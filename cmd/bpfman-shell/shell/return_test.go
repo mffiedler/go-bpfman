@@ -815,6 +815,66 @@ let a <- echo "first"
 	assert.Contains(t, msg, "called at 6:", "the call site must be cited at the bind's line")
 }
 
+// Regression: with two def-call frames -- outer calls inner --
+// the call-site annotation must point at the line WITHIN the
+// outer def's body where the call to inner appears, NOT at
+// some surrounding chunk's start. Earlier behaviour leaked
+// env.ChunkStartLine (the currently-executing top-level
+// chunk) into the call-site coordinate, so the annotation
+// always reported the top-level user-call line regardless of
+// how deep the failure was. The design call: keep "in def
+// NAME (called at L:C)" pointing at the innermost call site
+// -- the most actionable navigation target -- and treat a
+// full stack trace as a separate future enhancement.
+//
+// The bug only manifests when each def lives in its own chunk
+// (the bpfman-shell chunk loop's normal case): body Pos values
+// are chunk-relative, def.RegStartLine carries the chunk's
+// start line, and translation has to use the def's RegStartLine
+// rather than the CURRENT chunk's start. EvalProgram on a
+// single-string program uses absolute Pos values throughout, so
+// the bug is invisible there. This test simulates the chunked
+// path by parsing each def in a separate chunk and bumping
+// env.ChunkStartLine in step, exactly as the real loop does.
+func TestEvalProgram_Return_DeepChainCallSiteIsInnermost(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	env := &Env{
+		Session:     s,
+		ExecCommand: func([]Arg, Span) (Value, error) { return Value{}, nil },
+		ExecBind: func([]Arg, Span) (BindResult, error) {
+			return BindResult{Rc: Envelope{OK: true}}, nil
+		},
+	}
+
+	// Chunk 1: inner def at file lines 2-4 inclusive.
+	env.ChunkStartLine = 2
+	innerProg := parseProgram(t, "def inner(x) {\n  return $x.bad\n}")
+	require.NoError(t, EvalProgram(innerProg, env))
+
+	// Chunk 2: outer def at file lines 6-9. The call to
+	// inner is on the second body line, file line 7.
+	env.ChunkStartLine = 6
+	outerProg := parseProgram(t, "def outer(x) {\n  let v <- inner $x\n  return $v\n}")
+	require.NoError(t, EvalProgram(outerProg, env))
+
+	// Chunk 3: top-level invocation at file line 11.
+	env.ChunkStartLine = 11
+	callProg := parseProgram(t, `let r <- outer "hi"`)
+	err := EvalProgram(callProg, env)
+	require.Error(t, err)
+	msg := err.Error()
+
+	assert.Contains(t, msg, "in def inner", "annotation must name the innermost def")
+	// The innermost call -- outer's body invoking inner -- is
+	// on file line 7. The buggy path reports 11 (the top-level
+	// chunk's start) because env.ChunkStartLine, not outer's
+	// RegStartLine, was used for the translation.
+	assert.Contains(t, msg, "called at 7:", "innermost call site is on line 7 (outer's body invoking inner)")
+	assert.NotContains(t, msg, "called at 11", "must not report the top-level chunk's line as the failing call's location")
+}
+
 // Regression: when no chunk-start shift is in effect (embedded
 // EvalProgram use, this test's path) the call site reads as
 // the raw script line. The chunk loop in

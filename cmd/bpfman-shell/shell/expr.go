@@ -315,6 +315,19 @@ type Env struct {
 	// decoration paths skip the decoration in that case.
 	ChunkFile      string
 	ChunkStartLine int
+
+	// currentDefRegStart is the RegStartLine of the def whose
+	// body is currently being evaluated, or 0 at top level.
+	// runDefCall pushes the called def's RegStartLine on entry
+	// and restores the prior value on exit, so a nested call
+	// inside a def body resolves "where am I in the file" by
+	// looking at the current def's registration chunk rather
+	// than at env.ChunkStartLine (which still names the
+	// outermost user chunk that started the call). absoluteCallLoc
+	// reads this so the "called at L:C" annotation in
+	// decorateDefError reports the calling def's body line, not
+	// the surrounding user chunk's start.
+	currentDefRegStart int
 }
 
 // IsBinaryOp reports whether s is a recognised binary operator.
@@ -690,6 +703,14 @@ func runDefCall(def *DefValue, args []Arg, callLoc Pos, env *Env) (Value, bool, 
 		return Value{}, false, 0, locErrorf(callLoc, "%s: expected %d argument(s), got %d (def declared at %d:%d)",
 			def.Name, len(def.Params), len(args), def.Pos.Line, def.Pos.Col)
 	}
+	// Track the active def's RegStartLine so nested call sites
+	// inside the body translate against the def's parsing chunk
+	// rather than against whatever top-level chunk is currently
+	// driving execution. Save / restore so recursive calls and
+	// def-inside-def calls each get the right context.
+	savedDefRegStart := env.currentDefRegStart
+	env.currentDefRegStart = def.RegStartLine
+	defer func() { env.currentDefRegStart = savedDefRegStart }()
 	var localDeferFailures int
 	err := env.Session.WithFrame(func() error {
 		for i, p := range def.Params {
@@ -725,20 +746,33 @@ func runDefCall(def *DefValue, args []Arg, callLoc Pos, env *Env) (Value, bool, 
 }
 
 // absoluteCallLoc translates a chunk-relative Pos to the
-// file-absolute coordinates the diagnostic renderer cites. The
-// chunk loop in cmd/bpfman-shell/repl/loop.go sets
-// env.ChunkStartLine to the 1-based file line at which the
-// current chunk begins; an in-chunk Pos has Line counted from
-// 1 of the chunk, so the absolute file line is `ChunkStartLine
-// + Line - 1`. When ChunkStartLine is unset (interactive REPL,
-// embedded use without chunking) the Pos is already absolute
-// and passes through unchanged. The column is chunk-invariant
-// either way.
+// file-absolute coordinates the diagnostic renderer cites.
+//
+// Inside a def body, the BindStmt / CommandStmt whose evaluator
+// triggered the call has positions relative to the chunk that
+// PARSED that def, not relative to the chunk currently driving
+// execution. runDefCall threads the active def's RegStartLine
+// through env.currentDefRegStart; this helper prefers that
+// value when non-zero so a nested call's "called at L:C"
+// annotation cites the calling def's body line. At top level
+// (outside any def body), currentDefRegStart is 0 and the
+// chunk loop's env.ChunkStartLine is the right reference --
+// the BindStmt's Pos is chunk-relative to the executing chunk
+// in that case. Pos passes through unchanged when both fields
+// are unset (embedded EvalProgram use, package tests): Pos
+// values are already file-absolute there.
 func absoluteCallLoc(callLoc Pos, env *Env) Pos {
-	if callLoc.Line <= 0 || env.ChunkStartLine <= 0 {
+	if callLoc.Line <= 0 {
 		return callLoc
 	}
-	return Pos{Line: callLoc.Line + env.ChunkStartLine - 1, Col: callLoc.Col}
+	shift := env.ChunkStartLine
+	if env.currentDefRegStart > 0 {
+		shift = env.currentDefRegStart
+	}
+	if shift <= 0 {
+		return callLoc
+	}
+	return Pos{Line: callLoc.Line + shift - 1, Col: callLoc.Col}
 }
 
 // decorateDefError attaches the def's registration site (file
