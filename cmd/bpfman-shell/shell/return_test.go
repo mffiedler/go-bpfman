@@ -793,6 +793,30 @@ print $v.field
 	assert.Empty(t, issues, "recursive value-returning def must allow field access on its primary")
 }
 
+// Regression: a no-return def in bind position produces the
+// envelope mirror as the primary (matching the no-payload
+// command-bind family); the checker must keep the sealed
+// envelope shape for that case so accessing a non-envelope
+// field on the bound primary is caught at preflight rather
+// than failing at runtime. The earlier fix that introduced
+// def-as-bind-head over-broadened to OriginUnknown for every
+// def, which masked this class of mistake.
+func TestCheck_Return_NoReturnDefBindsSealedEnvelope(t *testing.T) {
+	t.Parallel()
+	src := `
+def side_effect() {
+  print "ran"
+}
+let v <- side_effect
+print $v.id
+`
+	issues := checkSource(t, src)
+	require.NotEmpty(t, issues, "no-return def bind must keep the sealed envelope shape so .id is rejected at preflight")
+	// The diagnostic still points at the offending field
+	// access, not at the def call itself.
+	assert.Contains(t, issues[0].Msg, "id")
+}
+
 // Regression: a def whose name shadows a registered pure
 // builtin must route through the def at preflight, so the
 // pure-builtin <- rejection does not fire. The runtime's

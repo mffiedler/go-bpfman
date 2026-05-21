@@ -97,6 +97,18 @@ type checker struct {
 	// checker mirrors that by adding the name when the DefStmt
 	// is walked rather than pre-scanning.
 	defs map[string]bool
+	// defHasReturn[name] is true when the def's body contains
+	// at least one ReturnStmt anywhere in its tree. The bind
+	// site uses the flag to keep the original sealed envelope
+	// shape for no-return defs (so accessing a non-envelope
+	// field surfaces at preflight) and the OriginUnknown open
+	// shape only for defs that actually publish a value. The
+	// flag is not flow-sensitive -- a `return` in one branch
+	// is enough -- because the runtime contract is "primary is
+	// the returned value when a return fires, otherwise the
+	// envelope mirror", and the open shape is the conservative
+	// choice when either is possible.
+	defHasReturn map[string]bool
 }
 
 // checkFrame is one entry on the checker's frame stack. defined
@@ -113,9 +125,10 @@ type checkFrame struct {
 
 func newChecker() *checker {
 	return &checker{
-		frames:  []checkFrame{newCheckFrame()},
-		aliases: map[string]string{},
-		defs:    map[string]bool{},
+		frames:       []checkFrame{newCheckFrame()},
+		aliases:      map[string]string{},
+		defs:         map[string]bool{},
+		defHasReturn: map[string]bool{},
 	}
 }
 
@@ -359,6 +372,54 @@ func bindHeadPureBuiltin(cmd *CommandStmt, aliases map[string]string) (string, b
 	return "", false
 }
 
+// bodyHasReturn walks stmts looking for at least one
+// ReturnStmt that belongs to this body. A nested DefStmt's
+// body is NOT descended into: an inner def's `return` is the
+// inner def's contract, not the outer's. The walk is purely
+// structural; it does not need to know about reachability or
+// flow because a single return anywhere is enough to flip the
+// outer def's bind primary from "always envelope" to "may be
+// the returned value".
+func bodyHasReturn(stmts []Stmt) bool {
+	for _, s := range stmts {
+		switch n := s.(type) {
+		case *ReturnStmt:
+			return true
+		case *DefStmt:
+			// Inner def's returns are its own.
+			continue
+		case *IfStmt:
+			if bodyHasReturn(n.Then) {
+				return true
+			}
+			for _, b := range n.Elifs {
+				if bodyHasReturn(b.Body) {
+					return true
+				}
+			}
+			if bodyHasReturn(n.Else) {
+				return true
+			}
+		case *ForEachStmt:
+			if bodyHasReturn(n.Body) {
+				return true
+			}
+		case *EventuallyStmt:
+			if bodyHasReturn(n.Body) {
+				return true
+			}
+		case *BindStmt:
+			if n.Collect != nil && bodyHasReturn(n.Collect.Body) {
+				return true
+			}
+			if n.Eventually != nil && bodyHasReturn(n.Eventually.Body) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // bindHeadDef reports whether cmd's first word names a def
 // registered earlier in the walk. Aliases expand first because
 // the runtime's first-arg alias expansion runs before def
@@ -369,18 +430,32 @@ func bindHeadPureBuiltin(cmd *CommandStmt, aliases map[string]string) (string, b
 // envelope fallback that mis-shapes def-bound primaries as
 // commands' result envelopes.
 func (c *checker) bindHeadDef(cmd *CommandStmt) bool {
-	if cmd == nil || len(cmd.Args) == 0 {
+	name := bindHeadDefName(cmd, c.aliases)
+	if name == "" {
 		return false
+	}
+	return c.defs[name]
+}
+
+// bindHeadDefName is the name-returning sibling of bindHeadDef.
+// An empty string means "not a known def head"; a non-empty
+// string is the alias-resolved def name used for follow-on
+// lookups (e.g. defHasReturn). Sharing one helper keeps the
+// "alias expansion then def-table check" precedence in one
+// place.
+func bindHeadDefName(cmd *CommandStmt, aliases map[string]string) string {
+	if cmd == nil || len(cmd.Args) == 0 {
+		return ""
 	}
 	first, ok := cmd.Args[0].(*LiteralExpr)
 	if !ok || first.Quoted {
-		return false
+		return ""
 	}
 	head := first.Text
-	if expanded, ok := c.aliases[head]; ok {
+	if expanded, ok := aliases[head]; ok {
 		head = expanded
 	}
-	return c.defs[head]
+	return head
 }
 
 // primaryNameForHint picks a placeholder for the bind-target
@@ -487,15 +562,30 @@ func (c *checker) walkStmt(s Stmt) {
 				}
 			}
 		}
-		// A def-bound primary is open: the return value's shape
-		// is dynamic and the checker has no way to infer it
-		// without flow analysis the language does not need.
-		// Marking it as OriginUnknown matches what destructure
+		// A def-bound primary takes one of two shapes. When the
+		// def's body contains at least one ReturnStmt, the
+		// publishable value is dynamic and the checker has no
+		// way to infer it without flow analysis the language
+		// does not need; OriginUnknown matches what destructure
 		// binding does for the same reason and unblocks field
-		// access on def-returned structured values.
+		// access on def-returned structured values. When the
+		// body has NO return at all, the runtime contract is
+		// "Primary = ValueFromEnvelope(Rc)" -- the envelope
+		// mirror, exactly the no-payload command-bind family --
+		// so the sealed envelope shape is the right preflight
+		// stand-in. A user binding a side-effect helper with
+		// `let v <- f; print $v.id` then trips the envelope's
+		// field check at static time, where the diagnostic is
+		// useful, rather than seeing a runtime "field id not
+		// found" later.
 		var primaryShape Shape
 		if headIsDef {
-			primaryShape = Shape{Sealed: false, Kind: OriginUnknown}
+			headName := bindHeadDefName(n.Cmd, c.aliases)
+			if c.defHasReturn[headName] {
+				primaryShape = Shape{Sealed: false, Kind: OriginUnknown}
+			} else {
+				primaryShape = KindShape(OriginEnvelope)
+			}
 		} else {
 			primaryShape = c.inferBindShape(n.Cmd)
 		}
@@ -528,6 +618,7 @@ func (c *checker) walkStmt(s Stmt) {
 		// SetDef installation, so the checker matches what the
 		// runtime does on the second and later iterations.
 		c.defs[n.Name] = true
+		c.defHasReturn[n.Name] = bodyHasReturn(n.Body)
 		// Parameters are visible inside the body and disappear
 		// at end-of-def. The runtime allocates a fresh frame
 		// per call; the checker walks the def body once with
