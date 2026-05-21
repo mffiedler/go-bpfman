@@ -420,6 +420,41 @@ func bodyHasReturn(stmts []Stmt) bool {
 	return false
 }
 
+// suggestDefForUnknownBindHead emits a "did you mean ..." hint
+// when cmd's bind head doesn't match any known def, alias, or
+// pure builtin AND a known def name is a short edit distance
+// away. The strdist threshold gates which candidates surface
+// so an arbitrary external command name does not get a
+// false-positive suggestion; only close-miss typos trip the
+// hint. The hint is informational -- an unknown head is a
+// valid shape (the user may genuinely call a subprocess) --
+// but a closely-matching typo is almost always a mistake.
+func (c *checker) suggestDefForUnknownBindHead(cmd *CommandStmt) {
+	if cmd == nil || len(cmd.Args) == 0 {
+		return
+	}
+	first, ok := cmd.Args[0].(*LiteralExpr)
+	if !ok || first.Quoted {
+		return
+	}
+	head := first.Text
+	if expanded, ok := c.aliases[head]; ok {
+		head = expanded
+	}
+	if len(c.defs) == 0 {
+		return
+	}
+	candidates := make([]string, 0, len(c.defs))
+	for name := range c.defs {
+		candidates = append(candidates, name)
+	}
+	matches := strdist.Nearest(head, candidates, 1)
+	if len(matches) == 0 {
+		return
+	}
+	c.addIssue(first.Span, "unknown bind head %q; did you mean %q?", first.Text, matches[0])
+}
+
 // bindHeadDef reports whether cmd's first word names a def
 // registered earlier in the walk. Aliases expand first because
 // the runtime's first-arg alias expansion runs before def
@@ -551,6 +586,18 @@ func (c *checker) walkStmt(s Stmt) {
 			// position.
 			if name, ok := bindHeadPureBuiltin(n.Cmd, c.aliases); ok {
 				c.addIssue(n.Cmd.Span, "%s is a pure builtin; use 'let %s = %s ...' rather than '<-' (no result envelope is produced)", name, primaryNameForHint(n), name)
+			} else {
+				// Typo-against-defs hint. An unknown bind head
+				// is a valid shape -- the user may genuinely
+				// want a subprocess -- but when the head is a
+				// short edit distance away from a known def
+				// the most likely intent is the def. The
+				// strdist threshold already drops candidates
+				// beyond a relative ratio, so an arbitrary
+				// external command name does not pick up
+				// false-positive suggestions; only close-miss
+				// typos surface a hint.
+				c.suggestDefForUnknownBindHead(n.Cmd)
 			}
 		}
 		// Tuple-bind on a bind-collect whose producer is a pure

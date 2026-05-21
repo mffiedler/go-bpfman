@@ -925,6 +925,47 @@ func TestCheck_Return_LetEqualsNonDefIsClean(t *testing.T) {
 	assert.Empty(t, issues, "a bareword RHS that is not a def must not trigger the hint")
 }
 
+// Regression: a typo'd def name at the bind RHS used to slip
+// through the checker (which sees nothing wrong with an
+// unknown bind head -- it might be an external command) and
+// land at the runtime "exec NAME: exec NAME: executable file
+// not found in $PATH" diagnostic. With the defs map already
+// populated, the checker can fuzzy-match the typo'd head
+// against the known defs and emit a "did you mean ..." hint.
+// Doesn't restrict: an unknown head might genuinely be an
+// external command, so the hint is informational.
+func TestCheck_Return_BindRHSTypoSuggestsDefName(t *testing.T) {
+	t.Parallel()
+	src := `
+def loader() {
+  return "value"
+}
+let v <- loaderr
+`
+	issues := checkSource(t, src)
+	require.NotEmpty(t, issues, "the typo'd bind head must produce a hint")
+	combined := issues[0].Msg
+	for _, i := range issues[1:] {
+		combined += "\n" + i.Msg
+	}
+	assert.Contains(t, combined, "loaderr", "the diagnostic must name the typo")
+	assert.Contains(t, combined, "loader", "the diagnostic must suggest the actual def name")
+	assert.Contains(t, combined, "did you mean", "the diagnostic must explicitly frame the suggestion")
+}
+
+// Regression: a bind head that genuinely is an unknown
+// external command -- no defs in scope, or all defs far away
+// from the head's text -- must NOT trip the typo hint. The
+// strdist threshold gates suggestions to short edit
+// distances, but the no-defs-at-all path also needs to stay
+// clean.
+func TestCheck_Return_BindRHSUnknownNoDefsIsClean(t *testing.T) {
+	t.Parallel()
+	src := `let v <- some_external_command`
+	issues := checkSource(t, src)
+	assert.Empty(t, issues, "no defs to match against -- the hint must not fire")
+}
+
 // Regression: a comparison operand naming a def must hint
 // at the bind form. The W3 arithmetic-operand hint covered
 // `let x = two + 3`; this is the parallel for `if two == 2`.
