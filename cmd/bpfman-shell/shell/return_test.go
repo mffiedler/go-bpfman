@@ -484,6 +484,13 @@ let (rc p) <- f
 	rawRc, ok := rc.Raw().(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, false, rawRc["ok"], "defer failure during return unwind must flip rc.ok")
+	// rc.code must be non-zero when rc.ok is false; an
+	// envelope with ok=false / code=0 is internally
+	// inconsistent and confuses the guard-failure renderer
+	// (which prints "exit: 0" for what was actually a
+	// failed call).
+	codeStr := fmt.Sprint(rawRc["code"])
+	assert.NotEqual(t, "0", codeStr, "rc.code must be non-zero alongside rc.ok=false")
 	p, _ := env.Session.Get("p")
 	gp, err := p.Scalar()
 	require.NoError(t, err)
@@ -519,6 +526,13 @@ after $p
 	var gf *GuardFailure
 	require.True(t, errors.As(err, &gf), "expected GuardFailure, got %T: %v", err, err)
 	assert.False(t, gf.Envelope.OK)
+	// The guard-failure envelope must carry a non-zero code
+	// when rc.ok is false. The driver-side
+	// RenderEnvelopeFailure block prints "exit: <code>", so a
+	// code of 0 alongside ok=false reads as a successful exit
+	// in the rendered diagnostic -- internally inconsistent
+	// and actively misleading.
+	assert.NotZero(t, gf.Envelope.Code, "guard envelope's code must be non-zero on failure")
 }
 
 func TestEvalProgram_Return_RecursiveValueReturn(t *testing.T) {

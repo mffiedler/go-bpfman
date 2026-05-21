@@ -730,7 +730,17 @@ func callDefAsBind(def *DefValue, args []Arg, callLoc Pos, env *Env) (BindResult
 	}
 	rc := Envelope{OK: true}
 	if localDeferFailures > 0 {
+		// Both fields move together: an envelope with
+		// OK=false / Code=0 reads as "successful exit but not
+		// ok", which is internally inconsistent and confuses
+		// the guard-failure renderer (it prints "exit: 0" for
+		// what was actually a failed call). The conventional
+		// shell exit code for "command failed without a more
+		// specific signal" is 1, which matches what
+		// runExternalAsBind / RenderEnvelopeFailure expect
+		// throughout the rest of the bind-family contract.
 		rc.OK = false
+		rc.Code = 1
 	}
 	primary := returned
 	if !hasReturn {
