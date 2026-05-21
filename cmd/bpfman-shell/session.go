@@ -1,6 +1,6 @@
 // Session-manipulating REPL commands: list variables (vars),
-// define / list / remove aliases, remove variables, print a
-// resolved value to stdout, and the internal value-lookup helper.
+// remove variables, print a resolved value to stdout, and the
+// internal value-lookup helper.
 // None of these touch the bpfman manager; they all operate on the
 // shell.Session and on the CLI writer.
 //

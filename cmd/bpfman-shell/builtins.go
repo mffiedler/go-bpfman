@@ -1,6 +1,6 @@
 // Shell builtin registry: one source of truth for the set of
-// shell-language commands (alias, defer, jobs, kill, source,
-// ...). Adding a new builtin is a single map entry: the
+// shell-language commands (defer, jobs, kill, source, ...).
+// Adding a new builtin is a single map entry: the
 // dispatcher reads from the registry, the completer derives
 // its first-token candidates from the registry, and per-builtin
 // argument completion (file paths for 'source', $-led variable
@@ -98,16 +98,16 @@ var keywordRegistrations = []keyword{
 		Usage:   "bpfman <subcommand> ...",
 		Summary: "Domain-command namespace prefix for program / link / dispatcher / audit verbs.",
 		Detail: "All bpfman domain operations live behind this prefix to keep them " +
-			"distinct from shell builtins and aliases. See the 'Domain commands' " +
+			"distinct from shell builtins. See the 'Domain commands' " +
 			"section of the overview for the available subcommands.",
 	},
 }
 
 // builtinRegistrations is the bpfman-shell builtin set. The
 // init() at the bottom of this file feeds each entry into
-// repl.RegisterBuiltin so the dispatcher (replShellCmd), the
-// completer's first-token candidates, and the alias-shadow
-// check all see the same source of truth.
+// repl.RegisterBuiltin so the dispatcher (replShellCmd) and
+// the completer's first-token candidates see the same source
+// of truth.
 //
 // Populated in an init() rather than at the top level so the
 // handler references do not form a compile-time initialisation
@@ -237,7 +237,7 @@ func init() {
 			Category: categoryIO,
 			Usage:    "source <file>",
 			Summary:  "Execute commands from a file in the caller's session.",
-			Detail: "Variables, defs, aliases, and jobs started in the file inherit the " +
+			Detail: "Variables, defs, and jobs started in the file inherit the " +
 				"caller's scope. Defers in the file fire when source returns " +
 				"(file-as-cleanup-unit). Nested source is rejected. A relative " +
 				"path resolves against the directory of the script containing the " +
@@ -403,7 +403,7 @@ func init() {
 	// package so the static checker (shell/check.go's inferBindShape)
 	// resolves `<- NAME ARGS...` to the correct primary Shape
 	// without a hand-maintained switch. Entries with a nil BindShape
-	// (alias, vars, help, jobs, reap, ...) bind nothing assignable
+	// (vars, help, jobs, reap, ...) bind nothing assignable
 	// and so contribute no shape; inferBindShape's default takes
 	// care of the rest (external-subprocess result).
 	for name, b := range repl.Builtins() {

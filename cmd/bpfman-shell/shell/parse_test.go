@@ -368,20 +368,19 @@ func TestParse_BareAssignIsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "unexpected '='")
 }
 
-func TestParse_AliasKeepsAssignAsLiteral(t *testing.T) {
+func TestParse_AliasSyntaxRejected(t *testing.T) {
 	t.Parallel()
 
-	// alias uses the = sigil syntactically; the parser must allow
-	// it through as a LiteralExpr so the alias command handler can
-	// see the classic "alias name = expansion" shape.
-	prog, err := parseSource(t, "alias b = bpfman")
-	require.NoError(t, err)
-	cmd, ok := firstStmt(t, prog).(*CommandStmt)
-	require.True(t, ok)
-	require.Len(t, cmd.Args, 4)
-	lit, ok := cmd.Args[2].(*LiteralExpr)
-	require.True(t, ok)
-	assert.Equal(t, "=", lit.Text)
+	// `alias` was a builtin that used `=` as a sigil
+	// syntactically. With the feature removed, the parser
+	// treats `alias name = expansion` like any other command
+	// form: a stray '=' at command position is rejected with
+	// the "use `let` for assignment" hint. Pinning this stops
+	// the syntax sneaking back through preflight only to fail
+	// at runtime.
+	_, err := parseSource(t, "alias b = bpfman")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unexpected '='")
 }
 
 func TestParse_VarRefOnlyExprStmt(t *testing.T) {

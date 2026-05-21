@@ -186,7 +186,7 @@ func (*PureCallExpr) exprNode()     {}
 func (*ListExpr) exprNode()         {}
 
 // Env is the execution environment for the evaluator. Session is
-// the variable and alias store; ExecCommand dispatches top-level
+// the variable and def store; ExecCommand dispatches top-level
 // commands to the REPL's shell and domain pipelines; ExecBind
 // dispatches command forms on the right of a '<-' bind.
 //
@@ -653,7 +653,7 @@ func evalReturnStmt(s *ReturnStmt, env *Env) error {
 }
 
 // evalDefStmt registers s in the session's def table. Redefining an
-// existing def replaces it silently; this matches let and alias.
+// existing def replaces it silently; this matches let.
 // The current chunk's file and start line are captured on the
 // DefValue so a later body error escaping the call frame can be
 // decorated with the registration site's absolute file+line.

@@ -583,10 +583,9 @@ func Dispatch(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, ses
 
 // makeExecCommand bridges the evaluator's top-level CommandStmt
 // dispatch into the loop pipeline. Output is visible on the CLI.
-// Dispatch order: aliases expand first; registered builtins
-// handle their own names; the embedder's Fallback handles
-// domain commands; an unrecognised first word runs as an
-// external subprocess.
+// Dispatch order: registered builtins handle their own names;
+// the embedder's Fallback handles domain commands; an
+// unrecognised first word runs as an external subprocess.
 func makeExecCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, env *shell.Env, loc SourceLoc, fallback FallbackFunc) func([]shell.Arg, shell.Span) (shell.Value, error) {
 	return func(args []shell.Arg, span shell.Span) (shell.Value, error) {
 		if len(args) == 0 {
@@ -726,7 +725,7 @@ func makeTraceHook(cli *bpfmancli.CLI, session *shell.Session, env *shell.Env, l
 
 // Source reads commands from a file and executes each line in
 // the caller's session. Inherits the caller's session (vars,
-// defs, aliases, jobs) and opens its own defer scope so
+// defs, jobs) and opens its own defer scope so
 // `defer cleanup` near the top of a sourced file fires when
 // source returns; does not open a new job scope so jobs started
 // in the sourced file live in the caller's job scope. Nested
@@ -756,9 +755,9 @@ func Source(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, env *
 	file := args[0]
 
 	// Module-scoped evaluation: the file evaluates against a
-	// fresh sub-session whose vars and aliases are private,
-	// whose defs are seeded from a shallow clone of the
-	// parent's, and whose failure counters start at zero.
+	// fresh sub-session whose vars are private, whose defs
+	// are seeded from a shallow clone of the parent's, and
+	// whose failure counters start at zero.
 	// On successful completion the child's defs merge back
 	// into the parent and the counter deltas accumulate; on
 	// failure the defs are discarded but the deltas still

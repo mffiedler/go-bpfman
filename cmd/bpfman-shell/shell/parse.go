@@ -722,7 +722,7 @@ func (p *parser) parseDeferStmt() (Stmt, error) {
 	if len(cmdTokens) == 0 {
 		return nil, spanErrorf(deferTok.Span, "defer requires a command form")
 	}
-	args, err := parseCommandArgs(cmdTokens, false)
+	args, err := parseCommandArgs(cmdTokens)
 	if err != nil {
 		return nil, err
 	}
@@ -894,7 +894,7 @@ func (p *parser) parseBindRHS(stmtLoc Pos, rc, primary string, guard bool) (Stmt
 	if err != nil {
 		return nil, err
 	}
-	args, err := parseCommandArgs(cmdTokens, false)
+	args, err := parseCommandArgs(cmdTokens)
 	if err != nil {
 		return nil, err
 	}
@@ -1045,7 +1045,6 @@ func (p *parser) parseCommandStmt() (Stmt, error) {
 	if first.Kind == TokenWord && (first.Text == "{" || first.Text == "}") {
 		return nil, spanErrorf(first.Span, "unexpected %q at statement start", first.Text)
 	}
-	isAlias := first.Kind == TokenWord && first.Text == "alias"
 	var buf []Token
 	for !p.atEOF() {
 		t := p.peek()
@@ -1055,7 +1054,7 @@ func (p *parser) parseCommandStmt() (Stmt, error) {
 		if t.Kind == TokenWord && (t.Text == "{" || t.Text == "}") {
 			break
 		}
-		if t.Kind == TokenAssign && !isAlias {
+		if t.Kind == TokenAssign {
 			return nil, spanErrorf(t.Span, "unexpected '='; use \"let <name> = <value...>\" for assignment")
 		}
 		buf = append(buf, t)
@@ -1101,7 +1100,7 @@ func (p *parser) parseCommandStmt() (Stmt, error) {
 		}
 	}
 
-	args, err := parseCommandArgs(buf, isAlias)
+	args, err := parseCommandArgs(buf)
 	if err != nil {
 		return nil, err
 	}
@@ -2287,12 +2286,10 @@ func (p *exprParser) parsePureCallArg(name string) (Expr, error) {
 	return parsePrimary(t)
 }
 
-// parseTimeoutExpr consumes a 'timeout' keyword followed by a
-// duration literal (e.g. 30s, 200ms, 1h30m — anything
 // parseCommandArgs turns a command's token run into argument
-// expressions. Each token becomes a primary expression; a
-// TokenAssign is preserved as a literal "=" only inside the alias
-// builtin, which uses the sigil syntactically ("alias name = expansion").
+// expressions. Each token becomes a primary expression; a stray
+// TokenAssign is rejected with a "use let" hint because no command
+// form expects a literal '=' as an argument.
 //
 // A leading '(' starts a parenthesised expression that runs through
 // the same parser used by let RHSes and assert operands. The whole
@@ -2309,18 +2306,13 @@ func (p *exprParser) parsePureCallArg(name string) (Expr, error) {
 // A bare ')' or ']' outside any opening paren / bracket is a parse
 // error; the tokeniser keeps them as their own tokens and the
 // resulting "unmatched" diagnostic mirrors the opening-side check.
-func parseCommandArgs(tokens []Token, allowAssign bool) ([]Expr, error) {
+func parseCommandArgs(tokens []Token) ([]Expr, error) {
 	exprs := make([]Expr, 0, len(tokens))
 	i := 0
 	for i < len(tokens) {
 		t := tokens[i]
 		if t.Kind == TokenAssign {
-			if !allowAssign {
-				return nil, spanErrorf(t.Span, "unexpected '='; use \"let <name> = <value...>\" for assignment")
-			}
-			exprs = append(exprs, &LiteralExpr{Text: "=", Span: t.Span})
-			i++
-			continue
+			return nil, spanErrorf(t.Span, "unexpected '='; use \"let <name> = <value...>\" for assignment")
 		}
 		if t.Kind == TokenWord && t.Text == "(" {
 			end, err := findMatchingParen(tokens, i)

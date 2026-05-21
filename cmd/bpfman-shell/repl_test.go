@@ -638,10 +638,10 @@ func TestReplLoop_SourceFromInteractiveStaysCwdRelative(t *testing.T) {
 }
 
 // TestReplLoop_SourceModule_* pin the SCOPE-DESIGN Section 5
-// module-scope contract: vars and aliases stay private to the
-// sourced file, defs merge back to the importer on success,
-// counters always accumulate, and a failed source does not
-// publish partial defs.
+// module-scope contract: vars stay private to the sourced
+// file, defs merge back to the importer on success, counters
+// always accumulate, and a failed source does not publish
+// partial defs.
 
 func TestReplLoop_SourceModule_DefsExportToImporter(t *testing.T) {
 	t.Parallel()
@@ -677,29 +677,6 @@ func TestReplLoop_SourceModule_VarsStayPrivate(t *testing.T) {
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "undefined variable: libvar")
-}
-
-func TestReplLoop_SourceModule_AliasesStayPrivate(t *testing.T) {
-	t.Parallel()
-
-	// An alias declared in the library does not propagate to
-	// the importer. Invoking it from the importer falls
-	// through to external-command resolution.
-	tmp := filepath.Join(t.TempDir(), "lib.bpfman")
-	require.NoError(t, os.WriteFile(tmp, []byte("alias bye = print\n"), 0o644))
-
-	input := "source " + tmp + "\nbye\n"
-	var errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
-	lr := repl.NewScannerReader(strings.NewReader(input), nil)
-
-	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
-	require.NoError(t, err)
-	// bye is not registered in the importer's session, so it
-	// reaches the external-command fallback and is reported as
-	// not found rather than running as `print`.
-	assert.Contains(t, errBuf.String(), "bye")
-	assert.NotContains(t, errBuf.String(), "print")
 }
 
 func TestReplLoop_SourceModule_RedefinitionExports(t *testing.T) {

@@ -446,13 +446,13 @@ func (c *checker) suggestDefForUnknownBindHead(cmd *CommandStmt) {
 // suggestConditionalDefForUnknownHead emits ONLY the
 // conditional-def hint at sites where the typo-suggest would
 // produce too many false positives. Command position and
-// defer dispatch see the full universe of external commands,
-// drivers' builtins, and aliases; fuzzy-matching against the
-// shell package's defs map would suggest a def for any
-// unknown command (`print` -> `greet`, etc.), which is
-// noise. At those sites the conditional-def case is still
-// useful (the user literally wrote the conditional def's
-// name in the same file) but the broader typo case is not.
+// defer dispatch see the full universe of external commands
+// and drivers' builtins; fuzzy-matching against the shell
+// package's defs map would suggest a def for any unknown
+// command (`print` -> `greet`, etc.), which is noise. At
+// those sites the conditional-def case is still useful (the
+// user literally wrote the conditional def's name in the
+// same file) but the broader typo case is not.
 func (c *checker) suggestConditionalDefForUnknownHead(cmd *CommandStmt, role string) {
 	c.diagnoseUnknownHead(cmd, role, false /*suggestTypos*/)
 }
@@ -899,17 +899,12 @@ func (c *checker) walkStmt(s Stmt) {
 		// lookupDefHead at runtime; preflight should mirror
 		// the same resolution rule. A head that doesn't
 		// resolve to a top-level def gets the conditional-
-		// def hint or the typo-suggest hint depending on the
-		// tracking state. The shape-probe predicate forms
-		// (`assert ok ...`, `require not ok ...`) are command-
-		// shaped but their head is the assert verb, not a
-		// callable; recordAlias's `alias` and `unalias`
-		// builtins similarly carry an alias-management head.
-		// Both leave the suggestion silent because their
-		// heads are reserved words handled by the existing
-		// parseStmt dispatch -- the registered-defs / pure-
-		// builtins / bind-shape lookups all miss, leaving
-		// the head as "unknown" without a near match.
+		// def hint depending on the tracking state. The
+		// shape-probe predicate forms (`assert ok ...`,
+		// `require not ok ...`) are command-shaped but their
+		// head is the assert verb, not a callable; the
+		// suggestion stays silent because the head matches
+		// neither a def name nor any near miss.
 		if !c.bindHeadDef(n) {
 			c.suggestConditionalDefForUnknownHead(n, "command")
 		}

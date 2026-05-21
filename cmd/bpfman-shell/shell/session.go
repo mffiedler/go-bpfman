@@ -273,8 +273,8 @@ func (s *Session) ChildForSource() *Session {
 // parent, making new defs and redefinitions visible to the
 // importer; when false, the child's defs are discarded entirely.
 //
-// Aliases and variables are always discarded: those are private
-// to the child session.
+// Variables are always discarded: they are private to the
+// child session.
 func (s *Session) MergeChildSource(child *Session, commitDefs bool) {
 	s.assertFailures += child.assertFailures
 	s.deferFailures += child.deferFailures

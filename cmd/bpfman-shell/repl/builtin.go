@@ -38,9 +38,9 @@ type Ctx struct {
 	Mgr *manager.Manager
 
 	// Env is the active shell environment. Env.Session is the
-	// canonical handle to variable bindings, defs, and aliases;
-	// jobs and source read Env directly to register background
-	// processes and to inherit the caller's scope.
+	// canonical handle to variable bindings and defs; jobs and
+	// source read Env directly to register background processes
+	// and to inherit the caller's scope.
 	Env *shell.Env
 
 	// Cmd is the command name as the user typed it (args[0]
@@ -78,7 +78,7 @@ type ArgCompleter func(session *shell.Session, baseDir string, tokens []string, 
 
 // Category constants group builtins in the help overview.
 const (
-	CategorySession = "session" // bindings, defs, aliases
+	CategorySession = "session" // bindings, defs
 	CategoryIO      = "io"      // external commands, file, jq, print, source
 	CategoryAssert  = "assert"  // assert / require
 	CategoryJobs    = "jobs"    // start / wait / kill / jobs
