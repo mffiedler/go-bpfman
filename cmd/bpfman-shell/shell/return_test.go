@@ -971,6 +971,84 @@ let p <- hidden
 	assert.Contains(t, combined, "conditional", "the diagnostic must name the conditional-declaration shape")
 }
 
+// Regression: the conditional-def-hint must also fire at
+// command position. The W22 fix wired the hint into the
+// BindStmt-checker's unknown-head path, but a bare command
+// `hidden` (no `<-` bind) went through evalCommandStmt
+// without any conditional-def diagnostic. Same shape, three
+// other dispatch sites (CommandStmt, bind-collect producer,
+// defer) all need the same hint so the user gets a useful
+// diagnostic regardless of how they call the conditional def.
+func TestCheck_Return_ConditionalDefAtCommandPosition(t *testing.T) {
+	t.Parallel()
+	src := `
+if false {
+  def hidden() {
+    print "nope"
+  }
+}
+hidden
+`
+	issues := checkSource(t, src)
+	require.NotEmpty(t, issues, "command-position use of a conditional def must trip the diagnostic")
+	combined := issues[0].Msg
+	for _, i := range issues[1:] {
+		combined += "\n" + i.Msg
+	}
+	assert.Contains(t, combined, "hidden", "the diagnostic must name the head")
+	assert.Contains(t, combined, "conditional", "the diagnostic must name the conditional-declaration shape")
+}
+
+// Regression: bind-collect producer must be checked for the
+// conditional-def shape too. The producer in `let xs <-
+// foreach n in $items { hidden }` is dispatched as a
+// command-form at runtime; until the check was wired the
+// pre-flight let `hidden` slip through.
+func TestCheck_Return_ConditionalDefAtBindCollectProducer(t *testing.T) {
+	t.Parallel()
+	src := `
+let xs = [1]
+if false {
+  def hidden() {
+    return 1
+  }
+}
+let vs <- foreach n in $xs { hidden }
+`
+	issues := checkSource(t, src)
+	require.NotEmpty(t, issues, "bind-collect producer of a conditional def must trip the diagnostic")
+	combined := issues[0].Msg
+	for _, i := range issues[1:] {
+		combined += "\n" + i.Msg
+	}
+	assert.Contains(t, combined, "hidden")
+	assert.Contains(t, combined, "conditional")
+}
+
+// Regression: defer-of-conditional-def. The defer dispatcher
+// resolves the head via lookupDefHead at runtime; preflight
+// must mirror that resolution and emit the conditional-branch
+// hint when the head is conditionally-declared.
+func TestCheck_Return_ConditionalDefAtDeferPosition(t *testing.T) {
+	t.Parallel()
+	src := `
+if false {
+  def hidden() {
+    print "cleaned"
+  }
+}
+defer hidden
+`
+	issues := checkSource(t, src)
+	require.NotEmpty(t, issues, "defer of a conditional def must trip the diagnostic")
+	combined := issues[0].Msg
+	for _, i := range issues[1:] {
+		combined += "\n" + i.Msg
+	}
+	assert.Contains(t, combined, "hidden")
+	assert.Contains(t, combined, "conditional")
+}
+
 // Regression: top-level defs still get registered globally so
 // the existing usages work. This pins the boundary between
 // the W22 fix (conditional defs don't register) and the W2

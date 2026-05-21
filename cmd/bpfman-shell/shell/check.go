@@ -450,25 +450,50 @@ func bodyHasReturn(stmts []Stmt) bool {
 	return false
 }
 
-// suggestDefForUnknownBindHead emits a hint when cmd's bind
-// head doesn't match a top-level def. Two cases produce a
-// diagnostic:
+// suggestDefForUnknownBindHead emits the conditional-def or
+// typo-suggest hint at a bind-RHS site. The bind RHS is a
+// narrow surface -- the user is explicitly saying "give me a
+// value from this dispatch" -- so a near-miss def name is
+// almost always the right suggestion. The typo-suggest hint
+// fires alongside the conditional-def check.
+func (c *checker) suggestDefForUnknownBindHead(cmd *CommandStmt) {
+	c.diagnoseUnknownHead(cmd, "bind head", true /*suggestTypos*/)
+}
+
+// suggestConditionalDefForUnknownHead emits ONLY the
+// conditional-def hint at sites where the typo-suggest would
+// produce too many false positives. Command position and
+// defer dispatch see the full universe of external commands,
+// drivers' builtins, and aliases; fuzzy-matching against the
+// shell package's defs map would suggest a def for any
+// unknown command (`print` -> `greet`, etc.), which is
+// noise. At those sites the conditional-def case is still
+// useful (the user literally wrote the conditional def's
+// name in the same file) but the broader typo case is not.
+func (c *checker) suggestConditionalDefForUnknownHead(cmd *CommandStmt, role string) {
+	c.diagnoseUnknownHead(cmd, role, false /*suggestTypos*/)
+}
+
+// diagnoseUnknownHead implements the shared resolution logic
+// for both hint-callers. Two cases produce a diagnostic:
 //
 //   - The head matches a CONDITIONALLY-declared def name (one
 //     declared inside an if/elif/else / foreach / eventually
 //     body or a nested def body). The runtime may not register
-//     it, so the use-site is suspect. Diagnostic names the
-//     conditional shape explicitly.
-//   - The head matches no def at all but a top-level def name
-//     is a short edit distance away. Likely typo; emit the
-//     existing "did you mean ..." hint.
+//     it, so the use-site is suspect. Always-emitted.
+//   - When suggestTypos is true and the head matches no def
+//     at all but a top-level def name is a short edit distance
+//     away. Likely typo; emit the "did you mean ..." hint.
 //
-// Both cases stop short of restricting the user -- an unknown
-// head is still a valid shape (the user may genuinely call a
-// subprocess) -- but the diagnostic at preflight is much more
-// useful than the runtime "executable file not found in
-// $PATH" the bind-dispatch fallback used to produce.
-func (c *checker) suggestDefForUnknownBindHead(cmd *CommandStmt) {
+// The role string is interpolated into the diagnostic so the
+// user reads "bind head", "command", "defer command", or
+// "bind-collect producer" depending on where the call came
+// from. The suggestTypos gate exists because the typo-suggest
+// hint is appropriate at narrow surfaces (bind RHS) but noisy
+// at broad ones (command position) where the universe of
+// valid commands extends far beyond the shell package's defs
+// map.
+func (c *checker) diagnoseUnknownHead(cmd *CommandStmt, role string, suggestTypos bool) {
 	if cmd == nil || len(cmd.Args) == 0 {
 		return
 	}
@@ -476,17 +501,32 @@ func (c *checker) suggestDefForUnknownBindHead(cmd *CommandStmt) {
 	if !ok || first.Quoted {
 		return
 	}
+	// Skip if the head already resolves through a known
+	// dispatch path: a top-level def, a bind-shape registry
+	// entry (bpfman, start, exec, etc.), or a pure builtin.
 	head := first.Text
 	if expanded, ok := c.aliases[head]; ok {
 		head = expanded
 	}
-	// Conditional-def case: the name appeared in source but
-	// inside a context the runtime may not execute.
-	if c.conditionalDefs[head] {
-		c.addIssue(first.Span, "bind head %q is declared in a conditional branch (if / foreach / eventually / def body); it is not registered at runtime unless the declaring branch ran", head)
+	if c.defs[head] {
 		return
 	}
-	if len(c.defs) == 0 {
+	if _, ok := LookupBindShape(head); ok {
+		return
+	}
+	if _, ok := LookupPureBuiltin(head); ok {
+		return
+	}
+	// Conditional-def case: the name appeared in source but
+	// inside a context the runtime may not execute. This
+	// always fires regardless of suggestTypos because the
+	// user literally wrote the def's name in source -- the
+	// match isn't a guess.
+	if c.conditionalDefs[head] {
+		c.addIssue(first.Span, "%s %q is declared in a conditional branch (if / foreach / eventually / def body); it is not registered at runtime unless the declaring branch ran", role, head)
+		return
+	}
+	if !suggestTypos || len(c.defs) == 0 {
 		return
 	}
 	candidates := make([]string, 0, len(c.defs))
@@ -497,7 +537,7 @@ func (c *checker) suggestDefForUnknownBindHead(cmd *CommandStmt) {
 	if len(matches) == 0 {
 		return
 	}
-	c.addIssue(first.Span, "unknown bind head %q; did you mean %q?", first.Text, matches[0])
+	c.addIssue(first.Span, "unknown %s %q; did you mean %q?", role, first.Text, matches[0])
 }
 
 // bindHeadDef reports whether cmd's first word names a def
@@ -663,6 +703,20 @@ func (c *checker) walkStmt(s Stmt) {
 				}
 			}
 		}
+		// Bind-collect producer (the last statement of the
+		// foreach body) is dispatched as a command-form at
+		// runtime, so the same conditional-def / typo-suggest
+		// hint that fires at command position should fire
+		// here too. Without this, a producer naming a
+		// conditional def slipped through preflight and
+		// failed at runtime with "executable file not found".
+		if n.Collect != nil && len(n.Collect.Body) > 0 {
+			if last, ok := n.Collect.Body[len(n.Collect.Body)-1].(*CommandStmt); ok {
+				if !c.bindHeadDef(last) {
+					c.suggestConditionalDefForUnknownHead(last, "bind-collect producer")
+				}
+			}
+		}
 		// A def-bound primary takes one of two shapes. When the
 		// def's body contains at least one ReturnStmt, the
 		// publishable value is dynamic and the checker has no
@@ -818,6 +872,15 @@ func (c *checker) walkStmt(s Stmt) {
 			for _, a := range n.Cmd.Args {
 				c.checkExpr(a)
 			}
+			// Defer dispatches through lookupDefHead at
+			// runtime, so the same conditional-def / typo-
+			// suggest hint that fires at command position must
+			// fire here. Without it, `defer hidden` against a
+			// conditional def slipped through preflight and
+			// failed at scope unwind with an exec error.
+			if !c.bindHeadDef(n.Cmd) {
+				c.suggestConditionalDefForUnknownHead(n.Cmd, "defer command")
+			}
 		}
 
 	case *EventuallyStmt:
@@ -858,6 +921,24 @@ func (c *checker) walkStmt(s Stmt) {
 				continue
 			}
 			c.checkExpr(a)
+		}
+		// Command-position def dispatch goes through
+		// lookupDefHead at runtime; preflight should mirror
+		// the same resolution rule. A head that doesn't
+		// resolve to a top-level def gets the conditional-
+		// def hint or the typo-suggest hint depending on the
+		// tracking state. The shape-probe predicate forms
+		// (`assert ok ...`, `require not ok ...`) are command-
+		// shaped but their head is the assert verb, not a
+		// callable; recordAlias's `alias` and `unalias`
+		// builtins similarly carry an alias-management head.
+		// Both leave the suggestion silent because their
+		// heads are reserved words handled by the existing
+		// parseStmt dispatch -- the registered-defs / pure-
+		// builtins / bind-shape lookups all miss, leaving
+		// the head as "unknown" without a near match.
+		if !c.bindHeadDef(n) {
+			c.suggestConditionalDefForUnknownHead(n, "command")
 		}
 
 	case *BreakStmt, *ContinueStmt:
