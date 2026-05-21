@@ -277,50 +277,98 @@ func TestEventuallyBind_Matrix_BindForm_x_Outcome(t *testing.T) {
 		{name: "success", body: "  print \"ok\"\n"},
 		{name: "failure", body: "  assert 1 == 2\n"},
 	}
-	// form produces the bind target.
+	// formCase carries the bind keyword, the bind-target
+	// spelling, and per-outcome assertion functions. The
+	// success / failure checks are split because the three
+	// bind shapes publish different things on failure:
+	//
+	//   - let_single binds the eventually result value (a
+	//     structured map with ok / timed_out / attempts /
+	//     elapsed_ms / error / last_command). The result has
+	//     NO top-level .code field, so failure asserts on
+	//     $r.ok and $r.timed_out, not on a synthesised
+	//     rc.code.
+	//   - guard publishes nothing on failure -- it halts via
+	//     GuardFailure whose Envelope carries OK=false and
+	//     Code=1 (the synthesised rc).
+	//   - let_tuple publishes both the rc envelope mirror
+	//     (which DOES have .ok and .code) and the result
+	//     value as separate slots.
+	//
+	// Earlier shape ran every form through a single rc.code
+	// check; the single-name forms passed vacuously because
+	// fmt.Sprint(nil) != "0" was always true. Per-form
+	// assertions remove the vacuity.
 	type formCase struct {
-		name    string
-		target  string
-		extract func(s *Session) (rcOK, rcCodeNonZero, primaryBound bool)
+		name         string
+		keyword      string
+		target       string
+		checkSuccess func(t *testing.T, s *Session)
+		checkFailure func(t *testing.T, s *Session, err error)
 	}
 	forms := []formCase{
 		{
-			name:   "let",
-			target: "r",
-			extract: func(s *Session) (bool, bool, bool) {
+			name:    "let_single",
+			keyword: "let",
+			target:  "r",
+			checkSuccess: func(t *testing.T, s *Session) {
 				v, ok := s.Get("r")
-				if !ok {
-					return false, false, false
-				}
+				require.True(t, ok, "let single: $r must be bound on success")
 				raw, _ := v.Raw().(map[string]any)
-				return raw["ok"] == true, fmt.Sprint(raw["code"]) != "0", true
+				assert.Equal(t, true, raw["ok"], "let single: $r.ok must be true on success")
+			},
+			checkFailure: func(t *testing.T, s *Session, err error) {
+				require.NoError(t, err, "let single: must not halt on failure")
+				v, ok := s.Get("r")
+				require.True(t, ok, "let single: $r must be bound on failure")
+				raw, _ := v.Raw().(map[string]any)
+				assert.Equal(t, false, raw["ok"], "let single: $r.ok must be false on failure")
+				assert.Equal(t, true, raw["timed_out"], "let single: $r.timed_out must be true on failure (the result has no top-level .code; the timeout flag is the failure signal)")
 			},
 		},
 		{
-			name:   "guard",
-			target: "r",
-			// guard sets the same single slot but halts
-			// before binding on failure.
-			extract: func(s *Session) (bool, bool, bool) {
+			name:    "guard",
+			keyword: "guard",
+			target:  "r",
+			checkSuccess: func(t *testing.T, s *Session) {
 				v, ok := s.Get("r")
-				if !ok {
-					return false, false, false
-				}
+				require.True(t, ok, "guard: $r must be bound on success")
 				raw, _ := v.Raw().(map[string]any)
-				return raw["ok"] == true, fmt.Sprint(raw["code"]) != "0", true
+				assert.Equal(t, true, raw["ok"], "guard: $r.ok must be true on success")
+			},
+			checkFailure: func(t *testing.T, s *Session, err error) {
+				require.Error(t, err, "guard: must halt on failure")
+				var gf *GuardFailure
+				require.True(t, errors.As(err, &gf), "guard: expected GuardFailure, got %T", err)
+				assert.False(t, gf.Envelope.OK, "guard: envelope OK=false on failure")
+				assert.NotZero(t, gf.Envelope.Code, "guard: envelope Code must be non-zero on failure")
+				_, bound := s.Get("r")
+				assert.False(t, bound, "guard: $r must NOT be bound on failure (the halt fires before assignment)")
 			},
 		},
 		{
-			name:   "let_tuple",
-			target: "(rc p)",
-			extract: func(s *Session) (bool, bool, bool) {
+			name:    "let_tuple",
+			keyword: "let",
+			target:  "(rc p)",
+			checkSuccess: func(t *testing.T, s *Session) {
 				rcVal, ok := s.Get("rc")
-				if !ok {
-					return false, false, false
-				}
+				require.True(t, ok, "let tuple: $rc must be bound on success")
 				raw, _ := rcVal.Raw().(map[string]any)
-				_, primarySet := s.Get("p")
-				return raw["ok"] == true, fmt.Sprint(raw["code"]) != "0", primarySet
+				assert.Equal(t, true, raw["ok"], "let tuple: $rc.ok must be true on success")
+				_, primary := s.Get("p")
+				assert.True(t, primary, "let tuple: $p must be bound on success")
+			},
+			checkFailure: func(t *testing.T, s *Session, err error) {
+				require.NoError(t, err, "let tuple: must not halt on failure")
+				rcVal, ok := s.Get("rc")
+				require.True(t, ok, "let tuple: $rc must be bound on failure")
+				raw, _ := rcVal.Raw().(map[string]any)
+				assert.Equal(t, false, raw["ok"], "let tuple: $rc.ok must be false on failure")
+				assert.Equal(t, "1", fmt.Sprint(raw["code"]), "let tuple: $rc.code must be 1 on failure")
+				pVal, primary := s.Get("p")
+				require.True(t, primary, "let tuple: $p must be bound on failure")
+				pRaw, _ := pVal.Raw().(map[string]any)
+				assert.Equal(t, false, pRaw["ok"], "let tuple: $p.ok (the result value) must be false on failure")
 			},
 		},
 	}
@@ -329,13 +377,9 @@ func TestEventuallyBind_Matrix_BindForm_x_Outcome(t *testing.T) {
 			label := form.name + "_" + outcome.name
 			t.Run(label, func(t *testing.T) {
 				t.Parallel()
-				keyword := "let"
-				if form.name == "guard" {
-					keyword = "guard"
-				}
 				src := fmt.Sprintf(
 					"%s %s <- eventually timeout 30ms interval 5ms {\n%s}\n",
-					keyword, form.target, outcome.body,
+					form.keyword, form.target, outcome.body,
 				)
 				s := NewSession()
 				env := eventuallyEnv(s,
@@ -343,23 +387,11 @@ func TestEventuallyBind_Matrix_BindForm_x_Outcome(t *testing.T) {
 					func([]Arg, Span) (BindResult, error) { return BindResult{Rc: OkEnvelope()}, nil },
 				)
 				err := runEventuallySrc(t, src, env)
-				rcOK, rcCodeNonZero, primaryBound := form.extract(s)
-				switch {
-				case outcome.name == "success":
+				if outcome.name == "success" {
 					require.NoError(t, err, "%s: success outcome must not error", label)
-					assert.True(t, rcOK, "%s: rc.ok must be true on success", label)
-					assert.True(t, primaryBound, "%s: target must be set on success", label)
-				case outcome.name == "failure" && form.name == "guard":
-					require.Error(t, err, "%s: guard form must halt on failure", label)
-					var gf *GuardFailure
-					require.True(t, errors.As(err, &gf), "%s: expected GuardFailure", label)
-					assert.False(t, gf.Envelope.OK, "%s: guard envelope OK=false", label)
-					assert.NotZero(t, gf.Envelope.Code, "%s: guard envelope Code != 0", label)
-				case outcome.name == "failure":
-					require.NoError(t, err, "%s: let form must not halt on failure", label)
-					assert.False(t, rcOK, "%s: rc.ok must be false on failure", label)
-					assert.True(t, rcCodeNonZero, "%s: rc.code must be non-zero on failure", label)
-					assert.True(t, primaryBound, "%s: target must be set on failure (let form)", label)
+					form.checkSuccess(t, s)
+				} else {
+					form.checkFailure(t, s, err)
 				}
 			})
 		}
