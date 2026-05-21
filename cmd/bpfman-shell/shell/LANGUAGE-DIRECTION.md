@@ -179,15 +179,17 @@ just has to put the cleanup with the consumer.
 The honest trade-off: partial-cleanup-on-error inside the
 helper is lost. If `bpfman link attach` fails after the
 load succeeded, the prog is loaded but the helper never
-ran an unload-on-error step before returning. For lifecycle
-patterns where partial cleanup matters, write the helper
-as two stages -- `load_then_attach`'s halves -- or have the
-helper publish both the resource and a cleanup recipe the
-caller installs. A "defer to caller scope" primitive (a
-def-local `defer` that registers in the caller's defer
-stack instead of the def's) would close the gap; it is not
-on any roadmap today and the corpus has not yet shown the
-shape is load-bearing.
+ran an unload-on-error step before returning. The targeted
+fix is `with x <- CMD { BODY }` blocks (the "Scoped
+resource helpers" section): the block IS the scope, the
+helper publishes resources INTO it, and cleanup naturally
+lives with the consumer's scope. That is now step 3 on the
+"what to build, in order" list -- not a speculative "would
+be nice" but the next compositional unlock the corpus
+needs. A `defer-out` per-statement primitive would patch
+the gap sooner but turns into language clutter the moment
+`with` lands; the discipline is to wait one primitive, not
+to ship two that overlap.
 
 Nothing else is magical. Just a def with locals that do not
 leak, guards that halt on failure inside the helper, an
@@ -477,8 +479,13 @@ structured helper results become painful without them.
 
 ### Scoped resource helpers (`with`)
 
-`def` plus `defer` already covers most of this. A future
-primitive could make scope explicit:
+This is the targeted fix for the lifecycle-defer mismatch
+the "sweet spot" section names. A def opens its own defer
+scope, so cleanup written inside a lifecycle helper fires
+at the helper's return rather than at the caller's scope
+exit; with `with` blocks the block IS the scope, the helper
+publishes resources INTO it, and cleanup naturally lives
+with the consumer:
 
     with prog <- load_prog ./xdp.o xdp {
         with link <- attach_xdp $iface $prog {
@@ -495,12 +502,26 @@ Semantics:
 - Cleanup runs at block exit, even on failure.
 - Nested resources unwind in reverse order.
 
-Tests would read as resource lifetimes rather than
-imperative cleanup recipes. This is the test-DSL face of
-block-as-value (the same primitive the control-flow
-section holds back). Same bar: do not add until the
-`guard` + `defer` pair becomes repetitive enough to
-justify a new primitive.
+The corpus already wants this. Today's value-returning
+helper has to return its resources and trust the caller to
+register cleanup at the call site (see the "sweet spot"
+example), which loses partial-cleanup-on-error inside the
+helper and pushes implementation details out to every
+consumer. `with` closes the gap with one primitive: the
+helper writes the lifecycle once and every call site reads
+as a resource lifetime rather than as an imperative cleanup
+recipe.
+
+Block-as-value is the load-bearing evaluator concept this
+needs (the control-flow section's `with_program` discussion
+covers the parser shape). It is bigger than `defer-out`
+would be -- a one-keyword primitive that registers cleanup
+into the caller's defer scope -- but `defer-out` would
+become a band-aid the day `with` lands: it solves a single
+case at extra language surface, while `with` solves the
+lifecycle, the control-flow, and the future "transaction"-
+shaped patterns with one primitive. Hold to `with`; do not
+ship `defer-out` to plug the gap.
 
 ### Table-driven tests
 
@@ -597,25 +618,41 @@ the test-DSL items:
    *(Landed.)* The single biggest compositional unlock;
    the `load_xdp` helper is now idiomatic and tests gain
    a real vocabulary.
-3. Let user-defined defs become assertion vocabulary
+3. Add `with x <- CMD { BODY }`. The motivating case is
+   the lifecycle-defer mismatch documented in the "sweet
+   spot" section: today's value-returning helper has to
+   return resources and push cleanup registration out to
+   every caller, because def-local defer scope unwinds at
+   the helper's return. `with` is the targeted resolution
+   -- block-as-value, cleanup tied to the block's scope --
+   not just a "nice to have". Bigger primitive than the
+   surrounding items, but the next unlock the corpus
+   actually needs. Was step 7; promoted now that the gap
+   is documented and confirmed.
+4. Let user-defined defs become assertion vocabulary
    (`require (program_loaded $pid)`). Falls out of step
    2 plus bindable commands; mostly a documentation and
    ergonomics pass.
-4. Improve failure rendering for `require`, `assert`,
+5. Improve failure rendering for `require`, `assert`,
    and `eventually`. Evidence-bearing diagnostics, not
    more retry syntax.
-5. Expand `matches { ... }` before growing general
+6. Expand `matches { ... }` before growing general
    expression syntax. Structured assertions live in the
    matcher.
-6. Add object / record literals when structured helper
+7. Add object / record literals when structured helper
    results become painful without them.
-7. Add `with x <- CMD { BODY }` only after `guard` +
-   `defer` patterns become repetitive enough to justify
-   a new primitive. Same bar block-as-value is held to.
 8. Add `test "..." { ... }` only when scripts grow large
    enough to need named test blocks.
 9. Do not add macros, `quote`, or `eval`. The language
    does not need them and gains little from them.
+10. Do not ship `defer-out` (a per-statement primitive
+    that would register cleanup in the caller's defer
+    scope). It would patch the lifecycle gap at single-
+    statement granularity but turns into language clutter
+    the moment `with` lands -- and `with` lands by step
+    3. One primitive that solves the lifecycle, the
+    control-flow, and the future scoped-context shapes
+    beats two primitives that overlap.
 
 The discipline is "deep but few". Every addition above
 the line is a primitive the corpus genuinely uses; the

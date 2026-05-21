@@ -219,6 +219,37 @@ envelope, exactly as the bind-form style guide describes.
 envelope. See `GRAMMAR.md` ReturnStmt and SCOPE-DESIGN.md
 Section 9 for the contract.
 
+## 14. Lifecycle defers can't transfer to the caller (Pending)
+
+A def opens its own defer scope, so cleanup written inside
+a lifecycle helper fires at the helper's return rather than
+at the caller's scope exit. The natural shape of a
+value-returning lifecycle helper -- load + attach + register
+cleanup + return resource -- runs into this: by the time
+the caller has bound the result, the helper's defers have
+already unloaded the resource. The corrected today-shape
+moves cleanup to the call site (see
+LANGUAGE-DIRECTION.md "The sweet spot" example), at the
+cost of partial-cleanup-on-error inside the helper.
+
+The resolution is `with x <- CMD { BODY }` blocks, promoted
+to step 3 on LANGUAGE-DIRECTION.md's "what to build, in
+order" list. A per-statement `defer-out` primitive (a
+defer that registers in the caller's scope) would close
+the same gap sooner, but with overlapping language surface
+that turns into clutter the moment `with` lands; the
+discipline is to wait one primitive, not to ship two that
+overlap. Probed live with sudo bpfman-shell on
+`/tmp/wart-hunt/lifecycle.bpfman`: cleanup output appeared
+between the helper's body and the caller's bind, confirming
+the lifetime misalignment.
+
+No documentation-only change closes this; both LANGUAGE-
+DIRECTION.md (sweet spot + scoped resource helpers + the
+priority list) and GRAMMAR.md (ReturnStmt section's
+lifecycle example) point at `with` as the resolution. This
+entry is the cross-reference.
+
 ## What to change next
 
 The Pending items, in rough priority:
