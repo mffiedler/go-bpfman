@@ -7,9 +7,16 @@ runtime model, `def` / `foreach` / `if` bodies each push a fresh
 frame, `source` evaluates against a module-scoped sub-session,
 typed retryable errors classify retry candidates uniformly, and
 the `eventually` construct has replaced `retry ... until`. The
-corpus has migrated; `retry`, `until`, and `return` are reserved
-tombstones in the lexer that produce targeted diagnostics for
-old scripts. Section 9 collects items deferred for later.
+corpus has migrated; `retry` and `until` are reserved tombstones
+in the lexer that produce targeted diagnostics for old scripts.
+
+Section 9's value-returning def form has also landed:
+`return EXPR` is a real ReturnStmt routed through
+`parseReturnStmt`, evaluated via the internal `returnSignal`,
+caught at statement form (`callDef`) and bind form
+(`callDefAsBind`), and surfaced as the bind primary in the
+documented shape. The remaining items in Section 9 are still
+deferred.
 
 This document is the implementation plan for lexical variable
 scope in bpfman-shell. The language gets one variable-scope
@@ -1257,14 +1264,21 @@ caught by the contract tests in commits 4-8.
 
 ## 9. Future work
 
-Deferred items, not in this change:
+Deferred items, not in this change. The first entry --
+value-returning defs -- landed in a follow-up sequence;
+the rest are still ahead.
 
-- **Returning a value from a def.** Asked during review --
-  "with this, could a def return a new variable/value?" --
-  and the answer is yes, and lexical frames make it a much
-  cleaner future extension because a def can return a value
-  without leaking locals. The shape is pinned, the work is
-  deferred until the first call site asks.
+- **Returning a value from a def.** *(Landed.)* The shape
+  below was pinned during the SCOPE-DESIGN review and
+  shipped in a follow-up three-commit sequence
+  (`ReturnStmt` + statement-form runtime; bind-position
+  dispatch + `callDefAsBind`; static checker support). The
+  remaining text describes the contract as it now exists in
+  the language; the implementation is in `expr.go`
+  (`evalReturnStmt`, `runDefCall`, `callDef`, `callDefAsBind`,
+  `lookupDefHead`, `applyBindResult`) and `check.go` (the
+  `defDepth` counter on the checker plus the `ReturnStmt`
+  case in `walkStmt`).
 
   The natural shape is to make defs optionally participate
   in the existing bind path. A new `return EXPR` statement

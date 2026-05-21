@@ -568,12 +568,12 @@ is the destination.
 The merged priority across the compositional spine and
 the test-DSL items:
 
-1. Finish SCOPE-DESIGN. Lexical frames are the gate
-   everything else passes through.
+1. Finish SCOPE-DESIGN. *(Landed.)* Lexical frames are
+   the gate everything else passes through.
 2. Land value-returning defs (SCOPE-DESIGN Section 9).
-   The single biggest compositional unlock; the
-   `load_xdp` helper becomes idiomatic and tests gain a
-   real vocabulary.
+   *(Landed.)* The single biggest compositional unlock;
+   the `load_xdp` helper is now idiomatic and tests gain
+   a real vocabulary.
 3. Let user-defined defs become assertion vocabulary
    (`require (program_loaded $pid)`). Falls out of step
    2 plus bindable commands; mostly a documentation and

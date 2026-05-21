@@ -7,13 +7,15 @@ document is the human-readable shape of what that code accepts.
 
 **Implementation status.** The SCOPE-DESIGN.md ten-commit plan
 has landed: `EventuallyStmt` / `EventuallyCommand` are live,
-`retry` / `until` / `return` are reserved tombstone keywords
-that emit targeted diagnostics, the runtime and the checker
-both push a fresh frame on each block-shaped construct, and
-the typed retryable/fatal error layer classifies attempt
-failures uniformly via `errors.As`. The single-name
-`let _ = EXPR` rejection and the restriction of `break` /
-`continue` to `foreach` bodies are still tracked in
+`retry` / `until` are reserved tombstone keywords that emit
+targeted diagnostics, the runtime and the checker both push a
+fresh frame on each block-shaped construct, and the typed
+retryable/fatal error layer classifies attempt failures
+uniformly via `errors.As`. `return` is no longer a tombstone:
+SCOPE-DESIGN.md Section 9's value-returning def form has landed,
+so `ReturnStmt` is a real statement (see the production below).
+The single-name `let _ = EXPR` rejection and the restriction of
+`break` / `continue` to `foreach` bodies are still tracked in
 `GRAMMAR-FOLLOW-UP.md` as small follow-on items.
 
 ## Scope
@@ -271,8 +273,8 @@ tests by name.
 
 Statement-leading reserved words (tested in `parseStmt`):
 
-    let guard foreach if eventually defer def break continue
-    assert require
+    let guard foreach if eventually defer def return break
+    continue assert require
 
 Branch-keyword words (tested in `parseIfStmt` after a block's
 closing `}`):
@@ -282,16 +284,18 @@ closing `}`):
 Removed tombstone words (reserved only to produce a targeted
 diagnostic for old scripts; never valid as statement forms):
 
-    retry until return
+    retry until
 
 `retry` and `until` are reserved tombstones after the
 SCOPE-DESIGN rework removes the construct; the parser emits
 "retry is removed; use eventually" rather than letting the
-words parse as ordinary command names. `return` is reserved
-for the future value-returning def form (SCOPE-DESIGN
-Section 9); using it today is a parse error so a script
-cannot accidentally bind it as a command name and become
-ambiguous when the form lands.
+words parse as ordinary command names.
+
+`return` was a tombstone until the value-returning def form
+landed; it is now a real statement keyword tested at
+`parseStmt` and routed to `parseReturnStmt`. See the
+`ReturnStmt` section below for the grammar and SCOPE-DESIGN.md
+Section 9 for the semantics.
 
 Inside `eventually`, the keyword words `timeout` and
 `interval` are recognised at the leading statement form
@@ -404,6 +408,7 @@ optional Sep tokens between, before, and after them.
                    | EventuallyStmt
                    | DeferStmt
                    | DefStmt
+                   | ReturnStmt
                    | BreakStmt
                    | ContinueStmt
                    | AssertStmt
@@ -422,21 +427,21 @@ head is the keyword.
 
 Statement dispatch is decided by the first token of the
 statement. Reserved words `let`, `guard`, `foreach`, `if`,
-`eventually`, `defer`, `def`, `break`, `continue` route to
-their named parsers. `assert` and `require` route to the
-assert parser, which chooses between `AssertStmt`,
+`eventually`, `defer`, `def`, `return`, `break`, `continue`
+route to their named parsers. `assert` and `require` route
+to the assert parser, which chooses between `AssertStmt`,
 `AssertCommand` predicate form, and `AssertCommand` matches
 form using the disambiguation rule in the AssertStmt
-section. Tombstone words `retry`, `until`, and `return` at
-statement position raise targeted parse errors rather than
-routing as command names. A statement-leading VarRef,
-Quoted, InterpString, AdapterRef, or one of the Words `(`,
-`not`, `not-empty`, `true`, `false` routes to ExprStmt.
-Anything else routes to CommandStmt. `source` has no
-dedicated production; it parses as a CommandStmt and is
-recognised by the command dispatcher in `repl/loop.go`,
-which evaluates the referenced file under the module-scope
-rules in SCOPE-DESIGN.md Section 5.
+section. Tombstone words `retry` and `until` at statement
+position raise targeted parse errors rather than routing as
+command names. A statement-leading VarRef, Quoted,
+InterpString, AdapterRef, or one of the Words `(`, `not`,
+`not-empty`, `true`, `false` routes to ExprStmt. Anything
+else routes to CommandStmt. `source` has no dedicated
+production; it parses as a CommandStmt and is recognised by
+the command dispatcher in `repl/loop.go`, which evaluates
+the referenced file under the module-scope rules in
+SCOPE-DESIGN.md Section 5.
 
 A bare `{` or `}` at statement position is a parse error: the
 parser has already routed block-introducing keywords elsewhere,
@@ -529,7 +534,14 @@ The `BindRHS` has three shapes:
 
 1. **Command form.** The default path. `parseBindRHS` reads the
    command's tokens up to the next Sep or block marker via
-   `takeBindRHSTokens` and produces a `CommandStmt`.
+   `takeBindRHSTokens` and produces a `CommandStmt`. At evaluation
+   time, the command head is looked up against the session's def
+   table before any external dispatch: a def-named head routes
+   through `callDefAsBind` so the def's `return EXPR` value
+   becomes the bind primary; the same precedence applies at
+   command-statement position so a def name never reaches the
+   external dispatch path. The same def precedence applies inside
+   the bind-collect form's producer.
 
 2. **Bind-collect form.** When the RHS begins with the keyword
    `foreach`, the parser delegates to `parseForEachStmt`. The
@@ -739,6 +751,81 @@ Examples:
     def attach(iface prog) {
         bpfman link attach xdp $iface generic 50 $prog
     }
+
+### ReturnStmt
+
+`return EXPR` is the value-publishing exit from a def body. The
+expression is mandatory; bare `return` is rejected at parse time
+so the construct stays uniformly value-publishing. A bareword
+early-exit form earns its own keyword if it is ever wanted.
+
+    ReturnStmt     = 'return' Expression .
+
+`return` is only meaningful inside a def body. The static checker
+rejects a `return` reached without an enclosing def with "return
+outside a def body"; the runtime carries a safety net at
+evalProgramBody for any path the checker does not see (dynamic
+source, future evaluator paths).
+
+At a def's call site:
+
+- **Command-form** invocation (`my_def args`) -- the expression is
+  evaluated for its side effects and the value is discarded. The
+  early exit itself is the only observable effect:
+
+      def f() {
+          if $skip { return 0 }
+          do-the-work
+      }
+
+- **Bind-position** invocation (`let p <- my_def args`,
+  `guard p <- my_def args`, `let (rc p) <- my_def args`) -- the
+  evaluated value becomes the BindResult's Primary. A def that
+  runs to completion without `return` produces Primary equal to
+  `ValueFromEnvelope(Rc)`, matching the no-payload command-bind
+  family (exec, bpftool, wait).
+
+Defer interaction (SCOPE-DESIGN.md Section 9):
+
+1. evaluate `return EXPR` in the call frame; obtain the Value;
+2. stash the Value -- it is now independent of the call frame;
+3. unwind def-local defers in LIFO order while the call frame
+   is still live so deferred `print $captured` and similar
+   commands resolve against the body's bindings;
+4. pop the call frame;
+5. emit `BindResult{Rc, Primary: stashed}` to the bind-position
+   caller, or discard at command-form position.
+
+A defer that fires during step 3 and reports a non-ok envelope
+flips Rc.OK to false on the bind-position path even when
+`return EXPR` itself evaluated cleanly. The single-name bind
+family (`let p <- f`) discards the envelope; `let (rc p) <- f`
+exposes the cleanup outcome through `$rc.ok`; `guard p <- f`
+halts via GuardFailure when cleanup failed. Defs are not a
+special case; this is the existing bind family contract.
+
+The call sites for value-returning defs uniformly compose with
+the existing bind-target shapes. Multiple values fall out of
+the existing list / destructure story:
+
+    def load_xdp(path iface) {
+        guard prog <- bpfman program load file \
+            --path $path --type xdp
+        defer bpfman program unload $prog
+        guard link <- bpfman link attach xdp \
+            -i $iface generic 50 $prog
+        defer bpfman link detach $link
+        return [prog link]
+    }
+
+    guard pair <- load_xdp ./xdp.o eth0
+    let (prog link) = $pair
+
+The single-name bind form intentionally discards the envelope,
+matching the existing command-bind family. Scripts that require
+successful cleanup should call the def via `guard` or via the
+tuple bind and inspect `$rc.ok`; value-returning defs get no
+special exemption.
 
 ### BreakStmt and ContinueStmt
 

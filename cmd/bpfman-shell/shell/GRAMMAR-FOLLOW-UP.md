@@ -210,12 +210,14 @@ Recommended phrasing:
 
 ## 13. `return` plus def-local defer failure (Addressed)
 
-Once value-returning defs land (SCOPE-DESIGN Section 9),
+Value-returning defs landed in a follow-up to SCOPE-DESIGN.
 `let p <- f` with a def whose cleanup defer failed binds
-`p` and discards the cleanup-failure envelope. This is
-consistent with all other bindable commands -- plain `let
-<-` discards rc -- and is exactly why the bind-form style
-guide below exists.
+`p` to the returned value and discards the cleanup-failure
+envelope, exactly as the bind-form style guide describes.
+`let (rc p) <- f` exposes the cleanup outcome through
+`$rc.ok`; `guard p <- f` halts via GuardFailure on a flipped
+envelope. See `GRAMMAR.md` ReturnStmt and SCOPE-DESIGN.md
+Section 9 for the contract.
 
 ## What to change next
 
