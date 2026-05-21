@@ -57,44 +57,38 @@ keeps the count honest. Memorable phrasing:
     failures, not test failures, unless the whole
     eventually times out.
 
-## 4. `source` exports defs but not aliases (Accepted)
+## 4. `source` exports defs but not aliases (Resolved by removal)
 
-Aliases are session-level declarations elsewhere, but
-sourced libraries do not publish them. This is coherent
-with "defs are the module API" and mildly surprising.
-
-Style rule: publish via `def`, not `alias`. Aliases are
-an interactive-prompt convenience. A library that wants
-`pls` visible to importers writes
+Aliases were session-level declarations that sourced
+libraries did not publish, an asymmetry the original entry
+flagged as "mildly surprising". The asymmetry is gone: the
+alias feature was removed in commits ba54375e / 597db971 /
+3dcf2819. Defs are now the only first-token name-binding
+form. A library that wants `pls` visible to importers
+writes the def directly:
 
     def pls() {
         bpfman program list
     }
 
-not
+## 5. Defs declared inside blocks survive the block (Addressed)
 
-    alias pls = bpfman program list
-
-## 5. Defs declared inside blocks survive the block (Pending)
-
-Variables are block-scoped; defs and aliases are not.
-After
-
-    if $debug {
-        def dump() { bpfman program list }
-    }
-    dump
-
-`dump` is callable when `$debug` was true and an
-unknown-command error when it was not. Coherent with the
-scope model (frames are variable-only), but visually it
-looks like everything inside `{ ... }` is local.
-
-Recommended: leave the semantics; add a checker warning
-for `def` (and `alias`) declared inside a block. Not a
-hard error -- conditional helpers are occasionally useful
--- but the warning surfaces the asymmetry at write time.
-Follow-up commit; checker only, no parser change.
+The original entry was concerned with `def` (and `alias`)
+declared inside a block leaking to the session, asymmetric
+with how variables behave. With aliases removed, this is
+now strictly a def question, and the checker treats the
+case correctly: defs declared inside a conditional branch
+(if/elif/else, foreach, eventually body, or a nested def
+body) land in conditionalDefs rather than the unconditional
+defs map (W22, W24). Use-sites of a conditionally-declared
+def get a specific "declared in a conditional branch ...
+not registered at runtime unless the declaring branch ran"
+diagnostic at every dispatch site (bind, command, defer,
+bind-collect producer). The "checker warning for def
+declared inside a block" recommendation became "checker
+distinguishes conditional from unconditional registration
+and surfaces the right diagnostic at use-site", which is
+the strictly stronger outcome.
 
 ## 6. Defs do not capture variables (Accepted)
 
@@ -258,14 +252,12 @@ The Pending items, in rough priority:
    change, no corpus impact.
 2. Reject or reroute `[` at statement position (item 9).
    Single parser change, no corpus impact.
-3. Checker warning for `def` / `alias` declared inside a
-   block (item 5). Pure diagnostic, no semantic change.
 
-Items 1 and 2 are single-commit parser changes and could
-land alongside SCOPE-DESIGN commit 9 (corpus migration)
-or as a separate small PR. Item 3 is a checker addition
-that fits naturally on top of SCOPE-DESIGN commit 2
-(checker frames).
+Both are single-commit parser changes and could land
+alongside SCOPE-DESIGN commit 9 (corpus migration) or as a
+separate small PR. The conditional-def case from the old
+item 5 is already addressed at use-site (see item 5 above);
+no further work is needed.
 
 The remaining Accepted items are documentation work,
 covered by `GRAMMAR.md` and `SCOPE-DESIGN.md` once the

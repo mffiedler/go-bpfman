@@ -26,8 +26,7 @@ block-like construct chooses an explicit frame lifetime:
 `if` branches and `def` calls run in a fresh frame;
 `foreach` and `eventually` allocate one frame per iteration
 / attempt; `source` evaluates in a fresh sub-session.
-Aliases and defs stay session-level; defs do not capture
-variable frames.
+Defs stay session-level and do not capture variable frames.
 
 Companion to `BINDING-DESIGN.md` (binding-site syntax) and
 `GRAMMAR.md` (surface grammar). Load-bearing references are
@@ -96,18 +95,21 @@ implementation is a single flat namespace.
 
 ### 1.1 Storage
 
-`Session` (`shell/session.go`) holds one `vars` map plus
-session-level maps for aliases and defs:
+`Session` (`shell/session.go`) holds one `vars` map plus a
+session-level map for defs:
 
     type Session struct {
         vars    map[string]Value
-        aliases map[string]string
         defs    map[string]*DefValue
         ...
     }
 
 `let x = ...` becomes `Session.Set("x", v)`. No frames, no
-parent pointers.
+parent pointers. (The original implementation also carried
+an aliases map; aliases were a separate first-token name-
+binding feature that has since been removed. Defs strictly
+subsume what aliases offered, so the discussion below tracks
+only vars and defs.)
 
 ### 1.2 The three partial mitigations
 
@@ -133,7 +135,7 @@ writes directly to the parent session.
   bindings persist unconditionally.
 - `let x = ...` in `retry { ... }` persists past the loop.
 - Top-level statements in a sourced file write through to
-  the parent's vars, defs, and aliases.
+  the parent's vars and defs.
 
 ### 1.4 Why it bites
 
@@ -169,7 +171,6 @@ of frames on `Session`.
 
     type Session struct {
         frames  []map[string]Value
-        aliases map[string]string
         defs    map[string]*DefValue
         ...
     }
@@ -219,14 +220,13 @@ explicitly does not relax the local primitive to do
 
 ### 2.2 Variables only
 
-Aliases and defs are not part of the frame stack. They
-remain session-level declarations. A `let` writes to a
-frame; an `alias` writes to `Session.aliases`; a `def`
-writes to `Session.defs`. Different storage, different
+Defs are not part of the frame stack. They remain
+session-level declarations. A `let` writes to a frame; a
+`def` writes to `Session.defs`. Different storage, different
 lifetimes.
 
-A consequence: a `def` or `alias` declared inside a block
-updates the session-level table. After
+A consequence: a `def` declared inside a block updates the
+session-level table. After
 
     if cond {
         def helper() { ... }
@@ -236,7 +236,12 @@ updates the session-level table. After
 `helper` is callable if and only if the branch ran. This
 mirrors today's declaration behaviour and is not changed by
 this design. The style rule remains: declare helpers at the
-top of the script. The same applies to in-block aliases.
+top of the script. The checker tracks conditionally-declared
+defs separately and surfaces a "declared in a conditional
+branch" diagnostic at use-sites so an unreachable
+declaration does not silently become a runtime "command not
+found" (see GRAMMAR-FOLLOW-UP item 5 and the W22 / W24
+fixes).
 
 ### 2.3 Defs do not capture variable frames
 
@@ -310,7 +315,6 @@ The checker frame mirror:
 
     type checker struct {
         frames []checkFrame
-        aliases map[string]string
         issues []Issue
     }
     type checkFrame struct {
@@ -813,7 +817,6 @@ The boundary across the source call:
 | Thing      | Reads from caller  | Exports to caller   |
 |------------|--------------------|---------------------|
 | `vars`     | no                 | no                  |
-| `aliases`  | no                 | no                  |
 | `defs`     | yes                | yes (on success)    |
 
 Algorithm:
@@ -836,9 +839,9 @@ Algorithm:
    mutated. `source` is transactional at the module
    boundary.
 
-The child's variables and aliases are always discarded. The
-existing `WithDeferScope` and Env-callback save/restore
-around `Source` are preserved.
+The child's variables are always discarded. The existing
+`WithDeferScope` and Env-callback save/restore around
+`Source` are preserved.
 
 The source defer scope unwinds on both success and failure.
 A library that registers a top-level `defer` runs that
@@ -851,8 +854,7 @@ new defs to the importer.
 ### 5.1 Session counters and trace state
 
 `Session` carries `assertFailures`, `deferFailures`,
-`jobLeaks`, and `traceEnabled` outside the vars/aliases/
-defs storage. The module boundary has to decide explicitly
+`jobLeaks`, and `traceEnabled` outside the vars/defs storage. The module boundary has to decide explicitly
 what crosses it, because shallow-copying the parent
 session would catch these by accident.
 
@@ -891,8 +893,6 @@ Explicitly out of scope for this change:
 
 - No outward-assignment primitive. No `export`, no
   `nonlocal`, no `global`.
-- No block-local aliases. In-block `alias` writes to the
-  session alias table.
 - No block-local defs. In-block `def` writes to the session
   def table.
 - No closures. Defs do not capture variable frames.
@@ -1055,7 +1055,7 @@ Contract tests:
 
 - Build a child `Session`. Clone parent `defs` in (relying
   on `DefValue` immutability per Section 5); leave parent
-  vars and aliases unread.
+  vars unread.
 - Evaluate the file in the child.
 - On success, merge child `defs` into parent. On failure,
   discard `defs` but still let the child's `defer`s unwind.
@@ -1070,7 +1070,6 @@ Contract tests:
 
 - `source-exports-defs`
 - `source-does-not-export-vars`
-- `source-does-not-export-aliases`
 - `source-can-call-inherited-defs`
 - `source-redefinition-visible-later-in-same-file`
 - `source-redefinition-overwrites-parent-after-success`
@@ -1432,17 +1431,16 @@ the rest are still ahead.
   contextual-keyword parsing pattern (`range`, `zip`,
   `not-empty`, `matches`) and needs no lexer changes.
 
-- **Library-published constants or aliases.** Today
-  libraries contribute defs only. If a real
-  constant-sharing case emerges, design then. Once
-  value-returning defs land, the natural shape is a
-  nullary def -- a sourced library that wants to publish
-  `DEFAULT_TIMEOUT = 5s` writes `def default_timeout() {
-  return 5s }`, and the importer binds `let t <-
-  default_timeout`. No new export mechanism is needed.
-  This is an argument for keeping `source` vars private
-  now: the future extension absorbs the use case cleanly
-  without adding a parallel export channel.
+- **Library-published constants.** Today libraries
+  contribute defs only. If a real constant-sharing case
+  emerges, design then. With value-returning defs landed,
+  the natural shape is a nullary def -- a sourced library
+  that wants to publish `DEFAULT_TIMEOUT = 5s` writes `def
+  default_timeout() { return 5s }`, and the importer binds
+  `let t <- default_timeout`. No new export mechanism is
+  needed. This is an argument for keeping `source` vars
+  private: the future extension absorbs the use case
+  cleanly without adding a parallel export channel.
 - **Value-returning blocks.** `let ys = foreach x in xs {
   transform($x) }` would give clean accumulation without an
   outward-write primitive. Defer until the corpus needs it.

@@ -305,8 +305,6 @@ The alternatives each imply something stronger:
   can feel old-fashioned.
 - `command f(...) { ... }` -- very explicit, but verbose,
   and awkward once it returns values.
-- `alias f(...) { ... }` -- wrong, because aliases already
-  exist and are textually shallower than these.
 
 Keep `def`. It says "bind this name to a user-defined
 thing" without committing to whether that thing is a
