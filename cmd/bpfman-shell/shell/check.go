@@ -1062,6 +1062,15 @@ func (c *checker) flagNonNumericOperand(e Expr, op string) {
 		if isNumericLiteral(lit.Text) {
 			return
 		}
+		// When the offending literal happens to name a def,
+		// the most likely user intent is to call it. Point at
+		// the bind form so the corrective shape is obvious;
+		// the same hint shape works for comparisons via the
+		// shared classifier below.
+		if !lit.Quoted && c.defs[lit.Text] {
+			c.addIssue(lit.Span, "arithmetic %s: operand %q is not numeric; %q is a def -- call it via `let v <- %s` and use $v in the expression", op, lit.Text, lit.Text, lit.Text)
+			return
+		}
 		c.addIssue(lit.Span, "arithmetic %s: operand %q is not numeric", op, lit.Text)
 		return
 	}

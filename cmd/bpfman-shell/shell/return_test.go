@@ -748,6 +748,30 @@ print "main"
 	}
 }
 
+// Regression: a non-numeric arithmetic operand whose text
+// happens to be a known def name produces a confusing
+// "operand 'two' is not numeric" diagnostic. The user almost
+// certainly meant to call the def. The checker should append
+// a "did you mean `let v <- two`?" hint so the corrective
+// shape is obvious.
+func TestCheck_Return_ArithmeticHintsAtDefBindForm(t *testing.T) {
+	t.Parallel()
+	src := `
+def two() {
+  return 2
+}
+let x = two + 3
+`
+	issues := checkSource(t, src)
+	require.NotEmpty(t, issues, "non-numeric operand still rejected")
+	combined := issues[0].Msg
+	for _, i := range issues[1:] {
+		combined += "\n" + i.Msg
+	}
+	assert.Contains(t, combined, "two", "the diagnostic must name the offending operand")
+	assert.Contains(t, combined, "<-", "hint must point at the bind form")
+}
+
 // Regression: the static checker must treat a def call on the
 // right of '<-' as an open-shape source (the def's return value
 // is dynamic), not as a result envelope. The Envelope shape is
