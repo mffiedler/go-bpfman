@@ -696,3 +696,40 @@ func TestCheck_Return_NestedDefBodiesEachOwnContext(t *testing.T) {
 	issues := checkSource(t, src)
 	assert.Empty(t, issues, "both returns are inside a def")
 }
+
+// Regression: a defer-failure flip on the bind-position Rc.OK
+// must reflect the def's OWN cleanup outcome, not the session-
+// wide counter. An inner def whose defer fails -- invoked as a
+// command form and discarding its own rc -- must not cause the
+// outer def's `let (rc p) <- outer` to land with rc.ok = false.
+// The contract is def-local cleanup; nested defer failures must
+// not leak across call boundaries.
+func TestEvalProgram_Return_NestedDeferFailureDoesNotLeak(t *testing.T) {
+	t.Parallel()
+	r := &recorder{rc: func(args []Arg) Envelope {
+		if len(args) > 0 {
+			if w, ok := args[0].(WordArg); ok && w.Text == "cleanup_inner" {
+				return Envelope{OK: false, Code: 1}
+			}
+		}
+		return Envelope{OK: true}
+	}}
+	env := bindEnv(r)
+	env.RenderDeferFailure = func(Pos, []Arg, Envelope) {}
+	src := `
+def inner() {
+  defer cleanup_inner
+}
+def outer() {
+  inner
+  return 1
+}
+let (rc p) <- outer
+`
+	require.NoError(t, runProgramWithEnv(t, src, env))
+	rc, ok := env.Session.Get("rc")
+	require.True(t, ok)
+	rawRc, ok := rc.Raw().(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, true, rawRc["ok"], "outer's rc.ok must reflect outer's OWN cleanup, not the inner def's defer failure")
+}

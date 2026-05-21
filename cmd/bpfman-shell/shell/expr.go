@@ -605,7 +605,7 @@ func evalDefStmt(s *DefStmt, env *Env) error {
 // the closure. If lexical capture becomes a need, that is a
 // separate design.
 func callDef(def *DefValue, args []Arg, callLoc Pos, env *Env) error {
-	_, _, err := runDefCall(def, args, callLoc, env)
+	_, _, _, err := runDefCall(def, args, callLoc, env)
 	if err != nil {
 		return decorateDefError(err, def)
 	}
@@ -613,7 +613,10 @@ func callDef(def *DefValue, args []Arg, callLoc Pos, env *Env) error {
 	// loop via returnSignal. At command-form position the value
 	// is discarded; the early exit itself is the only observable
 	// effect. callDefAsBind handles the bind-position case and
-	// keeps the Value.
+	// keeps the Value. Defer failures still increment the
+	// session counter via runDefers so the script's exit code
+	// reflects the failure even when the call discards the
+	// value -- that view is global by design.
 	return nil
 }
 
@@ -622,15 +625,19 @@ func callDef(def *DefValue, args []Arg, callLoc Pos, env *Env) error {
 // Primary; a body that runs to completion without `return`
 // produces Primary = ValueFromEnvelope(Rc), matching the
 // no-payload command-bind family (exec, bpftool, wait). The Rc
-// is OK by default; a defer failure during body unwind flips
-// Rc.OK to false so a `guard p <- f` halts and a tuple bind
-// `let (rc p) <- f` lets the caller see the cleanup outcome.
-// The defer-failure observation uses Session.DeferFailures()
-// before-and-after, which matches how RenderDeferFailure
-// surfaces individual failures: each defer's failure is
-// rendered separately AND collected here, so nothing double-
-// counts and the caller still sees a single boolean for the
-// envelope.
+// is OK by default; a failure from a defer registered in THIS
+// def's body flips Rc.OK to false so a `guard p <- f` halts and
+// a tuple bind `let (rc p) <- f` lets the caller see the
+// cleanup outcome.
+//
+// The local-cleanup view is load-bearing: a nested helper
+// invoked at command form during the body has already run its
+// own defers and left any failures on the session counter; that
+// counter is the global exit-code view, not "did this def's
+// cleanup fail". runDefCall threads runDefers's local return up
+// to here so the flip reflects only defers belonging to this
+// def's body, matching the def-local cleanup contract in
+// SCOPE-DESIGN.md Section 9.
 //
 // A non-return error from the body (unbound variable, type
 // error, guard halt inside the body, parse error from a
@@ -638,13 +645,12 @@ func callDef(def *DefValue, args []Arg, callLoc Pos, env *Env) error {
 // path then frames it and the calling script halts. No
 // bindings happen in that case.
 func callDefAsBind(def *DefValue, args []Arg, callLoc Pos, env *Env) (BindResult, error) {
-	deferFailuresBefore := env.Session.DeferFailures()
-	returned, hasReturn, err := runDefCall(def, args, callLoc, env)
+	returned, hasReturn, localDeferFailures, err := runDefCall(def, args, callLoc, env)
 	if err != nil {
 		return BindResult{}, decorateDefError(err, def)
 	}
 	rc := Envelope{OK: true}
-	if env.Session.DeferFailures() > deferFailuresBefore {
+	if localDeferFailures > 0 {
 		rc.OK = false
 	}
 	primary := returned
@@ -657,37 +663,51 @@ func callDefAsBind(def *DefValue, args []Arg, callLoc Pos, env *Env) (BindResult
 // runDefCall is the shared body of callDef and callDefAsBind. It
 // checks arity, opens a fresh session frame, binds parameters,
 // opens a fresh defer scope, runs the body, and translates a
-// returnSignal escape into (Value, hasReturn=true, nil). A
-// non-return error escapes as (zero, false, err) so the caller
-// decides whether to frame/decorate it. Defer unwinding happens
-// inside runWithDeferScope, before the frame pop, matching the
+// returnSignal escape into (Value, hasReturn=true, ...). A
+// non-return error escapes as (zero, false, ..., err) so the
+// caller decides whether to frame/decorate it. The third return
+// is the local defer-failure count for this call's defer scope;
+// callDefAsBind uses it to flip the bind-position Rc.OK without
+// leaking nested calls' cleanup failures into the local view.
+// Defer unwinding happens before the frame pop, matching the
 // spec's order: return value -> stash -> defers -> frame pop.
-func runDefCall(def *DefValue, args []Arg, callLoc Pos, env *Env) (Value, bool, error) {
+func runDefCall(def *DefValue, args []Arg, callLoc Pos, env *Env) (Value, bool, int, error) {
 	if len(args) != len(def.Params) {
-		return Value{}, false, locErrorf(callLoc, "%s: expected %d argument(s), got %d (def declared at %d:%d)",
+		return Value{}, false, 0, locErrorf(callLoc, "%s: expected %d argument(s), got %d (def declared at %d:%d)",
 			def.Name, len(def.Params), len(args), def.Pos.Line, def.Pos.Col)
 	}
+	var localDeferFailures int
 	err := env.Session.WithFrame(func() error {
 		for i, p := range def.Params {
 			env.Session.Set(p, argToValue(args[i]))
 		}
-		return runWithDeferScope(env, func() error {
+		// Manage the defer scope inline so the local failure
+		// count for this call's stack is observable. The shared
+		// runWithDeferScope discards the count, which is fine
+		// for callers whose contract is the session-wide view.
+		saved := env.defers
+		var stack []deferEntry
+		env.defers = &stack
+		bodyErr := func() error {
 			for _, stmt := range def.Body {
 				if err := evalStmt(stmt, env); err != nil {
 					return err
 				}
 			}
 			return nil
-		})
+		}()
+		env.defers = saved
+		localDeferFailures = runDefers(env, stack)
+		return bodyErr
 	})
 	if err == nil {
-		return Value{}, false, nil
+		return Value{}, false, localDeferFailures, nil
 	}
 	var ret *returnSignal
 	if errors.As(err, &ret) {
-		return ret.Value, true, nil
+		return ret.Value, true, localDeferFailures, nil
 	}
-	return Value{}, false, err
+	return Value{}, false, localDeferFailures, err
 }
 
 // decorateDefError attaches the def's registration site (file
@@ -1198,10 +1218,23 @@ func evalDeferStmt(s *DeferStmt, env *Env) error {
 // across failures. Structural errors from ExecBind are rare;
 // they are rendered with an empty-rc envelope so the user still
 // sees a labelled block.
-func runDefers(env *Env, stack []deferEntry) {
+//
+// The return value is the count of failures observed in THIS
+// scope only -- the local-scope view a caller needs when it has
+// to react to its own cleanup result. Nested scopes have already
+// run their own defers by the time their stacks reach a caller
+// of this function, so their failures land on the session
+// counter (global view, used for exit-code accounting) but never
+// in the local count returned here. callDefAsBind uses the local
+// count to decide whether to flip the bind-position Rc.OK, so
+// the contract documented at SCOPE-DESIGN.md Section 9 -- def-
+// local cleanup -- does not silently broaden into "anything
+// that failed during this call's dynamic extent".
+func runDefers(env *Env, stack []deferEntry) int {
 	if env.ExecBind == nil {
-		return
+		return 0
 	}
+	failures := 0
 	for i := len(stack) - 1; i >= 0; i-- {
 		entry := stack[i]
 		// Use the trace callback captured at registration so
@@ -1224,6 +1257,7 @@ func runDefers(env *Env, stack []deferEntry) {
 				env.RenderDeferFailure(entry.Pos, entry.Args, rc)
 			}
 			env.Session.RecordDeferFailure()
+			failures++
 			continue
 		}
 		if !result.Rc.OK {
@@ -1231,8 +1265,10 @@ func runDefers(env *Env, stack []deferEntry) {
 				env.RenderDeferFailure(entry.Pos, entry.Args, result.Rc)
 			}
 			env.Session.RecordDeferFailure()
+			failures++
 		}
 	}
+	return failures
 }
 
 // RegisterJob appends a started Job to the active job scope's
@@ -1306,7 +1342,11 @@ func runWithDeferScope(env *Env, fn func() error) error {
 	env.defers = &stack
 	bodyErr := fn()
 	env.defers = saved
-	runDefers(env, stack)
+	// Most callers do not need the local failure count; the
+	// session counter is the right view for them. callDefAsBind
+	// reaches for the local count via its own scope wrapping in
+	// runDefCall so cleanup observation stays def-local.
+	_ = runDefers(env, stack)
 	return bodyErr
 }
 
