@@ -3962,6 +3962,29 @@ func TestReplLoop_TraceInsideDefBodyCitesBodyLine(t *testing.T) {
 	assert.Contains(t, out, "<repl>:5: let v <- inner hi", "trace inside def body must cite the body's own line, not the executing chunk's line")
 }
 
+// Regression: trace mode showed the def's bind site and the
+// post-call statement but skipped the body's `return` line
+// entirely. The value crossing the call boundary -- arguably
+// the most important moment of a value-returning def call --
+// was invisible. Render it so a `--trace` session sees the
+// resolved return value at the body's line.
+func TestReplLoop_TraceReturnRendersValue(t *testing.T) {
+	t.Parallel()
+	input := "def f() {\n" +
+		"  return \"yielded\"\n" +
+		"}\n" +
+		"trace on\n" +
+		"let v <- f\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
+	lr := repl.NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
+	require.NoError(t, err)
+	out := errBuf.String()
+	assert.Contains(t, out, "return yielded", "trace must render the return statement with the resolved value")
+}
+
 func TestReplLoop_TraceCommandResolvesInterpolations(t *testing.T) {
 	t.Parallel()
 

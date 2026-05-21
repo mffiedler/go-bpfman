@@ -634,6 +634,21 @@ func evalReturnStmt(s *ReturnStmt, env *Env) error {
 	if v.IsNil() {
 		return spanErrorf(s.Span, "return: expression produced no result")
 	}
+	// Trace the resolved return value at the body's line so a
+	// `--trace` session sees the moment the value crosses the
+	// call boundary. Statement-level trace already covers
+	// let / bind / command / defer; return is the only other
+	// value-producing form whose evaluation matters for
+	// debugging a script. Use the same RenderCompact path as
+	// let-style tracing so structured values render as JSON
+	// and scalars render as their underlying text.
+	if env.Trace != nil {
+		rendered, rerr := RenderCompact(v)
+		if rerr != nil {
+			rendered = fmt.Sprintf("<unrenderable %s>", v.Kind())
+		}
+		env.Trace(s.Span.Pos.Line, fmt.Sprintf("return %s", rendered))
+	}
 	return &returnSignal{Span: s.Span, Value: v}
 }
 
