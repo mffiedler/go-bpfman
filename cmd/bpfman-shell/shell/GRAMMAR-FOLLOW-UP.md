@@ -57,38 +57,16 @@ keeps the count honest. Memorable phrasing:
     failures, not test failures, unless the whole
     eventually times out.
 
-## 4. `source` exports defs but not aliases (Resolved by removal)
-
-Aliases were session-level declarations that sourced
-libraries did not publish, an asymmetry the original entry
-flagged as "mildly surprising". The asymmetry is gone: the
-alias feature was removed in commits ba54375e / 597db971 /
-3dcf2819. Defs are now the only first-token name-binding
-form. A library that wants `pls` visible to importers
-writes the def directly:
-
-    def pls() {
-        bpfman program list
-    }
-
 ## 5. Defs declared inside blocks survive the block (Addressed)
 
-The original entry was concerned with `def` (and `alias`)
-declared inside a block leaking to the session, asymmetric
-with how variables behave. With aliases removed, this is
-now strictly a def question, and the checker treats the
-case correctly: defs declared inside a conditional branch
-(if/elif/else, foreach, eventually body, or a nested def
-body) land in conditionalDefs rather than the unconditional
-defs map (W22, W24). Use-sites of a conditionally-declared
-def get a specific "declared in a conditional branch ...
-not registered at runtime unless the declaring branch ran"
-diagnostic at every dispatch site (bind, command, defer,
-bind-collect producer). The "checker warning for def
-declared inside a block" recommendation became "checker
-distinguishes conditional from unconditional registration
-and surfaces the right diagnostic at use-site", which is
-the strictly stronger outcome.
+A `def` declared inside a conditional branch (if/elif/else,
+foreach, eventually body, or a nested def body) lands in the
+checker's conditionalDefs map rather than the unconditional
+defs map. Use-sites of a conditionally-declared def get a
+"declared in a conditional branch ... not registered at
+runtime unless the declaring branch ran" diagnostic at every
+dispatch site (bind, command, defer, bind-collect producer).
+Top-level def declarations register normally.
 
 ## 6. Defs do not capture variables (Accepted)
 

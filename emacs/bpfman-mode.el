@@ -86,9 +86,9 @@
                  ;; domain gateway
                  "bpfman"
                  ;; shell-language builtins
-                 "alias" "aliases" "assert" "defs" "exec" "file"
+                 "assert" "defs" "exec" "file"
                  "help" "jq" "print" "range" "require" "source"
-                 "unalias" "undef" "unset" "vars" "version"))
+                 "undef" "unset" "vars" "version"))
       (puthash w t ht))
     ht)
   "Hash table of top-level bpfman REPL keywords and commands.")

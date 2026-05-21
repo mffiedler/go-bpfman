@@ -232,13 +232,6 @@ if $outer == yes {
 if $x > 0 { let a = 1; let b = 2; print a }
 if $ready { bpfman list programs; bpfman link list } else { require fail }
 
-# ---- 11. Reserved ----
-
-# Aliases used to live here. They were removed because defs
-# strictly subsume what aliases offered: instead of
-# `alias b = bpfman`, write `def b() { bpfman }` (or
-# `def bp(...) { bpfman program $@ }` once def varargs land).
-
 # ---- 12. Top-level commands and registered providers ----
 
 # 'bpfman' and the shell builtins (jq, file, print, source,

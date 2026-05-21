@@ -105,11 +105,7 @@ session-level map for defs:
     }
 
 `let x = ...` becomes `Session.Set("x", v)`. No frames, no
-parent pointers. (The original implementation also carried
-an aliases map; aliases were a separate first-token name-
-binding feature that has since been removed. Defs strictly
-subsume what aliases offered, so the discussion below tracks
-only vars and defs.)
+parent pointers.
 
 ### 1.2 The three partial mitigations
 
@@ -233,15 +229,12 @@ session-level table. After
     }
     helper
 
-`helper` is callable if and only if the branch ran. This
-mirrors today's declaration behaviour and is not changed by
-this design. The style rule remains: declare helpers at the
-top of the script. The checker tracks conditionally-declared
-defs separately and surfaces a "declared in a conditional
-branch" diagnostic at use-sites so an unreachable
-declaration does not silently become a runtime "command not
-found" (see GRAMMAR-FOLLOW-UP item 5 and the W22 / W24
-fixes).
+`helper` is callable if and only if the branch ran. The
+style rule: declare helpers at the top of the script. The
+checker tracks conditionally-declared defs separately and
+surfaces a "declared in a conditional branch" diagnostic at
+use-sites so an unreachable declaration does not silently
+become a runtime "command not found".
 
 ### 2.3 Defs do not capture variable frames
 

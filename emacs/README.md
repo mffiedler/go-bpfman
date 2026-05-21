@@ -53,7 +53,7 @@ tokens are fontified according to this table:
 
 | Face                          | Applied to                                                      |
 |-------------------------------|-----------------------------------------------------------------|
-| `font-lock-keyword-face`      | `let`, `def`, `if`, `elif`, `else`, `foreach`, `retry`, `until`, `break`, `continue`, `alias`, `assert`, `defs`, `exec`, `file`, `jq`, `print`, `require`, `source`, `unalias`, `undef`, `unset`, `vars`, `version`, `help`, `bpfman`; the `${` and `}` delimiters of a string interpolation |
+| `font-lock-keyword-face`      | `let`, `def`, `if`, `elif`, `else`, `foreach`, `retry`, `until`, `break`, `continue`, `assert`, `defs`, `exec`, `file`, `jq`, `print`, `require`, `source`, `undef`, `unset`, `vars`, `version`, `help`, `bpfman`; the `${` and `}` delimiters of a string interpolation |
 | `font-lock-builtin-face`      | domain subcommands (`program`, `link`, `show`, `attach`, ...), attach kinds (`xdp`, `tc`, `tracepoint`, ...), comparison operators (`==`, `!=`, `<`, `<=`, `>`, `>=`), assertion verbs (`not-empty`, `ok`, `fail`, `path`, `contains`, `nil`, `not`), the `matches` block keyword |
 | `font-lock-variable-name-face`| `$var` references, braced `${var}`, the identifier after `let`, adapter refs (`file:$var`), the body inside a `"${...}"` interpolation |
 | `font-lock-string-face`       | literal runs of `"double-quoted"` and `'single-quoted'` strings (including the quote marks themselves) |
@@ -72,9 +72,6 @@ Specific lines to watch:
   keyword-highlighted.
 - Section 5 has both the word (textual) and symbol (numeric)
   comparison operators. Both must highlight as builtin.
-- Section 11 shows `alias b = bpfman` — the `=` in `alias` is part
-  of alias syntax rather than `let` assignment, and should display
-  plainly.
 - Section 17 places `=` and `==` on adjacent lines to verify the
   tokeniser distinguishes them.
 - Section 24 exercises `assert <expr> matches { ... }`. The keyword
