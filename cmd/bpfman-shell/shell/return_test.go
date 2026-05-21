@@ -697,6 +697,34 @@ func TestCheck_Return_NestedDefBodiesEachOwnContext(t *testing.T) {
 	assert.Empty(t, issues, "both returns are inside a def")
 }
 
+// Regression: runaway recursion through value-returning defs
+// must surface a clean diagnostic rather than a Go runtime
+// stack overflow. The corpus's natural shape -- a recursive
+// helper that forgets its base case -- would dump pages of
+// goroutine traces; the evaluator should catch the depth
+// excess and emit "in def NAME: recursion depth limit
+// exceeded (N)". The exact limit is implementation-defined
+// but must be a few orders of magnitude smaller than Go's
+// stack so the diagnostic fires before the runtime panics.
+func TestEvalProgram_Return_RecursionDepthGuard(t *testing.T) {
+	t.Parallel()
+	r := &recorder{}
+	env := bindEnv(r)
+	src := `
+def loop() {
+  let next <- loop
+  return $next
+}
+let v <- loop
+`
+	prog := parseProgram(t, src)
+	err := EvalProgram(prog, env)
+	require.Error(t, err)
+	msg := err.Error()
+	assert.Contains(t, msg, "recursion", "diagnostic must name the failure class")
+	assert.Contains(t, msg, "loop", "diagnostic must name the offending def")
+}
+
 // Regression: a single-word alias pointing at a def must
 // resolve to the def at the bind-dispatch site, not fall
 // through to the external-subprocess path. lookupDefHead used

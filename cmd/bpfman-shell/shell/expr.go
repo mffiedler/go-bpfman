@@ -328,7 +328,28 @@ type Env struct {
 	// decorateDefError reports the calling def's body line, not
 	// the surrounding user chunk's start.
 	currentDefRegStart int
+
+	// defCallDepth counts the def-call frames currently active
+	// on the evaluator's stack. runDefCall increments on entry
+	// and decrements on exit; a value over MaxDefCallDepth is a
+	// clean failure rather than a Go-runtime stack overflow.
+	// Runaway recursion -- the natural shape of a value-returning
+	// helper that forgets its base case -- otherwise dumps pages
+	// of goroutine traces, which is unkind. The cap is far below
+	// Go's stack limit so the diagnostic always wins.
+	defCallDepth int
 }
+
+// MaxDefCallDepth bounds how deep def calls can nest before
+// the evaluator surfaces a clean recursion-limit diagnostic.
+// The number is deliberately a few orders of magnitude smaller
+// than Go's default per-goroutine stack ceiling so the
+// diagnostic fires before the runtime panics. Real corpus
+// patterns nest a handful of frames at most (a load_xxx helper
+// calling guard_attach_yyy, say); 256 leaves abundant slack
+// while still catching the textbook "forgot the base case"
+// mistake within a fraction of a second.
+const MaxDefCallDepth = 256
 
 // IsBinaryOp reports whether s is a recognised binary operator.
 // The DSL provides one comparison family in symbol form; semantics
@@ -703,6 +724,17 @@ func runDefCall(def *DefValue, args []Arg, callLoc Pos, env *Env) (Value, bool, 
 		return Value{}, false, 0, locErrorf(callLoc, "%s: expected %d argument(s), got %d (def declared at %d:%d)",
 			def.Name, len(def.Params), len(args), def.Pos.Line, def.Pos.Col)
 	}
+	// Catch runaway recursion before Go's stack does. The cap
+	// is far below Go's per-goroutine stack ceiling so the
+	// clean diagnostic wins over a runtime panic; the count is
+	// pushed / popped around the body so unrelated calls do not
+	// accumulate against the limit and a backtrack out of a
+	// recursive helper resumes with the right depth.
+	if env.defCallDepth >= MaxDefCallDepth {
+		return Value{}, false, 0, locErrorf(callLoc, "in def %s: recursion depth limit exceeded (%d)", def.Name, MaxDefCallDepth)
+	}
+	env.defCallDepth++
+	defer func() { env.defCallDepth-- }()
 	// Track the active def's RegStartLine so nested call sites
 	// inside the body translate against the def's parsing chunk
 	// rather than against whatever top-level chunk is currently
