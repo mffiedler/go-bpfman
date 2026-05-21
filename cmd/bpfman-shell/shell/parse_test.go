@@ -966,18 +966,6 @@ func TestParse_Until_IsTombstoneKeyword(t *testing.T) {
 	assert.Contains(t, err.Error(), "until is no longer a keyword")
 }
 
-func TestParse_Return_IsTombstoneKeyword(t *testing.T) {
-	t.Parallel()
-
-	// return is reserved for the future value-returning def
-	// form (SCOPE-DESIGN Section 9); using it today is a parse
-	// error so a script cannot accidentally bind it as a
-	// command name and become ambiguous when the form lands.
-	_, err := parseSource(t, "return 1")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "return is reserved")
-}
-
 // --- arithmetic ----------------------------------------------------
 
 func TestParse_Arithmetic_AdditivePrecedence(t *testing.T) {

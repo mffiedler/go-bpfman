@@ -218,6 +218,20 @@ type DefStmt struct {
 	Span
 }
 
+// ReturnStmt is the value-publishing exit from a def body. Expr is
+// the value to publish to a bind-position caller; it is mandatory.
+// Encountered outside a def body (top-level script, sourced library
+// top level, inside a block that is not inside any def call) it is
+// a fatal runtime error and a static checker error. Inside a def
+// body, evaluation halts the body at the return, unwinds any
+// def-local defers, and -- when the def was called in bind position
+// -- publishes Expr's value as the call's primary; at command-form
+// position the value is computed and discarded.
+type ReturnStmt struct {
+	Expr Expr
+	Span
+}
+
 func (*LetStmt) stmtNode()            {}
 func (*LetDestructureStmt) stmtNode() {}
 func (*BindStmt) stmtNode()           {}
@@ -230,6 +244,7 @@ func (*BreakStmt) stmtNode()          {}
 func (*ContinueStmt) stmtNode()       {}
 func (*EventuallyStmt) stmtNode()     {}
 func (*DefStmt) stmtNode()            {}
+func (*ReturnStmt) stmtNode()         {}
 func (*AssertStmt) stmtNode()         {}
 
 // Parse turns a token stream into a *Program. Every parse error
@@ -414,7 +429,7 @@ func (p *parser) parseStmt() (Stmt, error) {
 		case "until":
 			return nil, spanErrorf(t.Span, "until is no longer a keyword (retry was removed); see eventually timeout DUR { ... }")
 		case "return":
-			return nil, spanErrorf(t.Span, "return is reserved for a future value-returning def form (SCOPE-DESIGN.md Section 9)")
+			return p.parseReturnStmt()
 		case "eventually":
 			return p.parseEventuallyStmt()
 		case "break":
@@ -1163,6 +1178,30 @@ func (p *parser) parseDefStmt() (Stmt, error) {
 		return nil, wrapSyntaxErr(fmt.Sprintf("def %s", name), err)
 	}
 	return &DefStmt{Name: name, Params: params, Body: body, Span: p.spanFrom(defTok.Pos)}, nil
+}
+
+// parseReturnStmt consumes "return EXPR". The expression is
+// mandatory: bare `return` is rejected to keep the construct
+// uniformly value-publishing; if a value-less early-exit form is
+// ever wanted, it earns its place separately. The parser does not
+// know whether it is inside a def body; "return outside a def" is
+// caught by the static checker and again at runtime. Routing
+// `return` through this parser also lifts the SCOPE-DESIGN-era
+// tombstone diagnostic that rejected the word entirely.
+func (p *parser) parseReturnStmt() (Stmt, error) {
+	retTok := p.advance() // "return"
+	tokens, err := p.takeStmtTokens(false)
+	if err != nil {
+		return nil, err
+	}
+	if len(tokens) == 0 {
+		return nil, spanErrorf(retTok.Span, "return requires an expression: return EXPR")
+	}
+	expr, err := parseExpression(tokens)
+	if err != nil {
+		return nil, wrapSyntaxErr("return", err)
+	}
+	return &ReturnStmt{Expr: expr, Span: p.spanFrom(retTok.Pos)}, nil
 }
 
 // parseDefParams consumes the parameter list up to and including the

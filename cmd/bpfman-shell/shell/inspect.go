@@ -50,6 +50,7 @@ func (*BreakStmt) astNode()          {}
 func (*ContinueStmt) astNode()       {}
 func (*EventuallyStmt) astNode()     {}
 func (*DefStmt) astNode()            {}
+func (*ReturnStmt) astNode()         {}
 func (*AssertStmt) astNode()         {}
 
 // Exprs are Nodes via their exprNode method. Same shape as
@@ -166,6 +167,10 @@ func walk(node Node, f func(Node) bool) {
 	case *DefStmt:
 		for _, s := range n.Body {
 			walk(s, f)
+		}
+	case *ReturnStmt:
+		if n.Expr != nil {
+			walk(n.Expr, f)
 		}
 	case *AssertStmt:
 		walk(n.Expr, f)

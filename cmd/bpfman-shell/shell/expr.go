@@ -367,6 +367,15 @@ func evalProgramBody(prog *Program, env *Env) error {
 		case errors.Is(err, errContinue):
 			return locErrorf(stmtLoc(stmt), "continue outside a foreach loop")
 		default:
+			// A returnSignal escaped without a callDef catching
+			// it. The static checker rejects the visible shapes
+			// (return at script top level, return in a block
+			// outside a def); this is the runtime safety net for
+			// anything the checker did not see.
+			var ret *returnSignal
+			if errors.As(err, &ret) {
+				return spanErrorf(ret.Span, "return outside a def body")
+			}
 			// Defensive safety net: any runtime error that
 			// reached the program level without a Span gets
 			// framed at the offending statement. Most paths
@@ -409,6 +418,8 @@ func stmtLoc(s Stmt) Pos {
 		return v.Pos
 	case *DefStmt:
 		return v.Pos
+	case *ReturnStmt:
+		return v.Pos
 	case *AssertStmt:
 		return v.Pos
 	}
@@ -423,6 +434,26 @@ var (
 	errBreak    = fmt.Errorf("break outside a foreach loop")
 	errContinue = fmt.Errorf("continue outside a foreach loop")
 )
+
+// returnSignal is the internal control-flow value raised when a
+// def body executes `return EXPR`. The evaluator surfaces it as
+// an error so it short-circuits the body via the normal error
+// path and is caught by callDef / callDefAsBind. Outside a def
+// call -- at the top level of a script, inside a sourced library
+// top level, or via any other path where no enclosing call
+// exists -- returnSignal escapes evalProgramBody and is converted
+// into a user-facing "return outside a def body" diagnostic. The
+// value itself, once evaluated, is independent of the call frame:
+// it survives the frame pop intact and becomes the bind path's
+// Primary.
+type returnSignal struct {
+	Span
+	Value Value
+}
+
+func (e *returnSignal) Error() string {
+	return "return outside a def body"
+}
 
 func evalStmt(stmt Stmt, env *Env) error {
 	switch s := stmt.(type) {
@@ -465,6 +496,8 @@ func evalStmt(stmt Stmt, env *Env) error {
 		return errContinue
 	case *DefStmt:
 		return evalDefStmt(s, env)
+	case *ReturnStmt:
+		return evalReturnStmt(s, env)
 	case *AssertStmt:
 		if env.ExecAssertStmt == nil {
 			return spanErrorf(s.Span, "assert/require has no executor on the env")
@@ -512,6 +545,32 @@ func evalLetDestructureStmt(s *LetDestructureStmt, env *Env) error {
 		env.Session.Set(name, val.IndexValue(j))
 	}
 	return nil
+}
+
+// evalReturnStmt evaluates the return value and raises a
+// returnSignal, which propagates as an error through evalStmt and
+// the enclosing block loop until callDef / callDefAsBind catches
+// it. The expression is evaluated in the current frame so the
+// value uses the call frame's bindings; once stashed on the
+// signal, the Value is independent of the frame and survives the
+// frame pop.
+//
+// If no enclosing def call catches the signal -- a script-top-level
+// `return`, a return inside an `if` or `foreach` that is not inside
+// any def -- evalProgramBody surfaces it as a regular runtime
+// error and the script halts. The static checker rejects the
+// same shapes earlier; this is the safety net for paths the
+// checker may not see (e.g. a `return` reached only via the
+// runtime def-dispatch routing).
+func evalReturnStmt(s *ReturnStmt, env *Env) error {
+	v, err := EvalExpr(s.Expr, env)
+	if err != nil {
+		return err
+	}
+	if v.IsNil() {
+		return spanErrorf(s.Span, "return: expression produced no result")
+	}
+	return &returnSignal{Span: s.Span, Value: v}
 }
 
 // evalDefStmt registers s in the session's def table. Redefining an
@@ -563,6 +622,15 @@ func callDef(def *DefValue, args []Arg, callLoc Pos, env *Env) error {
 			return nil
 		})
 	})
+	// A `return EXPR` inside the body short-circuits the body
+	// loop via returnSignal. At command-form position the value
+	// is discarded; the early exit itself is the only observable
+	// effect. The bind-position path callDefAsBind catches the
+	// signal separately and keeps the Value.
+	var ret *returnSignal
+	if errors.As(err, &ret) {
+		return nil
+	}
 	return decorateDefError(err, def)
 }
 
