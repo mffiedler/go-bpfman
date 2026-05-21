@@ -164,6 +164,11 @@ The first IR is not about flattening into an execution format.
 It may be block-structured and may use richer instruction forms
 than a bytecode VM would want. Readability wins.
 
+This is a sequencing statement, not a rejection of a VM forever.
+Once the IR is canonical and executable, a bytecode encoding is a
+natural later endpoint if we ever want it. We just do not have a
+bytecode plan for this migration.
+
 ### Not an optimizer
 
 We are not folding constants, removing dead blocks, or
@@ -557,6 +562,42 @@ That means:
 The dump and its golden files are part of that parity story. They
 do not replace runtime tests, but they make semantic drift
 reviewable.
+
+## Bytecode as a later endpoint
+
+Once the shell has a canonical lowered IR and an interpreter that
+executes it, a VM stops being an architectural leap and becomes an
+execution-format choice.
+
+The hard semantic work has already been paid for:
+
+- the operations are explicit;
+- control flow is explicit;
+- bind/defer/return/`eventually` behaviour is explicit;
+- the program has one canonical semantic representation.
+
+At that point there are two execution strategies over the same
+meaning:
+
+- interpret the structured IR directly; or
+- encode that IR to bytecode and run a VM.
+
+That makes bytecode a natural conclusion if the project ever needs
+it, but not a current commitment. The current plan ends at
+"canonical IR plus interpreter". Anything beyond that is optional
+follow-on work.
+
+If a bytecode layer ever does arrive, it should inherit the same
+determinism discipline as the IR:
+
+- stable opcode numbering;
+- stable constant ordering;
+- stable jump/label rendering in dumps;
+- deterministic bytecode snapshots in tests.
+
+IR snapshots remain the load-bearing semantic contract because
+they are the human-readable form. Bytecode snapshots would be a
+useful derived artefact, not the primary design document.
 
 ## Open questions
 
