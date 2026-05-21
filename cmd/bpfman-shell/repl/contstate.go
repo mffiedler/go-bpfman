@@ -1,16 +1,14 @@
-// ContState (the chunk-continuation tracker), CanonicaliseHistory
-// (the multi-line-input history flattener), and ApplyAlias (the
-// first-token alias rewriter) all moved out of cmd/bpfman-shell's
-// repl.go to live with the rest of the loop mechanism in repl/.
-// Exported because the loop driver that will move next still
-// reaches them from main during the transition.
+// ContState (the chunk-continuation tracker) and
+// CanonicaliseHistory (the multi-line-input history flattener)
+// moved out of cmd/bpfman-shell's repl.go to live with the
+// rest of the loop mechanism in repl/. Exported because the
+// loop driver that will move next still reaches them from
+// main during the transition.
 
 package repl
 
 import (
 	"strings"
-
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 )
 
 // ContState tracks brace, parenthesis, and bracket depth across
@@ -146,25 +144,4 @@ func CanonicaliseHistory(s string) string {
 		b.WriteByte(ch)
 	}
 	return strings.TrimSpace(b.String())
-}
-
-// ApplyAlias rewrites the first token of an expanded arg slice
-// if it matches a session alias. Expansion is non-recursive:
-// only one rewrite is performed.
-func ApplyAlias(session *shell.Session, args []shell.Arg) []shell.Arg {
-	if len(args) == 0 {
-		return args
-	}
-	w, ok := args[0].(shell.WordArg)
-	if !ok {
-		return args
-	}
-	expansion, found := session.GetAlias(w.Text)
-	if !found {
-		return args
-	}
-	rewritten := make([]shell.Arg, len(args))
-	copy(rewritten, args)
-	rewritten[0] = shell.WordArg{Text: expansion, Span: shell.ArgSpan(args[0])}
-	return rewritten
 }

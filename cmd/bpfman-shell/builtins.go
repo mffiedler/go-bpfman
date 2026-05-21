@@ -122,18 +122,6 @@ func init() {
 	}
 	for _, b := range []builtin{
 		{
-			Name: "alias", Handler: handleAlias,
-			Category: categorySession,
-			Usage:    "alias <name> = <expansion>",
-			Summary:  "Define a first-token alias.",
-		},
-		{
-			Name: "aliases", Handler: handleAliases,
-			Category: categorySession,
-			Usage:    "aliases",
-			Summary:  "List defined aliases.",
-		},
-		{
 			Name: "assert", Handler: handleAssert,
 			Category: categoryAssert,
 			Usage:    "assert <verb> [args...]  |  assert <bool-expr>  |  assert not <verb> [args...]",
@@ -322,12 +310,6 @@ func init() {
 				"background $job (async). Operational use after release is a runtime error; " +
 				"field reads stay valid. Raw ip(8) remains the documented escape hatch for " +
 				"topologies net does not cover (bridges, VLANs, IPv6, multiple pairs).",
-		},
-		{
-			Name: "unalias", Handler: handleUnalias,
-			Category: categorySession,
-			Usage:    "unalias <name>...",
-			Summary:  "Remove alias bindings.",
 		},
 		{
 			Name: "undef", Handler: handleUndef,

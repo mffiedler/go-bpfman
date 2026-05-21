@@ -592,7 +592,6 @@ func makeExecCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 		if len(args) == 0 {
 			return shell.Value{}, nil
 		}
-		args = ApplyAlias(session, args)
 		handled, val, err := Dispatch(ctx, cli, mgr, session, env, args, loc, span)
 		if err != nil {
 			return shell.Value{}, err
@@ -623,7 +622,6 @@ func makeExecCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 // an unrecognised first word runs as an external subprocess.
 func makeExecBind(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, env *shell.Env, loc SourceLoc, fallback BindFallbackFunc) func([]shell.Arg, shell.Span) (shell.BindResult, error) {
 	return func(args []shell.Arg, span shell.Span) (shell.BindResult, error) {
-		args = ApplyAlias(session, args)
 		if len(args) == 0 {
 			return shell.BindResult{}, shell.SpanErrorf(span, "empty command form on '<-' RHS")
 		}

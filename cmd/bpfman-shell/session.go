@@ -36,46 +36,6 @@ func handleVars(c builtinCtx) (shell.Value, error) {
 	return shell.Value{}, c.CLI.PrintOut(b.String())
 }
 
-// applyAlias moved to repl.ApplyAlias.
-
-// handleAlias defines a first-token alias. Syntax:
-// alias <name> = <expansion>. The name must not collide with shell
-// commands or "bpfman".
-func handleAlias(c builtinCtx) (shell.Value, error) {
-	args := repl.ArgTexts(c.Args)
-	if len(args) != 3 || args[1] != "=" {
-		return shell.Value{}, fmt.Errorf("usage: alias <name> = <expansion>")
-	}
-	name, expansion := args[0], args[2]
-	if _, ok := repl.Builtins()[name]; ok {
-		return shell.Value{}, fmt.Errorf("cannot alias %q: it is a shell command", name)
-	}
-	if name == "bpfman" {
-		return shell.Value{}, fmt.Errorf("cannot alias %q: it is the domain prefix", name)
-	}
-	if name == "let" || name == "set" {
-		return shell.Value{}, fmt.Errorf("cannot alias %q: it is a shell keyword", name)
-	}
-	c.Env.Session.SetAlias(name, expansion)
-	return shell.Value{}, nil
-}
-
-// handleUnalias removes one or more alias bindings.
-func handleUnalias(c builtinCtx) (shell.Value, error) {
-	args := repl.ArgTexts(c.Args)
-	if len(args) == 0 {
-		return shell.Value{}, fmt.Errorf("unalias requires at least one alias name")
-	}
-	session := c.Env.Session
-	for _, name := range args {
-		if _, ok := session.GetAlias(name); !ok {
-			return shell.Value{}, fmt.Errorf("undefined alias %q", name)
-		}
-		session.DeleteAlias(name)
-	}
-	return shell.Value{}, nil
-}
-
 // handleDefs lists all user-defined commands and their parameter
 // lists.
 func handleDefs(c builtinCtx) (shell.Value, error) {
@@ -125,18 +85,6 @@ func handleTrace(c builtinCtx) (shell.Value, error) {
 		return shell.Value{}, fmt.Errorf("trace: unknown argument %q (expected on or off)", args[0])
 	}
 	return shell.Value{}, nil
-}
-
-// handleAliases lists all defined aliases.
-func handleAliases(c builtinCtx) (shell.Value, error) {
-	session := c.Env.Session
-	names := session.AliasNames()
-	var b strings.Builder
-	for _, name := range names {
-		expansion, _ := session.GetAlias(name)
-		fmt.Fprintf(&b, "  %s = %s\n", name, expansion)
-	}
-	return shell.Value{}, c.CLI.PrintOut(b.String())
 }
 
 // handleUnset removes one or more variable bindings from the
