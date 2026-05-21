@@ -697,6 +697,71 @@ func TestCheck_Return_NestedDefBodiesEachOwnContext(t *testing.T) {
 	assert.Empty(t, issues, "both returns are inside a def")
 }
 
+// Regression: the static checker must treat a def call on the
+// right of '<-' as an open-shape source (the def's return value
+// is dynamic), not as a result envelope. The Envelope shape is
+// sealed -- its fields are ok/code/stdout/stderr/... -- so a
+// field name like `.id` that does not exist there gets
+// rejected at preflight when the primary is mis-shaped as an
+// envelope. The fix is to mark def-bound primaries as
+// OriginUnknown (open) so dynamic field access passes the
+// preflight, matching what happens at runtime when the def
+// returns a structured value.
+func TestCheck_Return_BindFromDef_UnknownShapeAllowsFieldAccess(t *testing.T) {
+	t.Parallel()
+	src := `
+def load_prog() {
+  return "hello"
+}
+let p <- load_prog
+print $p.id
+`
+	issues := checkSource(t, src)
+	assert.Empty(t, issues, "field access on a def-returned value must not be rejected by the checker")
+}
+
+// Regression: a recursive value-returning def -- one whose
+// body contains `let v <- self ...` against itself -- must
+// pass preflight. The checker records the def name BEFORE
+// walking the body so the inner bind site resolves the head
+// to a known def and binds an open shape on $v.
+func TestCheck_Return_RecursiveValueReturn_FieldAccess(t *testing.T) {
+	t.Parallel()
+	src := `
+def chain(depth) {
+  if $depth == "stop" {
+    return "base"
+  }
+  let next <- chain stop
+  return ${next}
+}
+let v <- chain go
+print $v.field
+`
+	issues := checkSource(t, src)
+	assert.Empty(t, issues, "recursive value-returning def must allow field access on its primary")
+}
+
+// Regression: a def whose name shadows a registered pure
+// builtin must route through the def at preflight, so the
+// pure-builtin <- rejection does not fire. The runtime's
+// def lookup wins ahead of the external dispatch path; the
+// checker must mirror that precedence.
+func TestCheck_Return_DefShadowingPureBuiltinIsAccepted(t *testing.T) {
+	t.Parallel()
+	// `range` is a registered pure builtin; if a script
+	// shadows it with a def, the def takes over on the bind
+	// RHS at runtime and the checker must agree.
+	src := `
+def range() {
+  return "shadowed"
+}
+let v <- range
+`
+	issues := checkSource(t, src)
+	assert.Empty(t, issues, "a def shadowing a pure builtin must not trip the pure-builtin <- rejection")
+}
+
 // Regression: a defer-failure flip on the bind-position Rc.OK
 // must reflect the def's OWN cleanup outcome, not the session-
 // wide counter. An inner def whose defer fails -- invoked as a

@@ -89,6 +89,14 @@ type checker struct {
 	// `if` branch of a def body is fine; a return at script top
 	// level or inside an if-at-top-level is rejected.
 	defDepth int
+	// defs records the names registered via DefStmt so a bind
+	// RHS whose head is a known def routes through the def's
+	// open-shape inference rather than the pure-builtin /
+	// envelope fallback. Defs are session-level declarations,
+	// so a forward reference is not legal at runtime; the
+	// checker mirrors that by adding the name when the DefStmt
+	// is walked rather than pre-scanning.
+	defs map[string]bool
 }
 
 // checkFrame is one entry on the checker's frame stack. defined
@@ -107,6 +115,7 @@ func newChecker() *checker {
 	return &checker{
 		frames:  []checkFrame{newCheckFrame()},
 		aliases: map[string]string{},
+		defs:    map[string]bool{},
 	}
 }
 
@@ -350,6 +359,30 @@ func bindHeadPureBuiltin(cmd *CommandStmt, aliases map[string]string) (string, b
 	return "", false
 }
 
+// bindHeadDef reports whether cmd's first word names a def
+// registered earlier in the walk. Aliases expand first because
+// the runtime's first-arg alias expansion runs before def
+// lookup. A matching def name takes precedence over both the
+// pure-builtin rejection and the bind-shape registry: the
+// def's `return EXPR` value is dynamic at preflight, so the
+// primary slot binds with an open shape rather than the
+// envelope fallback that mis-shapes def-bound primaries as
+// commands' result envelopes.
+func (c *checker) bindHeadDef(cmd *CommandStmt) bool {
+	if cmd == nil || len(cmd.Args) == 0 {
+		return false
+	}
+	first, ok := cmd.Args[0].(*LiteralExpr)
+	if !ok || first.Quoted {
+		return false
+	}
+	head := first.Text
+	if expanded, ok := c.aliases[head]; ok {
+		head = expanded
+	}
+	return c.defs[head]
+}
+
 // primaryNameForHint picks a placeholder for the bind-target
 // slot in the diagnostic suggestion. The user's original name
 // is reused when one was supplied; the tuple target is
@@ -414,28 +447,58 @@ func (c *checker) walkStmt(s Stmt) {
 				c.checkExpr(a)
 			}
 		}
-		// A '<-' bind on a pure builtin is rejected: pure
-		// builtins produce no result envelope, so the rc slot
-		// of '<-' (and the synthetic one a single-name bind
-		// would discard) has nothing to carry. The '=' form is
-		// the only correct call shape in binding position.
-		if name, ok := bindHeadPureBuiltin(n.Cmd, c.aliases); ok {
-			c.addIssue(n.Cmd.Span, "%s is a pure builtin; use 'let %s = %s ...' rather than '<-' (no result envelope is produced)", name, primaryNameForHint(n), name)
+		// Def dispatch precedes both the pure-builtin
+		// rejection and the bind-shape lookup. A def name on
+		// the bind RHS routes through callDefAsBind at runtime
+		// no matter what other handler the same word might
+		// match against, so the static checker must do the
+		// same -- otherwise a def shadowing a pure-builtin
+		// name would get rejected at preflight even though it
+		// runs cleanly, and a def-bound primary would be
+		// mis-shaped as the fallback envelope and reject any
+		// field access the def's actual return shape supports.
+		headIsDef := c.bindHeadDef(n.Cmd)
+		if !headIsDef {
+			// A '<-' bind on a pure builtin is rejected: pure
+			// builtins produce no result envelope, so the rc
+			// slot of '<-' (and the synthetic one a single-name
+			// bind would discard) has nothing to carry. The '='
+			// form is the only correct call shape in binding
+			// position.
+			if name, ok := bindHeadPureBuiltin(n.Cmd, c.aliases); ok {
+				c.addIssue(n.Cmd.Span, "%s is a pure builtin; use 'let %s = %s ...' rather than '<-' (no result envelope is produced)", name, primaryNameForHint(n), name)
+			}
 		}
 		// Tuple-bind on a bind-collect whose producer is a pure
 		// builtin is rejected for the same reason: pure builtins
 		// have no result envelope, so the rc slot would silently
 		// collect synthetic OK envelopes. Single-bind is the
 		// correct shape because it discards the rc list and
-		// carries only the producer's value list.
+		// carries only the producer's value list. The same def-
+		// precedence rule applies: a def producer routes through
+		// callDefAsBind and is not a pure builtin even when its
+		// name shadows one.
 		if n.Collect != nil && n.Rc != "" && n.Rc != "_" && len(n.Collect.Body) > 0 {
 			if last, ok := n.Collect.Body[len(n.Collect.Body)-1].(*CommandStmt); ok {
-				if name, ok := bindHeadPureBuiltin(last, c.aliases); ok {
-					c.addIssue(last.Span, "%s is a pure builtin; tuple bind '(%s, %s)' is invalid in bind-collect because pure builtins produce no rc envelope; use single-bind 'let %s <- foreach ... { %s ... }' instead", name, n.Rc, primaryNameForHint(n), primaryNameForHint(n), name)
+				if !c.bindHeadDef(last) {
+					if name, ok := bindHeadPureBuiltin(last, c.aliases); ok {
+						c.addIssue(last.Span, "%s is a pure builtin; tuple bind '(%s, %s)' is invalid in bind-collect because pure builtins produce no rc envelope; use single-bind 'let %s <- foreach ... { %s ... }' instead", name, n.Rc, primaryNameForHint(n), primaryNameForHint(n), name)
+					}
 				}
 			}
 		}
-		primaryShape := c.inferBindShape(n.Cmd)
+		// A def-bound primary is open: the return value's shape
+		// is dynamic and the checker has no way to infer it
+		// without flow analysis the language does not need.
+		// Marking it as OriginUnknown matches what destructure
+		// binding does for the same reason and unblocks field
+		// access on def-returned structured values.
+		var primaryShape Shape
+		if headIsDef {
+			primaryShape = Shape{Sealed: false, Kind: OriginUnknown}
+		} else {
+			primaryShape = c.inferBindShape(n.Cmd)
+		}
 		c.define(n.Primary, primaryShape, nil)
 		c.define(n.Rc, KindShape(OriginEnvelope), nil)
 
@@ -456,6 +519,15 @@ func (c *checker) walkStmt(s Stmt) {
 		})
 
 	case *DefStmt:
+		// Register the def name BEFORE walking the body so a
+		// recursive value-returning def -- a body that contains
+		// `let v <- f` against itself -- gets the def-as-bind-
+		// head routing during its own walk. Runtime def lookup
+		// also resolves against the session's defs map at the
+		// call site, which a recursive call hits after the
+		// SetDef installation, so the checker matches what the
+		// runtime does on the second and later iterations.
+		c.defs[n.Name] = true
 		// Parameters are visible inside the body and disappear
 		// at end-of-def. The runtime allocates a fresh frame
 		// per call; the checker walks the def body once with
