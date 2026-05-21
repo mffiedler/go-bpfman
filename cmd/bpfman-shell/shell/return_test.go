@@ -617,3 +617,82 @@ func elementText(v any) string {
 		return fmt.Sprint(x)
 	}
 }
+
+// Checker tests pin the static-time rejection. The runtime catch
+// in evalProgramBody is the safety net; the checker rejection is
+// what scripts hit first, before any side effects fire.
+
+func TestCheck_Return_InsideDefIsClean(t *testing.T) {
+	t.Parallel()
+	issues := checkSource(t, "def f() { return 1 }")
+	assert.Empty(t, issues)
+}
+
+func TestCheck_Return_InsideIfInsideDefIsClean(t *testing.T) {
+	t.Parallel()
+	// A return inside a nested block is fine as long as some
+	// enclosing def opens the call context. The depth counter
+	// tracks "any enclosing def", not "directly enclosed".
+	issues := checkSource(t, "def f(x) { if $x { return 1 } }")
+	assert.Empty(t, issues)
+}
+
+func TestCheck_Return_InsideForeachInsideDefIsClean(t *testing.T) {
+	t.Parallel()
+	src := "def f(xs) { foreach x in $xs { return $x } }"
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
+func TestCheck_Return_AtTopLevelIsRejected(t *testing.T) {
+	t.Parallel()
+	issues := checkSource(t, "return 1")
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "return outside a def body")
+}
+
+func TestCheck_Return_InsideIfAtTopLevelIsRejected(t *testing.T) {
+	t.Parallel()
+	// An if at script top level is not a def context; a return
+	// inside is still rejected.
+	src := "if true { return 1 }"
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "return outside a def body")
+}
+
+func TestCheck_Return_AfterDefIsStillTopLevel(t *testing.T) {
+	t.Parallel()
+	// defDepth must unwind when the def body exits: a return
+	// written after a def declaration is at top level and must
+	// be rejected.
+	src := "def f() { print 1 }\nreturn 1"
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "return outside a def body")
+}
+
+func TestCheck_Return_ExpressionStillChecked(t *testing.T) {
+	t.Parallel()
+	// A bad expression on the return RHS reports the
+	// undefined-variable issue even when the position is also
+	// wrong, so a script with multiple problems shows them all.
+	src := "return $missing"
+	issues := checkSource(t, src)
+	require.Len(t, issues, 2)
+	msgs := []string{issues[0].Msg, issues[1].Msg}
+	assert.Contains(t, strings.Join(msgs, "\n"), "return outside a def body")
+	assert.Contains(t, strings.Join(msgs, "\n"), "undefined variable: missing")
+}
+
+func TestCheck_Return_NestedDefBodiesEachOwnContext(t *testing.T) {
+	t.Parallel()
+	// A nested def declaration -- visually unusual but
+	// syntactically allowed -- preserves the depth on entry and
+	// pops it back on exit, so a sibling return at the outer
+	// level is rejected only when it actually falls outside the
+	// outer def.
+	src := "def outer() { def inner() { return 1 }\nreturn 2 }"
+	issues := checkSource(t, src)
+	assert.Empty(t, issues, "both returns are inside a def")
+}

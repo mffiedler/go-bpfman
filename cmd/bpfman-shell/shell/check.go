@@ -82,6 +82,13 @@ type checker struct {
 	frames  []checkFrame
 	aliases map[string]string
 	issues  []Issue
+	// defDepth counts the def bodies currently being walked. A
+	// ReturnStmt is only valid when defDepth > 0. The depth is
+	// non-zero inside nested blocks (if, foreach, eventually)
+	// once we are inside a def, so a return tucked inside an
+	// `if` branch of a def body is fine; a return at script top
+	// level or inside an if-at-top-level is rejected.
+	defDepth int
 }
 
 // checkFrame is one entry on the checker's frame stack. defined
@@ -452,13 +459,33 @@ func (c *checker) walkStmt(s Stmt) {
 		// Parameters are visible inside the body and disappear
 		// at end-of-def. The runtime allocates a fresh frame
 		// per call; the checker walks the def body once with
-		// its parameter frame in place.
+		// its parameter frame in place. defDepth tracks whether
+		// the walk is currently inside any def so the ReturnStmt
+		// case can reject the keyword at the wrong nesting.
+		c.defDepth++
 		c.withFrame(func() {
 			for _, p := range n.Params {
 				c.define(p, Shape{Sealed: false, Kind: OriginUnknown}, nil)
 			}
 			c.walkStmts(n.Body)
 		})
+		c.defDepth--
+
+	case *ReturnStmt:
+		// `return EXPR` is only valid inside a def body. The
+		// runtime carries a safety-net check at evalProgramBody
+		// for paths the checker does not see (a return reached
+		// only through a dynamic source, say), but the visible
+		// shapes are caught here so the diagnostic lands at
+		// check time, before any side effect fires. The
+		// expression itself is checked even when the position
+		// is wrong, so a script with both errors reports both.
+		if c.defDepth == 0 {
+			c.addIssue(n.Span, "return outside a def body")
+		}
+		if n.Expr != nil {
+			c.checkExpr(n.Expr)
+		}
 
 	case *IfStmt:
 		// Each branch body checks in its own frame: a `let`
