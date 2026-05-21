@@ -639,14 +639,32 @@ func makeExecBind(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 			}
 		}
 
-		quiet := cli.WithDiscardOutput()
-		handled, val, err := Dispatch(ctx, quiet, mgr, session, env, args, loc, span)
+		// Capture the in-process Dispatch path's stdout / stderr
+		// into a buffer rather than discarding it: a builtin that
+		// runs through the bind family (`let v <- print "x"`, or
+		// a defer firing a print at unwind) used to lose the
+		// bytes entirely. Capturing puts them on the rc envelope
+		// alongside what runExternalAsBind already produces for
+		// subprocesses, so both halves of the bind family populate
+		// rc.Stdout / rc.Stderr uniformly. The bytes flow from
+		// there: ordinary bind callers read them via $v.stdout;
+		// the RenderDeferOutput hook flushes them to the
+		// terminal on successful defers; the RenderDeferFailure
+		// path already showed them in its labelled block on
+		// failure.
+		captured := cli.WithCaptureOutput()
+		handled, val, err := Dispatch(ctx, captured.CLI, mgr, session, env, args, loc, span)
 		if handled {
+			stdout := captured.Stdout()
+			stderr := captured.Stderr()
 			if err != nil {
-				rc := shell.Envelope{OK: false, Code: 1, Stderr: err.Error()}
+				rc := shell.Envelope{OK: false, Code: 1, Stdout: stdout, Stderr: stderr}
+				if rc.Stderr == "" {
+					rc.Stderr = err.Error()
+				}
 				return shell.BindResult{Rc: rc, Primary: shell.ValueFromEnvelope(rc)}, nil
 			}
-			rc := shell.Envelope{OK: true, Code: 0}
+			rc := shell.Envelope{OK: true, Code: 0, Stdout: stdout, Stderr: stderr}
 			primary := val
 			if primary.IsNil() {
 				primary = shell.ValueFromEnvelope(rc)

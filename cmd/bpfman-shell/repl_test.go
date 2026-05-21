@@ -281,6 +281,44 @@ func TestReplLoop_QuotedHashNotComment(t *testing.T) {
 	assert.Contains(t, outBuf.String(), "bogus#notcomment")
 }
 
+// Regression: a `defer COMMAND` where COMMAND is an in-process
+// builtin like `print` must produce visible output. The bind
+// dispatch in makeExecBind used cli.WithDiscardOutput(), so the
+// builtin's bytes went to io.Discard and never reached the
+// envelope; the Env.RenderDeferOutput hook then had an empty
+// rc.Stdout to flush and the user saw nothing. The fix is a
+// capture-and-drain variant of WithDiscardOutput that fills
+// rc.Stdout / rc.Stderr from the buffered bytes so the existing
+// flusher carries them to the terminal.
+func TestReplLoop_DeferPrintBuiltinShowsOutput(t *testing.T) {
+	t.Parallel()
+	input := "def f() {\n" +
+		"  defer print \"deferred-trace\"\n" +
+		"  print \"in-body\"\n" +
+		"}\n" +
+		"f\n" +
+		"print \"after\"\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
+	lr := repl.NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
+	require.NoError(t, err)
+	out := outBuf.String()
+	assert.Contains(t, out, "deferred-trace", "builtin defer output must appear on stdout")
+	assert.Contains(t, out, "in-body", "in-body print must appear before the defer fires")
+	assert.Contains(t, out, "after", "post-call print must appear after the defer fires")
+	// LIFO unwind plus post-call ordering: body line, then the
+	// deferred print at def-return, then the script's
+	// post-call line.
+	bodyAt := strings.Index(out, "in-body")
+	deferAt := strings.Index(out, "deferred-trace")
+	afterAt := strings.Index(out, "after")
+	require.True(t, bodyAt >= 0 && deferAt >= 0 && afterAt >= 0)
+	assert.Less(t, bodyAt, deferAt, "body must print before the defer fires")
+	assert.Less(t, deferAt, afterAt, "defer must fire before the post-call line")
+}
+
 func TestReplComplete_VarsCommand(t *testing.T) {
 	t.Parallel()
 
@@ -2565,6 +2603,36 @@ func TestWithDiscardOutput_PreservesRuntimeState(t *testing.T) {
 
 	// Must not alias the original.
 	assert.NotSame(t, original, quiet)
+}
+
+func TestWithCaptureOutput_CapturesWrites(t *testing.T) {
+	t.Parallel()
+
+	original := &bpfmancli.CLI{
+		RuntimeDir:    "/run/bpfman",
+		ImageCacheDir: "/var/cache/bpfman",
+		Config:        "/etc/bpfman/bpfman.toml",
+		LockTimeout:   30 * time.Second,
+		Out:           os.Stdout,
+		Err:           os.Stderr,
+	}
+	captured := original.WithCaptureOutput()
+
+	// Runtime state mirrors the original; only the writers are
+	// swapped.
+	assert.Equal(t, original.RuntimeDir, captured.CLI.RuntimeDir)
+	assert.Equal(t, original.ImageCacheDir, captured.CLI.ImageCacheDir)
+	assert.Equal(t, original.Config, captured.CLI.Config)
+	assert.Equal(t, original.LockTimeout, captured.CLI.LockTimeout)
+	assert.NotSame(t, original.Out, captured.CLI.Out)
+	assert.NotSame(t, original.Err, captured.CLI.Err)
+
+	// Writes through PrintOut / PrintErr land in the buffers
+	// and are recoverable via Stdout / Stderr.
+	require.NoError(t, captured.CLI.PrintOut("hello\n"))
+	require.NoError(t, captured.CLI.PrintErr("oops\n"))
+	assert.Equal(t, "hello\n", captured.Stdout())
+	assert.Equal(t, "oops\n", captured.Stderr())
 }
 
 // --- exec shell command tests ---

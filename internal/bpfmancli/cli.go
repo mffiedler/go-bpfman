@@ -7,6 +7,7 @@
 package bpfmancli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -74,6 +75,66 @@ func (c *CLI) WithDiscardOutput() *CLI {
 		Err:           io.Discard,
 		logger:        c.logger,
 	}
+}
+
+// CapturedOutput is a CLI variant backed by in-memory buffers. The
+// embedded CLI is wired to write Out / Err into the buffers; the
+// caller drains the captured bytes via Bytes() after dispatching
+// the command. Used by the bind-dispatch path so a builtin's
+// stdout / stderr can land in the bind result envelope rather
+// than being thrown away.
+type CapturedOutput struct {
+	*CLI
+	stdout *bytes.Buffer
+	stderr *bytes.Buffer
+}
+
+// WithCaptureOutput returns a CapturedOutput whose CLI mirrors the
+// receiver's execution settings (RuntimeDir, Config, lock timeout,
+// cached logger) but whose Out / Err write into private buffers.
+// The buffers belong to the returned CapturedOutput; Stdout() and
+// Stderr() drain them, intended for one-shot dispatch sites that
+// run a command and then read the captured bytes back to populate
+// an envelope.
+//
+// Subprocess output captured by runExternalAsBind goes through
+// RunExternal's own pipe-and-collect path; this helper covers the
+// in-process Dispatch path where a builtin writes to cli.Out
+// directly. Both halves of the bind family end up putting bytes
+// in rc.Stdout / rc.Stderr that way, so a consumer like the
+// RenderDeferOutput hook does not have to know which kind of
+// command produced them.
+func (c *CLI) WithCaptureOutput() *CapturedOutput {
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	return &CapturedOutput{
+		CLI: &CLI{
+			RuntimeDir:    c.RuntimeDir,
+			ImageCacheDir: c.ImageCacheDir,
+			Config:        c.Config,
+			Log:           c.Log,
+			LockTimeout:   c.LockTimeout,
+			Out:           stdout,
+			Err:           stderr,
+			logger:        c.logger,
+		},
+		stdout: stdout,
+		stderr: stderr,
+	}
+}
+
+// Stdout returns the captured stdout as a string. Subsequent
+// writes to the CapturedOutput's CLI continue to accumulate; the
+// buffer is not reset. Callers that need to read multiple times
+// across a single capture window should do so without mutating.
+func (c *CapturedOutput) Stdout() string {
+	return c.stdout.String()
+}
+
+// Stderr returns the captured stderr as a string. See Stdout for
+// the buffering note.
+func (c *CapturedOutput) Stderr() string {
+	return c.stderr.String()
 }
 
 // Layout returns the filesystem layout for the configured runtime directory.
