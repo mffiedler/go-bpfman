@@ -1443,22 +1443,14 @@ func runDefers(env *Env, stack []deferEntry) int {
 		if traceFn != nil {
 			traceFn(entry.Pos.Line, "defer fire: "+renderArgvTrace(entry.Args))
 		}
-		// Def dispatch precedes ExecBind for the same reason
-		// it precedes ExecBind at the bind-statement and
-		// command-statement positions: a def-named head must
-		// resolve through callDefAsBind, not through the
-		// external-subprocess fallback. Without this, a
-		// `defer cleanup` against a user-defined cleanup helper
-		// tried to exec a subprocess named "cleanup". The dispatch
-		// returns a BindResult so the existing failure rendering
-		// and counter accounting below stay verbatim.
-		var result BindResult
-		var err error
-		if def, ok := lookupDefHead(entry.Args, env); ok {
-			result, err = callDefAsBind(def, entry.Args[1:], entry.Pos, env)
-		} else {
-			result, err = env.ExecBind(entry.Args, entry.Span)
-		}
+		// Defer dispatches through the shared bind-style
+		// helper so the def-vs-external precedence matches the
+		// other bind-position sites. Failure rendering and
+		// session counter accounting stay in this loop because
+		// they are defer-specific (RenderDeferFailure block,
+		// RecordDeferFailure tick); the helper only handles
+		// the head resolution.
+		result, err := dispatchBindHead(entry.Args, entry.Pos, entry.Span, env)
 		if err != nil {
 			rc := FailEnvelopeFromError(err)
 			if env.RenderDeferFailure != nil {
@@ -1643,29 +1635,53 @@ func evalBindStmt(s *BindStmt, env *Env) error {
 		header := bindTraceHeader(s)
 		env.Trace(s.Span.Pos.Line, fmt.Sprintf("%s <- %s", header, renderArgvTrace(args)))
 	}
-	// Def dispatch precedes ExecBind: a def-named head must not
-	// reach the external dispatch path, which would otherwise
-	// either find a same-named builtin or try to exec the def
-	// name as a subprocess. The same precedence applies at
-	// command-statement position (see evalCommandStmt).
-	if def, ok := lookupDefHead(args, env); ok {
-		result, err := callDefAsBind(def, args[1:], s.Cmd.Span.Pos, env)
-		if err != nil {
-			return frameAtSpan(s.Span, err)
-		}
-		return applyBindResult(s, args, result, env)
-	}
-	result, err := env.ExecBind(args, s.Span)
+	result, err := dispatchBindHead(args, s.Cmd.Span.Pos, s.Span, env)
 	if err != nil {
 		return frameAtSpan(s.Span, err)
 	}
 	return applyBindResult(s, args, result, env)
 }
 
+// dispatchBindHead resolves args[0] to either a def call or
+// the external bind-dispatch path. Used by every bind-position
+// site (evalBindStmt, bind-collect producer, runDefers) so the
+// def-vs-external precedence is one rule applied at one site
+// rather than three. Without this helper, each site
+// independently consulted lookupDefHead before falling through
+// to env.ExecBind, and asymmetries crept in -- the W11 / W23
+// fixes were each "rule applied at site A but not B".
+//
+// The helper returns the BindResult and error verbatim. Span
+// framing is left to the caller because the relevant span
+// differs per site (the bind statement, the producer command,
+// the defer entry); a helper-side frameAtSpan would either
+// over-fit one site or lose context.
+func dispatchBindHead(args []Arg, callLoc Pos, span Span, env *Env) (BindResult, error) {
+	if def, ok := lookupDefHead(args, env); ok {
+		return callDefAsBind(def, args[1:], callLoc, env)
+	}
+	return env.ExecBind(args, span)
+}
+
+// dispatchCommandHead is the command-style sibling: try def,
+// fall through to env.ExecCommand. callDef discards the
+// returned value (a `return EXPR` inside the body is observable
+// only as the early exit at command-form position); the
+// caller's responsibility for framing the err on miss matches
+// the bind-style helper.
+func dispatchCommandHead(args []Arg, callLoc Pos, span Span, env *Env) error {
+	if def, ok := lookupDefHead(args, env); ok {
+		return callDef(def, args[1:], callLoc, env)
+	}
+	if env.ExecCommand == nil {
+		return spanErrorf(span, "command execution is not configured")
+	}
+	_, err := env.ExecCommand(args, span)
+	return frameAtSpan(span, err)
+}
+
 // lookupDefHead returns the def value when args[0] names a
-// registered def. Used by every dispatch path so the def
-// lookup happens uniformly before the external dispatch
-// fallback sees the args.
+// registered def. Used by both dispatch helpers above.
 func lookupDefHead(args []Arg, env *Env) (*DefValue, bool) {
 	if len(args) == 0 {
 		return nil, false
@@ -1764,17 +1780,9 @@ iter:
 				header := bindTraceHeader(s)
 				env.Trace(producer.Span.Pos.Line, fmt.Sprintf("%s <- %s", header, renderArgvTrace(args)))
 			}
-			var result BindResult
-			if def, ok := lookupDefHead(args, env); ok {
-				result, err = callDefAsBind(def, args[1:], producer.Span.Pos, env)
-				if err != nil {
-					return frameAtSpan(producer.Span, err)
-				}
-			} else {
-				result, err = env.ExecBind(args, producer.Span)
-				if err != nil {
-					return frameAtSpan(producer.Span, err)
-				}
+			result, err := dispatchBindHead(args, producer.Span.Pos, producer.Span, env)
+			if err != nil {
+				return frameAtSpan(producer.Span, err)
 			}
 			if s.Guard && !result.Rc.OK {
 				return &GuardFailure{Span: producer.Span, Primary: s.Primary, Args: args, Envelope: result.Rc}
@@ -2000,18 +2008,7 @@ func evalCommandStmt(s *CommandStmt, env *Env) error {
 	if env.Trace != nil {
 		env.Trace(s.Span.Pos.Line, renderArgvTrace(args))
 	}
-	// Route through the shared lookupDefHead helper so the
-	// def lookup is uniform across every dispatch site
-	// (bind-statement, bind-collect producer, defer, and
-	// command-statement).
-	if def, ok := lookupDefHead(args, env); ok {
-		return callDef(def, args[1:], s.Pos, env)
-	}
-	if env.ExecCommand == nil {
-		return spanErrorf(s.Span, "command execution is not configured")
-	}
-	_, err = env.ExecCommand(args, s.Span)
-	return frameAtSpan(s.Span, err)
+	return dispatchCommandHead(args, s.Pos, s.Span, env)
 }
 
 // commandHeadName extracts the command name from the first argument
