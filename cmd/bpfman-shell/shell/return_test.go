@@ -772,6 +772,77 @@ let x = two + 3
 	assert.Contains(t, combined, "<-", "hint must point at the bind form")
 }
 
+// Regression: a runtime error inside a def body cited only
+// the body location, leaving the caller unable to tell which
+// of several call sites tripped it. With value-returning
+// helpers designed for reuse, the ambiguity is acute. The
+// diagnostic must name the call site so the user can navigate
+// to the offending caller.
+func TestEvalProgram_Return_RuntimeErrorNamesCallSite(t *testing.T) {
+	t.Parallel()
+	// The leading newline puts the def on line 2 of the source
+	// and the bind on line 6, so the test can assert both the
+	// body line in the rust-frame citation and the call line
+	// in the embedded "in def echo (called at ...)" note.
+	src := `
+def echo(x) {
+  return $x.field
+}
+
+let a <- echo "first"
+`
+	prog := parseProgram(t, src)
+	env := &Env{
+		Session: NewSession(),
+		ExecCommand: func([]Arg, Span) (Value, error) {
+			return Value{}, nil
+		},
+		ExecBind: func([]Arg, Span) (BindResult, error) {
+			return BindResult{Rc: Envelope{OK: true}}, nil
+		},
+	}
+	err := EvalProgram(prog, env)
+	require.Error(t, err)
+	msg := err.Error()
+	// The body-side citation must still be present so the
+	// user sees the inner error location.
+	assert.Contains(t, msg, "cannot access field", "the body error must still be cited")
+	// The diagnostic must name the called def.
+	assert.Contains(t, msg, "echo", "the diagnostic must name the called def")
+	// And the call site line must appear in the message. The
+	// bind statement is on line 6 of the source; the call
+	// itself is at the head of the RHS command.
+	assert.Contains(t, msg, "called at 6:", "the call site must be cited at the bind's line")
+}
+
+// Regression: when no chunk-start shift is in effect (embedded
+// EvalProgram use, this test's path) the call site reads as
+// the raw script line. The chunk loop in
+// cmd/bpfman-shell/repl/loop.go sets env.ChunkStartLine so a
+// real driver shifts the body span; the call-site annotation
+// must shift in lockstep so the cited coordinate is always
+// file-absolute. This test pins the shift-free behaviour
+// because that is the path EvalProgram uses; the live
+// bpfman-shell test in the probe sequence pinned the shifted
+// path end-to-end.
+func TestEvalProgram_Return_CallSiteAtEmbeddedTopLevel(t *testing.T) {
+	t.Parallel()
+	src := "def f(x) { return $x.y }\nlet v <- f \"hi\"\n"
+	prog := parseProgram(t, src)
+	env := &Env{
+		Session:     NewSession(),
+		ExecCommand: func([]Arg, Span) (Value, error) { return Value{}, nil },
+		ExecBind: func([]Arg, Span) (BindResult, error) {
+			return BindResult{Rc: Envelope{OK: true}}, nil
+		},
+	}
+	err := EvalProgram(prog, env)
+	require.Error(t, err)
+	msg := err.Error()
+	// The bind is on line 2; the call is at the head of the RHS.
+	assert.Contains(t, msg, "called at 2:", "call site at line 2 must be cited")
+}
+
 // Regression: the static checker must treat a def call on the
 // right of '<-' as an open-shape source (the def's return value
 // is dynamic), not as a result envelope. The Envelope shape is

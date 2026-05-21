@@ -607,7 +607,7 @@ func evalDefStmt(s *DefStmt, env *Env) error {
 func callDef(def *DefValue, args []Arg, callLoc Pos, env *Env) error {
 	_, _, _, err := runDefCall(def, args, callLoc, env)
 	if err != nil {
-		return decorateDefError(err, def)
+		return decorateDefError(err, def, absoluteCallLoc(callLoc, env))
 	}
 	// A `return EXPR` inside the body short-circuits the body
 	// loop via returnSignal. At command-form position the value
@@ -647,7 +647,7 @@ func callDef(def *DefValue, args []Arg, callLoc Pos, env *Env) error {
 func callDefAsBind(def *DefValue, args []Arg, callLoc Pos, env *Env) (BindResult, error) {
 	returned, hasReturn, localDeferFailures, err := runDefCall(def, args, callLoc, env)
 	if err != nil {
-		return BindResult{}, decorateDefError(err, def)
+		return BindResult{}, decorateDefError(err, def, absoluteCallLoc(callLoc, env))
 	}
 	rc := Envelope{OK: true}
 	if localDeferFailures > 0 {
@@ -710,6 +710,23 @@ func runDefCall(def *DefValue, args []Arg, callLoc Pos, env *Env) (Value, bool, 
 	return Value{}, false, localDeferFailures, err
 }
 
+// absoluteCallLoc translates a chunk-relative Pos to the
+// file-absolute coordinates the diagnostic renderer cites. The
+// chunk loop in cmd/bpfman-shell/repl/loop.go sets
+// env.ChunkStartLine to the 1-based file line at which the
+// current chunk begins; an in-chunk Pos has Line counted from
+// 1 of the chunk, so the absolute file line is `ChunkStartLine
+// + Line - 1`. When ChunkStartLine is unset (interactive REPL,
+// embedded use without chunking) the Pos is already absolute
+// and passes through unchanged. The column is chunk-invariant
+// either way.
+func absoluteCallLoc(callLoc Pos, env *Env) Pos {
+	if callLoc.Line <= 0 || env.ChunkStartLine <= 0 {
+		return callLoc
+	}
+	return Pos{Line: callLoc.Line + env.ChunkStartLine - 1, Col: callLoc.Col}
+}
+
 // decorateDefError attaches the def's registration site (file
 // and absolute line offset) to a *SyntaxError escaping the body,
 // so the diagnostic localises against the file the def was
@@ -717,23 +734,46 @@ func runDefCall(def *DefValue, args []Arg, callLoc Pos, env *Env) (Value, bool, 
 // Errors that already carry a File are left alone (an inner
 // callDef has already decorated them with the inner def's
 // registration site).
-func decorateDefError(err error, def *DefValue) error {
-	if err == nil || def.RegFile == "" {
+//
+// Independently of the file decoration, the error's message
+// gains a leading "in def NAME (called at L:C): " annotation
+// so a runtime error escaping a value-returning helper is no
+// longer ambiguous about which call site produced it -- a
+// helper reused across several lines of script used to render
+// only the body line. Decoration is suppressed when the error
+// already carries an inner def's annotation (the innermost
+// callDef has decorated first), so propagation preserves the
+// closest-to-the-failure call rather than over-attributing to
+// every wrapping caller.
+func decorateDefError(err error, def *DefValue, callLoc Pos) error {
+	if err == nil {
 		return err
 	}
 	var se *SyntaxError
 	if !errors.As(err, &se) {
 		return err
 	}
-	if se.File != "" {
-		return err
+	if def.RegFile != "" && se.File == "" {
+		se.File = def.RegFile
+		if def.RegStartLine > 0 {
+			shift := def.RegStartLine - 1
+			se.Span.Pos.Line += shift
+			if se.Span.End.Line > 0 {
+				se.Span.End.Line += shift
+			}
+		}
 	}
-	se.File = def.RegFile
-	if def.RegStartLine > 0 {
-		shift := def.RegStartLine - 1
-		se.Span.Pos.Line += shift
-		if se.Span.End.Line > 0 {
-			se.Span.End.Line += shift
+	// Annotate the message with the def name plus the caller's
+	// line:col. An inner annotation -- recognised by the
+	// "in def " prefix -- leaves the message alone so the
+	// innermost def wins the attribution.
+	if !strings.HasPrefix(se.Msg, "in def ") {
+		callLine := callLoc.Line
+		callCol := callLoc.Col
+		if callLine > 0 {
+			se.Msg = fmt.Sprintf("in def %s (called at %d:%d): %s", def.Name, callLine, callCol, se.Msg)
+		} else {
+			se.Msg = fmt.Sprintf("in def %s: %s", def.Name, se.Msg)
 		}
 	}
 	return err
