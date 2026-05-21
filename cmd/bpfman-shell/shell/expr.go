@@ -1145,15 +1145,30 @@ func runEventually(s *EventuallyStmt, env *Env) (eventuallyResult, error) {
 		result.attempts++
 		attemptCounter := env.Session.AssertFailures()
 		env.Session.EnterEventuallyAttempt()
+		// Manage the attempt's defer scope inline so the
+		// attempt-local defer-failure count is observable here.
+		// The shared WithDeferScope discards the count, which
+		// is fine for callers whose contract is the session-
+		// wide view; the SCOPE-DESIGN Section 3.4 contract for
+		// eventually is that an attempt-local defer failure is
+		// fatal to the construct, so we need the per-attempt
+		// number, not the session-wide one.
+		var attemptDeferFailures int
 		bodyErr := env.Session.WithFrame(func() error {
-			return WithDeferScope(env, func() error {
+			savedDefers := env.defers
+			var stack []deferEntry
+			env.defers = &stack
+			be := func() error {
 				for _, stmt := range s.Body {
 					if err := evalStmt(stmt, env); err != nil {
 						return err
 					}
 				}
 				return nil
-			})
+			}()
+			env.defers = savedDefers
+			attemptDeferFailures = runDefers(env, stack)
+			return be
 		})
 		env.Session.ExitEventuallyAttempt()
 		// Did this attempt record a new assert failure? Reset
@@ -1163,6 +1178,18 @@ func runEventually(s *EventuallyStmt, env *Env) (eventuallyResult, error) {
 		assertDelta := env.Session.AssertFailures() - attemptCounter
 		if assertDelta > 0 {
 			resetAssertCounter(env.Session, attemptCounter)
+		}
+		// Attempt-local cleanup failure is fatal: a defer
+		// registered during this attempt's body returned a
+		// non-ok envelope while unwinding. Retrying compounds
+		// leaks rather than reaching success, so halt
+		// immediately and propagate as a runtime error
+		// regardless of bind form. Note: only defers in this
+		// attempt's stack count; defer failures from nested
+		// helper calls invoked at command form are session-
+		// counter only and not attempt-local.
+		if attemptDeferFailures > 0 {
+			return eventuallyResult{}, spanErrorf(s.Span, "eventually: attempt-local defer failed during unwind (%d cleanup failure(s)); halting the construct", attemptDeferFailures)
 		}
 		// Success: no error and no new assertion failure.
 		if bodyErr == nil && assertDelta == 0 {

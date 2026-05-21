@@ -204,6 +204,46 @@ func TestEventually_BindForm_ReturnsResultOnOverallFailure(t *testing.T) {
 // The guard form must halt with GuardFailure when res.ok is
 // false, matching the ordinary command-bind family's guard
 // contract.
+// Regression: SCOPE-DESIGN.md Section 3.4 says "If an
+// attempt-local defer fails while unwinding, eventually
+// stops immediately and propagates that cleanup error as
+// fatal." Currently runEventually opens the attempt's
+// defer scope with WithDeferScope, which only records
+// defer failures on the session counter; the body error
+// (here, a returnSignal escaping the attempt) propagates
+// as-is and the attempt-local cleanup failure is silently
+// dropped. The eventually then reports a clean exit even
+// though one of its own defers failed.
+func TestEventually_AttemptDeferFailureIsFatal(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	env := eventuallyEnv(s,
+		func([]Arg, Span) (Value, error) { return Value{}, nil },
+		func(args []Arg, _ Span) (BindResult, error) {
+			// Simulate a defer'd command that fails. The
+			// recorder rc-fn pattern is used elsewhere; here
+			// any cleanup-named arg produces a non-ok envelope.
+			if len(args) > 0 {
+				if w, ok := args[0].(WordArg); ok && w.Text == "cleanup" {
+					return BindResult{Rc: Envelope{OK: false, Code: 1}}, nil
+				}
+			}
+			return BindResult{Rc: Envelope{OK: true}}, nil
+		},
+	)
+	env.RenderDeferFailure = func(Pos, []Arg, Envelope) {}
+	src := "eventually timeout 1s interval 1ms {\n" +
+		"  defer cleanup\n" +
+		"  assert true\n" +
+		"}\n" +
+		"let after = post-eventually\n"
+	err := runEventuallySrc(t, src, env)
+	require.Error(t, err, "attempt-local defer failure must be fatal to the construct")
+	_, ok := s.Get("after")
+	assert.False(t, ok, "post-eventually statement must not run after a fatal defer failure")
+}
+
 func TestEventually_BindForm_GuardHaltsOnOverallFailure(t *testing.T) {
 	t.Parallel()
 
