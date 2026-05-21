@@ -1,6 +1,8 @@
 package shell
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -282,4 +284,336 @@ outer
 	assert.Equal(t, []string{"before-outer"}, calls[0])
 	assert.Equal(t, []string{"before-inner"}, calls[1])
 	assert.Equal(t, []string{"after-outer"}, calls[2])
+}
+
+// Bind-position tests pin the value-returning contract: a def
+// callable on the right of '<-' publishes its return Value as the
+// primary, defer failures during return-unwind flip Rc.OK, and
+// the existing bind-target shapes (single name, tuple, guard,
+// discard) work uniformly across def-dispatch and ExecBind.
+
+// bindEnv builds an Env for tests that exercise the bind path:
+// the recorder captures every ExecBind call so a non-def-dispatch
+// fallback shows up as a recorded call, and ExecCommand is a
+// no-op so command-form invocations (the def's own call site) do
+// not interfere. The recorder's rc function lets a test mark
+// specific commands as failing -- used by the defer-failure
+// tests where a defer fires through ExecBind and must surface a
+// non-ok envelope.
+func bindEnv(r *recorder) *Env {
+	return &Env{
+		Session:     NewSession(),
+		ExecBind:    r.execBind,
+		ExecCommand: func([]Arg, Span) (Value, error) { return Value{}, nil },
+	}
+}
+
+func TestEvalProgram_Return_BindCarriesPrimary(t *testing.T) {
+	t.Parallel()
+	r := &recorder{}
+	env := bindEnv(r)
+	src := `
+def f() { return 7 }
+let v <- f
+seen $v
+`
+	require.NoError(t, runProgramWithEnv(t, src, env))
+	v, ok := env.Session.Get("v")
+	require.True(t, ok, "single-name bind must set v")
+	got, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "7", got)
+}
+
+func TestEvalProgram_Return_BindFromParameter(t *testing.T) {
+	t.Parallel()
+	r := &recorder{}
+	env := bindEnv(r)
+	src := `
+def echo(x) { return $x }
+let v <- echo "hello"
+`
+	require.NoError(t, runProgramWithEnv(t, src, env))
+	v, ok := env.Session.Get("v")
+	require.True(t, ok)
+	got, _ := v.Scalar()
+	assert.Equal(t, "hello", got)
+}
+
+func TestEvalProgram_Return_BindReturnsList(t *testing.T) {
+	t.Parallel()
+	r := &recorder{}
+	env := bindEnv(r)
+	src := `
+def triple() { return [1 2 3] }
+let xs <- triple
+`
+	require.NoError(t, runProgramWithEnv(t, src, env))
+	xs, ok := env.Session.Get("xs")
+	require.True(t, ok)
+	raw, ok := xs.Raw().([]any)
+	require.True(t, ok, "expected a list, got %T", xs.Raw())
+	assert.Len(t, raw, 3)
+}
+
+func TestEvalProgram_Return_BindIntoListThenDestructure(t *testing.T) {
+	t.Parallel()
+	// The documented two-value pattern: return a list, bind it,
+	// destructure into named slots. Pins the composition for the
+	// load_xdp-shaped helper called out in LANGUAGE-DIRECTION.md.
+	r := &recorder{}
+	env := bindEnv(r)
+	src := `
+def pair() { return [left right] }
+let p <- pair
+let (a b) = $p
+seen $a $b
+`
+	require.NoError(t, runProgramWithEnv(t, src, env))
+	a, _ := env.Session.Get("a")
+	b, _ := env.Session.Get("b")
+	ga, _ := a.Scalar()
+	gb, _ := b.Scalar()
+	assert.Equal(t, "left", ga)
+	assert.Equal(t, "right", gb)
+}
+
+func TestEvalProgram_Return_TupleBindSetsBothSlots(t *testing.T) {
+	t.Parallel()
+	r := &recorder{}
+	env := bindEnv(r)
+	src := `
+def f() { return "primary-value" }
+let (rc p) <- f
+`
+	require.NoError(t, runProgramWithEnv(t, src, env))
+	rc, ok := env.Session.Get("rc")
+	require.True(t, ok)
+	rawRc, ok := rc.Raw().(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, true, rawRc["ok"], "Rc.OK true for a clean return")
+	p, ok := env.Session.Get("p")
+	require.True(t, ok)
+	gp, err := p.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "primary-value", gp)
+}
+
+func TestEvalProgram_Return_GuardOnSuccessBindsAndContinues(t *testing.T) {
+	t.Parallel()
+	r := &recorder{}
+	env := bindEnv(r)
+	src := `
+def f() { return 1 }
+guard v <- f
+after $v
+`
+	require.NoError(t, runProgramWithEnv(t, src, env))
+	v, ok := env.Session.Get("v")
+	require.True(t, ok, "guard must bind on success")
+	got, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "1", got)
+}
+
+func TestEvalProgram_Return_NoReturnBindsEnvelope(t *testing.T) {
+	t.Parallel()
+	// A def with no `return` in bind position yields the
+	// envelope-mirror as the primary, matching no-payload
+	// providers (exec, bpftool, wait). The primary's .ok
+	// resolves to true on a clean run.
+	r := &recorder{}
+	env := bindEnv(r)
+	src := `
+def f() { do-something }
+let v <- f
+`
+	require.NoError(t, runProgramWithEnv(t, src, env))
+	v, ok := env.Session.Get("v")
+	require.True(t, ok)
+	raw, ok := v.Raw().(map[string]any)
+	require.True(t, ok, "no-return def's primary must be an envelope-shaped map")
+	assert.Equal(t, true, raw["ok"])
+}
+
+func TestEvalProgram_Return_DiscardUnderscorePrimary(t *testing.T) {
+	t.Parallel()
+	r := &recorder{}
+	env := bindEnv(r)
+	src := `
+def f() { return 42 }
+let _ <- f
+`
+	require.NoError(t, runProgramWithEnv(t, src, env))
+	_, ok := env.Session.Get("_")
+	assert.False(t, ok, "_ must not establish a binding")
+}
+
+func TestEvalProgram_Return_DeferFailureFlipsRcOk(t *testing.T) {
+	t.Parallel()
+	// A defer that fires inside the def body and returns non-ok
+	// must flip the bind-position Rc.OK to false even though
+	// `return EXPR` itself evaluated cleanly. The Primary
+	// remains the returned Value -- the single-name bind family
+	// discards the envelope, so the script sees the value; the
+	// tuple bind sees ok:false on rc.
+	r := &recorder{rc: func(args []Arg) Envelope {
+		if len(args) > 0 {
+			if w, ok := args[0].(WordArg); ok && w.Text == "cleanup" {
+				return Envelope{OK: false, Code: 1}
+			}
+		}
+		return Envelope{OK: true}
+	}}
+	env := bindEnv(r)
+	// RenderDeferFailure is required so the defer dispatcher
+	// counts the failure on the session; without it the run
+	// short-circuits before incrementing the counter and the
+	// flip never happens.
+	env.RenderDeferFailure = func(Pos, []Arg, Envelope) {}
+	src := `
+def f() {
+  defer cleanup "kaboom"
+  return 1
+}
+let (rc p) <- f
+`
+	require.NoError(t, runProgramWithEnv(t, src, env))
+	rc, ok := env.Session.Get("rc")
+	require.True(t, ok)
+	rawRc, ok := rc.Raw().(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, false, rawRc["ok"], "defer failure during return unwind must flip rc.ok")
+	p, _ := env.Session.Get("p")
+	gp, err := p.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "1", gp, "primary still carries the returned value")
+}
+
+func TestEvalProgram_Return_GuardHaltsOnDeferFailure(t *testing.T) {
+	t.Parallel()
+	// A guard form sees rc.ok=false from the defer flip and
+	// halts via GuardFailure before any post-call statement
+	// runs.
+	r := &recorder{rc: func(args []Arg) Envelope {
+		if len(args) > 0 {
+			if w, ok := args[0].(WordArg); ok && w.Text == "cleanup" {
+				return Envelope{OK: false, Code: 1}
+			}
+		}
+		return Envelope{OK: true}
+	}}
+	env := bindEnv(r)
+	env.RenderDeferFailure = func(Pos, []Arg, Envelope) {}
+	src := `
+def f() {
+  defer cleanup
+  return 1
+}
+guard p <- f
+after $p
+`
+	prog := parseProgram(t, src)
+	err := EvalProgram(prog, env)
+	require.Error(t, err)
+	var gf *GuardFailure
+	require.True(t, errors.As(err, &gf), "expected GuardFailure, got %T: %v", err, err)
+	assert.False(t, gf.Envelope.OK)
+}
+
+func TestEvalProgram_Return_RecursiveValueReturn(t *testing.T) {
+	t.Parallel()
+	// Recursion through value-returning defs: each call gets
+	// its own frame and its own returnSignal. The outer call's
+	// `let v <- inner` routes through callDefAsBind, the inner
+	// call's `return` raises a separate returnSignal that the
+	// inner callDefAsBind catches, and the bound value crosses
+	// the call boundary intact for the outer to publish.
+	//
+	// Numeric recursion (sum_to N) would force the test to deal
+	// with the language's command-arg stringification rule --
+	// arguments lose their numeric Kind at the call boundary, by
+	// design. String equality lets the test stay focused on the
+	// recursion contract.
+	r := &recorder{}
+	env := bindEnv(r)
+	src := `
+def chain(depth) {
+  if $depth == "stop" {
+    return "base"
+  }
+  let next <- chain stop
+  return "wrap:${next}"
+}
+let v <- chain go
+`
+	require.NoError(t, runProgramWithEnv(t, src, env))
+	v, ok := env.Session.Get("v")
+	require.True(t, ok)
+	got, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "wrap:base", got)
+}
+
+func TestEvalProgram_Return_BindFatalErrorPropagates(t *testing.T) {
+	t.Parallel()
+	// A body error unrelated to return -- here, an unbound
+	// variable inside the return expression -- escapes
+	// callDefAsBind as a Go error; the bind path frames it and
+	// no binding happens.
+	r := &recorder{}
+	env := bindEnv(r)
+	src := `
+def f() {
+  return $missing
+}
+let v <- f
+`
+	prog := parseProgram(t, src)
+	err := EvalProgram(prog, env)
+	require.Error(t, err)
+	_, hasV := env.Session.Get("v")
+	assert.False(t, hasV, "no binding when the def body errors")
+}
+
+func TestEvalProgram_Return_BindCollectFromDefProducer(t *testing.T) {
+	t.Parallel()
+	// A def callable in bind position is also a valid
+	// bind-collect producer. Each iteration calls the def, the
+	// primary accumulates into the bound list.
+	r := &recorder{}
+	env := bindEnv(r)
+	src := `
+def square(x) { return $x * $x }
+guard squares <- foreach n in [1 2 3 4] {
+  square $n
+}
+`
+	require.NoError(t, runProgramWithEnv(t, src, env))
+	xs, ok := env.Session.Get("squares")
+	require.True(t, ok)
+	raw, ok := xs.Raw().([]any)
+	require.True(t, ok, "expected list, got %T", xs.Raw())
+	require.Len(t, raw, 4)
+	// Each element is a string of the squared integer.
+	gotSquares := make([]string, len(raw))
+	for i, el := range raw {
+		gotSquares[i] = elementText(el)
+	}
+	assert.Equal(t, []string{"1", "4", "9", "16"}, gotSquares)
+}
+
+// elementText extracts a stringy view of a list element for
+// assertion purposes. The bind-collect path stores .Raw() of each
+// element; scalars come through as their underlying type so we
+// normalise via fmt.Sprint for the test.
+func elementText(v any) string {
+	switch x := v.(type) {
+	case string:
+		return x
+	default:
+		// fall through to a string form; json.Number and ints
+		// both render via Sprint without quoting.
+		return fmt.Sprint(x)
+	}
 }

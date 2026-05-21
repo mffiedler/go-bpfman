@@ -605,8 +605,66 @@ func evalDefStmt(s *DefStmt, env *Env) error {
 // the closure. If lexical capture becomes a need, that is a
 // separate design.
 func callDef(def *DefValue, args []Arg, callLoc Pos, env *Env) error {
+	_, _, err := runDefCall(def, args, callLoc, env)
+	if err != nil {
+		return decorateDefError(err, def)
+	}
+	// A `return EXPR` inside the body short-circuits the body
+	// loop via returnSignal. At command-form position the value
+	// is discarded; the early exit itself is the only observable
+	// effect. callDefAsBind handles the bind-position case and
+	// keeps the Value.
+	return nil
+}
+
+// callDefAsBind runs def in bind position and packages the
+// outcome as a BindResult. The body's `return EXPR` becomes
+// Primary; a body that runs to completion without `return`
+// produces Primary = ValueFromEnvelope(Rc), matching the
+// no-payload command-bind family (exec, bpftool, wait). The Rc
+// is OK by default; a defer failure during body unwind flips
+// Rc.OK to false so a `guard p <- f` halts and a tuple bind
+// `let (rc p) <- f` lets the caller see the cleanup outcome.
+// The defer-failure observation uses Session.DeferFailures()
+// before-and-after, which matches how RenderDeferFailure
+// surfaces individual failures: each defer's failure is
+// rendered separately AND collected here, so nothing double-
+// counts and the caller still sees a single boolean for the
+// envelope.
+//
+// A non-return error from the body (unbound variable, type
+// error, guard halt inside the body, parse error from a
+// dynamic source, etc.) propagates as a Go error; the bind
+// path then frames it and the calling script halts. No
+// bindings happen in that case.
+func callDefAsBind(def *DefValue, args []Arg, callLoc Pos, env *Env) (BindResult, error) {
+	deferFailuresBefore := env.Session.DeferFailures()
+	returned, hasReturn, err := runDefCall(def, args, callLoc, env)
+	if err != nil {
+		return BindResult{}, decorateDefError(err, def)
+	}
+	rc := Envelope{OK: true}
+	if env.Session.DeferFailures() > deferFailuresBefore {
+		rc.OK = false
+	}
+	primary := returned
+	if !hasReturn {
+		primary = ValueFromEnvelope(rc)
+	}
+	return BindResult{Rc: rc, Primary: primary}, nil
+}
+
+// runDefCall is the shared body of callDef and callDefAsBind. It
+// checks arity, opens a fresh session frame, binds parameters,
+// opens a fresh defer scope, runs the body, and translates a
+// returnSignal escape into (Value, hasReturn=true, nil). A
+// non-return error escapes as (zero, false, err) so the caller
+// decides whether to frame/decorate it. Defer unwinding happens
+// inside runWithDeferScope, before the frame pop, matching the
+// spec's order: return value -> stash -> defers -> frame pop.
+func runDefCall(def *DefValue, args []Arg, callLoc Pos, env *Env) (Value, bool, error) {
 	if len(args) != len(def.Params) {
-		return locErrorf(callLoc, "%s: expected %d argument(s), got %d (def declared at %d:%d)",
+		return Value{}, false, locErrorf(callLoc, "%s: expected %d argument(s), got %d (def declared at %d:%d)",
 			def.Name, len(def.Params), len(args), def.Pos.Line, def.Pos.Col)
 	}
 	err := env.Session.WithFrame(func() error {
@@ -622,16 +680,14 @@ func callDef(def *DefValue, args []Arg, callLoc Pos, env *Env) error {
 			return nil
 		})
 	})
-	// A `return EXPR` inside the body short-circuits the body
-	// loop via returnSignal. At command-form position the value
-	// is discarded; the early exit itself is the only observable
-	// effect. The bind-position path callDefAsBind catches the
-	// signal separately and keeps the Value.
+	if err == nil {
+		return Value{}, false, nil
+	}
 	var ret *returnSignal
 	if errors.As(err, &ret) {
-		return nil
+		return ret.Value, true, nil
 	}
-	return decorateDefError(err, def)
+	return Value{}, false, err
 }
 
 // decorateDefError attaches the def's registration site (file
@@ -1329,10 +1385,45 @@ func evalBindStmt(s *BindStmt, env *Env) error {
 		header := bindTraceHeader(s)
 		env.Trace(s.Span.Pos.Line, fmt.Sprintf("%s <- %s", header, renderArgvTrace(args)))
 	}
+	// Def dispatch precedes ExecBind: a def-named head must not
+	// reach the external dispatch path, which would otherwise
+	// either find a same-named builtin or try to exec the def
+	// name as a subprocess. The same precedence applies at
+	// command-statement position (see evalCommandStmt).
+	if def, ok := lookupDefHead(args, env); ok {
+		result, err := callDefAsBind(def, args[1:], s.Cmd.Span.Pos, env)
+		if err != nil {
+			return frameAtSpan(s.Span, err)
+		}
+		return applyBindResult(s, args, result, env)
+	}
 	result, err := env.ExecBind(args, s.Span)
 	if err != nil {
 		return frameAtSpan(s.Span, err)
 	}
+	return applyBindResult(s, args, result, env)
+}
+
+// lookupDefHead returns the def value when args[0] names a
+// registered def. Used by every bind-dispatch path so the def
+// lookup happens uniformly before ExecBind sees the args.
+func lookupDefHead(args []Arg, env *Env) (*DefValue, bool) {
+	if len(args) == 0 {
+		return nil, false
+	}
+	name, ok := commandHeadName(args[0])
+	if !ok {
+		return nil, false
+	}
+	return env.Session.GetDef(name)
+}
+
+// applyBindResult installs result into the BindStmt's named slots
+// or halts via GuardFailure on a non-ok envelope under the guard
+// form. Shared between the def-dispatch and ExecBind paths so the
+// caller-visible binding semantics stay identical no matter how
+// the BindResult was produced.
+func applyBindResult(s *BindStmt, args []Arg, result BindResult, env *Env) error {
 	if s.Guard && !result.Rc.OK {
 		return &GuardFailure{Span: s.Span, Primary: s.Primary, Args: args, Envelope: result.Rc}
 	}
@@ -1414,9 +1505,17 @@ iter:
 				header := bindTraceHeader(s)
 				env.Trace(producer.Span.Pos.Line, fmt.Sprintf("%s <- %s", header, renderArgvTrace(args)))
 			}
-			result, err := env.ExecBind(args, producer.Span)
-			if err != nil {
-				return frameAtSpan(producer.Span, err)
+			var result BindResult
+			if def, ok := lookupDefHead(args, env); ok {
+				result, err = callDefAsBind(def, args[1:], producer.Span.Pos, env)
+				if err != nil {
+					return frameAtSpan(producer.Span, err)
+				}
+			} else {
+				result, err = env.ExecBind(args, producer.Span)
+				if err != nil {
+					return frameAtSpan(producer.Span, err)
+				}
 			}
 			if s.Guard && !result.Rc.OK {
 				return &GuardFailure{Span: producer.Span, Primary: s.Primary, Args: args, Envelope: result.Rc}
