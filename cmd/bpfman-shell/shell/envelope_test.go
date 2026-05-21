@@ -9,7 +9,7 @@ import (
 
 // The canonical constructors pin the bind-family invariant:
 // OK=true never carries a non-zero Code, and OK=false never
-// carries Code=0. Every dispatch site that synthesizes an
+// carries Code=0. Every dispatch site that synthesises an
 // envelope from scratch routes through these helpers so the
 // invariant cannot drift across call sites.
 func TestOkEnvelope_HasOKTrueAndZeroCode(t *testing.T) {
