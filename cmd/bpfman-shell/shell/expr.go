@@ -1621,24 +1621,9 @@ func evalBindStmt(s *BindStmt, env *Env) error {
 }
 
 // lookupDefHead returns the def value when args[0] names a
-// registered def, either directly or via a single-word alias.
-// Used by every bind-dispatch path so the def lookup happens
-// uniformly before ExecBind sees the args.
-//
-// Alias resolution: the driver-side ApplyAlias rewrites the
-// args vector when it runs (replacing args[0] with the
-// expansion's tokens), but the shell layer's def precedence
-// has to fire BEFORE ApplyAlias, otherwise an aliased def name
-// slips past def lookup and lands in the external-subprocess
-// fallback. To keep the dispatch precedence honest, look the
-// head up directly, then -- on a miss -- check whether the name
-// is an alias whose expansion is a single bare word and try
-// that name against the def table. Multi-word aliases ("alias
-// mylist = bpfman program list") fall through to ExecBind,
-// which does the full ApplyAlias and routes the resulting
-// multi-token command to its proper handler; defs cannot
-// usefully shadow multi-word aliases because the trailing
-// expansion tokens have nowhere to bind as parameters.
+// registered def. Used by every dispatch path so the def
+// lookup happens uniformly before the external dispatch
+// fallback sees the args.
 func lookupDefHead(args []Arg, env *Env) (*DefValue, bool) {
 	if len(args) == 0 {
 		return nil, false
@@ -1647,35 +1632,7 @@ func lookupDefHead(args []Arg, env *Env) (*DefValue, bool) {
 	if !ok {
 		return nil, false
 	}
-	if d, ok := env.Session.GetDef(name); ok {
-		return d, true
-	}
-	expansion, ok := env.Session.GetAlias(name)
-	if !ok {
-		return nil, false
-	}
-	resolved, ok := singleWord(expansion)
-	if !ok {
-		return nil, false
-	}
-	return env.Session.GetDef(resolved)
-}
-
-// singleWord reports whether s is a single bare word (no
-// internal whitespace, no quotes, no metacharacters that the
-// shell tokeniser would split). The empty string and any
-// string containing whitespace returns ("", false). Used by
-// lookupDefHead to decide whether an alias expansion is
-// simple enough for direct def-table resolution.
-func singleWord(s string) (string, bool) {
-	trimmed := strings.TrimSpace(s)
-	if trimmed == "" {
-		return "", false
-	}
-	if strings.ContainsAny(trimmed, " \t\n\r;|<>&\"'$#") {
-		return "", false
-	}
-	return trimmed, true
+	return env.Session.GetDef(name)
 }
 
 // applyBindResult installs result into the BindStmt's named slots
@@ -2002,18 +1959,9 @@ func evalCommandStmt(s *CommandStmt, env *Env) error {
 		env.Trace(s.Span.Pos.Line, renderArgvTrace(args))
 	}
 	// Route through the shared lookupDefHead helper so the
-	// def-vs-alias resolution rule is uniform across every
-	// dispatch site (bind-statement, bind-collect producer,
-	// defer, and command-statement). The inline raw-name
-	// lookup that used to live here missed single-word
-	// aliases pointing at defs, so an alias-resolved name at
-	// command position fell through to ExecCommand and
-	// emitted an "unknown command" diagnostic for what was
-	// actually a registered def. lookupDefHead alias-expands
-	// before consulting the def table; multi-word aliases
-	// (which need the driver's full ApplyAlias to rewrite
-	// the args vector) intentionally fall through to
-	// ExecCommand.
+	// def lookup is uniform across every dispatch site
+	// (bind-statement, bind-collect producer, defer, and
+	// command-statement).
 	if def, ok := lookupDefHead(args, env); ok {
 		return callDef(def, args[1:], s.Pos, env)
 	}

@@ -737,48 +737,6 @@ print $data.x.y.z`
 	assert.Empty(t, issues)
 }
 
-func TestCheck_AliasExpansionInBindKindInference(t *testing.T) {
-	t.Parallel()
-
-	// 'alias s = start' is a runtime alias the checker
-	// mirrors at static-check time. After the alias, 'let p
-	// <- s sleep 5' must infer the same OriginJob shape it
-	// would for the un-aliased 'let p <- start sleep 5'
-	// form, so a typo on the Job's only sealed field (pid)
-	// is caught. The test uses 'start' rather than 'bpfman'
-	// because Job is registered by the shell package itself
-	// while OriginProgram only registers when cmd/bpfman-shell
-	// is linked.
-	src := `alias s = start
-let p <- s sleep 5
-print $p.pidd
-kill $p`
-	issues := checkSource(t, src)
-	require.Len(t, issues, 1)
-	assert.Contains(t, issues[0].Msg, "p has kind job")
-	assert.Contains(t, issues[0].Msg, `"pidd"`)
-}
-
-func TestCheck_UnaliasReinstatesUnknownShape(t *testing.T) {
-	t.Parallel()
-
-	// With 'unalias s' between the alias and the bind, the
-	// bind does not see the alias expansion: the inferred
-	// shape falls back to the external-command result
-	// default, and $p.pidd is not flagged as a Job field
-	// typo. This matches runtime behaviour: 's' is also not
-	// expanded once unaliased.
-	src := `alias s = start
-unalias s
-let p <- s sleep 5
-print $p.pidd`
-	issues := checkSource(t, src)
-	for _, iss := range issues {
-		assert.NotContains(t, iss.Msg, "p has kind job",
-			"after unalias, s is not start; kind inference must not produce job")
-	}
-}
-
 func TestCheck_ForEachScopeRestoresShape(t *testing.T) {
 	t.Parallel()
 

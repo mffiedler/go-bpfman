@@ -74,14 +74,10 @@ func Check(prog *Program) []Issue {
 // duration of its body. Each checkFrame holds the per-variable
 // shape and the verbatim RHS LiteralExpr for variables bound to a
 // single literal, so type checks (notably arithmetic-operand
-// validation) can inspect the original expression. Aliases are
-// session-level and live outside the frame stack: `alias` /
-// `unalias` are explicit user actions, not implicit by entering a
-// block.
+// validation) can inspect the original expression.
 type checker struct {
-	frames  []checkFrame
-	aliases map[string]string
-	issues  []Issue
+	frames []checkFrame
+	issues []Issue
 	// defDepth counts the def bodies currently being walked. A
 	// ReturnStmt is only valid when defDepth > 0. The depth is
 	// non-zero inside nested blocks (if, foreach, eventually)
@@ -155,7 +151,6 @@ type checkFrame struct {
 func newChecker() *checker {
 	return &checker{
 		frames:          []checkFrame{newCheckFrame()},
-		aliases:         map[string]string{},
 		defs:            map[string]bool{},
 		defHasReturn:    map[string]bool{},
 		conditionalDefs: map[string]bool{},
@@ -359,15 +354,7 @@ func (c *checker) inferBindShape(cmd *CommandStmt) Shape {
 	if !ok || first.Quoted {
 		return Shape{Sealed: false, Kind: OriginUnknown}
 	}
-	// Mirror the runtime's first-arg alias expansion (see
-	// applyAlias in cmd/bpfman-shell/session.go) so an aliased
-	// 'b program load file' resolves to bpfman's typed Program
-	// shape rather than falling through to the external-command
-	// result default.
 	headText := first.Text
-	if expanded, ok := c.aliases[headText]; ok {
-		headText = expanded
-	}
 	if fn, ok := LookupBindShape(headText); ok {
 		return fn(cmd.Args[1:])
 	}
@@ -381,10 +368,10 @@ func (c *checker) inferBindShape(cmd *CommandStmt) Shape {
 }
 
 // bindHeadPureBuiltin reports whether cmd's first word is a
-// registered pure builtin (after alias expansion). The hint
-// emitted by walkStmt cites the resolved name so a user reading
-// the diagnostic sees the same spelling the registry would.
-func bindHeadPureBuiltin(cmd *CommandStmt, aliases map[string]string) (string, bool) {
+// registered pure builtin. The hint emitted by walkStmt cites
+// the resolved name so a user reading the diagnostic sees the
+// same spelling the registry would.
+func bindHeadPureBuiltin(cmd *CommandStmt) (string, bool) {
 	if cmd == nil || len(cmd.Args) == 0 {
 		return "", false
 	}
@@ -392,12 +379,8 @@ func bindHeadPureBuiltin(cmd *CommandStmt, aliases map[string]string) (string, b
 	if !ok || first.Quoted {
 		return "", false
 	}
-	head := first.Text
-	if expanded, ok := aliases[head]; ok {
-		head = expanded
-	}
-	if _, ok := LookupPureBuiltin(head); ok {
-		return head, true
+	if _, ok := LookupPureBuiltin(first.Text); ok {
+		return first.Text, true
 	}
 	return "", false
 }
@@ -505,9 +488,6 @@ func (c *checker) diagnoseUnknownHead(cmd *CommandStmt, role string, suggestTypo
 	// dispatch path: a top-level def, a bind-shape registry
 	// entry (bpfman, start, exec, etc.), or a pure builtin.
 	head := first.Text
-	if expanded, ok := c.aliases[head]; ok {
-		head = expanded
-	}
 	if c.defs[head] {
 		return
 	}
@@ -541,16 +521,15 @@ func (c *checker) diagnoseUnknownHead(cmd *CommandStmt, role string, suggestTypo
 }
 
 // bindHeadDef reports whether cmd's first word names a def
-// registered earlier in the walk. Aliases expand first because
-// the runtime's first-arg alias expansion runs before def
-// lookup. A matching def name takes precedence over both the
-// pure-builtin rejection and the bind-shape registry: the
-// def's `return EXPR` value is dynamic at preflight, so the
-// primary slot binds with an open shape rather than the
-// envelope fallback that mis-shapes def-bound primaries as
-// commands' result envelopes.
+// registered earlier in the walk. A matching def name takes
+// precedence over both the pure-builtin rejection and the
+// bind-shape registry: the def's `return EXPR` value is
+// dynamic at preflight, so the primary slot binds with an
+// open shape rather than the envelope fallback that
+// mis-shapes def-bound primaries as commands' result
+// envelopes.
 func (c *checker) bindHeadDef(cmd *CommandStmt) bool {
-	name := bindHeadDefName(cmd, c.aliases)
+	name := bindHeadDefName(cmd)
 	if name == "" {
 		return false
 	}
@@ -559,11 +538,9 @@ func (c *checker) bindHeadDef(cmd *CommandStmt) bool {
 
 // bindHeadDefName is the name-returning sibling of bindHeadDef.
 // An empty string means "not a known def head"; a non-empty
-// string is the alias-resolved def name used for follow-on
-// lookups (e.g. defHasReturn). Sharing one helper keeps the
-// "alias expansion then def-table check" precedence in one
-// place.
-func bindHeadDefName(cmd *CommandStmt, aliases map[string]string) string {
+// string is the head used for follow-on lookups (e.g.
+// defHasReturn).
+func bindHeadDefName(cmd *CommandStmt) string {
 	if cmd == nil || len(cmd.Args) == 0 {
 		return ""
 	}
@@ -572,9 +549,6 @@ func bindHeadDefName(cmd *CommandStmt, aliases map[string]string) string {
 		return ""
 	}
 	head := first.Text
-	if expanded, ok := aliases[head]; ok {
-		head = expanded
-	}
 	return head
 }
 
@@ -669,7 +643,7 @@ func (c *checker) walkStmt(s Stmt) {
 			// bind would discard) has nothing to carry. The '='
 			// form is the only correct call shape in binding
 			// position.
-			if name, ok := bindHeadPureBuiltin(n.Cmd, c.aliases); ok {
+			if name, ok := bindHeadPureBuiltin(n.Cmd); ok {
 				c.addIssue(n.Cmd.Span, "%s is a pure builtin; use 'let %s = %s ...' rather than '<-' (no result envelope is produced)", name, primaryNameForHint(n), name)
 			} else {
 				// Typo-against-defs hint. An unknown bind head
@@ -697,7 +671,7 @@ func (c *checker) walkStmt(s Stmt) {
 		if n.Collect != nil && n.Rc != "" && n.Rc != "_" && len(n.Collect.Body) > 0 {
 			if last, ok := n.Collect.Body[len(n.Collect.Body)-1].(*CommandStmt); ok {
 				if !c.bindHeadDef(last) {
-					if name, ok := bindHeadPureBuiltin(last, c.aliases); ok {
+					if name, ok := bindHeadPureBuiltin(last); ok {
 						c.addIssue(last.Span, "%s is a pure builtin; tuple bind '(%s, %s)' is invalid in bind-collect because pure builtins produce no rc envelope; use single-bind 'let %s <- foreach ... { %s ... }' instead", name, n.Rc, primaryNameForHint(n), primaryNameForHint(n), name)
 					}
 				}
@@ -735,7 +709,7 @@ func (c *checker) walkStmt(s Stmt) {
 		// found" later.
 		var primaryShape Shape
 		if headIsDef {
-			headName := bindHeadDefName(n.Cmd, c.aliases)
+			headName := bindHeadDefName(n.Cmd)
 			if c.defHasReturn[headName] {
 				primaryShape = Shape{Sealed: false, Kind: OriginUnknown}
 			} else {
@@ -907,7 +881,6 @@ func (c *checker) walkStmt(s Stmt) {
 		c.checkExpr(n.Expr)
 
 	case *CommandStmt:
-		c.recordAlias(n)
 		// `assert present $X.field` and `assert missing $X.field`
 		// (and the `require` forms) test for the presence /
 		// absence of a path in the value tree. The path is
@@ -984,48 +957,6 @@ func (c *checker) shapeProbeOperandIndex(n *CommandStmt) int {
 		}
 	}
 	return -1
-}
-
-// recordAlias detects an `alias NAME = VALUE` command and
-// records the mapping so subsequent bind-RHS inference can see
-// through aliases. The runtime expands aliases at the first-arg
-// boundary (applyAlias in cmd/bpfman-shell); the checker mirrors
-// that expansion at static-check time so a script that aliases
-// 'b = bpfman' and writes 'guard p <- b program get $pid' gets
-// the same OriginProgram inference it would with the alias
-// expanded inline. 'unalias NAME' removes the mapping.
-//
-// The grammar is the same one cmd/bpfman-shell/session.go's
-// replAlias enforces: 'alias NAME = VALUE' with exactly four
-// argument slots and a literal '=' in slot two. Anything else
-// is left to the runtime checks; recordAlias is best-effort.
-func (c *checker) recordAlias(n *CommandStmt) {
-	if len(n.Args) == 0 {
-		return
-	}
-	head, ok := n.Args[0].(*LiteralExpr)
-	if !ok {
-		return
-	}
-	switch head.Text {
-	case "alias":
-		if len(n.Args) != 4 {
-			return
-		}
-		name, nameOK := n.Args[1].(*LiteralExpr)
-		eq, eqOK := n.Args[2].(*LiteralExpr)
-		val, valOK := n.Args[3].(*LiteralExpr)
-		if !nameOK || !eqOK || !valOK || eq.Text != "=" {
-			return
-		}
-		c.aliases[name.Text] = val.Text
-	case "unalias":
-		for _, a := range n.Args[1:] {
-			if lit, ok := a.(*LiteralExpr); ok {
-				delete(c.aliases, lit.Text)
-			}
-		}
-	}
 }
 
 // checkExpr scans an expression subtree for VarRef usages
