@@ -697,6 +697,57 @@ func TestCheck_Return_NestedDefBodiesEachOwnContext(t *testing.T) {
 	assert.Empty(t, issues, "both returns are inside a def")
 }
 
+// Regression: a `defer my_def` statement must route through the
+// def's body, not through env.ExecBind's external-dispatch
+// fallback. The bind-statement path already does the def
+// lookup ahead of ExecBind; the defer path missed the same
+// precedence and so a `defer cleanup` against a user-defined
+// `def cleanup` tried to exec a subprocess named `cleanup`.
+//
+// The recorder's ExecBind records every call it receives, so a
+// successful def dispatch must leave no defer-side recording
+// for the def name itself: the def's body runs via callDefAsBind
+// internally, and any commands the body invokes route through
+// ExecCommand at command position. The probe runs a def whose
+// body calls a wrapped sentinel command so the test can
+// distinguish "def dispatched through callDef" (sentinel
+// captured via ExecCommand) from "exec attempted on the def
+// name" (defer recorded an exec of "cleanup").
+func TestEvalProgram_Return_DeferDispatchesDef(t *testing.T) {
+	t.Parallel()
+	r := &recorder{}
+	var commandCalls []string
+	env := &Env{
+		Session:  NewSession(),
+		ExecBind: r.execBind,
+		ExecCommand: func(args []Arg, _ Span) (Value, error) {
+			if len(args) > 0 {
+				if w, ok := args[0].(WordArg); ok {
+					commandCalls = append(commandCalls, w.Text)
+				}
+			}
+			return Value{}, nil
+		},
+	}
+	src := `
+def cleanup() {
+  marker
+}
+defer cleanup
+print "main"
+`
+	require.NoError(t, runProgramWithEnv(t, src, env))
+	// The def's body called marker at command position, so it
+	// shows up via ExecCommand. The def name itself must not
+	// have been seen by ExecBind as a top-level dispatch.
+	assert.Contains(t, commandCalls, "marker", "def body must run when the defer fires")
+	for _, c := range r.calls {
+		if w, ok := c.args[0].(WordArg); ok && w.Text == "cleanup" {
+			t.Fatalf("defer dispatched the def name to ExecBind; def should resolve before external dispatch")
+		}
+	}
+}
+
 // Regression: the static checker must treat a def call on the
 // right of '<-' as an open-shape source (the def's return value
 // is dynamic), not as a result envelope. The Envelope shape is

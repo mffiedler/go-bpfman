@@ -1250,7 +1250,22 @@ func runDefers(env *Env, stack []deferEntry) int {
 		if traceFn != nil {
 			traceFn(entry.Pos.Line, "defer fire: "+renderArgvTrace(entry.Args))
 		}
-		result, err := env.ExecBind(entry.Args, entry.Span)
+		// Def dispatch precedes ExecBind for the same reason
+		// it precedes ExecBind at the bind-statement and
+		// command-statement positions: a def-named head must
+		// resolve through callDefAsBind, not through the
+		// external-subprocess fallback. Without this, a
+		// `defer cleanup` against a user-defined cleanup helper
+		// tried to exec a subprocess named "cleanup". The dispatch
+		// returns a BindResult so the existing failure rendering
+		// and counter accounting below stay verbatim.
+		var result BindResult
+		var err error
+		if def, ok := lookupDefHead(entry.Args, env); ok {
+			result, err = callDefAsBind(def, entry.Args[1:], entry.Pos, env)
+		} else {
+			result, err = env.ExecBind(entry.Args, entry.Span)
+		}
 		if err != nil {
 			rc := Envelope{OK: false, Code: 1, Stderr: err.Error()}
 			if env.RenderDeferFailure != nil {
