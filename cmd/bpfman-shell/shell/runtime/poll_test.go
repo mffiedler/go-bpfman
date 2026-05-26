@@ -4,6 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
 )
 
@@ -67,6 +70,58 @@ print after
 	if !strings.Contains(err.Error(), "require failed: false") {
 		t.Fatalf("unexpected error: %v", err)
 	}
+}
+
+func TestPoll_HelperRetryFailedDeferIsFatal(t *testing.T) {
+	t.Parallel()
+
+	// A helper def invoked from a poll body that itself runs
+	// `retry` must be treated as part of the enclosing attempt:
+	// if a defer registered in the helper fails during the
+	// retry-time unwind, the attempt cannot make forward
+	// progress, so the poll must halt rather than spin to the
+	// timeout while the same cleanup keeps failing each round.
+	//
+	// The retry sequence in a helper emits RunDefersAttemptFatal,
+	// the same policy the lexical poll body uses, but the
+	// helper runs on its own executor where ex.polls is empty.
+	// Without a fix the executor's "fatal cleanup" branch (gated
+	// on len(ex.polls) > 0) is skipped, the failure is dropped,
+	// the helper signals retry to the caller, and the poll
+	// burns its budget. The discriminator is the error string:
+	// the bug returns "poll timed out"; the fix returns the
+	// attempt-local defer diagnostic immediately.
+	src := `
+def helper() {
+  defer cleanup
+  retry "always"
+}
+poll timeout 50ms every 1ms {
+  helper
+}
+`
+	r := &recorder{
+		rc: func(args []Arg) Envelope {
+			if argText0(recordedCall{args: args}) == "cleanup" {
+				return Envelope{OK: false, Code: 2, Stderr: "broken"}
+			}
+			return Envelope{OK: true}
+		},
+	}
+	env := &Env{
+		Session:  NewSession(),
+		ExecBind: r.execBind,
+		ExecCommand: func(args []Arg, _ source.Span) (Value, error) {
+			return Value{}, nil
+		},
+	}
+
+	err := runProgramWithEnv(t, src, env)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "defer failed",
+		"helper defer failure must surface as a fatal cleanup diagnostic, got %q", err.Error())
+	assert.NotContains(t, err.Error(), "poll timed out",
+		"helper defer failure must halt the poll immediately, not let it spin to the timeout")
 }
 
 func TestPoll_TimeoutUsesRetryMessage(t *testing.T) {

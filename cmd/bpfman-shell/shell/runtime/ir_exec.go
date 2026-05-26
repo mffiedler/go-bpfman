@@ -478,12 +478,26 @@ func (ex *executor) execInstr(ins ir.Instr) (*ir.BasicBlock, bool, error) {
 		// Attempt-local cleanup failure is fatal to the enclosing
 		// poll: a defer registered during an attempt body returned
 		// a non-ok envelope while unwinding, and retrying compounds
-		// leaks rather than reaching success.
-		if v.Policy == ir.RunDefersAttemptFatal && failed > 0 && len(ex.polls) > 0 {
-			top := ex.polls[len(ex.polls)-1]
-			top.Failed = true
-			traceNote(ex.env, top.Span, "poll fatal")
-			return nil, false, syntax.SpanErrorf(top.Span, "poll: attempt-local defer failed during unwind (%d cleanup failure(s)); halting the construct", failed)
+		// leaks rather than reaching success. The lexical case
+		// finds the poll on this executor's stack; the helper
+		// case runs on its own executor (ex.polls empty) but is
+		// still part of the caller's attempt -- env.InPoll() is
+		// true and emitRetryStmt is the only emitter of
+		// AttemptFatal inside a helper, so the failure has the
+		// same meaning. Returning a regular error (not a retry
+		// signal) lets the caller's DispatchBind propagate the
+		// fatal diagnostic instead of treating the retry as in-
+		// progress.
+		if v.Policy == ir.RunDefersAttemptFatal && failed > 0 {
+			if len(ex.polls) > 0 {
+				top := ex.polls[len(ex.polls)-1]
+				top.Failed = true
+				traceNote(ex.env, top.Span, "poll fatal")
+				return nil, false, syntax.SpanErrorf(top.Span, "poll: attempt-local defer failed during unwind (%d cleanup failure(s)); halting the construct", failed)
+			}
+			if ex.inDef && ex.env.InPoll() {
+				return nil, false, syntax.SpanErrorf(v.Span, "poll: helper defer failed during retry unwind (%d cleanup failure(s)); halting the construct", failed)
+			}
 		}
 		return nil, false, nil
 	case *ir.Eval:
