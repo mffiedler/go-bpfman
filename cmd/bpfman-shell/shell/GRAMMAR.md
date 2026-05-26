@@ -874,7 +874,7 @@ unambiguously start an expression is parsed as a command
 invocation.
 
     CommandStmt     = CommandHead { CommandArg } .
-    CommandForm     = CommandHead { CommandArg } [ MatchesBlock ] .
+    CommandForm     = CommandHead { CommandArg } .
     CommandHead     = Word .
     CommandArg      = Word
                     | Quoted
@@ -886,13 +886,15 @@ invocation.
     CommandParenArg = '(' Expression ')' .
     CommandListArg  = ListExpr .
 
-`CommandStmt` is the bare statement-level form: `parseCommandStmt`
-terminates at the first `{` no matter what, so a trailing
-`matches { ... }` is not part of the statement-level grammar.
-`CommandForm` is the richer production reused on bind RHS,
-defer, let RHS, and assert clauses, where the surrounding
-parser detects a `matches { ... }` tail and folds it into the
-same node.
+`CommandForm` is the production reused on bind RHS, defer RHS,
+let-`<-` RHS, and assert/require clauses; the structure is the
+same as the bare `CommandStmt` plus the surrounding parser's
+own framing. There is no trailing `MatchesBlock` in either
+production: `matches` is not a command-tail. It is a postfix
+expression operator at the comparison level (see Expressions
+below); when a command argument needs to use it, the argument
+enters expression syntax explicitly via `CommandParenArg`
+(`print ($x matches { ... })`).
 
 `CommandParenArg` and `CommandListArg` are named separately from
 `ParenExpr` and `ListExpr` because command argument parsing is
@@ -909,21 +911,25 @@ the following:
 
 - A `Sep` token at top-level depth.
 - A `}` token at top-level depth (closing an enclosing Block).
-- A `{` token at top-level depth, unless the immediately
-  preceding token is the bare word `matches`, in which case the
-  `{` opens a trailing `MatchesBlock` and is part of the same
-  CommandForm.
+- A `{` token at top-level depth.
 
 "Top-level depth" here means: outside any open
 `CommandParenArg` and outside any open `CommandListArg`. The
 matched-paren and matched-bracket consumption inside those
 forms handles their own balancing.
 
-`CommandForm` is the production reused on bind RHS, defer RHS,
-let RHS, and assert clauses; on those sites the matches-block
-detection above applies. Bare `CommandStmt` ends at the first
-`{` unconditionally and does not pick up a trailing matches
-block.
+The parser's RHS token collectors for `assert`/`require`, `let`,
+and a few similar contexts perform a small lookahead trick: when
+the buffer's tail is the bare word `matches` (optionally
+followed by `exhaustive`), an immediately following `{` is
+absorbed into the buffer rather than treated as a block
+terminator. This lookahead exists so that an expression-position
+parser called on the buffer (`parseExpression` for the
+let-expression and assert-expression clauses) can see the
+complete `matches { ... }` tail of its expression. It is a
+buffer-collection convenience, not a feature of CommandForm:
+the resulting tokens are still parsed as a single Expression
+where `matches` reduces through `ComparisonExpr`.
 
 **Language rule versus parser accident: command head.**
 
@@ -1099,14 +1105,31 @@ A primary is one of:
                    | PureCallExpr
                    .
 
-`MatchesBlock` is not in this alternation. Although it produces
-a `MatchesBlockExpr` node that implements the `Expr` interface,
-the general expression parser does not accept it; it is attached
-only by the bind / defer / let RHS command-tail parsers and the
-assert-clause parser (see BindStmt / DeferStmt / LetStmt /
-AssertStmt). A bare `CommandStmt` does not pick up a trailing
-matches block: `parseCommandStmt` ends the command at the first
-`{` regardless of the preceding word.
+`MatchesBlockExpr` is not in this alternation: it is the
+right-hand side of the `matches` postfix operator at the
+`ComparisonExpr` level, not a primary in its own right.
+`parseMatchesBlock` is only reached by `parseMatches` when the
+expression grammar has already consumed a primary on the left
+and the next token is the bare word `matches`.
+
+Expression parsing is entered at the following sites; anywhere
+in that subtree, `EXPR matches { ... }` works because matches
+is just another expression-level operator:
+
+- The `=` form of `let`: `let r = $x matches { ... }`.
+- The expression clause of `assert` and `require`:
+  `require $x matches { ... }`.
+- Condition expressions of `if` and `elif`.
+- Parenthesised command arguments: `print ($x matches { ... })`.
+- List literal elements: `[$a matches { ... }, $b]`.
+- The expression body inside an interpolation segment of a
+  double-quoted string: `"${$x matches { ... }}"`.
+
+Sites that are command-position (the `<-` form of `let`, `defer`,
+the assert-clause command shape `assert ok ...`, bare
+`CommandStmt`) do not own a `matches { ... }` tail; to use a
+matches expression there, wrap it in `(EXPR)` to enter the
+expression grammar through `CommandParenArg`.
 
 ### LiteralExpr
 
