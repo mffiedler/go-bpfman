@@ -206,6 +206,44 @@ func TestCheck_BindCollect_SingleBindOnPureBuiltinAccepted(t *testing.T) {
 	assert.Empty(t, issues)
 }
 
+func TestCheck_BindCollect_ListExprIsChecked(t *testing.T) {
+	t.Parallel()
+
+	// The foreach list on the RHS of a bind-collect is an
+	// expression like any other; an undefined variable there
+	// must be reported, otherwise a typo in the source list
+	// silently turns into a runtime "undefined variable"
+	// surprise long after the checker has cleared the script.
+	src := "let xs <- foreach n in $missing { jq \". * 2\" $n }"
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "undefined variable: missing")
+}
+
+func TestCheck_BindCollect_BodyVariablesAreChecked(t *testing.T) {
+	t.Parallel()
+
+	// References inside the bind-collect body need the same
+	// undefined-variable check as any other statement context.
+	// Without walking the body the checker rubber-stamps a
+	// reference to a name no producer ever published.
+	src := "let xs <- foreach n in [1 2 3] { print $n $undef }"
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "undefined variable: undef")
+}
+
+func TestCheck_BindCollect_LoopVarVisibleInBody(t *testing.T) {
+	t.Parallel()
+
+	// The flip side of walking the body: the loop variable(s)
+	// must be defined inside the body's frame so a legitimate
+	// reference does not flag a false-positive undefined.
+	src := "let doubled <- foreach n in [1 2 3] { jq \". * 2\" $n }"
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
 func TestCheck_BindStmtDefinesPrimaryAndRc(t *testing.T) {
 	t.Parallel()
 

@@ -742,11 +742,6 @@ func (c *checker) walkStmt(s syntax.Stmt) {
 		// precedence rule applies: a def producer routes through
 		// callDefAsBind and is not a pure builtin even when its
 		// name shadows one.
-		if n.Collect != nil && len(n.Collect.Body) > 0 {
-			if last, ok := n.Collect.Body[len(n.Collect.Body)-1].(*syntax.CommandStmt); ok {
-				c.checkDefArity(last)
-			}
-		}
 		if n.Collect != nil && n.Rc != "" && n.Rc != "_" && len(n.Collect.Body) > 0 {
 			if last, ok := n.Collect.Body[len(n.Collect.Body)-1].(*syntax.CommandStmt); ok {
 				if !c.bindHeadDef(last) {
@@ -755,6 +750,29 @@ func (c *checker) walkStmt(s syntax.Stmt) {
 					}
 				}
 			}
+		}
+		// Walk the bind-collect's foreach list expression and
+		// body the same way a free-standing ForEachStmt does: the
+		// list is a regular expression that may reference
+		// undefined variables, and the body is a statement list
+		// that must be checked with the loop variable(s) in
+		// scope. Without this walk a typo in the source list, an
+		// undefined reference in the body, or a misplaced def /
+		// import / break / continue inside the body would all
+		// pass preflight unnoticed. The body runs inside a fresh
+		// frame so loop-var bindings disappear at the bind
+		// boundary, and nonTopLevelDepth bumps so a syntax.DefStmt
+		// inside the body is rejected as non-top-level.
+		if n.Collect != nil {
+			c.checkExpr(n.Collect.List)
+			c.nonTopLevelDepth++
+			c.withFrame(func() {
+				for _, name := range n.Collect.Names {
+					c.define(name, semantics.Shape{Sealed: false, Kind: semantics.OriginUnknown}, nil)
+				}
+				c.walkStmts(n.Collect.Body)
+			})
+			c.nonTopLevelDepth--
 		}
 		// A def-bound primary takes one of two shapes. When the
 		// def's body contains at least one syntax.ReturnStmt, the
