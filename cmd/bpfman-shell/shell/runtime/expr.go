@@ -1475,13 +1475,19 @@ func evalBinary(e *syntax.BinaryExpr, env *Env) (Value, error) {
 	return evalCompare(e.Op, leftV, rightV, e.Span)
 }
 
-// compareKind classifies a Value for the purpose of strict comparison
-// dispatch. Numbers (json.Number, float64) are "number"; plain
-// strings are "string"; booleans are "bool". Anything else (nil,
-// map, slice, absent values) returns "" and is rejected by
-// evalCompare with an error citing the actual underlying type so
-// users see why the operands are incomparable.
+// compareKind classifies a Value for the purpose of strict
+// comparison dispatch. Numbers (json.Number, float64) are
+// "number"; plain strings are "string"; booleans are "bool";
+// explicit JSON null is "null" -- a first-class comparable
+// value with the equality rules `null == null` true and `null
+// == X` false for any non-null X (no ordering). Anything else
+// (map, slice, absent values) returns "" and is rejected by
+// evalCompare with an error citing the actual underlying type
+// so users see why the operands are incomparable.
 func compareKind(v Value) string {
+	if v.IsNull() {
+		return "null"
+	}
 	switch v.Raw().(type) {
 	case json.Number, float64:
 		return "number"
@@ -1509,6 +1515,22 @@ func evalCompare(op string, l, r Value, span source.Span) (Value, error) {
 	}
 	if rk == "" {
 		return Value{}, syntax.SpanErrorf(span, "%s: right side is a %s; only scalars (numbers, strings, booleans) can be compared with %s", op, r.Kind(), op)
+	}
+	// Null comparisons are special: `null == null` is true,
+	// `null == X` (X non-null) is false, and the cross-kind
+	// case is well-defined rather than an error. The language
+	// supports null as a first-class comparable value, so any
+	// op that does not need ordering (== and !=) bypasses the
+	// strict same-kind rule when at least one operand is null.
+	// Ordering operators (<, <=, >, >=) are not defined for
+	// null and surface as an explicit error.
+	if lk == "null" || rk == "null" {
+		if op != "==" && op != "!=" {
+			return Value{}, syntax.SpanErrorf(span, "binary %s: null supports only == and != (no ordering)", op)
+		}
+		bothNull := lk == "null" && rk == "null"
+		pass := (op == "==") == bothNull
+		return BoolValue(pass), nil
 	}
 	if lk != rk {
 		return Value{}, syntax.SpanErrorf(span, "binary %s: cannot compare %s to %s; coerce explicitly (e.g. \"$x |> jq tonumber\" for stringy numeric input)", op, lk, rk)

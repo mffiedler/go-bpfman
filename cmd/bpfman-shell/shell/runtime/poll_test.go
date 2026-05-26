@@ -72,6 +72,44 @@ print after
 	}
 }
 
+func TestRuntime_NullEqualsNull(t *testing.T) {
+	t.Parallel()
+
+	// Null is a first-class comparable value in the language:
+	// `null == null` succeeds and binds true. Earlier the
+	// runtime compareKind returned "" for a nil carrier and
+	// the equality reduced to "Null is not a scalar" because
+	// the kind classifier had no entry for nullable values.
+	src := "let r = null == null\nrequire $r == true"
+	err := runScriptError(t, src, nil)
+	require.NoError(t, err, "null == null must succeed")
+}
+
+func TestRuntime_NullNotEqualsScalar(t *testing.T) {
+	t.Parallel()
+
+	// Cross-kind equality with null is well-defined: null
+	// compares unequal to any non-null scalar, so `null == 5`
+	// is a valid expression that yields false. The strict
+	// kinds-must-match rule has an exception for null because
+	// the language deliberately supports `null == value`.
+	src := "let r = null == 5\nrequire $r == false"
+	err := runScriptError(t, src, nil)
+	require.NoError(t, err, "null == 5 must succeed with value false")
+}
+
+func TestRuntime_NullOrderingRejected(t *testing.T) {
+	t.Parallel()
+
+	// Null has no ordering: <, <=, >, >= are not supported.
+	// The runtime must surface this with a clear diagnostic
+	// rather than silently accepting a comparison whose
+	// outcome is undefined.
+	err := runScriptError(t, "let r = null < 5", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "null")
+}
+
 func TestPoll_HelperRetryFailedDeferIsFatal(t *testing.T) {
 	t.Parallel()
 

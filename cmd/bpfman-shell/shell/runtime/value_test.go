@@ -39,11 +39,23 @@ func TestValueFromJSON(t *testing.T) {
 		assert.True(t, ok, "expected json.Number, got %T", v.Raw())
 	})
 
-	t.Run("null", func(t *testing.T) {
+	t.Run("null preserves IsNull distinction", func(t *testing.T) {
 		t.Parallel()
+		// A top-level JSON null is a value -- the JSON
+		// null literal -- not the absent Value{} sentinel.
+		// The deliberate IsNull / IsNil split in the Value
+		// vocabulary lives across every entry point that
+		// produces a Value: matches blocks (`field: null`),
+		// the null / present / missing shape predicates,
+		// the path-walk landing on a null terminal already
+		// honoured via LookupValue. ValueFromJSON must
+		// follow the same contract so a Value built from
+		// JSON does not lose the distinction at the
+		// boundary.
 		v, err := ValueFromJSON([]byte(`null`))
 		require.NoError(t, err)
-		assert.True(t, v.IsNil())
+		assert.True(t, v.IsNull(), "JSON null must surface as IsNull")
+		assert.False(t, v.IsNil(), "explicit null is a present value, not absent")
 	})
 
 	t.Run("invalid JSON", func(t *testing.T) {

@@ -342,6 +342,14 @@ func (c *checker) inferExprShape(e syntax.Expr) semantics.Shape {
 		switch v.Text {
 		case "true", "false":
 			return semantics.KindShape(semantics.OriginBool)
+		case "null":
+			// literalValueParts returns NullValue() for the
+			// unquoted "null" token at runtime; the static
+			// shape must agree so a `let r = null` carries
+			// OriginNull through chained inferences and the
+			// comparison classifier sees the same kind the
+			// runtime sees.
+			return semantics.KindShape(semantics.OriginNull)
 		}
 		return semantics.KindShape(semantics.OriginScalar)
 	case *syntax.VarRefExpr:
@@ -1467,6 +1475,20 @@ func classifyComparison(l, r semantics.OriginKind, op string) (ok bool, msg stri
 	}
 	if !isScalarLikeKind(r) {
 		return false, fmt.Sprintf("right side has kind %s; only scalars (numbers, strings, booleans) can be compared with %s", r, op)
+	}
+	// Null is a first-class comparable value: `null == null`
+	// is true, `null == X` (X non-null) is false, and the
+	// cross-kind case is well-defined for == / != rather than
+	// a kind-mismatch error. Ordering (<, <=, >, >=) is not
+	// defined for null and surfaces explicitly. The same rule
+	// lives in the runtime's evalCompare; mirror it here so
+	// the static checker does not reject a comparison the
+	// runtime would happily evaluate.
+	if l == semantics.OriginNull || r == semantics.OriginNull {
+		if op != "==" && op != "!=" {
+			return false, fmt.Sprintf("null supports only == and !=, not %s", op)
+		}
+		return true, ""
 	}
 	if l != r {
 		return false, fmt.Sprintf("cannot compare %s to %s; coerce explicitly", l, r)

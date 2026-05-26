@@ -119,6 +119,17 @@ func ValueFromJSON(b []byte) (Value, error) {
 		}
 		return Value{}, fmt.Errorf("decode JSON: trailing data after value: %w", err)
 	}
+	// Preserve the IsNull / IsNil distinction at the JSON
+	// boundary: a top-level `null` decodes to a nil interface,
+	// but that should surface as the explicit-null carrier
+	// (kind OriginNull) rather than the absent Value{} sentinel.
+	// Downstream callers (matches blocks, the null / present /
+	// missing predicates, comparison operators, the path-walk
+	// in LookupValue) all rely on the distinction holding once
+	// a Value is constructed.
+	if v == nil {
+		return NullValue(), nil
+	}
 	return Value{v: v}, nil
 }
 
