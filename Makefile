@@ -885,6 +885,7 @@ build-e2e-scripts: bpfman-compile bpfman-shell-compile $(E2E_SCRIPTS_TEST_BIN)
 # unset.
 run-e2e-scripts:
 	sudo BIN_DIR=$(abspath $(BIN_DIR)) \
+	    BPFMAN_E2E_DIR=$(abspath e2e) \
 	    $(call forward-env,$(E2E_SCRIPTS_FORWARD_VARS)) \
 	    $(E2E_SCRIPTS_TEST_BIN) -test.v -test.failfast \
 	    -test.count=$(STRESS_COUNT) $(if $(PARALLEL),-test.parallel $(PARALLEL)) \

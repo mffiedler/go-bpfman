@@ -71,21 +71,36 @@ func TestBPFManScripts(t *testing.T) {
 }
 
 // e2ePackageDir returns the absolute path of the e2e directory
-// (one level up from this test file's package). Anchoring on
-// runtime.Caller is what lets the test be invoked from any cwd
-// (repo root, e2e/, anywhere) and still find the script
-// corpora and run each script with the right working directory
-// for its testdata.
+// where the .bpfman corpora and testdata live. Resolution order:
+//
+//  1. BPFMAN_E2E_DIR if set. This is the authoritative form and
+//     is what the Makefile recipe passes (set to $(abspath e2e)),
+//     so CI builds that ship the test binary in one filesystem
+//     and run it in another always get the right path.
+//
+//  2. The runtime.Caller-derived path otherwise. Convenient for
+//     direct local invocations of bin/e2e-scripts.test from any
+//     cwd, but only works when the binary still has access to
+//     its build-time source tree -- which is true for local
+//     `go test` / `go build` runs and false for static binaries
+//     built inside a container and extracted to a different host.
 func e2ePackageDir(t *testing.T) string {
 	t.Helper()
+	if d := os.Getenv("BPFMAN_E2E_DIR"); d != "" {
+		return d
+	}
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
-		t.Fatal("runtime.Caller failed; cannot anchor e2e dir")
+		t.Fatal("runtime.Caller failed and BPFMAN_E2E_DIR is unset; cannot anchor e2e dir")
 	}
 	// file is .../e2e/scriptrunner/scripts_test.go; walk up
 	// two levels to reach the e2e/ directory where the script
 	// corpora and testdata live.
-	return filepath.Dir(filepath.Dir(file))
+	dir := filepath.Dir(filepath.Dir(file))
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("runtime.Caller-derived e2e dir %s is not accessible (set BPFMAN_E2E_DIR for cross-filesystem builds): %v", dir, err)
+	}
+	return dir
 }
 
 // bpfmanShellTimeoutEnv overrides the per-script deadline.
