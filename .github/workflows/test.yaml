@@ -53,7 +53,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v3
-      - run: make ci-test-e2e PARALLEL=1 STRESS_COUNT=5 RACE=${{ matrix.race }} BPFMAN_E2E_ISOLATED_RUNTIME=${{ matrix.isolated_runtime }}
+      # STRESS_COUNT shrinks to 1 under RACE=1: the race detector
+      # roughly doubles per-test wall time, so a 5x stress on a
+      # RACE=1 lane compounds to ~10x the baseline cost. The
+      # RACE=0 lane keeps the 5x stress to catch flakes that need
+      # repeated iteration; the RACE=1 lane still exercises every
+      # test once with the race detector active, which is the
+      # unique value the lane is paying for.
+      - run: make ci-test-e2e PARALLEL=1 STRESS_COUNT=${{ matrix.race == 1 && '1' || '5' }} RACE=${{ matrix.race }} BPFMAN_E2E_ISOLATED_RUNTIME=${{ matrix.isolated_runtime }}
 
   # Parallel-mode canary for the e2e suite. Mirrors test-e2e but
   # omits the PARALLEL=1 override so go test runs at GOMAXPROCS,
@@ -110,7 +117,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v3
-      - run: make ci-test-e2e PARALLEL=1 STRESS_COUNT=5 RACE=${{ matrix.race }} BPFMAN_E2E_ISOLATED_RUNTIME=0 EXTRA_TAGS=cgo_sqlite
+      # STRESS_COUNT shrinks to 1 under RACE=1; see test-e2e
+      # above for the rationale (race detector doubles per-test
+      # cost, 5x stress compounds to ~10x baseline).
+      - run: make ci-test-e2e PARALLEL=1 STRESS_COUNT=${{ matrix.race == 1 && '1' || '5' }} RACE=${{ matrix.race }} BPFMAN_E2E_ISOLATED_RUNTIME=0 EXTRA_TAGS=cgo_sqlite
 
   # Parallel gRPC e2e: stands up a real `bpfman serve` subprocess
   # and fans goroutines through the full
@@ -148,7 +158,10 @@ jobs:
       # the gRPC client allows before cancelling. RACE=0 jobs
       # keep the daemon on its package defaults so the defaults
       # themselves stay exercised in CI.
-      - run: make ci-test-e2e-grpc STRESS_COUNT=5 RACE=${{ matrix.race }}
+      # STRESS_COUNT shrinks to 1 under RACE=1; see test-e2e
+      # above. The RACE=0 lane keeps the 5x stress to catch
+      # flakes the single-run race lane would miss.
+      - run: make ci-test-e2e-grpc STRESS_COUNT=${{ matrix.race == 1 && '1' || '5' }} RACE=${{ matrix.race }}
         env:
           BPFMAN_SQLITE_BUSY_TIMEOUT: ${{ matrix.race == 1 && '30s' || '' }}
           BPFMAN_SQLITE_TX_RETRY_BACKOFFS: ${{ matrix.race == 1 && '100ms,500ms,2s,8s' || '' }}
