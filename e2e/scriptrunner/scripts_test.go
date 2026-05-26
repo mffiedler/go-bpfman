@@ -5,10 +5,12 @@ package scriptrunner
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -41,8 +43,21 @@ import (
 // `go test -run 'TestBPFManScripts/new/Foo\.bpfman$'` selects
 // one script (escape the dot and anchor the end to avoid
 // prefix matches against longer names).
+//
+// BPFMAN_E2E_SCRIPT_REPEATS turns the corpus into a stress
+// run: each script is registered N times as
+// `<corpus>/<name>.bpfman#<r>` (r in [0, N)), with the outer
+// loop being repeat and the inner loop being the script list.
+// Registering in that order means consecutive subtests in the
+// t.Parallel queue are different scripts, which gives the
+// address pool's `net veth-pair` builtin maximum name diversity
+// per dispatched wave -- the same load shape the legacy
+// e2e/parallel-scripts.sh -r N option produced. Unset or N=1
+// keeps the default one-pass behaviour and the unsuffixed
+// subtest names.
 func TestBPFManScripts(t *testing.T) {
 	timeout := scriptTimeout()
+	repeats := scriptRepeats()
 	e2eDir := e2ePackageDir(t)
 
 	for _, sub := range []string{"scripts", "new"} {
@@ -55,19 +70,36 @@ func TestBPFManScripts(t *testing.T) {
 			t.Fatalf("no .bpfman scripts found under %s/", absSub)
 		}
 		parallel := sub == "new"
-		for _, abs := range matches {
-			// Subtest name is the script's path relative to
-			// e2eDir (e.g. "new/Foo.bpfman"); keeps -run
-			// filters portable.
-			rel := filepath.Join(sub, filepath.Base(abs))
-			t.Run(filepath.ToSlash(rel), func(t *testing.T) {
-				if parallel {
-					t.Parallel()
-				}
-				runBPFManScript(t, e2eDir, rel, timeout)
-			})
+		// Outer loop: repeat. Inner loop: scripts. Pass r=0 of
+		// every script enters the dispatcher first, then r=1,
+		// and so on; the t.Parallel queue under new/ therefore
+		// holds [s1#0, s2#0, ..., sN#0, s1#1, ...] which
+		// preserves wave diversity across repeats.
+		for r := 0; r < repeats; r++ {
+			for _, abs := range matches {
+				rel := filepath.Join(sub, filepath.Base(abs))
+				t.Run(scriptSubtestName(rel, r, repeats), func(t *testing.T) {
+					if parallel {
+						t.Parallel()
+					}
+					runBPFManScript(t, e2eDir, rel, timeout)
+				})
+			}
 		}
 	}
+}
+
+// scriptSubtestName produces the subtest path for one
+// registration. When repeats <= 1 the bare relative path is
+// used (so the default one-pass shape keeps clean names like
+// "new/Foo.bpfman"); when stressing the suffix "#<r>" makes
+// each registration unique under Go's t.Run dedup rules.
+func scriptSubtestName(rel string, repeat, repeats int) string {
+	name := filepath.ToSlash(rel)
+	if repeats <= 1 {
+		return name
+	}
+	return fmt.Sprintf("%s#%d", name, repeat)
 }
 
 // e2ePackageDir returns the absolute path of the e2e directory
@@ -108,9 +140,17 @@ func e2ePackageDir(t *testing.T) string {
 // complete; a deadline-exceeded run fails that one subtest
 // cleanly rather than hanging the whole binary against
 // go test's outer -timeout.
+//
+// bpfmanShellRepeatsEnv is the stress knob: each script is
+// registered N times so the t.Parallel queue under new/ holds
+// a wave-diverse mix the dispatcher can fan out at the
+// configured -test.parallel concurrency. Unset or N<=1 keeps
+// the default one-pass behaviour.
 const (
 	bpfmanShellTimeoutEnv     = "BPFMAN_E2E_SCRIPT_TIMEOUT"
 	bpfmanShellTimeoutDefault = 5 * time.Minute
+	bpfmanShellRepeatsEnv     = "BPFMAN_E2E_SCRIPT_REPEATS"
+	bpfmanShellRepeatsDefault = 1
 )
 
 func scriptTimeout() time.Duration {
@@ -123,6 +163,18 @@ func scriptTimeout() time.Duration {
 		return bpfmanShellTimeoutDefault
 	}
 	return d
+}
+
+func scriptRepeats() int {
+	raw := os.Getenv(bpfmanShellRepeatsEnv)
+	if raw == "" {
+		return bpfmanShellRepeatsDefault
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 {
+		return bpfmanShellRepeatsDefault
+	}
+	return n
 }
 
 // runBPFManScript executes one .bpfman script under a per-script

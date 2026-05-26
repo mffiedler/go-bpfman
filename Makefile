@@ -170,6 +170,7 @@ BPFMAN_LOCK_TIMEOUT ?=
 # deadline. The test binary carries the actual defaults.
 BPFMAN_DISPATCH ?=
 BPFMAN_E2E_SCRIPT_TIMEOUT ?=
+BPFMAN_E2E_SCRIPT_REPEATS ?=
 
 # ---------------------------------------------------------------------------
 # Verbose-build switch, modelled on the Linux kernel tree's V=
@@ -864,12 +865,15 @@ E2E_SCRIPTS_TEST_BIN := $(BIN_DIR)/e2e-scripts.test
 
 # Env vars forwarded into the sudo'd test process.
 # BPFMAN_E2E_SCRIPT_TIMEOUT widens the per-script deadline;
+# BPFMAN_E2E_SCRIPT_REPEATS turns the corpus into a stress run
+# (each script registered N times, wave-diverse dispatch);
 # BPFMAN_DISPATCH selects the bpfman-shell backend (library vs
 # external); BPFMAN_LOG threads through to bpfman-shell when set.
 # BIN_DIR is passed explicitly below rather than via this list
 # because the value gets abspath'd at the call site.
 E2E_SCRIPTS_FORWARD_VARS := \
 	BPFMAN_DISPATCH \
+	BPFMAN_E2E_SCRIPT_REPEATS \
 	BPFMAN_E2E_SCRIPT_TIMEOUT \
 	BPFMAN_LOG
 
