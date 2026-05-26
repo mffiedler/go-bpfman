@@ -186,8 +186,15 @@ func writeMatchesBlockSource(b *strings.Builder, m *MatchesBlockExpr) {
 	}
 	b.WriteString(" {")
 	for i, ent := range m.Entries {
+		// The matches parser separates entries by newlines and
+		// explicitly rejects commas; emitting commas here would
+		// produce a string that does not round-trip through
+		// Parse. Use newlines so the printed form is a valid
+		// matches body, falling back to a single space before
+		// the first entry so an empty block still renders as
+		// "matches { }" rather than "matches {\n}".
 		if i > 0 {
-			b.WriteByte(',')
+			b.WriteByte('\n')
 		}
 		b.WriteByte(' ')
 		b.WriteString(ent.Path)

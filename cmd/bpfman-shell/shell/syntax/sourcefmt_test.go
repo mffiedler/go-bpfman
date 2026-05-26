@@ -60,7 +60,7 @@ func TestFormatExprSource_ComplexForms(t *testing.T) {
 					},
 				},
 			},
-			want: `$src matches exhaustive { status.id: $want, status.meta: matches { name: "demo" } }`,
+			want: "$src matches exhaustive { status.id: $want\n status.meta: matches { name: \"demo\" } }",
 		},
 	}
 
@@ -68,6 +68,37 @@ func TestFormatExprSource_ComplexForms(t *testing.T) {
 		if got := FormatExprSource(tc.expr); got != tc.want {
 			t.Fatalf("%s: FormatExprSource() = %q, want %q", tc.name, got, tc.want)
 		}
+	}
+}
+
+func TestFormatExprSource_MatchesRoundTripsThroughParser(t *testing.T) {
+	t.Parallel()
+
+	// Rendering a matches block from the AST and feeding it
+	// back through the parser must succeed: the formatter
+	// previously emitted entries separated by commas, but the
+	// parser explicitly rejects commas inside a matches block
+	// ("matches: ',' is not a valid entry separator; entries
+	// are separated by newlines"). The format-then-reparse
+	// loop is the load-bearing contract here -- diagnostics
+	// and developer tooling that round-trip the printed form
+	// rely on it being a re-parseable string.
+	expr := &MatchesExpr{
+		Target: &VarRefExpr{Name: "src"},
+		Block: &MatchesBlockExpr{
+			Entries: []MatchEntry{
+				{Path: "id", Pattern: &VarRefExpr{Name: "want"}},
+				{Path: "name", Pattern: &LiteralExpr{Text: "demo", Quoted: true}},
+			},
+		},
+	}
+	src := "let r = " + FormatExprSource(expr)
+	tokens, err := Tokenise(src)
+	if err != nil {
+		t.Fatalf("tokenise reformatted source %q: %v", src, err)
+	}
+	if _, err := Parse(tokens); err != nil {
+		t.Fatalf("reparse reformatted source %q: %v", src, err)
 	}
 }
 
