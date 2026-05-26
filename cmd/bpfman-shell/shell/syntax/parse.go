@@ -226,12 +226,23 @@ func isAssertCommandHead(text string) bool {
 
 func (p *parser) parseAssertClause(keywordTok Token) (AssertClause, error) {
 	var buf []Token
+	depth := 0
 	for !p.atEOF() {
 		t := p.peek()
 		if t.Kind == TokenSep {
+			if depth > 0 {
+				buf = append(buf, t)
+				p.pos++
+				continue
+			}
 			break
 		}
 		if t.Kind == TokenWord && (t.Text == "{" || t.Text == "}") {
+			if depth > 0 {
+				buf = append(buf, t)
+				p.pos++
+				continue
+			}
 			if t.Text == "{" && matchesBlockTail(buf) {
 				var err error
 				buf, err = p.appendMatchesBlockTokens(buf)
@@ -244,6 +255,16 @@ func (p *parser) parseAssertClause(keywordTok Token) (AssertClause, error) {
 		}
 		if t.Kind == TokenAssign {
 			return nil, spanErrorf(t.Span, "unexpected '='; use \"let <name> = <value...>\" for assignment")
+		}
+		if t.Kind == TokenWord {
+			switch t.Text {
+			case "(", "[":
+				depth++
+			case ")", "]":
+				if depth > 0 {
+					depth--
+				}
+			}
 		}
 		buf = append(buf, t)
 		p.pos++
@@ -719,9 +740,9 @@ func (p *parser) takeBindRHSTokens(bindTok Token) ([]Token, error) {
 		}
 		if t.Kind == TokenWord {
 			switch t.Text {
-			case "[":
+			case "[", "(":
 				depth++
-			case "]":
+			case "]", ")":
 				if depth > 0 {
 					depth--
 				}
@@ -777,9 +798,9 @@ func (p *parser) takeStmtTokens(rejectAssign bool) ([]Token, error) {
 		}
 		if t.Kind == TokenWord {
 			switch t.Text {
-			case "[":
+			case "[", "(":
 				depth++
-			case "]":
+			case "]", ")":
 				if depth > 0 {
 					depth--
 				}
@@ -804,16 +825,43 @@ func (p *parser) parseCommandStmt() (Stmt, error) {
 		return nil, spanErrorf(first.Span, "unexpected %q at statement start", first.Text)
 	}
 	var buf []Token
+	depth := 0
 	for !p.atEOF() {
 		t := p.peek()
+		// Statement terminators (Sep, `{`, `}`) only end the
+		// command at top-level paren/bracket depth. Inside a
+		// CommandParenArg `(EXPR)` or CommandListArg `[EXPR]`
+		// the inner expression grammar owns the contents,
+		// including any `matches { ... }` tail it folds in via
+		// the ComparisonExpr operator.
 		if t.Kind == TokenSep {
+			if depth > 0 {
+				buf = append(buf, t)
+				p.pos++
+				continue
+			}
 			break
 		}
 		if t.Kind == TokenWord && (t.Text == "{" || t.Text == "}") {
+			if depth > 0 {
+				buf = append(buf, t)
+				p.pos++
+				continue
+			}
 			break
 		}
 		if t.Kind == TokenAssign {
 			return nil, spanErrorf(t.Span, "unexpected '='; use \"let <name> = <value...>\" for assignment")
+		}
+		if t.Kind == TokenWord {
+			switch t.Text {
+			case "(", "[":
+				depth++
+			case ")", "]":
+				if depth > 0 {
+					depth--
+				}
+			}
 		}
 		buf = append(buf, t)
 		p.pos++
@@ -1220,13 +1268,24 @@ func (p *parser) parseForEachNameToken(feTok Token) (string, error) {
 // appears before EOF.
 func (p *parser) takeUntilOpenBrace() ([]Token, error) {
 	var buf []Token
+	depth := 0
 	for !p.atEOF() {
 		t := p.peek()
 		if t.Kind == TokenSep {
+			if depth > 0 {
+				buf = append(buf, t)
+				p.pos++
+				continue
+			}
 			p.pos++
 			continue
 		}
 		if t.Kind == TokenWord && t.Text == "{" {
+			if depth > 0 {
+				buf = append(buf, t)
+				p.pos++
+				continue
+			}
 			if matchesBlockTail(buf) {
 				var err error
 				buf, err = p.appendMatchesBlockTokens(buf)
@@ -1236,6 +1295,24 @@ func (p *parser) takeUntilOpenBrace() ([]Token, error) {
 				continue
 			}
 			return buf, nil
+		}
+		if t.Kind == TokenWord && t.Text == "}" {
+			if depth > 0 {
+				buf = append(buf, t)
+				p.pos++
+				continue
+			}
+			return nil, spanErrorf(t.Span, "unexpected '}' before '{'")
+		}
+		if t.Kind == TokenWord {
+			switch t.Text {
+			case "(", "[":
+				depth++
+			case ")", "]":
+				if depth > 0 {
+					depth--
+				}
+			}
 		}
 		buf = append(buf, t)
 		p.pos++
@@ -1297,13 +1374,24 @@ func (p *parser) parseIfStmt() (Stmt, error) {
 // as an expression. The `{` is not consumed.
 func (p *parser) parseCondition() (Expr, error) {
 	var buf []Token
+	depth := 0
 	for !p.atEOF() {
 		t := p.peek()
 		if t.Kind == TokenSep {
+			if depth > 0 {
+				buf = append(buf, t)
+				p.pos++
+				continue
+			}
 			p.pos++
 			continue
 		}
 		if t.Kind == TokenWord && t.Text == "{" {
+			if depth > 0 {
+				buf = append(buf, t)
+				p.pos++
+				continue
+			}
 			if matchesBlockTail(buf) {
 				var err error
 				buf, err = p.appendMatchesBlockTokens(buf)
@@ -1314,8 +1402,29 @@ func (p *parser) parseCondition() (Expr, error) {
 			}
 			break
 		}
+		if t.Kind == TokenWord && t.Text == "}" {
+			if depth > 0 {
+				buf = append(buf, t)
+				p.pos++
+				continue
+			}
+			break
+		}
+		if t.Kind == TokenWord {
+			switch t.Text {
+			case "(", "[":
+				depth++
+			case ")", "]":
+				if depth > 0 {
+					depth--
+				}
+			}
+		}
 		buf = append(buf, t)
 		p.pos++
+	}
+	if depth > 0 {
+		return nil, fmt.Errorf("unmatched '(' in condition; expected matching ')' before '{'")
 	}
 	if p.atEOF() || !(p.peek().Kind == TokenWord && p.peek().Text == "{") {
 		return nil, fmt.Errorf("expected '{' after condition")

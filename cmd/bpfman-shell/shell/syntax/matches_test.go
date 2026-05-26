@@ -40,6 +40,66 @@ func TestParse_MatchesBlock_SingleEntry(t *testing.T) {
 	assert.Equal(t, "foo", lit.Text)
 }
 
+func TestParse_MatchesBlock_InsideCommandParenArg(t *testing.T) {
+	t.Parallel()
+
+	// matches is a postfix expression operator at the
+	// ComparisonExpr level, not a command-tail. A bare command
+	// statement ends at the first `{`, so to call a builtin
+	// with a matches expression as one of its arguments, the
+	// argument enters expression syntax via a CommandParenArg
+	// `(EXPR)`. This test pins that round-trip: `print ($x
+	// matches { ... })` must parse as a CommandStmt whose
+	// argument is the MatchesExpr at the ComparisonExpr level.
+	// The `{` inside the paren must not terminate the command
+	// statement; the depth-tracking rule says `{` is only a
+	// terminator at top-level paren/bracket depth.
+	prog, err := parseSource(t, `print ($x matches { id: $expected })`)
+	require.NoError(t, err)
+	stmt, ok := firstStmt(t, prog).(*CommandStmt)
+	require.True(t, ok, "want CommandStmt, got %T", firstStmt(t, prog))
+	require.Len(t, stmt.Args, 2)
+	head, ok := stmt.Args[0].(*LiteralExpr)
+	require.True(t, ok)
+	assert.Equal(t, "print", head.Text)
+	matches, ok := stmt.Args[1].(*MatchesExpr)
+	require.True(t, ok, "want *MatchesExpr inside the parens, got %T", stmt.Args[1])
+	require.NotNil(t, matches.Block)
+	require.Len(t, matches.Block.Entries, 1)
+	assert.Equal(t, "id", matches.Block.Entries[0].Path)
+}
+
+func TestParse_MatchesBlock_InsideLetExprParen(t *testing.T) {
+	t.Parallel()
+
+	// Same shape inside a let-expression RHS: takeStmtTokens
+	// must keep collecting through the `{` while paren depth
+	// is positive. The matches block reaches the expression
+	// parser via ParenExpr.
+	prog, err := parseSource(t, `let r = ($x matches { id: $expected })`)
+	require.NoError(t, err)
+	let, ok := firstStmt(t, prog).(*LetStmt)
+	require.True(t, ok, "want LetStmt, got %T", firstStmt(t, prog))
+	// The outer expression is a ParenExpr (or its unwrapped
+	// inner) ending in a MatchesExpr.
+	_ = let
+}
+
+func TestParse_MatchesBlock_InsideIfCondParen(t *testing.T) {
+	t.Parallel()
+
+	// parseCondition collects tokens up to the next `{` that
+	// opens the branch body. Inside a paren-grouped condition
+	// expression the inner `{` of a matches block must not
+	// terminate the condition early; the depth rule keeps
+	// collecting until paren depth returns to zero.
+	src := "if ($x matches { id: $expected }) { print ok }"
+	prog, err := parseSource(t, src)
+	require.NoError(t, err)
+	_, ok := firstStmt(t, prog).(*IfStmt)
+	require.True(t, ok, "want IfStmt, got %T", firstStmt(t, prog))
+}
+
 func TestParse_MatchesBlock_MultiEntry_NewlineSeparated(t *testing.T) {
 	t.Parallel()
 
