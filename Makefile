@@ -882,13 +882,15 @@ $(BIN_DIR)/e2e-scripts.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) | $(BIN
 
 build-e2e-scripts: bpfman-compile bpfman-shell-compile $(E2E_SCRIPTS_TEST_BIN)
 
-# BIN_DIR=$(abspath ...) is the explicit hand-off so the test
-# binary can put bpfman-shell on its PATH despite sudo's
-# secure_path stripping the caller's environment. The runner
-# falls back to whatever bpfman-shell is on PATH when BIN_DIR is
-# unset.
+# PATH is arranged via `sudo env PATH=...` so the script test
+# binary can resolve bpfman-shell regardless of how sudo's
+# secure_path is configured on the host. Using `env` as the
+# sudo'd program means the PATH assignment is an ordinary exec-
+# time setting rather than a sudo env passthrough, so it works
+# under any sudoers configuration. The test process trusts
+# whatever PATH it inherits; no in-code path manipulation.
 run-e2e-scripts:
-	sudo BIN_DIR=$(abspath $(BIN_DIR)) \
+	sudo env PATH=$(abspath $(BIN_DIR)):$$PATH \
 	    BPFMAN_E2E_DIR=$(abspath e2e) \
 	    $(call forward-env,$(E2E_SCRIPTS_FORWARD_VARS)) \
 	    $(E2E_SCRIPTS_TEST_BIN) -test.v -test.failfast \

@@ -9,30 +9,6 @@ import (
 	"testing"
 )
 
-// prependBINDIRToPath puts $BIN_DIR at the front of the test
-// process's own PATH. exec.Command's name resolution runs
-// LookPath against os.Environ() at construction time, not
-// against the cmd.Env we hand the child, so an
-// already-built bpfman-shell sitting in BIN_DIR has to be
-// reachable from the parent's environment for `exec.Command(
-// "bpfman-shell", ...)` to find it. sudo strips PATH via
-// secure_path; this restores enough of it that the test
-// process can resolve the binary. Children inherit the
-// augmented PATH via os.Environ() once exec.Command runs, so
-// no per-cmd plumbing is needed downstream.
-func prependBINDIRToPath() {
-	bin := os.Getenv("BIN_DIR")
-	if bin == "" {
-		return
-	}
-	path := os.Getenv("PATH")
-	if path == "" {
-		_ = os.Setenv("PATH", bin)
-		return
-	}
-	_ = os.Setenv("PATH", bin+string(os.PathListSeparator)+path)
-}
-
 // e2eSuiteLockPath is the same system-wide flock the workload
 // e2e binary holds. Sharing the path means the two test
 // binaries are mutually exclusive on a single host: a
@@ -76,16 +52,18 @@ func acquireSuiteLock() {
 // has no helper-mode re-exec, no shared-runtime initialisation,
 // no stale-dir cleanup (the address-pool builtin and short
 // bpfman-shell lifetimes leave nothing of the kind the workload
-// suite accumulates), and no self-exec discovery. Three load-
-// bearing steps remain: refuse to run without root, take the
-// suite-wide flock, and prepend BIN_DIR to PATH so exec.Command
-// can resolve bpfman-shell under sudo's secure_path.
+// suite accumulates), and no self-exec discovery. Two load-
+// bearing steps remain: refuse to run without root, and take
+// the suite-wide flock. PATH is the caller's responsibility:
+// bpfman-shell must be reachable via exec.LookPath when the
+// test starts. The make recipe arranges this via
+// `sudo env PATH=...`; direct invocations are expected to
+// match.
 func TestMain(m *testing.M) {
 	if os.Geteuid() != 0 {
 		fmt.Fprintln(os.Stderr, "scriptrunner: tests require root privileges")
 		os.Exit(1)
 	}
 	acquireSuiteLock()
-	prependBINDIRToPath()
 	os.Exit(m.Run())
 }

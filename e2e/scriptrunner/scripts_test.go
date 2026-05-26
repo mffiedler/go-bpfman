@@ -20,13 +20,10 @@ import (
 // e2e/scripts/ and e2e/new/ and runs each one as a subtest by
 // invoking bpfman-shell from PATH. The caller is responsible
 // for putting bpfman-shell on PATH; the test does no binary
-// discovery or validation of its own.
-//
-// BIN_DIR is the convenience escape hatch for sudo, which
-// strips the caller's PATH via secure_path. When set, BIN_DIR
-// is prepended to the child's PATH; no other check happens.
-// The caller can equivalently use `sudo -E` or
-// `sudo --preserve-env=PATH` instead.
+// discovery or PATH manipulation. Under sudo this means the
+// invocation has to bypass secure_path itself (the make recipe
+// uses `sudo env PATH=...`; a developer invoking the binary
+// directly should arrange their PATH similarly).
 //
 // The package's TestMain already enforces root and takes the
 // suite-wide flock, so each subtest just runs the script
