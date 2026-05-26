@@ -104,11 +104,16 @@ type CommandStmt struct {
 	source.Span
 }
 
-// ExprStmt is an expression appearing in statement position. It is
-// only produced inside a command substitution "[EXPR]" when the
-// bracketed content parses as an expression. At the program level
-// the parser never emits ExprStmt; the only statement forms are the
-// named ones above plus a plain CommandStmt.
+// ExprStmt is an expression appearing in statement position. The
+// parser emits one whenever the leading token of a statement can
+// only start an expression -- a quoted string, a list literal, a
+// parenthesised group, a negate, a not, a $-reference, an
+// interpolated string, or a [EXPR] substitution -- and routes the
+// rest of the line through parseExprStmt; the result is wrapped
+// here. At runtime an ExprStmt is evaluated and its value
+// discarded, which gives the statement form for expressions whose
+// only purpose is the side effect of evaluation (a pure call, a
+// command substitution that runs for its rc envelope, etc.).
 type ExprStmt struct {
 	Expr Expr
 	source.Span
