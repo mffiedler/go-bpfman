@@ -87,6 +87,32 @@ func TestInspect_SkipSubtreeReturnsFalse(t *testing.T) {
 	assert.Equal(t, []string{"xs"}, names)
 }
 
+func TestInspect_DescendsIntoMatchesEntries(t *testing.T) {
+	t.Parallel()
+
+	// Patterns on the right-hand side of a matches entry are
+	// regular expressions and must be visited by Inspect just
+	// like any other child Expr. Without this descent any
+	// generic walker that uses Inspect to collect VarRefs
+	// (notably the static checker's undefined-variable pass)
+	// silently misses references that only appear inside a
+	// matches block.
+	names := inspectVarRefs(t, "let r = $got matches { id: $expected }")
+	assert.ElementsMatch(t, []string{"got", "expected"}, names)
+}
+
+func TestInspect_DescendsIntoNestedMatchesSubBlock(t *testing.T) {
+	t.Parallel()
+
+	// SubBlock entries recurse into another MatchesBlockExpr;
+	// the walker must hand control back to its own case so
+	// nested entries are visited too, otherwise references
+	// inside an inner block escape the traversal.
+	src := "let r = $envelope matches { stdout: matches { id: $expected } }"
+	names := inspectVarRefs(t, src)
+	assert.ElementsMatch(t, []string{"envelope", "expected"}, names)
+}
+
 func TestInspect_PostOrderNilSentinel(t *testing.T) {
 	t.Parallel()
 

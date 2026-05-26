@@ -646,6 +646,20 @@ func TestCheck_ContinueOutsideForeachReported(t *testing.T) {
 	assert.Contains(t, issues[0].Msg, "'continue' outside any foreach loop")
 }
 
+func TestCheck_UndefinedVarInMatchesEntryReported(t *testing.T) {
+	t.Parallel()
+
+	// Patterns on the right-hand side of a matches entry are
+	// regular expressions; an undefined reference there must
+	// surface from preflight the same way it does in any
+	// other position, otherwise a typo in a fixture-style
+	// assert silently survives the check pass.
+	src := "let got = \"x\"\nassert $got matches { id: $expected_id }"
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "undefined variable: expected_id")
+}
+
 func TestCheck_AssertInsidePollRejected(t *testing.T) {
 	t.Parallel()
 

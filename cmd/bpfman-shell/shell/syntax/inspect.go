@@ -228,9 +228,22 @@ func walk(node Node, f func(Node) bool) {
 			walk(elem, f)
 		}
 	case *MatchesBlockExpr:
-		// MatchesBlockExpr's children are pattern entries
-		// rather than child Exprs; nothing to walk for the
-		// generic AST traversal.
+		// Each entry's Pattern is a regular Expr and SubBlock
+		// is a nested MatchesBlockExpr; both are children that
+		// must be visited so generic walkers (notably the
+		// checker's undefined-variable pass via Inspect) see
+		// references buried inside a matches block. Entries
+		// without a Pattern (predicate-only or sub-block-only
+		// forms) just skip the corresponding walk call.
+		for i := range n.Entries {
+			ent := &n.Entries[i]
+			if ent.Pattern != nil {
+				walk(ent.Pattern, f)
+			}
+			if ent.SubBlock != nil {
+				walk(ent.SubBlock, f)
+			}
+		}
 	}
 	// Post-visit signal: nil tells callers the subtree has
 	// finished. Mirrors go/ast.Inspect.
