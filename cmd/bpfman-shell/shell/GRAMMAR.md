@@ -873,7 +873,7 @@ Anything that does not match a keyword statement and does not
 unambiguously start an expression is parsed as a command
 invocation.
 
-    CommandStmt     = CommandForm .
+    CommandStmt     = CommandHead { CommandArg } .
     CommandForm     = CommandHead { CommandArg } [ MatchesBlock ] .
     CommandHead     = Word .
     CommandArg      = Word
@@ -885,6 +885,14 @@ invocation.
                     | CommandListArg .
     CommandParenArg = '(' Expression ')' .
     CommandListArg  = ListExpr .
+
+`CommandStmt` is the bare statement-level form: `parseCommandStmt`
+terminates at the first `{` no matter what, so a trailing
+`matches { ... }` is not part of the statement-level grammar.
+`CommandForm` is the richer production reused on bind RHS,
+defer, let RHS, and assert clauses, where the surrounding
+parser detects a `matches { ... }` tail and folds it into the
+same node.
 
 `CommandParenArg` and `CommandListArg` are named separately from
 `ParenExpr` and `ListExpr` because command argument parsing is
@@ -911,9 +919,11 @@ the following:
 matched-paren and matched-bracket consumption inside those
 forms handles their own balancing.
 
-`CommandForm` is also the production used on bind RHS and defer
-RHS; see `BindStmt` and `DeferStmt`. On those sites the
-termination rule is the same.
+`CommandForm` is the production reused on bind RHS, defer RHS,
+let RHS, and assert clauses; on those sites the matches-block
+detection above applies. Bare `CommandStmt` ends at the first
+`{` unconditionally and does not pick up a trailing matches
+block.
 
 **Language rule versus parser accident: command head.**
 
@@ -1087,15 +1097,16 @@ A primary is one of:
                    | ParenExpr
                    | ListExpr
                    | PureCallExpr
-                   | TimeoutExpr
-                   | IterationExpr
                    .
 
 `MatchesBlock` is not in this alternation. Although it produces
 a `MatchesBlockExpr` node that implements the `Expr` interface,
 the general expression parser does not accept it; it is attached
-only by `parseCommandStmt` and the assert-clause parser as a
-trailing tail (see CommandStmt / AssertStmt).
+only by the bind / defer / let RHS command-tail parsers and the
+assert-clause parser (see BindStmt / DeferStmt / LetStmt /
+AssertStmt). A bare `CommandStmt` does not pick up a trailing
+matches block: `parseCommandStmt` ends the command at the first
+`{` regardless of the preceding word.
 
 ### LiteralExpr
 
