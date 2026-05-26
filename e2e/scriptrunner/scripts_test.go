@@ -278,4 +278,3 @@ func runBPFManScript(t *testing.T, e2eDir, script string, timeout time.Duration)
 		t.Logf("%s", s)
 	}
 }
-
