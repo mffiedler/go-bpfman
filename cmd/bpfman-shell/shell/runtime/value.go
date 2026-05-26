@@ -383,6 +383,17 @@ func (v Value) LookupValue(varName, path string) (Value, error) {
 	// the result remains origin-less, matching today's
 	// behaviour for non-struct-backed Values.
 	out := Value{v: current}
+	// Preserve the explicit-null vs absent distinction: a
+	// terminal JSON null is a value (IsNull true, IsNil false),
+	// not the bare Value{} sentinel reserved for absence. The
+	// downstream predicate idiom `IsNil() || IsNull()` catches
+	// either way, but matches blocks (`field: null`) and the
+	// present/missing/strict-null shape tests need IsNull to
+	// fire on a path-landed null. An origin walk that happens
+	// to bind a more specific kind below still wins.
+	if current == nil {
+		out.kind = semantics.OriginNull
+	}
 	if v.origin != nil {
 		if origin, kind := semantics.WalkSuborigin(v.origin, steps); origin != nil {
 			out.origin = origin

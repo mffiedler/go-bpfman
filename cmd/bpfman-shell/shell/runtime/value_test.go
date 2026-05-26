@@ -418,11 +418,21 @@ func TestValueLookupValue(t *testing.T) {
 		assert.Len(t, arr, 2)
 	})
 
-	t.Run("returns nil value", func(t *testing.T) {
+	t.Run("returns explicit null for JSON null terminal", func(t *testing.T) {
 		t.Parallel()
+		// A path landing on an explicit JSON null is a value
+		// that happens to be null, not the absent slot a bare
+		// Value{} represents. The two halves of the Value
+		// vocabulary are deliberately distinct (IsNull vs
+		// IsNil): predicates like `field: null` in a matches
+		// block, the present/missing/strict-null shape tests,
+		// and any caller chaining a further lookup all rely
+		// on the lookup preserving the distinction rather
+		// than collapsing the null carrier back to "absent".
 		got, err := v.LookupValue("v", "nullable")
 		require.NoError(t, err)
-		assert.True(t, got.IsNil())
+		assert.True(t, got.IsNull(), "terminal JSON null must surface as IsNull")
+		assert.False(t, got.IsNil(), "explicit null is a present value, not absent")
 	})
 
 	t.Run("returns scalar", func(t *testing.T) {
