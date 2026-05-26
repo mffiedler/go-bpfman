@@ -210,6 +210,7 @@ func runCheckPass(c *checker, prog *syntax.Program) []Issue {
 	c.checkLoopExits(prog.Stmts, 0)
 	c.checkBuiltinArity(prog)
 	c.checkKillFlags(prog)
+	c.checkThreadDefArity(prog)
 	return c.issues
 }
 
@@ -1536,6 +1537,40 @@ func (c *checker) checkLoopExits(stmts []syntax.Stmt, depth int) {
 			}
 		}
 	}
+}
+
+// checkThreadDefArity mirrors checkDefArity for thread
+// expressions. `$value |> head arg1 arg2` routes through
+// def-first bind dispatch at runtime with the LHS appended
+// last, so a def whose head matches the thread's first arg
+// receives len(ThreadExpr.Args) arguments (head excluded,
+// LHS appended). The walker dispatches on every ThreadExpr
+// rather than CommandStmt because thread args live in an
+// expression position the command-shape checks never see.
+func (c *checker) checkThreadDefArity(prog *syntax.Program) {
+	syntax.Inspect(prog, func(n syntax.Node) bool {
+		te, ok := n.(*syntax.ThreadExpr)
+		if !ok || len(te.Args) == 0 {
+			return true
+		}
+		headLit, ok := te.Args[0].(*syntax.LiteralExpr)
+		if !ok || headLit.Quoted {
+			return true
+		}
+		name := headLit.Text
+		if !c.defs[name] {
+			return true
+		}
+		want := c.defArity[name]
+		got := len(te.Args)
+		if got == want {
+			return true
+		}
+		decl := c.defDeclPos[name]
+		c.addIssue(te.Span, "%s: expected %d argument(s), got %d (def declared at %d:%d)",
+			name, want, got, decl.Line, decl.Col)
+		return true
+	})
 }
 
 // checkBuiltinArity flags shape errors on the async-job

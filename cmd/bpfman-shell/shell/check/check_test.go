@@ -206,6 +206,46 @@ func TestCheck_BindCollect_SingleBindOnPureBuiltinAccepted(t *testing.T) {
 	assert.Empty(t, issues)
 }
 
+func TestCheck_ThreadDefArityTooFew(t *testing.T) {
+	t.Parallel()
+
+	// `$value |> takes_two` resolves takes_two via the def-first
+	// bind dispatch policy at runtime, appending the LHS as the
+	// final positional. The def expects two arguments, the
+	// thread supplies one (the LHS), so the arity is wrong --
+	// runtime fails with "expected 2 argument(s), got 1". The
+	// static checker must reach the same diagnostic because
+	// thread is just expression-position bind-dispatch.
+	src := "def takes_two(a b) { return $a }\nlet r = \"hello\" |> takes_two"
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "takes_two: expected 2 argument(s), got 1")
+}
+
+func TestCheck_ThreadDefArityTooMany(t *testing.T) {
+	t.Parallel()
+
+	// Symmetric over-supply: `|> takes_one extra1 extra2` puts
+	// three arguments through to a one-param def (LHS plus the
+	// two explicit args after the head). The static checker
+	// pulls this diagnostic forward from the runtime.
+	src := "def takes_one(x) { return $x }\nlet r = \"hello\" |> takes_one extra1 extra2"
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "takes_one: expected 1 argument(s), got 3")
+}
+
+func TestCheck_ThreadDefArityExact(t *testing.T) {
+	t.Parallel()
+
+	// Boundary case: arity matches exactly. The LHS becomes the
+	// last positional, so a single-param def with no extra
+	// thread args is a clean call.
+	src := "def id(x) { return $x }\nlet r = \"hello\" |> id"
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
 func TestCheck_BindCollect_ListExprIsChecked(t *testing.T) {
 	t.Parallel()
 
