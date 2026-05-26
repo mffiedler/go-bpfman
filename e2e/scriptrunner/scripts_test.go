@@ -192,11 +192,9 @@ func runBPFManScript(t *testing.T, e2eDir, script string, timeout time.Duration)
 	// Script paths inside the corpus reference testdata
 	// relative to e2e/, so the child has to run with cwd at
 	// the package dir regardless of where the test binary was
-	// invoked from.
+	// invoked from. PATH is already set up at TestMain (BIN_DIR
+	// prepended once, before any exec.Command).
 	cmd.Dir = e2eDir
-	if bin := os.Getenv("BIN_DIR"); bin != "" {
-		cmd.Env = augmentPath(os.Environ(), bin)
-	}
 	out, err := cmd.CombinedOutput()
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		t.Fatalf("%s timed out after %s\n\n%s", script, timeout, out)
@@ -209,17 +207,3 @@ func runBPFManScript(t *testing.T, e2eDir, script string, timeout time.Duration)
 	}
 }
 
-// augmentPath returns a copy of env with binDir prepended to
-// the PATH entry. Used only when BIN_DIR is explicitly set, to
-// work around sudo's secure_path stripping the caller's PATH.
-func augmentPath(env []string, binDir string) []string {
-	out := make([]string, len(env))
-	copy(out, env)
-	for i, kv := range out {
-		if strings.HasPrefix(kv, "PATH=") {
-			out[i] = "PATH=" + binDir + string(os.PathListSeparator) + strings.TrimPrefix(kv, "PATH=")
-			return out
-		}
-	}
-	return append(out, "PATH="+binDir)
-}
