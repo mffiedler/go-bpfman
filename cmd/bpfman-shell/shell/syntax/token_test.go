@@ -928,6 +928,32 @@ func TestTokeniseDoubleQuotedEscapes(t *testing.T) {
 	}
 }
 
+func TestTokeniseDoubleQuotedEscape_HashInsideStringIsNotAComment(t *testing.T) {
+	t.Parallel()
+
+	// stripComment runs before the string lexer and walks
+	// quote state by hand. It must understand backslash
+	// escapes so that an escaped double quote does not flip
+	// the in-string flag, otherwise a '#' later in the same
+	// string is mistaken for a real inline comment and the
+	// rest of the line is stripped. The double-quote escape
+	// is a documented part of the string syntax, so this is
+	// the load-bearing seam between the two passes.
+	input := `let x = "he said \"hi#nope\""` + "\n" + `print done`
+	tokens, err := Tokenise(input)
+	require.NoError(t, err)
+	var quoted *Token
+	for i := range tokens {
+		if tokens[i].Kind == TokenQuoted {
+			quoted = &tokens[i]
+			break
+		}
+	}
+	require.NotNil(t, quoted, "expected a TokenQuoted; tokens=%v", tokens)
+	assert.Equal(t, `he said "hi#nope"`, quoted.Text,
+		"the '#' inside the escaped-quote string is part of the string, not a comment")
+}
+
 func TestTokeniseSingleQuotedIsLiteral(t *testing.T) {
 	t.Parallel()
 

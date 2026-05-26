@@ -340,6 +340,18 @@ func stripComment(input string) string {
 	for i := 0; i < len(input); {
 		ch := input[i]
 		switch {
+		case ch == '\\' && inDouble && i+1 < len(input):
+			// The double-quoted string lexer recognises backslash
+			// escapes (\", \n, \t, \r, \\, \$). The comment-
+			// stripping pass runs before the string lexer, so it
+			// has to walk the same escape vocabulary to keep quote
+			// state correct: a bare \" would otherwise look like a
+			// closing quote, flipping inDouble false, and any '#'
+			// later in the same string would be mistaken for an
+			// inline comment. Copy both bytes verbatim and skip
+			// the escape's payload without touching quote state.
+			b = append(b, ch, input[i+1])
+			i += 2
 		case ch == '\'' && !inDouble:
 			inSingle = !inSingle
 			b = append(b, ch)
