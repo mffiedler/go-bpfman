@@ -282,33 +282,6 @@ step "outer"
 	assert.Equal(t, []string{"recorded", "outer"}, calls[1])
 }
 
-func TestExecSource_Def_DoesNotCaptureVariableFrames(t *testing.T) {
-	t.Parallel()
-
-	// Defs are session-level declarations; they do not capture
-	// the variable frame they were declared in. Once the
-	// declaring if-branch ends, the let it introduced is gone
-	// and a call from outside the branch must fail with
-	// undefined-variable rather than seeing a captured snapshot.
-	src := `
-if true {
-  let captured = inner
-  def f() {
-    use $captured
-  }
-}
-f
-`
-	prog := parseProgram(t, src)
-	env := &Env{
-		Session:     NewSession(),
-		ExecCommand: func([]Arg, source.Span) (Value, error) { return Value{}, nil },
-	}
-	err := execParsedProgram(t, prog, env)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "undefined variable: captured")
-}
-
 func TestExecSource_Def_ParameterScopesToCallFrame(t *testing.T) {
 	t.Parallel()
 

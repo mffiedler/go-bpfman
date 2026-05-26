@@ -10,6 +10,56 @@ import (
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
 )
 
+// TestLower_NestedDefRejected pins the defence-in-depth gate on
+// def hoisting. The static checker rejects any def declared
+// outside the top level (nested in a def body, an if/elif/else
+// branch, a foreach body, a poll body, etc), but Lower is
+// callable on any parsed program with no checker as a
+// precondition; lowerDefStmt unconditionally appended the
+// resulting *ir.Def to the shared lowerState.defs slice, so a
+// nested def reached at lowering time would still get
+// globally hoisted at runtime registration. Reject the shape
+// here so the IR Defs list can only carry top-level defs no
+// matter how Lower is reached.
+func TestLower_NestedDefRejected(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		src  string
+	}{
+		{
+			name: "def inside def",
+			src:  "def outer() { def inner() { return 1 } }",
+		},
+		{
+			name: "def inside if",
+			src:  "if true { def inside_if() { return 1 } }",
+		},
+		{
+			name: "def inside foreach",
+			src:  "foreach x in [1 2 3] { def inside_loop() { return 1 } }",
+		},
+		{
+			name: "def inside poll",
+			src:  "poll timeout 1s every 1ms { def inside_poll() { return 1 } }",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tokens, err := syntax.Tokenise(tc.src)
+			require.NoError(t, err)
+			prog, err := syntax.Parse(tokens)
+			require.NoError(t, err)
+			_, err = Lower(prog)
+			require.Error(t, err, "expected the lowerer to reject %s", tc.name)
+			assert.Contains(t, err.Error(), "def",
+				"diagnostic should mention 'def' to point at the misplacement")
+		})
+	}
+}
+
 // TestLower_RetryRejectedOutsidePollAndDef pins the defence-in-
 // depth invariant the runtime relies on: a RetryStmt only makes
 // sense inside a poll attempt's lexical body or inside a helper

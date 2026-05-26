@@ -59,6 +59,16 @@ type lowerCtx struct {
 	returnTo    *ir.BasicBlock
 	attempt     *ir.BasicBlock
 	fatal       *ir.BasicBlock
+	// nonTopLevel marks that the current statement walk is
+	// inside an if/elif/else branch, a foreach body, or a poll
+	// body. lowerDefStmt consults it (alongside returnTo, which
+	// marks "inside a def body") to refuse any def declared
+	// outside the program's top level. The static checker
+	// applies the same gate via nonTopLevelDepth; pinning it in
+	// the lowerer keeps Lower defensive when Check is not in
+	// the path. Save and restore via the same ctx swap as
+	// returnTo / attempt.
+	nonTopLevel bool
 }
 
 // loopFrame is one entry on the foreach stack. Exit is the
@@ -326,11 +336,15 @@ func (l *lowerer) lowerIfBranchBody(block *ir.BasicBlock, body []syntax.Stmt, sp
 	l.cur = block
 	l.emit(&ir.TraceNote{Msg: traceMsg, Span: traceSpan})
 	l.emit(&ir.EnterFrame{Kind: ir.FrameIfBranch, Span: span})
+	saved := l.ctx
+	l.ctx.nonTopLevel = true
 	for _, st := range body {
 		if err := l.lowerStmt(st); err != nil {
+			l.ctx = saved
 			return err
 		}
 	}
+	l.ctx = saved
 	l.emit(&ir.ExitFrame{Span: span})
 	l.emit(&ir.Jump{Target: merge, Span: span})
 	return nil
@@ -365,11 +379,15 @@ func (l *lowerer) lowerForEachStmt(s *syntax.ForEachStmt) error {
 	// iteration ends. Lowering does not emit explicit frame
 	// markers because they would otherwise pair against intermediate
 	// frames opened mid-body and obscure the loop boundary.
+	saved := l.ctx
+	l.ctx.nonTopLevel = true
 	for _, st := range s.Body {
 		if err := l.lowerStmt(st); err != nil {
+			l.ctx = saved
 			return err
 		}
 	}
+	l.ctx = saved
 	l.emit(&ir.ForEachContinue{Span: s.Span})
 
 	l.cur = exit
@@ -431,6 +449,7 @@ func (l *lowerer) lowerPollStmt(s *syntax.PollStmt) error {
 	l.ctx.attempt = attempt
 	l.ctx.fatal = timeout
 	l.ctx.deferPolicy = ir.RunDefersAttemptFatal
+	l.ctx.nonTopLevel = true
 
 	l.cur = attempt
 	l.emit(&ir.TraceNote{Msg: "poll attempt", Span: s.Span})
@@ -508,6 +527,22 @@ func (l *lowerer) emitRetryStmt(s *syntax.RetryStmt) {
 // lowering no longer emits a body-time ir.RegisterDef instruction
 // because top-level defs are hoisted before body execution.
 func (l *lowerer) lowerDefStmt(s *syntax.DefStmt) error {
+	// Top-level defs are the only shape the IR Defs list is meant
+	// to carry: registerLoweredDefs hoists every entry into the
+	// session at the start of Exec, so a def nested in an
+	// if/elif/else branch, a foreach body, a poll body, or
+	// another def body would become globally visible regardless
+	// of the conditional that lexically surrounds it. The static
+	// checker catches this via nonTopLevelDepth, but Lower is
+	// callable without Check as a precondition; refuse the
+	// shape here so the IR shape stays well-formed no matter
+	// how the lowerer is reached. returnTo covers the
+	// def-inside-def case (set on entry to the outer def body);
+	// nonTopLevel covers the if / foreach / poll branches that
+	// bump it around their bodies.
+	if l.ctx.returnTo != nil || l.ctx.nonTopLevel {
+		return syntax.SpanErrorf(s.Span, "def %q must be declared at top level", s.Name)
+	}
 	defL := newLowerer(l.state, lowerCtx{deferPolicy: ir.RunDefersDefLocal})
 	defL.nextTemp = ir.Temp(len(s.Params))
 
