@@ -155,6 +155,12 @@ BPFMAN_LOG ?=
 # busy_timeout becomes too tight.
 BPFMAN_SQLITE_BUSY_TIMEOUT ?=
 BPFMAN_SQLITE_TX_RETRY_BACKOFFS ?=
+# Global writer-lock acquire deadline forwarded to the daemon
+# via the Kong env-tag binding on the --lock-timeout flag. Empty
+# leaves the daemon on its 30s default; the RACE=1 grpc lane
+# widens this in CI alongside the SQLite knobs above because the
+# race detector pushes worst-case flock waits past 30s.
+BPFMAN_LOCK_TIMEOUT ?=
 
 # ---------------------------------------------------------------------------
 # Verbose-build switch, modelled on the Linux kernel tree's V=
@@ -215,8 +221,8 @@ override STATIC := $(filter 1,$(STATIC))
 RACE ?=
 override RACE := $(filter 1,$(RACE))
 
-# ISOLATED_RUNTIME=1 sets BPFMAN_E2E_ISOLATED_RUNTIME=1 in the e2e
-# sudo command line, switching the suite from its production-shaped
+# BPFMAN_E2E_ISOLATED_RUNTIME=1 is forwarded into the e2e sudo
+# command line, switching the suite from its production-shaped
 # default (one bpffs mount, one sqlite store, one manager instance
 # shared across tests) to per-test isolated runtimes (each test
 # gets its own). Use the isolated lane when chasing a specific
@@ -225,9 +231,21 @@ override RACE := $(filter 1,$(RACE))
 # which one a developer hits first when they type `make test-e2e`.
 # The Go side checks for the literal string "1", so any other value
 # collapses to empty here and matches the env-unset (= shared)
-# behaviour. Same filter-1 pattern as RACE/STATIC.
-ISOLATED_RUNTIME ?=
-override ISOLATED_RUNTIME := $(filter 1,$(ISOLATED_RUNTIME))
+# behaviour. The Make variable name is intentionally the same as
+# the env var it controls so the forward-env macro can pick it up
+# uniformly. Same filter-1 pattern as RACE/STATIC.
+BPFMAN_E2E_ISOLATED_RUNTIME ?=
+override BPFMAN_E2E_ISOLATED_RUNTIME := $(filter 1,$(BPFMAN_E2E_ISOLATED_RUNTIME))
+
+# forward-env renders `VAR=value` for each VAR in $(1) that has
+# a non-empty value in the current Make environment. Suitable for
+# prepending to a sudo command line where sudo strips arbitrary
+# env by default and the recipe needs to re-inject a controlled
+# set. The Make variable name must match the env variable name --
+# adding a new env knob means picking a Make var name that aligns
+# (BPFMAN_FOO=$(BPFMAN_FOO), not FOO=$(BPFMAN_FOO)) and appending
+# it to the recipe's per-recipe forward list.
+forward-env = $(foreach v,$(1),$(if $($(v)),$(v)=$($(v))))
 
 # ---------------------------------------------------------------------------
 # Runtime image dispatch.
@@ -759,7 +777,7 @@ $(BIN_DIR)/e2e.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) | $(BIN_DIR)
 # stress run when bumped (CI pins it to 5 so every PR gets a small
 # count loop on top of the deterministic gate).
 test-e2e: $(BIN_DIR)/e2e.test
-	sudo $(if $(ISOLATED_RUNTIME),BPFMAN_E2E_ISOLATED_RUNTIME=$(ISOLATED_RUNTIME)) $(if $(BPFMAN_LOG),BPFMAN_LOG=$(BPFMAN_LOG)) $(BIN_DIR)/e2e.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(PARALLEL),-test.parallel $(PARALLEL)) $(if $(TEST),-test.run $(TEST))
+	sudo $(call forward-env,BPFMAN_E2E_ISOLATED_RUNTIME BPFMAN_LOG) $(BIN_DIR)/e2e.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(PARALLEL),-test.parallel $(PARALLEL)) $(if $(TEST),-test.run $(TEST))
 
 # Parallel gRPC e2e: stands up a real `bpfman serve` subprocess and
 # fans goroutines through load/get/attach/detach/unload over the
@@ -784,6 +802,20 @@ test-e2e: $(BIN_DIR)/e2e.test
 E2E_GRPC_TEST_BIN     ?= $(BIN_DIR)/e2e-grpc.test
 E2E_GRPC_BPFMAN_BIN   ?= $(BIN_DIR)/bpfman
 
+# BPFMAN_* env vars forwarded into the sudo'd e2e-grpc test
+# binary by run-e2e-grpc. Each entry is the env variable name
+# AND the Make variable name (they must match for forward-env
+# to pick it up); add a new knob by appending to this list and
+# letting the caller (CI workflow, developer command line, env
+# in the parent shell) set it.
+E2E_GRPC_FORWARD_VARS := \
+	BPFMAN_GRPC_GOROUTINES \
+	BPFMAN_GRPC_ITERATIONS \
+	BPFMAN_LOCK_TIMEOUT \
+	BPFMAN_LOG \
+	BPFMAN_SQLITE_BUSY_TIMEOUT \
+	BPFMAN_SQLITE_TX_RETRY_BACKOFFS
+
 $(BIN_DIR)/e2e-grpc.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) | $(BIN_DIR)
 	$(strip go test -c $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(E2E_TAGS),-tags=$(E2E_TAGS)) $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") -o $(BIN_DIR)/e2e-grpc.test ./e2e/grpc)
 
@@ -796,7 +828,10 @@ build-e2e-grpc: $(BIN_DIR)/e2e-grpc.test bpfman-compile
 # pass an absolute path through sudo rather than relying on PATH
 # munging.
 run-e2e-grpc:
-	sudo BPFMAN_BIN=$(abspath $(E2E_GRPC_BPFMAN_BIN)) $(if $(BPFMAN_GRPC_GOROUTINES),BPFMAN_GRPC_GOROUTINES=$(BPFMAN_GRPC_GOROUTINES)) $(if $(BPFMAN_GRPC_ITERATIONS),BPFMAN_GRPC_ITERATIONS=$(BPFMAN_GRPC_ITERATIONS)) $(if $(BPFMAN_LOG),BPFMAN_LOG=$(BPFMAN_LOG)) $(if $(BPFMAN_SQLITE_BUSY_TIMEOUT),BPFMAN_SQLITE_BUSY_TIMEOUT=$(BPFMAN_SQLITE_BUSY_TIMEOUT)) $(if $(BPFMAN_SQLITE_TX_RETRY_BACKOFFS),BPFMAN_SQLITE_TX_RETRY_BACKOFFS=$(BPFMAN_SQLITE_TX_RETRY_BACKOFFS)) $(if $(BPFMAN_LOCK_TIMEOUT),BPFMAN_LOCK_TIMEOUT=$(BPFMAN_LOCK_TIMEOUT)) $(E2E_GRPC_TEST_BIN) -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(TEST),-test.run $(TEST))
+	sudo BPFMAN_BIN=$(abspath $(E2E_GRPC_BPFMAN_BIN)) \
+	    $(call forward-env,$(E2E_GRPC_FORWARD_VARS)) \
+	    $(E2E_GRPC_TEST_BIN) -test.v -test.failfast \
+	    -test.count=$(STRESS_COUNT) $(if $(TEST),-test.run $(TEST))
 
 test-e2e-grpc: build-e2e-grpc run-e2e-grpc
 
@@ -1288,7 +1323,7 @@ ci-test: ci-image
 ci-test-e2e:
 	$(RM) -r $(CI_E2E_BUNDLE)
 	$(OCI_BIN) buildx build --target=e2e-export --output type=local,dest=$(CI_E2E_BUNDLE) -f $(CI_DOCKERFILE) --build-arg RACE=$(RACE) --build-arg EXTRA_TAGS=$(EXTRA_TAGS) $(CI_BUILDX_CACHE) .
-	sudo $(if $(ISOLATED_RUNTIME),BPFMAN_E2E_ISOLATED_RUNTIME=$(ISOLATED_RUNTIME)) $(CI_E2E_BUNDLE)/bin/e2e.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(PARALLEL),-test.parallel $(PARALLEL))
+	sudo $(call forward-env,BPFMAN_E2E_ISOLATED_RUNTIME) $(CI_E2E_BUNDLE)/bin/e2e.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(PARALLEL),-test.parallel $(PARALLEL))
 
 # Reproduce the workflow's e2e-scripts job locally. The .bpfman
 # scripts under e2e/scripts/ and e2e/new/ are interpreted by the
