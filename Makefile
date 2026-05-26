@@ -161,6 +161,15 @@ BPFMAN_SQLITE_TX_RETRY_BACKOFFS ?=
 # widens this in CI alongside the SQLite knobs above because the
 # race detector pushes worst-case flock waits past 30s.
 BPFMAN_LOCK_TIMEOUT ?=
+# Knobs the Go-based .bpfman script runner (test-e2e-scripts-go)
+# honours. Declared empty so checkmake's
+# --warn-undefined-variables doesn't trip on the
+# $(if $(VAR),VAR=$(VAR)) forwarding idiom in run-e2e-scripts-go.
+# BPFMAN_DISPATCH selects bpfman-shell's backend (library or
+# external); BPFMAN_E2E_SCRIPT_TIMEOUT widens the per-script
+# deadline. The test binary carries the actual defaults.
+BPFMAN_DISPATCH ?=
+BPFMAN_E2E_SCRIPT_TIMEOUT ?=
 
 # ---------------------------------------------------------------------------
 # Verbose-build switch, modelled on the Linux kernel tree's V=
@@ -598,7 +607,7 @@ help:
 	@echo "  update-lowered-corpus       Regenerate the shell lowered-IR corpus goldens"
 	@echo "  test-e2e                    Run e2e tests (requires root)"
 	@echo "  test-e2e-grpc               Run the parallel gRPC e2e test against a real bpfman serve daemon (requires root)"
-	@echo "  test-e2e-scripts            Run .bpfman e2e scripts under e2e/scripts/ and e2e/new/ (requires root)"
+	@echo "  test-e2e-scripts            Run .bpfman e2e scripts under e2e/scripts/ and e2e/new/ via the Go test binary in e2e/scriptrunner (requires root)"
 	@echo "  test-examples               Run .bpfman scripts under examples/ (requires root)"
 	@echo "  test-nsenter                Run nsenter tests (native amd64)"
 	@echo "  test-nsenter-cross          Run nsenter tests on amd64/arm64/ppc64le/s390x"
@@ -845,12 +854,41 @@ test-e2e-grpc: build-e2e-grpc run-e2e-grpc
 # from a hermetic container build (Dockerfile.ci's e2e-export
 # stage) and invoke `run-e2e-scripts` directly on the runner
 # without re-triggering the build deps. Local invocations of
-# `test-e2e-scripts` still build first.
-build-e2e-scripts: bpfman-compile bpfman-shell-compile $(BIN_DIR)/e2e.test
+# `test-e2e-scripts` still build first. The runner is a Go test
+# binary built from e2e/scriptrunner; t.Run / t.Parallel /
+# go test -json -run come for free, and the binary holds the
+# shared /tmp/bpfman-e2e.lock so it is mutually exclusive with
+# bin/e2e.test on a single host.
 
+E2E_SCRIPTS_TEST_BIN := $(BIN_DIR)/e2e-scripts.test
+
+# Env vars forwarded into the sudo'd test process.
+# BPFMAN_E2E_SCRIPT_TIMEOUT widens the per-script deadline;
+# BPFMAN_DISPATCH selects the bpfman-shell backend (library vs
+# external); BPFMAN_LOG threads through to bpfman-shell when set.
+# BIN_DIR is passed explicitly below rather than via this list
+# because the value gets abspath'd at the call site.
+E2E_SCRIPTS_FORWARD_VARS := \
+	BPFMAN_DISPATCH \
+	BPFMAN_E2E_SCRIPT_TIMEOUT \
+	BPFMAN_LOG
+
+$(BIN_DIR)/e2e-scripts.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) | $(BIN_DIR)
+	$(strip go test -c $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(E2E_TAGS),-tags=$(E2E_TAGS)) $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") -o $(BIN_DIR)/e2e-scripts.test ./e2e/scriptrunner)
+
+build-e2e-scripts: bpfman-compile bpfman-shell-compile $(E2E_SCRIPTS_TEST_BIN)
+
+# BIN_DIR=$(abspath ...) is the explicit hand-off so the test
+# binary can put bpfman-shell on its PATH despite sudo's
+# secure_path stripping the caller's environment. The runner
+# falls back to whatever bpfman-shell is on PATH when BIN_DIR is
+# unset.
 run-e2e-scripts:
-	@echo "Running .bpfman e2e scripts (requires root)..."
-	BIN_DIR=$(BIN_DIR) hack/test-e2e-scripts.sh $(TEST)
+	sudo BIN_DIR=$(abspath $(BIN_DIR)) \
+	    $(call forward-env,$(E2E_SCRIPTS_FORWARD_VARS)) \
+	    $(E2E_SCRIPTS_TEST_BIN) -test.v -test.failfast \
+	    -test.count=$(STRESS_COUNT) $(if $(PARALLEL),-test.parallel $(PARALLEL)) \
+	    -test.run $(if $(TEST),$(TEST),TestBPFManScripts)
 
 test-e2e-scripts: build-e2e-scripts run-e2e-scripts
 
@@ -1326,24 +1364,23 @@ ci-test-e2e:
 	sudo $(call forward-env,BPFMAN_E2E_ISOLATED_RUNTIME) $(CI_E2E_BUNDLE)/bin/e2e.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(PARALLEL),-test.parallel $(PARALLEL))
 
 # Reproduce the workflow's e2e-scripts job locally. The .bpfman
-# scripts under e2e/scripts/ and e2e/new/ are interpreted by the
-# bpfman binary, so the bundle's bpfman + testdata are extracted
-# directly into the source tree (the layout matches), and the
-# scripts run via `make run-e2e-scripts` which assumes the
-# artefacts are already in place. No outer sudo: the inner
-# hack/test-e2e-scripts.sh shells out to `sudo bpfman-shell` per
-# script invocation, which gets the kernel privileges it needs
-# while leaving the rest of the make recipe unprivileged.
+# scripts under e2e/scripts/ and e2e/new/ are driven by the Go
+# test binary at bin/e2e-scripts.test, which execs the bundle's
+# bpfman-shell per subtest. The bundle's binaries + testdata are
+# extracted into the source tree (the layout matches) and the
+# scripts run via `make run-e2e-scripts`, which sudo-execs
+# e2e-scripts.test with BIN_DIR pointing at the bundle so
+# bpfman-shell resolves despite sudo's secure_path.
 #
 # Pre-clean the exact set of paths the bundle is about to write
-# (bin/bpfman, bin/bpfman-shell, bin/e2e.test, and the BPF object
-# tree). buildx --output overwrites individual files but does not
-# prune anything stale, so leftover artefacts from a previous run
-# could otherwise mask "didn't rebuild" bugs. golangci-lint under
-# bin/ is preserved -- it has its own rule and re-fetching over
-# the network is slow.
+# (bin/bpfman, bin/bpfman-shell, bin/e2e.test, bin/e2e-scripts.test,
+# and the BPF object tree). buildx --output overwrites individual
+# files but does not prune anything stale, so leftover artefacts
+# from a previous run could otherwise mask "didn't rebuild" bugs.
+# golangci-lint under bin/ is preserved -- it has its own rule
+# and re-fetching over the network is slow.
 ci-test-e2e-scripts:
-	$(RM) bin/bpfman bin/bpfman-shell bin/e2e.test
+	$(RM) bin/bpfman bin/bpfman-shell bin/e2e.test bin/e2e-scripts.test
 	$(MAKE) clean-bpf
 	$(OCI_BIN) buildx build --target=e2e-export --output type=local,dest=. -f $(CI_DOCKERFILE) --build-arg RACE=$(RACE) --build-arg EXTRA_TAGS=$(EXTRA_TAGS) $(CI_BUILDX_CACHE) .
 	$(MAKE) run-e2e-scripts
@@ -1400,5 +1437,5 @@ bpfman-test-grpc: build-image-dev
 .PHONY: coverage clean-coverage coverage-func coverage-html coverage-open
 .PHONY: doc doc-text
 .PHONY: print-fedora-version print-go-version print-golangci-lint-version
-.PHONY: build-e2e-grpc build-e2e-scripts $(BIN_DIR)/e2e.test $(BIN_DIR)/e2e-grpc.test run-e2e-grpc run-e2e-scripts test test-lowered-corpus update-lowered-corpus test-e2e test-e2e-grpc test-e2e-scripts test-examples
+.PHONY: build-e2e-grpc build-e2e-scripts $(BIN_DIR)/e2e.test $(BIN_DIR)/e2e-grpc.test $(BIN_DIR)/e2e-scripts.test run-e2e-grpc run-e2e-scripts test test-lowered-corpus update-lowered-corpus test-e2e test-e2e-grpc test-e2e-scripts test-examples
 .PHONY: test-nsenter test-nsenter-amd64 test-nsenter-arm64 test-nsenter-cross test-nsenter-ppc64le test-nsenter-s390x

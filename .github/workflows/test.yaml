@@ -237,6 +237,9 @@ jobs:
           sudo ln -sf "$bpf_bin" /usr/local/bin/bpftool
           bpftool version
 
-      - run: make ci-test-e2e-scripts RACE=${{ matrix.race }}
+      # STRESS_COUNT shrinks to 1 under RACE=1; see test-e2e
+      # above for the rationale (race detector roughly doubles
+      # per-test cost, 5x stress compounds to ~10x baseline).
+      - run: make ci-test-e2e-scripts RACE=${{ matrix.race }} STRESS_COUNT=${{ matrix.race == 1 && '1' || '5' }}
         env:
           BPFMAN_DISPATCH: ${{ matrix.dispatch }}
