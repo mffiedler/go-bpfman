@@ -221,14 +221,27 @@ Comments are lexer-stripped before tokenisation: `#` outside a
 quoted string starts a comment that runs to end of line. The
 strip preserves source offsets so error spans remain accurate.
 
-A backslash immediately followed by a newline (or `\r\n`) is a
-line continuation: the backslash and line ending are consumed by
-the lexer, the continuation does not emit a Sep token, and the
-two adjacent lines tokenise as one logical line. The
-continuation is recognised only at top-level positions outside
-quoted strings; inside quoted strings backslash handling is
-governed by the quoted-string lexer rather than by the line
-continuation rule.
+The primary continuation model is structural: a Sep token does
+not terminate a statement while the parser is inside an open
+syntactic form. The statement-token collectors treat newlines
+and `{` as inert at positive paren / bracket depth, so an
+expression spread across lines reads naturally when it is
+inside `(...)`, `[...]`, a matches block, a `def` parameter
+list, an `if` / `elif` condition before its block, or any
+other context that opens a balanced pair. Inside `{ ... }`
+block bodies, newlines are ordinary statement separators.
+
+A backslash immediately followed by a newline (or `\r\n`) is
+also accepted as a lexer-level line continuation: the backslash
+and line ending are consumed, the continuation does not emit a
+Sep token, and the two adjacent lines tokenise as one logical
+line. The continuation is recognised only at top-level
+positions outside quoted strings; inside quoted strings
+backslash handling is governed by the quoted-string lexer
+rather than by the line continuation rule. The backslash form
+is intended for paste-from-shell compatibility on a plain argv
+command line that has no surrounding syntactic form; reach for
+it only when the structural continuation does not apply.
 
 Lexical predicates applied to Compound Word text:
 
@@ -336,9 +349,15 @@ optional dotted path; the predicate evaluator reads the
 underlying presence state from the runtime path walker so the
 three states (absent / null / value) are distinguishable.
 
-Match-tail word (tested by `parseCommandStmt`):
+Expression operator words (recognised at the matching position
+in the expression grammar):
 
-    matches
+    matches exhaustive
+
+`matches` is the postfix comparison-level operator described in
+the Expressions section; `exhaustive` is recognised only when it
+appears immediately after `matches`. Outside that position both
+words are ordinary Word tokens.
 
 Adapter prefix words (registered in `token.go`'s
 `adapterPrefixes`):
@@ -1121,7 +1140,11 @@ is just another expression-level operator:
   `require $x matches { ... }`.
 - Condition expressions of `if` and `elif`.
 - Parenthesised command arguments: `print ($x matches { ... })`.
-- List literal elements: `[$a matches { ... }, $b]`.
+- Parenthesised list literal elements:
+  `[($a matches { ... }) $b]`. List elements are
+  whitespace-separated and each element parses as a Term, so a
+  compound expression has to wrap in `(...)` to enter the
+  expression grammar.
 - The expression body inside an interpolation segment of a
   double-quoted string: `"${$x matches { ... }}"`.
 
@@ -1411,13 +1434,6 @@ output into a name is the bind form `let x <- CMD`.
 
 ## Parser limitations
 
-- Multi-line `(EXPR)` is not supported by the statement-token
-  collectors (`parseCommandStmt`, `takeStmtTokens`,
-  `takeBindRHSTokens`): they track `[` / `]` depth but not `(`
-  / `)`, so a parenthesised expression that spans lines is cut
-  at the newline. `def` parameter lists and `[ ... ]` list
-  literals have dedicated handling and do support wrapping
-  across lines.
 - VarRef index keys (`$x[K]`) accept only an integer literal or
   a `$ident` token; arbitrary expressions inside `[...]` in
   index position are not accepted by the path tokeniser.
