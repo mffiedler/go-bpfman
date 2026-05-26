@@ -1,4 +1,10 @@
 # -*- mode: bpfman -*-
+# NOPARALLEL: tc_stats_map is LIBBPF_PIN_BY_NAME, so concurrent
+# runs of this script would share a single kernel-global pin
+# and stomp on each other's counters. The scriptrunner test
+# harness greps the first 20 lines for `# NOPARALLEL` and
+# opts the subtest out of t.Parallel() when it sees it.
+#
 # Translation experiment: e2e/TestTC_PinByNameMapSharing.
 #
 # tc_counter_pinned.bpf.o declares its tc_stats_map with

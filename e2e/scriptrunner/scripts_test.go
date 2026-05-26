@@ -3,6 +3,7 @@
 package scriptrunner
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -36,6 +37,18 @@ import (
 // stay serial because the legacy corpus hardcodes
 // 198.51.100.1/24 via raw `ip addr add` and would collide.
 //
+// Per-script opt-out: a `.bpfman` script can declare itself
+// non-parallel by putting `# NOPARALLEL` on a line within the
+// first scriptHeaderLines lines of the file (the
+// scriptOptsOutOfParallel helper pre-scans for it). Such a
+// script's subtest runs sequentially in the parent's
+// registration loop with no t.Parallel call, so it has the
+// kernel surface to itself for the duration of its run; the
+// other new/ subtests stay paused in the parallel queue
+// until the parent body returns. The marker lives with the
+// script, so the constraint is discoverable from the file
+// that has it rather than from a central registry.
+//
 // Subtest names are the script's path relative to e2e/, so
 // `go test -run 'TestBPFManScripts/new/Foo\.bpfman$'` selects
 // one script (escape the dot and anchor the end to avoid
@@ -67,16 +80,50 @@ func TestBPFManScripts(t *testing.T) {
 			t.Fatalf("no .bpfman scripts found under %s/", absSub)
 		}
 		parallel := sub == "new"
+		// Pre-scan once per pass so a script's header is read
+		// at most once even under stress repeats. The scan
+		// fails loudly on any read error -- a script the
+		// runner cannot open is not a script the harness can
+		// honestly run, so propagate the open error rather
+		// than silently treating the file as opt-in to
+		// parallel.
+		serial := make(map[string]bool, len(matches))
+		if parallel {
+			for _, abs := range matches {
+				if scriptOptsOutOfParallel(t, abs) {
+					serial[abs] = true
+				}
+			}
+		}
 		// Outer loop: repeat. Inner loop: scripts. Pass r=0 of
 		// every script enters the dispatcher first, then r=1,
 		// and so on; the t.Parallel queue under new/ therefore
 		// holds [s1#0, s2#0, ..., sN#0, s1#1, ...] which
-		// preserves wave diversity across repeats.
+		// preserves wave diversity across repeats. Scripts
+		// marked NOPARALLEL skip the repeat: they hold the
+		// kernel surface to themselves for their run, so
+		// extra registrations only burn wall-clock time
+		// without tickling new race windows.
 		for r := 0; r < repeats; r++ {
 			for _, abs := range matches {
+				if serial[abs] && r > 0 {
+					continue
+				}
 				rel := filepath.Join(sub, filepath.Base(abs))
-				t.Run(scriptSubtestName(rel, r, repeats), func(t *testing.T) {
-					if parallel {
+				// Suffix only when the script actually
+				// participates in the repeat cycle. A
+				// NOPARALLEL script runs exactly once even
+				// under stress, so it keeps its unsuffixed
+				// name; otherwise `-test.run 'Foo#3'` against
+				// a NOPARALLEL script would silently match no
+				// subtests.
+				name := filepath.ToSlash(rel)
+				if repeats > 1 && !serial[abs] {
+					name = fmt.Sprintf("%s#%d", name, r)
+				}
+				runParallel := parallel && !serial[abs]
+				t.Run(name, func(t *testing.T) {
+					if runParallel {
 						t.Parallel()
 					}
 					runBPFManScript(t, e2eDir, rel, timeout)
@@ -84,19 +131,6 @@ func TestBPFManScripts(t *testing.T) {
 			}
 		}
 	}
-}
-
-// scriptSubtestName produces the subtest path for one
-// registration. When repeats <= 1 the bare relative path is
-// used (so the default one-pass shape keeps clean names like
-// "new/Foo.bpfman"); when stressing the suffix "#<r>" makes
-// each registration unique under Go's t.Run dedup rules.
-func scriptSubtestName(rel string, repeat, repeats int) string {
-	name := filepath.ToSlash(rel)
-	if repeats <= 1 {
-		return name
-	}
-	return fmt.Sprintf("%s#%d", name, repeat)
 }
 
 // e2ePackageDir returns the absolute path of the e2e directory
@@ -172,6 +206,47 @@ func scriptRepeats() int {
 		return bpfmanShellRepeatsDefault
 	}
 	return n
+}
+
+// scriptHeaderLines bounds the prescan window for the
+// # NOPARALLEL marker so the helper does no more I/O than
+// reading a small script header. Any marker has to appear in
+// the file's first scriptHeaderLines lines; that keeps the
+// convention explicit (the script header is where the
+// constraint lives), avoids accidentally matching a comment
+// or shell-quoted occurrence deep inside the body, and caps
+// the per-script scan cost at a tiny bounded read.
+const (
+	scriptHeaderLines = 20
+	scriptNoParallel  = "# NOPARALLEL"
+)
+
+// scriptOptsOutOfParallel reports whether the script at path
+// declares itself non-parallel via a `# NOPARALLEL` line in
+// its header. Match is a prefix on the trimmed line so
+// trailing rationale is allowed (e.g. "# NOPARALLEL: shares
+// pinned-map state"). Any read error is fatal -- a script
+// the runner cannot even open is not a script the runner
+// can run; better to surface the read error here than to
+// silently default the missing-or-unreadable script into
+// the parallel pool.
+func scriptOptsOutOfParallel(t *testing.T, path string) bool {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open script %s for NOPARALLEL prescan: %v", path, err)
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	for i := 0; i < scriptHeaderLines && scanner.Scan(); i++ {
+		if strings.HasPrefix(strings.TrimSpace(scanner.Text()), scriptNoParallel) {
+			return true
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("read script %s for NOPARALLEL prescan: %v", path, err)
+	}
+	return false
 }
 
 // runBPFManScript executes one .bpfman script under a per-script
