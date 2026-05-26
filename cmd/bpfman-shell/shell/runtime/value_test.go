@@ -66,6 +66,27 @@ func TestValueFromJSON(t *testing.T) {
 		assert.Contains(t, err.Error(), "trailing data")
 	})
 
+	t.Run("trailing close-bracket after value", func(t *testing.T) {
+		t.Parallel()
+		// dec.More() returns false when the next non-whitespace
+		// byte is ']' or '}' because the stdlib treats those as
+		// "no more elements in the current array/object". At
+		// the top level there is no array or object, so a
+		// stray ']' or '}' after an otherwise well-formed
+		// value should be reported as trailing data rather
+		// than silently accepted.
+		_, err := ValueFromJSON([]byte(`123 ]`))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "trailing data")
+	})
+
+	t.Run("trailing close-brace after value", func(t *testing.T) {
+		t.Parallel()
+		_, err := ValueFromJSON([]byte(`123 }`))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "trailing data")
+	})
+
 	t.Run("trailing whitespace is not trailing garbage", func(t *testing.T) {
 		t.Parallel()
 		v, err := ValueFromJSON([]byte("42  \n  "))

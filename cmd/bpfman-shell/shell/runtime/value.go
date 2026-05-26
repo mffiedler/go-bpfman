@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"slices"
 	"strconv"
@@ -102,8 +103,21 @@ func ValueFromJSON(b []byte) (Value, error) {
 	if err := dec.Decode(&v); err != nil {
 		return Value{}, fmt.Errorf("decode JSON: %w", err)
 	}
-	if dec.More() {
-		return Value{}, fmt.Errorf("decode JSON: trailing data after value")
+	// A second Decode is the only way to reject every form of
+	// trailing data at the top level. dec.More() looks right
+	// for the common cases but treats ']' and '}' as natural
+	// container terminators, so "123 ]" and "123 }" would slip
+	// through unnoticed. Decode returns io.EOF iff the input
+	// held exactly one well-formed value plus optional
+	// whitespace; any other outcome -- a successful second
+	// value or a syntax error mid-stream -- is trailing data
+	// and must surface as such.
+	var extra any
+	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return Value{}, fmt.Errorf("decode JSON: trailing data after value")
+		}
+		return Value{}, fmt.Errorf("decode JSON: trailing data after value: %w", err)
 	}
 	return Value{v: v}, nil
 }
