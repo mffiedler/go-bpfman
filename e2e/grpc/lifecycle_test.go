@@ -204,12 +204,15 @@ func runParallelLifecycles(t *testing.T, spec typeSpec, counter *atomic.Int64) {
 // scripts under e2e/new/. We only verify that the daemon's gRPC
 // surface behaves correctly under concurrency.
 func runOneLifecycle(t *testing.T, spec typeSpec, buildAttach func() *pb.AttachInfo, gid, iter int) error {
-	// 60s per-iteration safety net. With 5 sub-tests fanning in
+	// 180s per-iteration safety net. With 5 sub-tests fanning in
 	// parallel, a goroutine can wait up to (N x sub-tests) flock
 	// acquisitions x ~50ms ≈ tens of seconds in the worst case
-	// before its Attach completes. 60s is generous headroom for
-	// the default knobs and still bounded if something wedges.
-	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	// before its Attach completes. Under RACE=1 STRESS_COUNT=5 the
+	// race detector roughly doubles per-transaction wall time, so
+	// the worst-case wait exceeds the prior 60s ceiling; 180s is
+	// generous headroom for the widened RACE=1 knobs and still
+	// bounded if something wedges.
+	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 	defer cancel()
 
 	loadInfo := &pb.LoadInfo{
