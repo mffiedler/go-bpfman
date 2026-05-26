@@ -67,7 +67,7 @@ func ScanE2EResidue(bpffsRoot, netnsDir string) (Plan, error) {
 	}
 	for _, entry := range entries {
 		if StaleTestIfaceRe.MatchString(entry.Name()) {
-			plan = append(plan, DeleteNetns{Name: entry.Name()})
+			plan = append(plan, DeleteNetns{Name: entry.Name(), Dir: netnsDir})
 		}
 	}
 

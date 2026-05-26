@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/cilium/ebpf/link"
 	"github.com/vishvananda/netlink"
-	"github.com/vishvananda/netns"
+	"golang.org/x/sys/unix"
 
 	bpfnetns "github.com/frobware/go-bpfman/ns/netns"
 )
@@ -227,20 +228,47 @@ func (a DeleteIface) Apply() error {
 	return nil
 }
 
-// DeleteNetns removes a named netns under /run/netns. The
-// vishvananda/netns library hardcodes that directory; the
-// netnsDir parameter on the scanner exists for test isolation
-// only.
+// DeleteNetns removes a named netns marker file. Dir defaults
+// to DefaultNetnsDir when empty so production callers can keep
+// using the iproute2 convention without naming it; the scanner
+// fills Dir in explicitly so tests can point at a temp tree.
 type DeleteNetns struct {
 	Name string
+	Dir  string
 }
 
 // Describe implements Action.
 func (a DeleteNetns) Describe() string { return fmt.Sprintf("ip netns del %s", a.Name) }
 
 // Apply implements Action.
+//
+// The vendored vishvananda/netns DeleteNamed helper runs
+// unix.Unmount(path, MNT_DETACH) and then os.Remove(path). When
+// /run/netns/X exists as a plain file rather than a live bind-
+// mount (reboot, OOM kill, manual umount that left the marker
+// behind), the unmount step returns EINVAL ("not a mount
+// point") and the helper bails before the unlink, so the
+// marker file lingers forever and every subsequent --apply
+// fails on the same name. Run the two steps inline here with
+// the unmount treated as best-effort: EINVAL covers the
+// non-mount case under sudo, EPERM covers the same case under
+// an unprivileged caller (the capability check fires before
+// the mount-status check). The unlink is the load-bearing
+// operation that turns the entry from "discoverable by the
+// scanner" into "gone" and is the authoritative signal for
+// real permission failures.
 func (a DeleteNetns) Apply() error {
-	if err := netns.DeleteNamed(a.Name); err != nil {
+	dir := a.Dir
+	if dir == "" {
+		dir = DefaultNetnsDir
+	}
+	path := filepath.Join(dir, a.Name)
+	if err := unix.Unmount(path, unix.MNT_DETACH); err != nil &&
+		!errors.Is(err, unix.EINVAL) &&
+		!errors.Is(err, unix.EPERM) {
+		return fmt.Errorf("unmount netns %s: %w", a.Name, err)
+	}
+	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("delete netns %s: %w", a.Name, err)
 	}
 	return nil
