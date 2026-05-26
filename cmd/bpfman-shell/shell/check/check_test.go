@@ -646,6 +646,33 @@ func TestCheck_ContinueOutsideForeachReported(t *testing.T) {
 	assert.Contains(t, issues[0].Msg, "'continue' outside any foreach loop")
 }
 
+func TestCheck_AssertInsidePollRejected(t *testing.T) {
+	t.Parallel()
+
+	// `assert` inside a poll body is the fatal form that cannot
+	// retry, so the checker steers the author towards
+	// `retry unless ...` or `require ...`.
+	src := "poll timeout 1s every 1ms { assert ok ls }"
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "assert is not valid inside poll")
+}
+
+func TestCheck_RequireInsidePollAccepted(t *testing.T) {
+	t.Parallel()
+
+	// `require` shares the AssertStmt node with `assert` (the
+	// distinguishing field is IsRequire). The grammar deems
+	// `require` fatal-immediately at every context including
+	// inside a poll: the diagnostic that steers `assert`
+	// towards `retry unless` or `require ...` must not also
+	// reject `require` itself, otherwise the suggestion in the
+	// diagnostic is unreachable from the source it points at.
+	src := "poll timeout 1s every 1ms { require ok ls }"
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
 func TestCheck_BreakInsidePollReported(t *testing.T) {
 	t.Parallel()
 

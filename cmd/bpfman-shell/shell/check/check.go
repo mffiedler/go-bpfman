@@ -928,7 +928,14 @@ func (c *checker) walkStmt(s syntax.Stmt) {
 		c.nonTopLevelDepth--
 
 	case *syntax.AssertStmt:
-		if c.pollDepth > 0 {
+		// `require` shares the AssertStmt node with `assert` but
+		// is fatal-immediately in every context, including
+		// inside a poll body; the diagnostic itself names
+		// `require ...` as one of the two replacements for an
+		// `assert` here, so rejecting `require` as well would
+		// leave the suggestion unreachable from its source. The
+		// gate fires only for the non-require spelling.
+		if c.pollDepth > 0 && !n.IsRequire {
 			c.addIssue(n.Span, "assert is not valid inside poll; use retry unless ... or require ...")
 		}
 		c.checkAssertClause(n.Clause)
