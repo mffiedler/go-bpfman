@@ -1,0 +1,572 @@
+// Whole-program script runner and the Env-callback factories
+// that bridge the shell evaluator to the runtime. Pure
+// mechanism: the embedding binary plugs in its handlers via
+// RegisterBuiltin and its bpfman bridge via Config.Fallback /
+// Config.BindFallback.
+
+package driver
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/ir"
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/lower"
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
+	"github.com/frobware/go-bpfman/internal/bpfmancli"
+	"github.com/frobware/go-bpfman/manager"
+)
+
+// RunHooks bundles the Env callbacks the runner installs when
+// it evaluates a parsed program.
+// Callers pass the same triple the outer Loop wires through
+// Config.Fallback / BindFallback / MakeAssertStmt /
+// MakeAssertIR; the framework has no use for the hooks
+// outside the program-execution path, so they are not stored
+// on the context.
+type RunHooks struct {
+	Fallback       FallbackFunc
+	BindFallback   BindFallbackFunc
+	MakeAssertStmt MakeAssertStmtFunc
+	MakeAssertIR   MakeAssertIRFunc
+}
+
+// Config bundles the call-site options Run needs. The embedding
+// binary fills it from its Kong-parsed CLI struct (or equivalent)
+// and passes it to Run; the driver package owns everything past
+// that seam.
+type Config struct {
+	// CLI is the bpfmancli handle used for writers, manager
+	// construction, and logger access.
+	CLI *bpfmancli.CLI
+
+	// Mgr is the constructed bpfman manager. Loop uses it for
+	// bpfman dispatch and assertion policy that inspects bpfman
+	// results; nil is fine if the script only runs builtins that
+	// do not touch the manager.
+	Mgr *manager.Manager
+
+	// LineReader is the input source the runner reads from.
+	LineReader LineReader
+
+	// Session is the shell session the runner evaluates against.
+	Session *runtime.Session
+
+	// File is the diagnostic name for the input ("script.bpfman",
+	// "<stdin>", ""). Loop uses it for source-location prefixes
+	// and for source-location prefixes.
+	File string
+
+	// NoCheck disables the static pre-flight pass for script
+	// mode. Used by tests that exercise runtime behaviour on
+	// inputs the static checker would otherwise reject.
+	NoCheck bool
+
+	// Fallback is consulted when no registered builtin matches
+	// the first token of a dispatched command. Embedders use
+	// this to wire in a domain-command bridge (the bpfman
+	// dispatcher). Return handled == false to let the loop
+	// fall through to external-command execution.
+	Fallback FallbackFunc
+
+	// BindFallback is the equivalent of Fallback for the
+	// `<- name args` bind path. Embedders use it to special-
+	// case wait/net-exec (where the bind's Rc must reflect the
+	// captured inner outcome) and to dispatch the bpfman
+	// bridge. Return handled == false to let the loop fall
+	// through to external-command execution.
+	BindFallback BindFallbackFunc
+
+	// MakeAssertStmt builds the assert-statement evaluator the
+	// runtime.Env wires into Env.ExecAssertStmt. The embedding
+	// binary owns the app-layer assertion policy and diagnostics,
+	// so this stays a callback rather than a builtin.
+	// nil disables assert evaluation at runtime.
+	MakeAssertStmt MakeAssertStmtFunc
+
+	// MakeAssertIR builds the lowered-assert evaluator the
+	// runtime.Env wires into Env.ExecAssertIR. The embedding
+	// binary owns the actual verb dispatch and reporting policy.
+	// nil disables lowered assert evaluation at runtime.
+	MakeAssertIR MakeAssertIRFunc
+}
+
+// FallbackFunc dispatches unhandled commands (statement
+// position). Returning handled == false means "fall through to
+// external command".
+type FallbackFunc func(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, args []runtime.Arg, loc SourceLoc, span source.Span) (handled bool, val runtime.Value, err error)
+
+// BindFallbackFunc dispatches unhandled commands on the right
+// of `<-`. Returning handled == false means "fall through to
+// external command".
+type BindFallbackFunc func(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *runtime.Session, env *runtime.Env, args []runtime.Arg, loc SourceLoc, span source.Span) (handled bool, br runtime.BindResult, err error)
+
+// MakeAssertStmtFunc builds the Env.ExecAssertStmt callback for
+// one program execution. Returning nil disables assert
+// evaluation in that run (assert statements then return a "no evaluator" error
+// at parse-evaluate time).
+type MakeAssertStmtFunc func(cli *bpfmancli.CLI, session *runtime.Session) func(*syntax.AssertStmt, *runtime.Env) error
+
+// MakeAssertIRFunc builds the Env.ExecAssertIR callback for one
+// program execution. Returning nil disables lowered assert
+// evaluation in that run.
+type MakeAssertIRFunc func(cli *bpfmancli.CLI, session *runtime.Session) func(*ir.Assert, *runtime.Env) error
+
+// Run drives one whole-program execution end-to-end and returns
+// the session-aggregated outcome: ErrSilent for script-error / require-fail
+// paths the caller has already cited, a wrapped error for
+// assertion / defer / job-leak counters, or nil on clean exit.
+//
+// A single manager is held open for the session lifetime so
+// repeated store open/close cost is paid once. The session
+// counters drive the post-loop summary; assertion failures
+// surface a non-zero exit even when the program ran without
+// aborting.
+func Run(ctx context.Context, cfg Config) error {
+	if cfg.Session == nil {
+		cfg.Session = runtime.NewSession()
+	}
+
+	loopErr := Loop(ctx, cfg)
+
+	if errors.Is(loopErr, runtime.ErrRequireFailed) || errors.Is(loopErr, ErrScriptError) {
+		return ErrSilent
+	}
+	if loopErr != nil {
+		return loopErr
+	}
+
+	if n := cfg.Session.AssertFailures(); n > 0 {
+		_ = cfg.CLI.PrintErrf("%d assertion(s) failed\n", n)
+		return fmt.Errorf("%d assertion(s) failed", n)
+	}
+
+	if n := cfg.Session.DeferFailures(); n > 0 {
+		_ = cfg.CLI.PrintErrf("%d defer(s) failed\n", n)
+		return fmt.Errorf("%d defer(s) failed", n)
+	}
+
+	if n := cfg.Session.JobLeaks(); n > 0 {
+		_ = cfg.CLI.PrintErrf("%d job(s) leaked\n", n)
+		return fmt.Errorf("%d job(s) leaked", n)
+	}
+
+	return nil
+}
+
+// Loop reads one whole program from cfg.LineReader and executes
+// it inside one outer job scope and one outer defer scope.
+// `defer cleanup` therefore fires at script end and any
+// unmanaged job is reported as `[job] FAIL ...`, killed, and
+// counted toward the final non-zero exit.
+func Loop(ctx context.Context, cfg Config) error {
+	return scriptLoop(ctx, cfg)
+}
+
+// wireEnvForRun installs the per-run Env callbacks the
+// evaluator needs: command dispatch, bind dispatch, the
+// assert-statement evaluator, and the trace hook.
+func wireEnvForRun(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *runtime.Session, env *runtime.Env, loc SourceLoc, hooks RunHooks) {
+	env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, env, loc, hooks.Fallback)
+	env.ExecBind = makeExecBind(ctx, cli, mgr, session, env, loc, hooks.BindFallback)
+	if hooks.MakeAssertStmt != nil {
+		env.ExecAssertStmt = hooks.MakeAssertStmt(cli, session)
+	}
+	if hooks.MakeAssertIR != nil {
+		env.ExecAssertIR = hooks.MakeAssertIR(cli, session)
+	}
+	env.Trace = makeTraceHook(cli, session)
+	env.RenderPollFailure = makeRenderPollFailure(cli)
+}
+
+// makeRenderPollFailure builds the callback the shell evaluator
+// invokes when a poll runs out of retry budget.
+func makeRenderPollFailure(cli *bpfmancli.CLI) func(source.Span, time.Duration, time.Duration, int, string) {
+	return func(span source.Span, timeout, every time.Duration, attempts int, lastRetry string) {
+		loc := SourceLoc{File: span.Pos.File, Line: span.Pos.Line, Col: span.Pos.Col}
+		if lastRetry == "" {
+			_ = cli.PrintErrf("%s[poll] FAIL: timed out after %s every %s across %d attempt(s)\n",
+				loc, timeout, every, attempts)
+			return
+		}
+		_ = cli.PrintErrf("%s[poll] FAIL: timed out after %s every %s across %d attempt(s): %s\n",
+			loc, timeout, every, attempts, lastRetry)
+	}
+}
+
+// configHooks extracts the RunHooks triple from the loop's
+// Config so the same env-wiring helper serves both the CLI and
+// the test seams.
+func configHooks(cfg Config) RunHooks {
+	return RunHooks{
+		Fallback:       cfg.Fallback,
+		BindFallback:   cfg.BindFallback,
+		MakeAssertStmt: cfg.MakeAssertStmt,
+		MakeAssertIR:   cfg.MakeAssertIR,
+	}
+}
+
+// scriptLoop drives one whole-program evaluation in script mode.
+// runtime.Exec owns the outer job scope for one program run, and the
+// lowered IR owns program/def/poll defer scopes directly.
+//
+// SIGINT and SIGTERM cancel the script-wide context, matching
+// the way a bash script aborts on ^C.
+func scriptLoop(ctx context.Context, cfg Config) error {
+	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	cli := cfg.CLI
+	lr := cfg.LineReader
+	session := cfg.Session
+	file := cfg.File
+
+	src, slurpErr := SlurpReader(lr)
+	if slurpErr != nil {
+		_ = cli.PrintErrf("%s: %v\n", file, slurpErr)
+		return ErrScriptError
+	}
+	if !cfg.NoCheck {
+		if hadIssues := PreflightCheck(cli.Err, file, src); hadIssues {
+			return ErrScriptError
+		}
+	}
+	baseDir := sourceBaseDir(file)
+
+	env := &runtime.Env{
+		Session: session,
+		PrintResult: func(v runtime.Value) error {
+			return WriteValue(cli, v)
+		},
+		RenderDeferFailure: func(stmtLoc source.Pos, args []runtime.Arg, rc runtime.Envelope) {
+			RenderEnvelopeFailure(cli, "defer", file, stmtLoc, args, rc)
+		},
+		RenderDeferOutput: makeDeferOutputFlusher(cli),
+		HandleJobLeak:     StrictJobLeakHandler(cli, session),
+	}
+	hooks := configHooks(cfg)
+	loc := SourceLoc{File: file, Line: 1}
+	wireEnvForRun(ctx, cli, cfg.Mgr, session, env, loc, hooks)
+	return runProgramSource(cli, env, src, loc, baseDir)
+}
+
+func sourceBaseDir(file string) string {
+	if file != "" && file != "-" && file != "<stdin>" {
+		return ""
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	return cwd
+}
+
+// runProgramSource tokenises, parses, and executes one whole program.
+// Typed errors with a Span are rendered as rust-style frames against the
+// source text.
+func runProgramSource(cli *bpfmancli.CLI, env *runtime.Env, input string, loc SourceLoc, baseDir string) error {
+	emitFrame := func(span source.Span, msg string) {
+		_ = cli.PrintErr(renderDiagnostic(input, loc.File, diagnostic{
+			Span: span,
+			Msg:  msg,
+		}))
+	}
+	cite := func(span source.Span, body string) {
+		_ = cli.PrintErrf("%s%s\n", loc.WithSpan(span).String(), body)
+	}
+	report := func(err error) error {
+		var re *RuntimeError
+		if errors.As(err, &re) {
+			cite(re.Span, re.Msg)
+			return ErrScriptError
+		}
+		var ae *ExecArgError
+		if errors.As(err, &ae) {
+			cite(ae.Span, ae.Msg)
+			return ErrScriptError
+		}
+		var cnf *CommandNotFound
+		if errors.As(err, &cnf) {
+			cite(cnf.Span, cnf.Name+": command not found")
+			return ErrScriptError
+		}
+		var ef *ExecFailure
+		if errors.As(err, &ef) {
+			if loc.File != "" {
+				cite(ef.Span, fmt.Sprintf("%s: exit %d", strings.Join(ef.Argv, " "), ef.ExitCode))
+				var b strings.Builder
+				if ef.Stdout != "" {
+					b.WriteString("stdout:\n")
+					writeIndented(&b, ef.Stdout)
+				}
+				if ef.Stderr != "" {
+					b.WriteString("stderr:\n")
+					writeIndented(&b, ef.Stderr)
+				}
+				if b.Len() > 0 {
+					_ = cli.PrintErr(b.String())
+				}
+			}
+			return ErrScriptError
+		}
+		var se *syntax.SyntaxError
+		if errors.As(err, &se) && se.Span.Pos.Line > 0 {
+			// A *SyntaxError that escaped through callDef has
+			// already been decorated with its def's registration
+			// File and an absolute Span; the source text we are
+			// currently rendering is the caller's, not the def's,
+			// so the rust-style frame source-text would be the
+			// wrong file. Cite by location alone for cross-file
+			// errors; the rust-style frame is reserved for
+			// same-file diagnostics where the local source still
+			// lines up.
+			if se.Span.Pos.File != "" && se.Span.Pos.File != loc.File {
+				absLoc := SourceLoc{File: se.Span.Pos.File, Line: se.Span.Pos.Line, Col: se.Span.Pos.Col}
+				_ = cli.PrintErrf("%s%s\n", absLoc.String(), se.Msg)
+				return ErrScriptError
+			}
+			emitFrame(se.Span, se.Msg)
+			return ErrScriptError
+		}
+		_ = cli.PrintErrf("%serror: %v\n", loc, err)
+		return ErrScriptError
+	}
+	if strings.TrimSpace(input) == "" {
+		return nil
+	}
+	prog, err := parseAndExpandWithBaseTrace(loc.File, baseDir, input, loc.Line, nil, env.Trace)
+	if err != nil {
+		return report(err)
+	}
+	evalErr := execProgram(prog, env)
+	if evalErr != nil {
+		if errors.Is(evalErr, runtime.ErrRequireFailed) {
+			return evalErr
+		}
+		if errors.Is(evalErr, ErrScriptError) {
+			return evalErr
+		}
+		var gf *runtime.GuardFailure
+		if errors.As(evalErr, &gf) {
+			stmtLoc := gf.Pos
+			var se *syntax.SyntaxError
+			if errors.As(evalErr, &se) && se.Span.Pos.Line > 0 {
+				stmtLoc = se.Span.Pos
+			}
+			RenderEnvelopeFailure(cli, "guard", loc.File, stmtLoc, gf.Args, gf.Envelope)
+			return ErrScriptError
+		}
+		return report(evalErr)
+	}
+	return nil
+}
+
+func execProgram(prog *syntax.Program, env *runtime.Env) error {
+	lp, err := lower.Lower(prog)
+	if err != nil {
+		return err
+	}
+	return runtime.Exec(lp, env)
+}
+
+// Dispatch looks the first token of args up in the builtin
+// registry and invokes its handler. Returns
+// (true, value, err) when the registry has an entry; the value
+// is the assignable primary for builtins that produce one,
+// runtime.Value{} for builtins that bind nothing. Returns
+// (false, runtime.Value{}, nil) when no builtin matches.
+func Dispatch(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *runtime.Session, env *runtime.Env, args []runtime.Arg, loc SourceLoc, span source.Span) (bool, runtime.Value, error) {
+	if len(args) == 0 {
+		return false, runtime.Value{}, nil
+	}
+	cmd := ArgText(args[0])
+	b, ok := LookupBuiltin(cmd)
+	if !ok {
+		return false, runtime.Value{}, nil
+	}
+	callLoc := dispatchSourceLoc(loc, env, span)
+	c := Ctx{
+		Ctx:  ctx,
+		CLI:  cli,
+		Mgr:  mgr,
+		Env:  env,
+		Cmd:  cmd,
+		Args: args[1:],
+		Pos:  callLoc,
+		Span: span,
+	}
+	val, err := b.Handler(c)
+	return true, val, syntax.FrameAt(span, err)
+}
+
+// makeExecCommand bridges the evaluator's top-level CommandStmt
+// dispatch into the loop pipeline. Output is visible on the CLI.
+// Dispatch order: registered builtins handle their own names;
+// the embedder's Fallback handles domain commands; an
+// unrecognised first word runs as an external subprocess.
+func makeExecCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *runtime.Session, env *runtime.Env, loc SourceLoc, fallback FallbackFunc) func([]runtime.Arg, source.Span) (runtime.Value, error) {
+	return func(args []runtime.Arg, span source.Span) (runtime.Value, error) {
+		if len(args) == 0 {
+			return runtime.Value{}, nil
+		}
+		callLoc := dispatchSourceLoc(loc, env, span)
+		handled, val, err := Dispatch(ctx, cli, mgr, session, env, args, loc, span)
+		if err != nil {
+			return runtime.Value{}, err
+		}
+		if handled {
+			return val, nil
+		}
+		if fallback != nil {
+			handled, val, err = fallback(ctx, cli, mgr, args, callLoc, span)
+			if handled {
+				return val, err
+			}
+		}
+		first := ArgText(args[0])
+		if err := ResolveCommandPath(first, span); err != nil {
+			return runtime.Value{}, err
+		}
+		val, err = RunExecStatement(ctx, cli, args, span)
+		return val, syntax.FrameAt(span, err)
+	}
+}
+
+// makeExecBind bridges the evaluator's BindStmt dispatch into the
+// loop pipeline. Output is suppressed. Dispatch order:
+// `exec NAME` always runs as a subprocess; the embedder's
+// BindFallback handles special-case bind paths (wait, net exec,
+// domain dispatch); registered builtins handle their own names;
+// an unrecognised first word runs as an external subprocess.
+func makeExecBind(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *runtime.Session, env *runtime.Env, loc SourceLoc, fallback BindFallbackFunc) func([]runtime.Arg, source.Span) (runtime.BindResult, error) {
+	return func(args []runtime.Arg, span source.Span) (runtime.BindResult, error) {
+		if len(args) == 0 {
+			return runtime.BindResult{}, syntax.SpanErrorf(span, "empty command form on '<-' RHS")
+		}
+		callLoc := dispatchSourceLoc(loc, env, span)
+
+		if ArgText(args[0]) == "exec" {
+			return runExternalAsBind(ctx, args[1:], span)
+		}
+
+		if fallback != nil {
+			handled, br, err := fallback(ctx, cli, mgr, session, env, args, callLoc, span)
+			if handled {
+				return br, err
+			}
+		}
+
+		// Capture the in-process Dispatch path's stdout / stderr
+		// into a buffer rather than discarding it: a builtin that
+		// runs through the bind family (`let v <- print "x"`, or
+		// a defer firing a print at unwind) used to lose the
+		// bytes entirely. Capturing puts them on the rc envelope
+		// alongside what runExternalAsBind already produces for
+		// subprocesses, so both halves of the bind family populate
+		// rc.Stdout / rc.Stderr uniformly. The bytes flow from
+		// there: ordinary bind callers read them via $v.stdout;
+		// the RenderDeferOutput hook flushes them to the
+		// terminal on successful defers; the RenderDeferFailure
+		// path already showed them in its labelled block on
+		// failure.
+		captured := cli.WithCaptureOutput()
+		handled, val, err := Dispatch(ctx, captured.CLI, mgr, session, env, args, loc, span)
+		if handled {
+			stdout := captured.Stdout()
+			stderr := captured.Stderr()
+			if err != nil {
+				rc := runtime.FailEnvelope()
+				rc.Stdout = stdout
+				if stderr != "" {
+					rc.Stderr = stderr
+				} else {
+					rc.Stderr = err.Error()
+				}
+				return runtime.BindResult{Rc: rc, Primary: runtime.ValueFromEnvelope(rc)}, nil
+			}
+			rc := runtime.OkEnvelope()
+			rc.Stdout = stdout
+			rc.Stderr = stderr
+			primary := val
+			if primary.IsNil() {
+				primary = runtime.ValueFromEnvelope(rc)
+			}
+			return runtime.BindResult{Rc: rc, Primary: primary}, nil
+		}
+		return runExternalAsBind(ctx, args, span)
+	}
+}
+
+func dispatchSourceLoc(base SourceLoc, _ *runtime.Env, span source.Span) SourceLoc {
+	if span.Pos.Line > 0 {
+		file := span.Pos.File
+		if file == "" {
+			file = base.File
+		}
+		return SourceLoc{File: file, Line: span.Pos.Line, Col: span.Pos.Col}
+	}
+	return base
+}
+
+// runExternalAsBind runs args as a subprocess and packages the
+// outcome as a BindResult. A launch failure returns a Go error;
+// a non-zero exit is captured into the rc envelope so the bind
+// caller can inspect it.
+func runExternalAsBind(ctx context.Context, args []runtime.Arg, span source.Span) (runtime.BindResult, error) {
+	if len(args) > 0 {
+		if err := ResolveCommandPath(ArgText(args[0]), span); err != nil {
+			return runtime.BindResult{}, err
+		}
+	}
+	cap, err := RunExternal(ctx, args)
+	if err != nil {
+		return runtime.BindResult{}, err
+	}
+	rc := runtime.Envelope{
+		OK:     cap.ExitCode == 0,
+		Code:   cap.ExitCode,
+		Stdout: cap.Stdout,
+		Stderr: cap.Stderr,
+	}
+	return runtime.BindResult{Rc: rc, Primary: runtime.ValueFromEnvelope(rc)}, nil
+}
+
+// makeTraceHook builds the Env.Trace closure for one program run. The
+// closure consults session.TraceEnabled() on every invocation
+// so `trace on` / `trace off` can toggle tracing mid-script
+// without rebuilding the Env.
+//
+// Line translation uses the def's registration source when we
+// are inside a def body, falling back to the executing
+// program's loc.Line otherwise. Without this, trace lines
+// emitted from a def body get shifted by the top-level source
+// start (the bug at the heart of W17), and a nested call
+// renders both the body's call and the top-level statement as
+// if they lived on the same line. Same root cause as the W10
+// fix in decorateDefError's call-site annotation; both
+// renderers translate Pos values that were captured during
+// def-body parsing.
+func makeTracePrinter(cli *bpfmancli.CLI, session *runtime.Session) func(source.Pos, string) {
+	return func(pos source.Pos, rendered string) {
+		if !session.TraceEnabled() {
+			return
+		}
+		file := pos.File
+		if file == "" {
+			file = "<stdin>"
+		}
+		_ = cli.PrintErrf("+ %s:%d: %s\n", file, pos.Line, rendered)
+	}
+}
+
+func makeTraceHook(cli *bpfmancli.CLI, session *runtime.Session) func(source.Pos, string) {
+	return makeTracePrinter(cli, session)
+}

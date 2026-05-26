@@ -80,7 +80,6 @@ let counts <- foreach d in $dumps {
     jq $sumFilter $d.stdout
 }
 
-print "packets:" $counts
 
 # Programs at and before the break point all ran.
 assert $counts[0] > 0

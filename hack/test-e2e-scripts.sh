@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Run every REPL script under e2e/scripts/ and e2e/new/ against the
+# Run every .bpfman script under e2e/scripts/ and e2e/new/ against the
 # built bpfman-shell binary. Each script executes from e2e/ so
 # testdata paths match the Go e2e tests. Scripts under e2e/new/
 # spawn worker subprocesses via naked `bpfman-shell` invocations, so
@@ -57,4 +57,4 @@ if [ "$fail" -ne 0 ]; then
 fi
 
 echo ""
-echo "all REPL e2e scripts passed"
+echo "all .bpfman e2e scripts passed"

@@ -1,0 +1,5 @@
+import ./lib.bpfman
+print before
+let p <- spawn_bad
+guard _ <- wait $p
+print after

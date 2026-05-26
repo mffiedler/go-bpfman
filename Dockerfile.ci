@@ -17,7 +17,7 @@
 # 2. **e2e binary extraction** (`buildx --output type=local`) --
 #    builds the `e2e-export` scratch stage which contains the
 #    static, self-contained e2e.test binary (BPF objects embedded,
-#    uprobe target merged) plus the BPF object tree that the REPL
+#    uprobe target merged) plus the BPF object tree that the shell
 #    pipeline still loads via filesystem paths. The layout mirrors
 #    the source tree:
 #
@@ -75,7 +75,7 @@ WORKDIR /src
 # via go:embed) and is its own uprobe attach target (cgo'd
 # e2e_uprobe_call_malloc plus a TestMain helper-mode dispatch), so
 # the Go e2e suite is self-contained in a single artefact. The
-# REPL scripts under e2e/scripts/ and e2e/new/ load BPF via
+# .bpfman scripts under e2e/scripts/ and e2e/new/ load BPF via
 # bpfman-shell, which in turn drives the bpfman manager and reads
 # the .bpf.o tree, so both binaries plus the BPF objects are
 # exported for that pipeline.
@@ -125,8 +125,8 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 #   ./ci-e2e-bundle/bin/e2e-grpc.test            (parallel gRPC e2e test binary)
 #   ./ci-e2e-bundle/bin/bpfman                   (static bpfman binary)
 #   ./ci-e2e-bundle/bin/bpfman-shell             (static bpfman-shell binary)
-#   ./ci-e2e-bundle/e2e/testdata/bpf/*.bpf.o     (BPF programs for REPL scripts)
-# The bundle layout matches the in-tree layout, so REPL scripts
+#   ./ci-e2e-bundle/e2e/testdata/bpf/*.bpf.o     (BPF programs for .bpfman scripts)
+# The bundle layout matches the in-tree layout, so .bpfman scripts
 # under e2e/scripts/ and e2e/new/ that reference ../bin/e2e.test
 # resolve the same way regardless of whether they're run against
 # a local build or an extracted CI bundle.

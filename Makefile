@@ -174,6 +174,21 @@ quiet_cmd = @printf "  %-9s %s\n" "$(1)" "$(2)"
 endif
 
 # ---------------------------------------------------------------------------
+# CGO is always on for this repo: ns/nsenter ships a C constructor
+# (nsexec.c) that has to be linked into every binary that imports the
+# package, and the project policy is to assume cgo is available.
+# Export so every recipe inherits it and individual go invocations no
+# longer need to repeat CGO_ENABLED=1. Linker mode is deliberately not
+# pinned here: with CGO_ENABLED=1, the Go toolchain auto-picks
+# external linking when a binary actually links C and internal linking
+# otherwise, which is the right behaviour and avoids the
+# "loadinternal: cannot find runtime/cgo" warning that an
+# unconditional GO_EXTLINK_ENABLED=1 used to produce on pure-Go test
+# binaries.
+# ---------------------------------------------------------------------------
+export CGO_ENABLED := 1
+
+# ---------------------------------------------------------------------------
 # Static linking is opt-in via STATIC=1. Any other value disables it.
 # The upstream container image enables it because the runtime base is
 # scratch, which ships no libc; downstream consumers building with a
@@ -561,10 +576,12 @@ help:
 	@echo ""
 	@echo "Testing:"
 	@echo "  test                        Run all tests"
+	@echo "  test-lowered-corpus         Compare the shell lowered-IR corpus against checked-in goldens"
+	@echo "  update-lowered-corpus       Regenerate the shell lowered-IR corpus goldens"
 	@echo "  test-e2e                    Run e2e tests (requires root)"
 	@echo "  test-e2e-grpc               Run the parallel gRPC e2e test against a real bpfman serve daemon (requires root)"
-	@echo "  test-e2e-scripts            Run REPL e2e scripts under e2e/scripts/ and e2e/new/ (requires root)"
-	@echo "  test-examples               Run REPL scripts under examples/ (requires root)"
+	@echo "  test-e2e-scripts            Run .bpfman e2e scripts under e2e/scripts/ and e2e/new/ (requires root)"
+	@echo "  test-examples               Run .bpfman scripts under examples/ (requires root)"
 	@echo "  test-nsenter                Run nsenter tests (native amd64)"
 	@echo "  test-nsenter-cross          Run nsenter tests on amd64/arm64/ppc64le/s390x"
 	@echo "  test-nsenter-{arch}         Run nsenter tests for a single architecture"
@@ -587,7 +604,7 @@ help:
 	@echo "  ci-test                     Run unit tests inside the CI container"
 	@echo "  ci-test-e2e                 Extract e2e test bundle and run it on the host (sudo)"
 	@echo "  ci-test-e2e-grpc            Extract bundle to source tree and run the parallel gRPC test (sudo)"
-	@echo "  ci-test-e2e-scripts         Extract bundle to source tree and run REPL scripts (sudo)"
+	@echo "  ci-test-e2e-scripts         Extract bundle to source tree and run .bpfman scripts (sudo)"
 	@echo ""
 	@echo "bpfman (with integrated CSI):"
 	@echo "  bpfman-build                Build bpfman binary"
@@ -694,7 +711,14 @@ lint-dockerfile:
 # their .bpf.o files. Unit tests no longer reach into
 # e2e/testdata/bpf/ at runtime.
 test: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS)
-	$(strip go test $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") -v $(if $(PARALLEL),-parallel $(PARALLEL)) ./...)
+	$(strip go test $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") $(if $(PARALLEL),-parallel $(PARALLEL)) ./...)
+
+test-lowered-corpus:
+	$(strip go test $(if $(RACE),-race,) $(strip $(EXTRA_GOFLAGS) -run=TestLoweredCorpus) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") ./cmd/bpfman-shell/shell/lower)
+
+update-lowered-corpus:
+	$(strip GOLDIE_UPDATE=true go test $(if $(RACE),-race,) $(strip $(EXTRA_GOFLAGS) -count=1 -run=TestLoweredCorpus) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") ./cmd/bpfman-shell/shell/lower)
+	@echo "Regenerated lowered corpus goldens. Inspect 'git diff' before committing."
 
 # nsenter cross-architecture tests
 #
@@ -713,7 +737,7 @@ test: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS)
 #   make test-nsenter-cross           # all architectures
 test-nsenter test-nsenter-amd64: | $(BIN_DIR)
 	@echo "=== nsenter: amd64 ==="
-	$(strip CGO_ENABLED=1 go test -c $(EXTRA_GOFLAGS) $(if $(NSENTER_TAGS),-tags=$(NSENTER_TAGS)) -o $(NSENTER_TEST_BIN) ./ns/nsenter/)
+	$(strip go test -c $(EXTRA_GOFLAGS) $(if $(NSENTER_TAGS),-tags=$(NSENTER_TAGS)) -o $(NSENTER_TEST_BIN) ./ns/nsenter/)
 	file $(NSENTER_TEST_BIN)
 	sudo $(NSENTER_TEST_BIN) -test.v
 
@@ -776,7 +800,7 @@ run-e2e-grpc:
 
 test-e2e-grpc: build-e2e-grpc run-e2e-grpc
 
-# Run every REPL script under e2e/scripts/ and e2e/new/ against
+# Run every .bpfman script under e2e/scripts/ and e2e/new/ against
 # the built bpfman binary. Each script executes from e2e/ so
 # testdata paths match the Go e2e tests. The target runs them
 # sequentially, reports failures as it goes, and exits non-zero
@@ -790,18 +814,18 @@ test-e2e-grpc: build-e2e-grpc run-e2e-grpc
 build-e2e-scripts: bpfman-compile bpfman-shell-compile $(BIN_DIR)/e2e.test
 
 run-e2e-scripts:
-	@echo "Running REPL e2e scripts (requires root)..."
+	@echo "Running .bpfman e2e scripts (requires root)..."
 	BIN_DIR=$(BIN_DIR) hack/test-e2e-scripts.sh $(TEST)
 
 test-e2e-scripts: build-e2e-scripts run-e2e-scripts
 
-# Run every REPL script under examples/ against the built bpfman
+# Run every .bpfman script under examples/ against the built bpfman
 # binary. The examples are load/attach/detach/unload
 # walk-throughs; running them in CI catches drift between the
 # shipped examples and the actual CLI surface. Pass TEST=<name> to
 # restrict to scripts whose filename contains <name>.
 test-examples: bpfman-compile bpfman-shell-compile $(BIN_DIR)/e2e.test
-	@echo "Running REPL example scripts (requires root)..."
+	@echo "Running .bpfman example scripts (requires root)..."
 	BIN_DIR=$(BIN_DIR) hack/test-examples.sh $(TEST)
 
 # ---------------------------------------------------------------------------
@@ -888,19 +912,19 @@ bpfman-vet: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS) $(E2E_BPF_OBJEC
 # compile time. Make's pattern rules build them on demand if
 # missing or out of date.
 bpfman-compile: $(DISPATCHER_BPF_EMBEDS) | $(BIN_DIR)
-	$(strip CGO_ENABLED=1 go build $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(BUILD_TAGS),-tags '$(BUILD_TAGS)') -ldflags "$(BIN_LDFLAGS)" -o $(BIN_DIR)/bpfman ./cmd/bpfman)
+	$(strip go build $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(BUILD_TAGS),-tags '$(BUILD_TAGS)') $(if $(BIN_LDFLAGS),-ldflags "$(BIN_LDFLAGS)") -o $(BIN_DIR)/bpfman ./cmd/bpfman)
 
 clean-bpfman:
 	$(RM) $(BIN_DIR)/bpfman
 
 # bpfman-shell is the development / test / ops companion to bpfman.
-# It hosts the REPL, the DSL script runner, and (in time) the test
+# It hosts the DSL script runner and (in time) the test
 # scaffolding subcommands. Production deployments must ship only
 # bin/bpfman; bin/bpfman-shell is intended for dev and CI.
 bpfman-shell-build: bpfman-fmt bpfman-shell-compile
 
 bpfman-shell-compile: | $(BIN_DIR)
-	$(strip CGO_ENABLED=1 go build $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(BUILD_TAGS),-tags '$(BUILD_TAGS)') -ldflags "$(BIN_LDFLAGS)" -o $(BIN_DIR)/bpfman-shell ./cmd/bpfman-shell)
+	$(strip go build $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(BUILD_TAGS),-tags '$(BUILD_TAGS)') $(if $(BIN_LDFLAGS),-ldflags "$(BIN_LDFLAGS)") -o $(BIN_DIR)/bpfman-shell ./cmd/bpfman-shell)
 
 clean-bpfman-shell:
 	$(RM) $(BIN_DIR)/bpfman-shell
@@ -913,7 +937,7 @@ clean-bpfman-shell:
 bpfman-e2e-cleanup-build: bpfman-fmt bpfman-e2e-cleanup-compile
 
 bpfman-e2e-cleanup-compile: | $(BIN_DIR)
-	$(strip CGO_ENABLED=1 go build $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(BUILD_TAGS),-tags '$(BUILD_TAGS)') -ldflags "$(BIN_LDFLAGS)" -o $(BIN_DIR)/bpfman-e2e-cleanup ./cmd/bpfman-e2e-cleanup)
+	$(strip go build $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(BUILD_TAGS),-tags '$(BUILD_TAGS)') $(if $(BIN_LDFLAGS),-ldflags "$(BIN_LDFLAGS)") -o $(BIN_DIR)/bpfman-e2e-cleanup ./cmd/bpfman-e2e-cleanup)
 
 clean-bpfman-e2e-cleanup:
 	$(RM) $(BIN_DIR)/bpfman-e2e-cleanup
@@ -1166,7 +1190,7 @@ build-image-openshift:
 #
 # `make ci` runs every pipeline the GH workflows run -- vendor /
 # format checks, the bpfman binary build, the lint umbrella, the
-# unit tests, and the two e2e jobs (Go binary + REPL scripts).
+# unit tests, and the two e2e jobs (Go binary + .bpfman scripts).
 # The CI workflow YAML invokes the same `make ci-*` targets, so
 # `make ci` locally is a faithful reproduction of what runs in
 # CI; if it passes here, it passes there (modulo runner-specific
@@ -1266,7 +1290,7 @@ ci-test-e2e:
 	$(OCI_BIN) buildx build --target=e2e-export --output type=local,dest=$(CI_E2E_BUNDLE) -f $(CI_DOCKERFILE) --build-arg RACE=$(RACE) --build-arg EXTRA_TAGS=$(EXTRA_TAGS) $(CI_BUILDX_CACHE) .
 	sudo $(if $(ISOLATED_RUNTIME),BPFMAN_E2E_ISOLATED_RUNTIME=$(ISOLATED_RUNTIME)) $(CI_E2E_BUNDLE)/bin/e2e.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(PARALLEL),-test.parallel $(PARALLEL))
 
-# Reproduce the workflow's e2e-scripts job locally. The REPL
+# Reproduce the workflow's e2e-scripts job locally. The .bpfman
 # scripts under e2e/scripts/ and e2e/new/ are interpreted by the
 # bpfman binary, so the bundle's bpfman + testdata are extracted
 # directly into the source tree (the layout matches), and the
@@ -1313,7 +1337,7 @@ ci-test-e2e-grpc:
 # bpffs mounts, dispatcher slot tables, the global program-id
 # space, and the inode that uprobes attach to (for which both
 # suites use the same e2e.test binary). Symptoms range from spurious
-# attach failures to REPL counter assertions seeing the other
+# attach failures to shell counter assertions seeing the other
 # suite's events. Don't `make -j ci-test-e2e ci-test-e2e-scripts`
 # locally, and don't run them in two shells at once.
 ci: ci-check-vendor ci-check-fmt ci-check-goimports ci-check-vet ci-build ci-lint ci-test ci-test-e2e ci-test-e2e-scripts ci-test-e2e-grpc
@@ -1341,5 +1365,5 @@ bpfman-test-grpc: build-image-dev
 .PHONY: coverage clean-coverage coverage-func coverage-html coverage-open
 .PHONY: doc doc-text
 .PHONY: print-fedora-version print-go-version print-golangci-lint-version
-.PHONY: build-e2e-grpc build-e2e-scripts $(BIN_DIR)/e2e.test $(BIN_DIR)/e2e-grpc.test run-e2e-grpc run-e2e-scripts test test-e2e test-e2e-grpc test-e2e-scripts test-examples
+.PHONY: build-e2e-grpc build-e2e-scripts $(BIN_DIR)/e2e.test $(BIN_DIR)/e2e-grpc.test run-e2e-grpc run-e2e-scripts test test-lowered-corpus update-lowered-corpus test-e2e test-e2e-grpc test-e2e-scripts test-examples
 .PHONY: test-nsenter test-nsenter-amd64 test-nsenter-arm64 test-nsenter-cross test-nsenter-ppc64le test-nsenter-s390x

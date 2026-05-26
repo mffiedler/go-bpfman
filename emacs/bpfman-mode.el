@@ -1,25 +1,27 @@
-;;; bpfman-mode.el --- Major mode for bpfman REPL scripts -*- lexical-binding: t; -*-
+;;; bpfman-mode.el --- Major mode for bpfman-shell scripts -*- lexical-binding: t; -*-
 
-;; Version: 0.5.0
+;; Version: 0.6.0
 ;; Keywords: languages, bpf
 ;; Package-Requires: ((emacs "25.1"))
 
-;; This file provides a major mode for editing bpfman REPL scripts
+;; This file provides a major mode for editing bpfman-shell scripts
 ;; (.bpfman files). The language has typed let-bindings for
 ;; expressions and command captures via the bind sigil '<-', the
 ;; lifecycle primitives 'guard' and 'defer', conditional blocks,
-;; foreach/break/continue iteration, retry/until/timeout polling,
-;; logical operators (and/or/not), parenthesised expressions,
+;; foreach/break/continue iteration, 'poll' retry blocks
+;; with 'timeout' and 'every' clauses plus explicit 'retry',
+;; value-returning user
+;; commands via 'def name(params) { ... return EXPR }', logical
+;; operators (and/or/not), parenthesised expressions,
 ;; value-threading (|>), variable references with path access,
-;; string literals, flags, comments, user-defined commands (def
-;; name(params) { body }), and the `assert <expr> matches { ... }'
-;; subset-match form. See docs/REPL-REDESIGN.md for the full
-;; specification.
+;; string literals, flags, comments, list literals, and the
+;; '<expr> matches { ... }' expression operator. See
+;; cmd/bpfman-shell/shell/GRAMMAR.md for the full specification.
 
 ;;; Commentary:
 
 ;; bpfman-mode provides syntax highlighting and editing support for
-;; bpfman REPL scripts. Statements are separated by ';' or newline;
+;; bpfman-shell scripts. Statements are separated by ';' or newline;
 ;; if/elif/else blocks span multiple lines through brace-delimited
 ;; bodies.
 ;;
@@ -27,14 +29,21 @@
 ;;
 ;;   Comments:     # to end of line (not inside quotes)
 ;;   Expression:   let pid = $prog.record.program_id
+;;   Destructure:  let (a b) = [$foo.a $bar.b]
 ;;   Bind:         let prog <- bpfman program load --path foo.o
 ;;   Guard:        guard prog <- bpfman program load --path foo.o
 ;;   Defer:        defer bpfman program unload $prog
-;;   Tuple bind:   let (rc, prog) <- bpfman ...
+;;   Tuple bind:   let (rc prog) <- bpfman ...
 ;;   Discard:      let _ <- ip link del foo
 ;;   Control:      if EXPR { ... } elif EXPR { ... } else { ... }
 ;;   Iteration:    foreach item in $list { ... break/continue }
-;;   Polling:      retry { ... } until EXPR (timeout 60s, iteration 5)
+;;                 foreach (a b) in (zip $xs $ys) { ... }
+;;   Poll:         poll timeout 5s every 250ms { BODY }
+;;   Retry:        retry / retry "msg" / retry unless EXPR
+;;   Def:          def attach(iface prog) { ... return $link }
+;;   Return:       return EXPR (only inside def bodies)
+;;   Matches:      $value matches { ... } or assert $x matches { ... }
+;;   Lists:        [1 2 3], [$a $b (range 10)]
 ;;   Logical:      and, or, not, parenthesised (EXPR)
 ;;   Threading:    $xs |> jq ".foo"
 ;;   Variables:    $prog.id, $prog.maps[0].name, ${prog.id}
@@ -44,9 +53,12 @@
 ;;                 starting with '$'); single quotes keep '$'
 ;;                 literal.
 ;;   Flags:        --path, -m, --dry-run
-;;   Commands:     registered providers such as bpfman, jq, file, exec
-;;                 plus user-defined commands; unknown names fall
-;;                 through to subprocess execution
+;;   Commands:     registered builtins (bpfman, jq, file, exec,
+;;                 print, range, zip, u32le, u64le, start, wait,
+;;                 kill, jobs, reap, fire, trace, tempdir, net,
+;;                 import, ...) plus user-defined commands;
+;;                 unknown names fall through to subprocess
+;;                 execution.
 ;;
 ;; Highlighting uses a custom font-lock matcher that parses each line
 ;; structurally, so tokens are fontified according to their position
@@ -68,7 +80,7 @@
 ;;; Code:
 
 (defgroup bpfman nil
-  "Major mode for bpfman REPL scripts."
+  "Major mode for bpfman-shell scripts."
   :group 'languages
   :prefix "bpfman-")
 
@@ -80,18 +92,27 @@
                  "let" "guard" "defer"
                  ;; control flow
                  "if" "elif" "else"
-                 "foreach" "retry" "until" "break" "continue"
+                 "foreach" "break" "continue"
+                 ;; poll/retry and value-publishing exit from def
+                 "poll" "retry" "return"
                  ;; user-defined commands
                  "def"
                  ;; domain gateway
                  "bpfman"
-                 ;; shell-language builtins
-                 "assert" "defs" "exec" "file"
-                 "help" "jq" "print" "range" "require" "source"
-                 "undef" "unset" "vars" "version"))
+                 ;; assertion keywords
+                 "assert" "require"
+                 ;; pure-builtin call producers (jq, range, zip,
+                 ;; u32le, u64le); the parser-visible registry
+                 ;; that mirrors shell/syntax/purebuiltin.go
+                 "jq" "range" "zip" "u32le" "u64le"
+                 ;; shell builtins registered by
+                 ;; internal/builtins/*.go
+                 "defs" "exec" "file" "fire" "import" "jobs"
+                 "kill" "net" "print" "reap" "start" "tempdir"
+                 "trace" "wait"))
       (puthash w t ht))
     ht)
-  "Hash table of top-level bpfman REPL keywords and commands.")
+  "Hash table of top-level bpfman-shell keywords and commands.")
 
 (defconst bpfman--subcommands
   (let ((ht (make-hash-table :test 'equal)))
@@ -107,17 +128,30 @@
                  "uprobe" "xdp"
                  ;; show subviews
                  "links" "maps" "paths" "summary"
-                 ;; assertion verbs (prefix unary / command-status).
-                 ;; "true" and "false" are bare boolean literals, not
-                 ;; predicates -- they get default face like other
-                 ;; literals.
-                 "contains" "fail" "nil" "not" "not-empty" "ok" "path"
+                 ;; assertion command heads ('assert ok CMD',
+                 ;; 'assert fail CMD'). 'not' also appears here as
+                 ;; the optional leading negation ('assert not ok
+                 ;; CMD'). "true" and "false" are bare boolean
+                 ;; literals, not predicates -- they get default
+                 ;; face like other literals.
+                 "fail" "not" "ok"
+                 ;; named predicates registered as pure builtins
+                 ;; (shell/syntax/purebuiltin.go). 'not-empty' is
+                 ;; the expression-position unary predicate;
+                 ;; 'path-exists' is the file-system predicate
+                 ;; (renamed from the older 'path' verb).
+                 "contains" "empty" "missing" "not-empty"
+                 "null" "path-exists" "present"
                  ;; logical operators
                  "and" "or"
-                 ;; foreach / retry auxiliaries
-                 "in" "timeout" "iteration"
-                 ;; matches block keyword (assert <expr> matches { ... })
-                 "matches"
+                 ;; foreach separator
+                 "in"
+                 ;; poll clause keywords (recognised only
+                 ;; between 'poll' and the block body)
+                 "timeout" "every" "unless"
+                 ;; matches expression operator and its optional
+                 ;; 'exhaustive' modifier
+                 "matches" "exhaustive"
                  ;; comparison operators (semantics chosen by
                  ;; operand type: number-vs-number numeric,
                  ;; string-vs-string textual, bool-vs-bool only
@@ -534,11 +568,15 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
              ;; start) follows.
              ((and (= dch ?\)) (eq state 'def-params-list))
               (setq state 'start))
-             ;; `(` after `let` or `guard` opens a tuple-target list:
-             ;; '(rc, prim) <- COMMAND'. Fontify words inside as
-             ;; variable names up to the closing ')'; '<-' then
-             ;; resets the state to command position.
-             ((and (= dch ?\() (eq state 'let-name))
+             ;; `(` after `let` or `guard` opens a tuple-target list
+             ;; or destructure-target list: '(rc prim) <- COMMAND'
+             ;; or '(a b c) = EXPR'. Fontify words inside as
+             ;; variable names up to the closing ')'; the trailing
+             ;; '<-' / '=' then resets the state. The same shape
+             ;; covers `foreach (a b) in EXPR`, so the open paren
+             ;; in `foreach-name` state enters the same sub-state.
+             ((and (= dch ?\() (or (eq state 'let-name)
+                                   (eq state 'foreach-name)))
               (setq state 'tuple-targets))
              ((and (= dch ?\)) (eq state 'tuple-targets))
               (setq state 'args))
@@ -560,11 +598,11 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
           (let ((text (buffer-substring-no-properties beg end)))
             (pcase state
               ('start
-               ;; First word of a statement or block.  "let" starts
+               ;; First word of a statement or block. "let" starts
                ;; a binding; "foreach" binds an iteration variable;
-               ;; "if"/"elif"/"else"/"retry"/"until" are control
-               ;; flow; "break"/"continue" are standalone; everything
-               ;; else is a command.
+               ;; "if"/"elif"/"else"/"poll"/"retry"/"return" are
+               ;; control flow; "break"/"continue" are standalone;
+               ;; everything else is a command.
                (cond
                 ((string= text "let")
                  (put-text-property beg end 'face 'font-lock-keyword-face)
@@ -584,8 +622,9 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
                 ((or (string= text "if")
                      (string= text "elif")
                      (string= text "else")
+                     (string= text "poll")
                      (string= text "retry")
-                     (string= text "until"))
+                     (string= text "return"))
                  (put-text-property beg end 'face 'font-lock-keyword-face)
                  (setq state 'args))
                 ((or (string= text "break")
@@ -620,11 +659,11 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
 
               ('def-params-list
                ;; Word inside a def parameter list. Parameter names
-               ;; may have a trailing comma glued to them ("a,") --
-               ;; ',' is not a tokeniser stop character -- so the
-               ;; identifier portion (up to the comma, if any) gets
-               ;; the variable-name face and the trailing comma is
-               ;; left plain.
+               ;; are whitespace-separated identifiers; the grammar
+               ;; rejects any token whose text contains ','. Fontify
+               ;; the identifier portion (up to the first non-ident
+               ;; character) so a mid-edit "a," still highlights 'a'
+               ;; even though the parser would reject it.
                (let ((ident-end end))
                  (save-excursion
                    (goto-char beg)
@@ -637,10 +676,13 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
                                       'face 'font-lock-variable-name-face))))
 
               ('tuple-targets
-               ;; Word inside a tuple-target list ('(rc, prim)' on
-               ;; the LHS of '<-'). Same comma-handling as
-               ;; def-params-list. The slot may also be the discard
-               ;; marker '_'.
+               ;; Word inside a parenthesised name list. Three
+               ;; surface forms share this state: the bind tuple
+               ;; '(rc prim) <- CMD', the let-destructure
+               ;; '(a b ...) = EXPR', and the multi-var foreach
+               ;; 'foreach (a b ...) in EXPR'. All accept
+               ;; whitespace-separated identifiers and the discard
+               ;; marker '_'; comma is rejected by the parser.
                (let ((ident-end end))
                  (save-excursion
                    (goto-char beg)
@@ -778,24 +820,31 @@ the same way they read."
 
 ;;;###autoload
 (define-derived-mode bpfman-mode prog-mode "Bpfman"
-  "Major mode for editing bpfman REPL scripts.
+  "Major mode for editing bpfman-shell scripts.
 
 Statements bind values via 'let NAME = EXPR' (expression
 binding) or 'let NAME <- COMMAND' (capture a command's primary
 result), with 'guard NAME <- COMMAND' as the halt-on-failure
-variant. Tuple targets '(rc, prim)' bind both the result
-envelope and the primary; '_' discards a slot. 'defer COMMAND'
-registers a cleanup that runs LIFO at scope exit. Other
-statements are if-blocks, foreach iteration, retry/until
-polling, plain commands, or 'def NAME(PARAMS) { BODY }' for
-user-defined commands. Statements are separated by a newline
-or ';'. Comments begin with '#' and extend to end of line.
+variant. Tuple targets '(rc prim)' bind both the result
+envelope and the primary; the destructure form '(a b ...)'
+positionally binds list elements; '_' discards a slot at any
+binding site. 'defer COMMAND' registers a cleanup that runs
+LIFO at scope exit. Control statements are if-blocks, foreach
+iteration (single-var 'foreach x in EXPR' or multi-var
+'foreach (a b) in EXPR'), 'poll timeout DUR every DUR { BODY }'
+retry blocks with explicit 'retry', and 'def NAME(PARAMS) { BODY }'
+for user-defined commands. A def body may finish with 'return
+EXPR' to publish a value to bind-position callers. Statements
+are separated by a newline or ';'. Comments begin with '#' and
+extend to end of line.
 
 Expressions support logical operators ('and', 'or', 'not'),
 parenthesised grouping, and the thread operator '|>' which
-feeds the LHS as the last argument of the RHS command. Within
-a retry block, 'timeout DURATION' and 'iteration N' are
-primary expressions that terminate polling.
+feeds the LHS as the last argument of the RHS command. List
+literals are bracket-delimited and whitespace-separated:
+'[1 2 3]', '[$a $b (range 10)]'. The 'matches' operator on the
+expression layer attaches a structural matcher to the LHS
+value: 'EXPR matches { ... }' or 'EXPR matches exhaustive { ... }'.
 
 Variable references use the '$' sigil: $prog.id,
 ${prog.maps[0].name}, ${$n * 2}.

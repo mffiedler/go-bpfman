@@ -33,7 +33,7 @@
 #
 # Requires root, bpftool.
 
-source ../lib.bpfman
+import ../lib.bpfman
 
 let n      = 5
 let waves  = 3
@@ -65,7 +65,6 @@ guard loaded <- bpfman program load file \
 let (prog_a pid_a) = [$loaded.programs[0] $loaded.programs[0].record.program_id]
 let (prog_b pid_b) = [$loaded.programs[1] $loaded.programs[1].record.program_id]
 let (prog_c pid_c) = [$loaded.programs[2] $loaded.programs[2].record.program_id]
-print "pids: a=${pid_a} b=${pid_b} c=${pid_c}"
 
 defer bpfman program unload $pid_a
 defer bpfman program unload $pid_b
@@ -74,7 +73,6 @@ defer bpfman program unload $pid_c
 let mapID_a = $prog_a |> jq '[.status.maps[] | select(.name == "mup_a_count") | .id][0]'
 let mapID_b = $prog_b |> jq '[.status.maps[] | select(.name == "mup_b_count") | .id][0]'
 let mapID_c = $prog_c |> jq '[.status.maps[] | select(.name == "mup_c_count") | .id][0]'
-print "maps: a=${mapID_a} b=${mapID_b} c=${mapID_c}"
 
 # Attach each program at bpfman_shell_uprobe_call_malloc inside
 # the bpfman-shell binary the worker is running.
@@ -86,30 +84,23 @@ let counter_filter = "fromjson | .[0].formatted.value | tonumber"
 
 # --- Wave 1: a, b, c all attached ---
 guard _ <- touch "${sentinel}.1"
-eventually timeout 5s {
-    require path-exists "${ack}.1"
-}
+poll timeout 5s every 100ms { await_wave_completion $ack 1 }
 
 bpfman link detach $link_c
 sleep 0.1
 
 # --- Wave 2: a, b attached; c detached ---
 guard _ <- touch "${sentinel}.2"
-eventually timeout 5s {
-    require path-exists "${ack}.2"
-}
+poll timeout 5s every 100ms { await_wave_completion $ack 2 }
 
 bpfman link detach $link_b
 sleep 0.1
 
 # --- Wave 3: only a attached ---
 guard _ <- touch "${sentinel}.3"
-eventually timeout 5s {
-    require path-exists "${ack}.3"
-}
+poll timeout 5s every 100ms { await_wave_completion $ack 3 }
 
-guard work_r <- wait $work
-assert $work_r.ok
+guard _ <- wait $work
 
 guard dump_a <- bpftool map dump id $mapID_a -j
 guard dump_b <- bpftool map dump id $mapID_b -j

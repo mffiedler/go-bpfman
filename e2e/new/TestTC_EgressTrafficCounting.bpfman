@@ -58,7 +58,6 @@ let count_a = $dump_a.stdout |> jq $sumFilter
 let count_b = $dump_b.stdout |> jq $sumFilter
 let count_c = $dump_c.stdout |> jq $sumFilter
 
-print "egress packets: a=${count_a} b=${count_b} c=${count_c}"
 
 assert $count_a > 0
 assert $count_b > 0

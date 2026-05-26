@@ -1,0 +1,175 @@
+body entry=bb0
+
+bb0:
+  EnterDeferScope kind=program
+  BuildArgs t0 = [import ../lib.bpfman]
+  DispatchCommand argv=t0 policy=def-then-exec-command lane=builtin(import)
+  Eval t1 = 5
+  BindName n = t1
+  Eval t2 = 42
+  BindName weight = t2
+  Eval t3 = $n * $weight
+  BindName want = t3
+  BuildArgs t4 = [tempdir bpfman-shell-kprobe]
+  DispatchBind t5 = t4 policy=def-then-exec-bind lane=builtin(tempdir)
+  ApplyBind src=t5 argv=t4 primary=workdir rc=_ guard=true fail=bb1
+  BuildArgs t6 = [rm -rf $workdir.path]
+  RegisterDefer argv=t6 policy=def-then-exec-bind lane=exec
+  Eval t7 = "${workdir.path}/sentinel"
+  BindName sentinel = t7
+  Eval t8 = "${workdir.path}/ack"
+  BindName ack = t8
+  BuildArgs t9 = [fire unlinkat $sentinel $ack --count $n --waves 1]
+  DispatchBind t10 = t9 policy=def-then-exec-bind lane=builtin(fire)
+  ApplyBind src=t10 argv=t9 primary=work rc=_ guard=true fail=bb2
+  BuildArgs t11 = [kill --signal=KILL $work]
+  RegisterDefer argv=t11 policy=def-then-exec-bind lane=builtin(kill)
+  BuildArgs t12 = [bpfman program load file --path testdata/bpf/kprobe_exact.bpf.o --programs kprobe:kprobe_counter -g "expected_pid=0x${u32le $work.pid}" -g "weight=0x${u64le $weight}"]
+  DispatchBind t13 = t12 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t13 argv=t12 primary=loaded rc=_ guard=true fail=bb3
+  Eval t14 = $loaded.programs[0]
+  BindName prog = t14
+  Eval t15 = $prog.record.program_id
+  BindName pid = t15
+  BuildArgs t16 = [expect_program_load $prog kprobe kprobe kprobe_counter]
+  DispatchCommand argv=t16 policy=def-then-exec-command lane=exec
+  BuildArgs t17 = [bpfman program get $pid]
+  DispatchBind t18 = t17 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t18 argv=t17 primary=got rc=_ guard=true fail=bb4
+  BuildArgs t19 = [expect_program_round_trip $got $prog]
+  DispatchCommand argv=t19 policy=def-then-exec-command lane=exec
+  BuildArgs t20 = [bpfman program list -o json]
+  DispatchBind t21 = t20 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t21 argv=t20 primary=listed rc=_ guard=true fail=bb5
+  Eval t22 = ".programs[] | select(.record.program_id == ${pid})"
+  BindName progFilter = t22
+  Eval t23 = $listed |> jq $progFilter
+  BindName ours = t23
+  Require not null ours
+  Assert $ours.record.meta.name == $prog.record.meta.name
+  Assert $ours.status.kernel.id == $prog.status.kernel.id
+  BuildArgs t24 = [bpfman link attach kprobe --fn-name do_unlinkat $prog]
+  DispatchBind t25 = t24 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t25 argv=t24 primary=link rc=_ guard=true fail=bb6
+  Eval t26 = $link.record.id
+  BindName linkID = t26
+  Assert $link.record.kind == kprobe
+  Assert $link.record.program_id == $pid
+  Assert $link.record.details.fn_name == do_unlinkat
+  Assert $link.record.details.offset == 0
+  Assert not $link.record.details.retprobe
+  Assert $link.status.kernel_seen
+  BuildArgs t27 = [bpfman link get $linkID]
+  DispatchBind t28 = t27 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t28 argv=t27 primary=gotLink rc=_ guard=true fail=bb7
+  Assert $gotLink.record.id == $linkID
+  Assert $gotLink.record.kind == $link.record.kind
+  Assert $gotLink.record.details.fn_name == $link.record.details.fn_name
+  Assert $gotLink.record.details.retprobe == $link.record.details.retprobe
+  BuildArgs t29 = [bpfman link list -o json]
+  DispatchBind t30 = t29 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t30 argv=t29 primary=listedLinks rc=_ guard=true fail=bb8
+  Eval t31 = ".links[] | select(.id == ${linkID})"
+  BindName linkFilter = t31
+  Eval t32 = $listedLinks |> jq $linkFilter
+  BindName ourLink = t32
+  Require not null ourLink
+  Assert $ourLink.id == $link.record.id
+  Assert $ourLink.kind == $link.record.kind
+  BuildArgs t33 = [touch "${sentinel}.1"]
+  DispatchBind t34 = t33 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t34 argv=t33 primary=_ rc=_ guard=true fail=bb9
+  BuildArgs t35 = [wait $work]
+  DispatchBind t36 = t35 policy=def-then-exec-bind lane=builtin(wait)
+  ApplyBind src=t36 argv=t35 primary=work_r rc=_ guard=true fail=bb10
+  Assert $work_r.ok
+  Assert $work_r.code == 0
+  Eval t37 = $prog |> jq "[.status.maps[] | select(.name == \"kp_count\") | .id][0]"
+  BindName mapID = t37
+  Eval t38 = "fromjson | .[0].formatted.value | tonumber"
+  BindName sumFilter = t38
+  BuildArgs t39 = [bpftool map dump id $mapID -j]
+  DispatchBind t40 = t39 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t40 argv=t39 primary=dump rc=_ guard=true fail=bb11
+  Eval t41 = $dump.stdout |> jq $sumFilter
+  BindName got_counter = t41
+  BuildArgs t42 = [print "got=${got_counter} want=${want}"]
+  DispatchCommand argv=t42 policy=def-then-exec-command lane=builtin(print)
+  Assert $got_counter == $want
+  BuildArgs t43 = [bpfman link detach $link]
+  DispatchCommand argv=t43 policy=def-then-exec-command lane=builtin(bpfman)
+  Assert fail bpfman link get $linkID
+  BuildArgs t44 = [bpftool map dump id $mapID -j]
+  DispatchBind t45 = t44 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t45 argv=t44 primary=before_dump rc=_ guard=true fail=bb12
+  Eval t46 = $before_dump.stdout |> jq $sumFilter
+  BindName before = t46
+  BuildArgs t47 = [sleep 0.1]
+  DispatchCommand argv=t47 policy=def-then-exec-command lane=exec
+  BuildArgs t48 = [bpftool map dump id $mapID -j]
+  DispatchBind t49 = t48 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t49 argv=t48 primary=after_dump rc=_ guard=true fail=bb13
+  Eval t50 = $after_dump.stdout |> jq $sumFilter
+  BindName after = t50
+  Eval t51 = $after - $before
+  BindName delta = t51
+  BuildArgs t52 = [print "post-detach delta=${delta}"]
+  DispatchCommand argv=t52 policy=def-then-exec-command lane=builtin(print)
+  Assert $delta == 0
+  BuildArgs t53 = [bpfman program unload $pid]
+  DispatchCommand argv=t53 policy=def-then-exec-command lane=builtin(bpfman)
+  Assert fail bpfman program get $prog
+  RunDefers policy=program
+  Stop
+
+bb1:
+  RunDefers policy=program
+  PropagateError
+
+bb2:
+  RunDefers policy=program
+  PropagateError
+
+bb3:
+  RunDefers policy=program
+  PropagateError
+
+bb4:
+  RunDefers policy=program
+  PropagateError
+
+bb5:
+  RunDefers policy=program
+  PropagateError
+
+bb6:
+  RunDefers policy=program
+  PropagateError
+
+bb7:
+  RunDefers policy=program
+  PropagateError
+
+bb8:
+  RunDefers policy=program
+  PropagateError
+
+bb9:
+  RunDefers policy=program
+  PropagateError
+
+bb10:
+  RunDefers policy=program
+  PropagateError
+
+bb11:
+  RunDefers policy=program
+  PropagateError
+
+bb12:
+  RunDefers policy=program
+  PropagateError
+
+bb13:
+  RunDefers policy=program
+  PropagateError

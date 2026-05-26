@@ -1,6 +1,6 @@
 # Emacs support for bpfman
 
-This directory contains Emacs tooling for the bpfman REPL language.
+This directory contains Emacs tooling for the bpfman-shell language.
 
 ## Files
 
@@ -53,8 +53,8 @@ tokens are fontified according to this table:
 
 | Face                          | Applied to                                                      |
 |-------------------------------|-----------------------------------------------------------------|
-| `font-lock-keyword-face`      | `let`, `def`, `if`, `elif`, `else`, `foreach`, `retry`, `until`, `break`, `continue`, `assert`, `defs`, `exec`, `file`, `jq`, `print`, `require`, `source`, `undef`, `unset`, `vars`, `version`, `help`, `bpfman`; the `${` and `}` delimiters of a string interpolation |
-| `font-lock-builtin-face`      | domain subcommands (`program`, `link`, `show`, `attach`, ...), attach kinds (`xdp`, `tc`, `tracepoint`, ...), comparison operators (`==`, `!=`, `<`, `<=`, `>`, `>=`), assertion verbs (`not-empty`, `ok`, `fail`, `path`, `contains`, `nil`, `not`), the `matches` block keyword |
+| `font-lock-keyword-face`      | `let`, `guard`, `defer`, `if`, `elif`, `else`, `foreach`, `break`, `continue`, `poll`, `retry`, `return`, `def`, `bpfman`, `assert`, `require`, `jq`, `range`, `zip`, `u32le`, `u64le`, `defs`, `exec`, `file`, `fire`, `import`, `jobs`, `kill`, `net`, `print`, `reap`, `start`, `tempdir`, `trace`, `wait`; the `${` and `}` delimiters of a string interpolation |
+| `font-lock-builtin-face`      | domain subcommands (`dispatcher`, `doctor`, `gc`, `link`, `list`, `load`, `program`, `programs`, `show`, `attach`, `detach`, `get`, `image`, `status`, `unload`, ...), attach kinds (`fentry`, `fexit`, `kprobe`, `tc`, `tcx`, `tracepoint`, `uprobe`, `xdp`), assertion/predicate words (`fail`, `not`, `ok`, `contains`, `empty`, `missing`, `not-empty`, `null`, `path-exists`, `present`), logical and control-clause words (`and`, `or`, `in`, `timeout`, `every`, `unless`), `matches` / `exhaustive`, and expression operators (`==`, `!=`, `<`, `<=`, `>`, `>=`, `+`, `-`, `*`, `/`, `%`) |
 | `font-lock-variable-name-face`| `$var` references, braced `${var}`, the identifier after `let`, adapter refs (`file:$var`), the body inside a `"${...}"` interpolation |
 | `font-lock-string-face`       | literal runs of `"double-quoted"` and `'single-quoted'` strings (including the quote marks themselves) |
 | `font-lock-comment-face`      | `# to end of line` (outside quotes)                             |

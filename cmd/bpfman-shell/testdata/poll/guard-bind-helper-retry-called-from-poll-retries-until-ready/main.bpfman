@@ -1,0 +1,19 @@
+let d <- tempdir poll-guard-bind-helper
+defer exec rm -rf $d.path
+let marker = "${d.path}/marker"
+let worker <- start sh -c "sleep 0.02; touch '${marker}'"
+defer kill $worker
+
+def await_marker(path) {
+  let rc <- exec test -f $path
+  retry "waiting from guard-bind helper" unless $rc.ok
+  print guard-bind-ready
+}
+
+poll timeout 100ms every 1ms {
+  guard _ <- await_marker $marker
+}
+
+guard _ <- wait $worker
+assert path-exists $marker
+print after

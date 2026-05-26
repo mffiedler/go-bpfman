@@ -2,7 +2,7 @@
 # Syntax gallery for bpfman-mode.el highlighting.
 #
 # This file is NOT intended to be evaluated. It exists so every
-# construct in the REPL language has a representative line to
+# construct in the bpfman-shell language has a representative line to
 # stress-test the Emacs major mode. Open it, scan top to bottom, and
 # confirm every token is fontified according to its role.
 #
@@ -175,14 +175,14 @@ assert not $flag
 
 # ---- 7. Prefix-verb assertions (outside expression grammar) ----
 
-assert nil maybe
+assert null maybe
 assert ok       bpfman show program 42
 assert fail     bpfman link get 9999
 assert path-exists /sys/fs/bpf/bpfman
 assert contains "hello world" world
 
 # Negation with `not'.
-assert not nil               maybe
+assert not null              maybe
 assert not not-empty         $dry_run
 assert not ok                exec false
 assert not path-exists /does/not/exist
@@ -190,7 +190,7 @@ assert not contains $haystack needle
 
 # `require' is the fatal counterpart; same grammar otherwise.
 require ok      bpfman program get 42
-require not nil prog
+require not null prog
 require $count > 0
 
 # ---- 8. if / elif / else blocks ----
@@ -235,7 +235,7 @@ if $ready { bpfman list programs; bpfman link list } else { require fail }
 # ---- 12. Top-level commands and registered providers ----
 
 # 'bpfman' and the shell builtins (jq, file, print, source,
-# vars, help, version, ...) are registered providers.
+# ...) are registered providers.
 # Any other first word falls through to subprocess execution,
 # so 'ip', 'cat', 'diff' run as host commands without needing
 # an explicit 'exec' prefix.
@@ -258,10 +258,7 @@ cat file:$data
 cat file:$parsed.name
 
 print $parsed
-vars
-unset parsed tmp_path
-help
-version
+print $tmp_path.path
 # source setup.bpfman       # would evaluate a script file at path
 
 # ---- 13. Domain commands (every noun and verb we recognise) ----
@@ -436,25 +433,32 @@ foreach item in $progs {
     print $item
 }
 
-# ---- 22. eventually timeout / interval ----
+# ---- 22. poll / retry ----
 
-# The body either succeeds as a whole or fails as a whole; a
-# mandatory `timeout DUR' bounds the retry budget and the
-# optional `interval DUR' sets the cadence (default 100ms). See
-# SCOPE-DESIGN.md Section 3.4 for the full semantics.
-eventually timeout 60s {
+# Poll retries only when the script says `retry`. `require`
+# remains fail-now; `assert` is not valid inside poll.
+poll timeout 60s every 100ms {
     guard status <- bpfman program get 42 -o json
-    require $status.record.gpl_compatible
+    retry "waiting for GPL-compatible status" unless $status.record.gpl_compatible
 }
 
-eventually timeout 30s interval 250ms {
+poll timeout 30s every 250ms {
     guard status <- bpfman program get 42 -o json
-    require $status.record.gpl_compatible
+    retry unless $status.record.gpl_compatible
 }
 
-eventually timeout 2m {
+poll timeout 2m every 1s {
     guard link <- bpfman link get 8801 -o json
-    require $link.record.kind == xdp
+    retry "waiting for xdp link kind" unless $link.record.kind == xdp
+}
+
+def await_ready_link(id) {
+    guard link <- bpfman link get $id -o json
+    retry "waiting for xdp helper link kind" unless $link.record.kind == xdp
+}
+
+poll timeout 2m every 1s {
+    await_ready_link 8801
 }
 
 # ---- 23. jq as a higher-order operator over structured data ----
@@ -530,9 +534,8 @@ banner
 let link = $link2
 expect_link $link $prog tracepoint
 
-# `defs' lists registered defs; `undef' removes them.  Both are
-# shell-language builtins and fontify as keywords.
+# `defs' lists registered defs and fonts as a shell-language
+# keyword.
 defs
-undef expect_link banner
 
 # ---- End of gallery ----

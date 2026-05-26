@@ -1,5 +1,5 @@
 # -*- mode: bpfman -*-
-# REPL equivalent of e2e/TestFentry_LoadAttachDetachUnload.
+# .bpfman equivalent of e2e/TestFentry_LoadAttachDetachUnload.
 #
 # Loads a fentry counter targeting do_unlinkat(), attaches it,
 # asserts the load and attach responses round-trip through Get/
@@ -15,7 +15,7 @@
 # Requires root, bpftool, and kernel BTF.
 
 # Pull in the shared lifecycle assertion helpers.
-source ../lib.bpfman
+import ../lib.bpfman
 
 # Preconditions: BTF-enabled kernel.
 require path-exists /sys/kernel/btf/vmlinux
@@ -55,7 +55,7 @@ assert $gotLink.record.details.fn_name == $link.record.details.fn_name
 guard listedLinks <- bpfman link list -o json
 let linkFilter = ".links[] | select(.id == ${linkID})"
 let ourLink = $listedLinks |> jq $linkFilter
-require not nil ourLink
+require not null ourLink
 assert $ourLink.id == $link.record.id
 assert $ourLink.kind == $link.record.kind
 
@@ -76,7 +76,6 @@ foreach _ in (range 5) {
 guard dumpAfter <- bpftool map dump id $mapID -j
 let after     = $dumpAfter.stdout |> jq $sumFilter
 let delta     = $after - $before
-print $delta
 assert $delta >= 5
 
 # Clean up: detach the link, then unload the program.

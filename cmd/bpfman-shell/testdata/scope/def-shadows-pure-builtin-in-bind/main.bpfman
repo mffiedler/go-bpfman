@@ -1,0 +1,6 @@
+def range() {
+  return shadowed
+}
+
+let v <- range
+print $v

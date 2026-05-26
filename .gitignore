@@ -10,5 +10,11 @@ archive/bpfman-kernel/bpfman-kernel
 # slip into the index when a new test directory is added.
 *.bpf.o
 *.bpf.d
+
+# Go test binaries left behind by `go test -c` or sandboxed
+# test runners. Matches anywhere in the tree; the bin/ outputs
+# are already covered by /bin/ above.
+*.test
+
 /ci-e2e-bundle/
 .cache/

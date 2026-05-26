@@ -1,0 +1,71 @@
+body entry=bb0
+
+bb0:
+  EnterDeferScope kind=program
+  BuildArgs t0 = [net veth-pair]
+  DispatchBind t1 = t0 policy=def-then-exec-bind lane=builtin(net)
+  ApplyBind src=t1 argv=t0 primary=pair rc=_ guard=true fail=bb1
+  BuildArgs t2 = [net release $pair]
+  RegisterDefer argv=t2 policy=def-then-exec-bind lane=builtin(net)
+  BuildArgs t3 = [bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats]
+  DispatchBind t4 = t3 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t4 argv=t3 primary=loaded rc=_ guard=true fail=bb2
+  Eval t5 = $loaded.programs[0]
+  BindName prog = t5
+  Eval t6 = $prog.record.program_id
+  BindName pid = t6
+  BuildArgs t7 = [bpfman program unload $pid]
+  RegisterDefer argv=t7 policy=def-then-exec-bind lane=builtin(bpfman)
+  Eval t8 = [500 100 800 300 900 200 700 400 600 50]
+  BindName priorities = t8
+  Eval t9 = $priorities
+  ForEachCollect list=t9 names=[prio] primary=links rc=_ guard=true body=bb3 exit=bb4
+
+bb1:
+  RunDefers policy=program
+  PropagateError
+
+bb2:
+  RunDefers policy=program
+  PropagateError
+
+bb3:
+  BuildArgs t10 = [bpfman link attach tc -i $pair.host_link -d ingress -p $prio $pid]
+  DispatchBind t11 = t10 policy=def-then-exec-bind lane=builtin(bpfman)
+  CollectProduce t11
+
+bb4:
+  Eval t12 = $links
+  ForEach list=t12 names=[l] body=bb5 exit=bb6
+
+bb5:
+  BuildArgs t13 = [bpfman link detach $l]
+  RegisterDefer argv=t13 policy=def-then-exec-bind lane=builtin(bpfman)
+  ForEachContinue
+
+bb6:
+  Eval t14 = $links
+  ForEachCollect list=t14 names=[l] primary=refreshed rc=_ guard=true body=bb7 exit=bb8
+
+bb7:
+  BuildArgs t15 = [bpfman link get $l]
+  DispatchBind t16 = t15 policy=def-then-exec-bind lane=builtin(bpfman)
+  CollectProduce t16
+
+bb8:
+  Eval t17 = $refreshed
+  ForEach list=t17 names=[r] body=bb9 exit=bb10
+
+bb9:
+  Eval t18 = $r.record.details.priority
+  BindName prio = t18
+  Eval t19 = $r.record.details.position
+  BindName pos = t19
+  Eval t20 = $priorities |> jq "sort | index(${prio})"
+  BindName want_pos = t20
+  Assert $pos == $want_pos
+  ForEachContinue
+
+bb10:
+  RunDefers policy=program
+  Stop

@@ -79,7 +79,6 @@ let counts <- foreach d in $dumps {
     jq $sumFilter $d.stdout
 }
 
-print "packets:" $counts
 
 foreach c in $counts {
     assert $c > 0

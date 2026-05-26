@@ -1,10 +1,10 @@
 # -*- mode: bpfman -*-
 # e2e/lib.bpfman
 #
-# Shared helpers for the Test*_LoadAttachDetachUnload REPL scripts.
-# Sourced from each lifecycle script via `source ../lib.bpfman`.
-# `source` resolves relative paths against the directory of the
-# script containing the `source` statement, so this works
+# Shared helpers for the Test*_LoadAttachDetachUnload .bpfman scripts.
+# Imported from each lifecycle script via `import ../lib.bpfman`.
+# `import` resolves relative paths against the directory of the
+# script containing the `import` statement, so this works
 # regardless of where the runner is invoked from.
 #
 # This file is deliberately placed one level above e2e/scripts/ so
@@ -51,4 +51,17 @@ def expect_program_round_trip(got prog) {
         record.meta.name:            $prog.record.meta.name
         record.handles.pin_path:     $prog.record.handles.pin_path
     }
+}
+
+# Polling helper for the numbered sentinel/ack worker protocol used
+# by the multi-wave workload drivers in e2e/new. Call from inside a
+# poll body:
+#
+#   poll timeout 5s every 100ms { await_wave_completion $ack 2 }
+#
+# This keeps the wait contract explicit (`retry` is the only
+# recoverable signal) while letting scripts keep their wave narrative
+# local to the call site.
+def await_wave_completion(ack n) {
+    retry "waiting for ack.${n}" unless path-exists "${ack}.${n}"
 }

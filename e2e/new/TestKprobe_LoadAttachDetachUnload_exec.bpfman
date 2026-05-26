@@ -37,7 +37,7 @@
 #   cd e2e
 #   sudo bpfman-shell new/TestKprobe_LoadAttachDetachUnload_exec.bpfman
 
-source ../lib.bpfman
+import ../lib.bpfman
 
 let n = 5
 let weight = 42
@@ -74,7 +74,7 @@ guard list_r <- exec bpfman program list -o json
 let listed = $list_r.stdout |> jq "fromjson"
 let progFilter = ".programs[] | select(.record.program_id == ${pid})"
 let ours = $listed |> jq $progFilter
-require not nil ours
+require not null ours
 assert $ours.record.meta.name == $prog.record.meta.name
 assert $ours.status.kernel.id == $prog.status.kernel.id
 
@@ -102,7 +102,7 @@ guard listlinks_r <- exec bpfman link list -o json
 let listedLinks = $listlinks_r.stdout |> jq "fromjson"
 let linkFilter = ".links[] | select(.id == ${linkID})"
 let ourLink = $listedLinks |> jq $linkFilter
-require not nil ourLink
+require not null ourLink
 assert $ourLink.id == $link.record.id
 assert $ourLink.kind == $link.record.kind
 

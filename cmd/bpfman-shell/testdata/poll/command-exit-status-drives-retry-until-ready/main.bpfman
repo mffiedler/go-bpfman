@@ -1,0 +1,15 @@
+let d <- tempdir poll-command-status
+defer exec rm -rf $d.path
+let marker = "${d.path}/marker"
+let worker <- start sh -c "sleep 0.02; touch '${marker}'"
+defer kill $worker
+
+poll timeout 100ms every 1ms {
+  let rc <- exec test -f $marker
+  retry "waiting for marker" unless $rc.ok
+}
+
+guard _ <- wait $worker
+assert path-exists $marker
+print command-ready
+print after

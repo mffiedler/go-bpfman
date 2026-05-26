@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# parallel-scripts.sh -- run the e2e/new/ REPL corpus in parallel
+# parallel-scripts.sh -- run the e2e/new/ .bpfman corpus in parallel
 # against the built bpfman-shell binary.
 #
 # Scope is deliberately limited to e2e/new/. The legacy scripts

@@ -17,7 +17,7 @@
 #
 # Requires root.
 
-source ../lib.bpfman
+import ../lib.bpfman
 
 guard loaded <- bpfman program load file \
     --path testdata/bpf/tc_counter.bpf.o \
@@ -44,20 +44,20 @@ assert $prog matches exhaustive {
         license:        "Dual BSD/GPL"
         gpl_compatible: true
         created_at:     not-empty
-        updated_at:     nil
+        updated_at: null
         load: matches exhaustive {
             object_path:  $expect_bytecode
             program_name: stats
             program_type: tc
-            attach_func:  nil
-            map_owner_id: nil
+            attach_func: null
+            map_owner_id: null
             global_data:  empty
-            image_source: nil
+            image_source: null
         }
         handles: matches exhaustive {
             pin_path:     $expect_prog_pin
             map_pin_path: $expect_map_dir
-            map_owner_id: nil
+            map_owner_id: null
         }
         meta: matches exhaustive {
             name:        stats
@@ -89,7 +89,7 @@ assert $prog matches exhaustive {
             has_memlock:    true
             restricted:     false
         }
-        stats:    nil
+        stats: null
         prog_pin: $expect_prog_pin
         map_dir:  $expect_map_dir
         link_dir: $expect_link_dir
@@ -135,7 +135,7 @@ assert $got matches exhaustive {
         license:        $prog.record.license
         gpl_compatible: $prog.record.gpl_compatible
         created_at:     $prog.record.created_at
-        updated_at:     nil
+        updated_at: null
         load: matches exhaustive {
             object_path:  $prog.record.load.object_path
             program_name: $prog.record.load.program_name
@@ -143,12 +143,12 @@ assert $got matches exhaustive {
             attach_func:  $prog.record.load.attach_func
             map_owner_id: $prog.record.load.map_owner_id
             global_data:  empty
-            image_source: nil
+            image_source: null
         }
         handles: matches exhaustive {
             pin_path:     $prog.record.handles.pin_path
             map_pin_path: $prog.record.handles.map_pin_path
-            map_owner_id: nil
+            map_owner_id: null
         }
         meta: matches exhaustive {
             name:        $prog.record.meta.name

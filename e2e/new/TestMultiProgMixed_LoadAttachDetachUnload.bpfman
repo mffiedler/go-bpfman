@@ -33,7 +33,7 @@
 #   cd e2e
 #   sudo bpfman-shell new/TestMultiProgMixed_LoadAttachDetachUnload.bpfman
 
-source ../lib.bpfman
+import ../lib.bpfman
 
 let n      = 5
 let waves  = 3
@@ -64,7 +64,6 @@ guard loaded <- bpfman program load file \
 let (prog_tp  pid_tp)  = [$loaded.programs[0] $loaded.programs[0].record.program_id]
 let (prog_kp  pid_kp)  = [$loaded.programs[1] $loaded.programs[1].record.program_id]
 let (prog_krp pid_krp) = [$loaded.programs[2] $loaded.programs[2].record.program_id]
-print "pids: tp=${pid_tp} kp=${pid_kp} krp=${pid_krp}"
 
 defer bpfman program unload $pid_tp
 defer bpfman program unload $pid_kp
@@ -73,7 +72,6 @@ defer bpfman program unload $pid_krp
 let mapID_tp  = $prog_tp  |> jq '[.status.maps[] | select(.name == "mtp_count")  | .id][0]'
 let mapID_kp  = $prog_kp  |> jq '[.status.maps[] | select(.name == "mkp_count")  | .id][0]'
 let mapID_krp = $prog_krp |> jq '[.status.maps[] | select(.name == "mkrp_count") | .id][0]'
-print "maps: tp=${mapID_tp} kp=${mapID_kp} krp=${mapID_krp}"
 
 # Three different attach verbs, one per program type. Same
 # do_unlinkat target underneath kp and krp; the kernel resolves
@@ -86,9 +84,7 @@ let counter_filter = "fromjson | .[0].formatted.value | tonumber"
 
 # --- Wave 1: tp, kp, krp all attached ---
 guard _ <- touch "${sentinel}.1"
-eventually timeout 5s {
-    require path-exists "${ack}.1"
-}
+poll timeout 5s every 100ms { await_wave_completion $ack 1 }
 
 # Detach krp first.
 bpfman link detach $link_krp
@@ -96,21 +92,16 @@ sleep 0.1
 
 # --- Wave 2: tp, kp attached; krp detached ---
 guard _ <- touch "${sentinel}.2"
-eventually timeout 5s {
-    require path-exists "${ack}.2"
-}
+poll timeout 5s every 100ms { await_wave_completion $ack 2 }
 
 bpfman link detach $link_kp
 sleep 0.1
 
 # --- Wave 3: only tp attached ---
 guard _ <- touch "${sentinel}.3"
-eventually timeout 5s {
-    require path-exists "${ack}.3"
-}
+poll timeout 5s every 100ms { await_wave_completion $ack 3 }
 
-guard work_r <- wait $work
-assert $work_r.ok
+guard _ <- wait $work
 
 guard dump_tp  <- bpftool map dump id $mapID_tp -j
 guard dump_kp  <- bpftool map dump id $mapID_kp -j

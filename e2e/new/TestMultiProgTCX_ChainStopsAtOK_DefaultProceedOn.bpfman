@@ -23,7 +23,7 @@
 #   cd e2e
 #   sudo bpfman-shell new/TestMultiProgTCX_ChainStopsAtOK_DefaultProceedOn.bpfman
 
-source ../lib.bpfman
+import ../lib.bpfman
 
 let n        = 5
 let weight_a = 41
@@ -44,7 +44,6 @@ guard loaded <- bpfman program load file \
 let (prog_a pid_a) = [$loaded.programs[0] $loaded.programs[0].record.program_id]
 let (prog_b pid_b) = [$loaded.programs[1] $loaded.programs[1].record.program_id]
 let (prog_c pid_c) = [$loaded.programs[2] $loaded.programs[2].record.program_id]
-print "pids: a=${pid_a} b=${pid_b} c=${pid_c}"
 
 defer bpfman program unload $pid_a
 defer bpfman program unload $pid_b

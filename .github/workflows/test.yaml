@@ -151,7 +151,7 @@ jobs:
           BPFMAN_SQLITE_TX_RETRY_BACKOFFS: ${{ matrix.race == 1 && '100ms,500ms,2s,8s' || '' }}
 
   test-e2e-scripts:
-    name: E2E REPL scripts (${{ matrix.arch }}, RACE=${{ matrix.race }}, DISPATCH=${{ matrix.dispatch }})
+    name: E2E .bpfman scripts (${{ matrix.arch }}, RACE=${{ matrix.race }}, DISPATCH=${{ matrix.dispatch }})
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false

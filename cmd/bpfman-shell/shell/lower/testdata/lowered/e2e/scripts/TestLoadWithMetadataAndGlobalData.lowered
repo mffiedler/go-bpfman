@@ -1,0 +1,65 @@
+body entry=bb0
+
+bb0:
+  EnterDeferScope kind=program
+  BuildArgs t0 = [bpfman program load file --path testdata/bpf/xdp_pass.bpf.o --programs xdp:pass -m owner=test-team -m environment=e2e-testing -g config_u8=0x42 -g config_u32=0xdeadbeef]
+  DispatchBind t1 = t0 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t1 argv=t0 primary=loaded rc=_ guard=true fail=bb1
+  Eval t2 = $loaded.programs[0]
+  BindName prog = t2
+  Eval t3 = $prog.record.program_id
+  BindName pid = t3
+  Assert $prog.record.load.program_type == xdp
+  Assert $prog.status.kernel.program_type == extension
+  Assert $prog.record.meta.name == pass
+  Assert $prog.status.kernel.id == $pid
+  Assert not-empty $prog.status.kernel.name
+  Assert not-empty $prog.status.kernel.tag
+  Assert not-empty $prog.status.kernel.loaded_at
+  Assert not-empty $prog.record.handles.pin_path
+  Assert $prog.record.meta.metadata.owner == test-team
+  Assert $prog.record.meta.metadata.environment == e2e-testing
+  Assert $prog.record.load.global_data.config_u8 == "Qg=="
+  Assert $prog.record.load.global_data.config_u32 == "3q2+7w=="
+  BuildArgs t4 = [bpfman program get $pid]
+  DispatchBind t5 = t4 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t5 argv=t4 primary=got rc=_ guard=true fail=bb2
+  Assert $got.status.kernel.id == $prog.status.kernel.id
+  Assert $got.status.kernel.program_type == $prog.status.kernel.program_type
+  Assert $got.status.kernel.name == $prog.status.kernel.name
+  Assert $got.status.kernel.tag == $prog.status.kernel.tag
+  Assert $got.record.meta.name == $prog.record.meta.name
+  Assert $got.record.handles.pin_path == $prog.record.handles.pin_path
+  Assert $got.record.meta.metadata.owner == test-team
+  Assert $got.record.meta.metadata.environment == e2e-testing
+  Assert $got.record.load.global_data.config_u8 == "Qg=="
+  Assert $got.record.load.global_data.config_u32 == "3q2+7w=="
+  BuildArgs t6 = [bpfman program list -o json]
+  DispatchBind t7 = t6 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t7 argv=t6 primary=listed rc=_ guard=true fail=bb3
+  Eval t8 = ".programs[] | select(.record.program_id == ${pid})"
+  BindName progFilter = t8
+  Eval t9 = $listed |> jq $progFilter
+  BindName ours = t9
+  Require not null ours
+  Assert $ours.record.meta.name == $prog.record.meta.name
+  Assert $ours.status.kernel.id == $prog.status.kernel.id
+  Assert $ours.record.meta.metadata.owner == test-team
+  Assert $ours.record.load.global_data.config_u8 == "Qg=="
+  BuildArgs t10 = [bpfman program unload $pid]
+  DispatchCommand argv=t10 policy=def-then-exec-command lane=builtin(bpfman)
+  Assert fail bpfman program get $prog
+  RunDefers policy=program
+  Stop
+
+bb1:
+  RunDefers policy=program
+  PropagateError
+
+bb2:
+  RunDefers policy=program
+  PropagateError
+
+bb3:
+  RunDefers policy=program
+  PropagateError

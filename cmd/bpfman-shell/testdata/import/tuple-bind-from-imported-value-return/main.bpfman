@@ -1,0 +1,4 @@
+import ./lib.bpfman
+let (rc p) <- f
+print $rc.ok
+print $p

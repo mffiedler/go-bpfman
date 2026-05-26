@@ -1,0 +1,195 @@
+package semantics
+
+import (
+	"encoding/json"
+	"reflect"
+	"strings"
+	"time"
+
+	bpfman "github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
+)
+
+// Program and Link shape inference for bpfman API types. Derived
+// from the bpfman package via reflect so the registry tracks the
+// real Go types without hand-maintained mirror declarations.
+
+var (
+	typeToOriginKind = map[reflect.Type]OriginKind{
+		reflect.TypeOf(bpfman.Program{}): OriginProgram,
+		reflect.TypeOf(bpfman.Link{}):    OriginLink,
+	}
+
+	programShape = shapeFromType(reflect.TypeOf(bpfman.Program{}), OriginProgram)
+	linkShape    = shapeFromType(reflect.TypeOf(bpfman.Link{}), OriginLink)
+
+	linkDetailsShapes = buildLinkDetailsShapes()
+)
+
+func buildLinkDetailsShapes() map[string]Shape {
+	shapes := map[string]Shape{}
+	for _, kind := range bpfman.LinkAttachKinds() {
+		t := bpfman.LinkAttachKindDetailsType(kind)
+		if t == nil {
+			continue
+		}
+		shapes[kind] = shapeFromType(t, OriginUnknown)
+	}
+	return shapes
+}
+
+func inferBpfmanBindShape(args []syntax.Expr) Shape {
+	if len(args) < 2 {
+		return Shape{Sealed: false, Kind: OriginUnknown}
+	}
+	noun, ok := args[0].(*syntax.LiteralExpr)
+	if !ok || noun.Quoted {
+		return Shape{Sealed: false, Kind: OriginUnknown}
+	}
+	verb, ok := args[1].(*syntax.LiteralExpr)
+	if !ok || verb.Quoted {
+		return Shape{Sealed: false, Kind: OriginUnknown}
+	}
+	switch noun.Text {
+	case "program":
+		switch verb.Text {
+		case "load":
+			elem := KindShape(OriginProgram)
+			return Shape{
+				Sealed: true,
+				Kind:   OriginUnknown,
+				Fields: map[string]Shape{
+					"programs": {Sealed: false, Kind: OriginUnknown, Elem: &elem},
+				},
+			}
+		case "get":
+			return KindShape(OriginProgram)
+		case "list":
+			elem := KindShape(OriginProgram)
+			return Shape{Sealed: false, Kind: OriginUnknown, Elem: &elem}
+		}
+	case "link":
+		switch verb.Text {
+		case "attach":
+			if len(args) >= 3 {
+				if kind, ok := args[2].(*syntax.LiteralExpr); ok && !kind.Quoted {
+					if details, ok := linkDetailsShapes[kind.Text]; ok {
+						return linkShapeWithDetails(details)
+					}
+				}
+			}
+			return KindShape(OriginLink)
+		case "get":
+			return KindShape(OriginLink)
+		case "list":
+			elem := KindShape(OriginLink)
+			return Shape{Sealed: false, Kind: OriginUnknown, Elem: &elem}
+		}
+	}
+	return Shape{Sealed: false, Kind: OriginUnknown}
+}
+
+func linkShapeWithDetails(detailsShape Shape) Shape {
+	link := CloneShape(KindShape(OriginLink))
+	record, ok := link.Fields["record"]
+	if !ok {
+		return link
+	}
+	if _, ok := record.Fields["details"]; !ok {
+		return link
+	}
+	record.Fields["details"] = detailsShape
+	link.Fields["record"] = record
+	return link
+}
+
+func shapeFromType(t reflect.Type, kind OriginKind) Shape {
+	return buildShape(t, map[reflect.Type]bool{}, kind)
+}
+
+func buildShape(t reflect.Type, seen map[reflect.Type]bool, kind OriginKind) Shape {
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if mapped, ok := typeToOriginKind[t]; ok && kind == OriginUnknown {
+		kind = mapped
+	}
+	if t == reflect.TypeOf(time.Time{}) {
+		return Shape{Sealed: true, Kind: OriginScalar}
+	}
+	if t == reflect.TypeOf(json.Number("")) {
+		return Shape{Sealed: true, Kind: OriginScalar}
+	}
+	if implementsJSONMarshaler(t) {
+		return Shape{Sealed: false, Kind: kind}
+	}
+	if seen[t] {
+		return Shape{Sealed: false, Kind: kind}
+	}
+	switch t.Kind() {
+	case reflect.Struct:
+		seen[t] = true
+		defer delete(seen, t)
+		fields := map[string]Shape{}
+		for i := 0; i < t.NumField(); i++ {
+			f := t.Field(i)
+			if !f.IsExported() {
+				continue
+			}
+			name, omit := jsonFieldName(f)
+			if omit {
+				continue
+			}
+			child := buildShape(f.Type, seen, OriginUnknown)
+			if f.Anonymous && f.Tag.Get("json") == "" {
+				if child.Sealed {
+					for k, v := range child.Fields {
+						fields[k] = v
+					}
+				}
+				continue
+			}
+			if name == "" {
+				name = f.Name
+			}
+			fields[name] = child
+		}
+		return Shape{Sealed: true, Kind: kind, Fields: fields}
+	case reflect.Slice, reflect.Array:
+		elem := buildShape(t.Elem(), seen, OriginUnknown)
+		return Shape{Sealed: false, Kind: kind, Elem: &elem}
+	case reflect.Map, reflect.Interface:
+		return Shape{Sealed: false, Kind: OriginMap}
+	case reflect.Bool:
+		return Shape{Sealed: true, Kind: OriginBool}
+	case reflect.String,
+		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64:
+		return Shape{Sealed: true, Kind: OriginScalar}
+	}
+	return Shape{Sealed: false, Kind: kind}
+}
+
+func jsonFieldName(f reflect.StructField) (name string, omit bool) {
+	tag := f.Tag.Get("json")
+	if tag == "-" {
+		return "", true
+	}
+	if tag == "" {
+		return f.Name, false
+	}
+	if comma := strings.Index(tag, ","); comma >= 0 {
+		tag = tag[:comma]
+	}
+	return tag, false
+}
+
+var jsonMarshalerType = reflect.TypeOf((*json.Marshaler)(nil)).Elem()
+
+func implementsJSONMarshaler(t reflect.Type) bool {
+	if t.Implements(jsonMarshalerType) {
+		return true
+	}
+	return reflect.PointerTo(t).Implements(jsonMarshalerType)
+}

@@ -1,7 +1,7 @@
 // bpfman-shell is the development / test / ops companion to bpfman.
-// It hosts the REPL, the DSL script runner, and (in time) the test
-// scaffolding subcommands (veth, reap, lease). Production deployments
-// ship only bin/bpfman; bin/bpfman-shell is for dev and CI.
+// It hosts the DSL script runner, inspection modes, and (in time) the
+// test scaffolding subcommands (veth, reap, lease). Production
+// deployments ship only bin/bpfman; bin/bpfman-shell is for dev and CI.
 package main
 
 import (
@@ -10,33 +10,29 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/fixturemode"
 )
 
 // main wires the process-level signal model. The root context
-// is plain context.Background(): we deliberately do not put
-// SIGINT/SIGTERM on the root because the two execution modes
-// want different things from those signals. Script mode wraps
-// the root with NotifyContext inside replScript so a ^C aborts
-// the whole script (matches running a bash script). Interactive
-// mode wraps each chunk in its own NotifyContext inside
-// replInteractive so a ^C cancels the current builtin or
-// foreground operation but the shell stays alive at the
-// prompt; this is the bash-shaped REPL contract.
+// is plain context.Background(): the shell runner installs its
+// own NotifyContext so a ^C aborts the whole program, matching
+// the way a bash script exits on SIGINT.
 //
 // A small watcher goroutine catches a second SIGINT/SIGTERM
-// after the first has been observed by the running mode and
-// hard-exits, so a wedged shell can always be killed by typing
-// ^C twice. The first signal goes to the mode's NotifyContext;
+// after the first has been observed by the running program and
+// hard-exits, so a wedged script can always be killed by typing
+// ^C twice. The first signal goes to the runner's NotifyContext;
 // the second is the escape hatch.
 func main() {
 	// Mode dispatch: when BPFMAN_SHELL_MODE is set, bpfman-shell
-	// acts as a test-fixture helper rather than a REPL/script
-	// runner. The dispatch runs before NewCLI so we don't open
+	// acts as a test-fixture helper rather than a user-facing
+	// script entry point. The dispatch runs before NewCLI so we don't open
 	// the manager / database / lock for a helper invocation that
 	// has no need for them. Mirrors the BPFMAN_MODE pattern used
 	// by the main bpfman binary for bpfman-rpc / bpfman-ns.
 	if mode := os.Getenv("BPFMAN_SHELL_MODE"); mode != "" {
-		if err := runMode(mode, os.Args[1:]); err != nil {
+		if err := fixturemode.Run(mode, os.Args[1:]); err != nil {
 			fmt.Fprintf(os.Stderr, "bpfman-shell: %v\n", err)
 			os.Exit(1)
 		}
@@ -56,30 +52,11 @@ func main() {
 	}
 }
 
-// runMode dispatches the BPFMAN_SHELL_MODE entry points. Each mode
-// is a test-fixture helper that runs in place of the REPL/script
-// runner; modes are intentionally narrow, single-purpose, and
-// self-contained so the helper code does not pull the rest of the
-// shell's machinery in.
-func runMode(mode string, args []string) error {
-	switch mode {
-	case "uprobe-fire-worker":
-		return runUprobeFireWorker(args)
-	case "unlinkat-fire-worker":
-		return runUnlinkatFireWorker(args)
-	case "kill-fire-worker":
-		return runKillFireWorker(args)
-	default:
-		return fmt.Errorf("unknown BPFMAN_SHELL_MODE %q", mode)
-	}
-}
-
 // watchForHardExit installs a long-lived signal watcher that
 // hard-exits the process on the second SIGINT or SIGTERM. The
-// first signal is consumed by whatever mode-specific
-// NotifyContext is active (script-wide or per-chunk); if that
-// mode's context cancellation is observed and acted on, the
-// shell keeps running. A user who sends a second signal has
+// first signal is consumed by the runner's NotifyContext; if
+// that context cancellation is observed and acted on, the
+// process exits cleanly. A user who sends a second signal has
 // asked unambiguously for the process to die, and we honour
 // that without further negotiation.
 func watchForHardExit() {

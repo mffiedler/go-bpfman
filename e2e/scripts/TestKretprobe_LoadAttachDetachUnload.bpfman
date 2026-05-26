@@ -1,5 +1,5 @@
 # -*- mode: bpfman -*-
-# REPL equivalent of e2e/TestKretprobe_LoadAttachDetachUnload.
+# .bpfman equivalent of e2e/TestKretprobe_LoadAttachDetachUnload.
 #
 # Loads the same kprobe counter object as the kprobe test but
 # declares it at program-type kretprobe, attaches it to
@@ -19,7 +19,7 @@
 # object serves both kprobe and kretprobe; the program type at
 # load time governs whether attaches fire on entry or return.
 # Pull in the shared lifecycle assertion helpers.
-source ../lib.bpfman
+import ../lib.bpfman
 
 guard loaded <- bpfman program load file --path testdata/bpf/kprobe_counter.bpf.o --programs kretprobe:kprobe_counter
 let prog = $loaded.programs[0]
@@ -38,7 +38,7 @@ expect_program_round_trip $got $prog
 guard listed <- bpfman program list -o json
 let progFilter = ".programs[] | select(.record.program_id == ${pid})"
 let ours = $listed |> jq $progFilter
-require not nil ours
+require not null ours
 assert $ours.record.meta.name == $prog.record.meta.name
 assert $ours.status.kernel.id == $prog.status.kernel.id
 
@@ -69,7 +69,7 @@ assert $gotLink.record.details.retprobe == $link.record.details.retprobe
 guard listedLinks <- bpfman link list -o json
 let linkFilter = ".links[] | select(.id == ${linkID})"
 let ourLink = $listedLinks |> jq $linkFilter
-require not nil ourLink
+require not null ourLink
 assert $ourLink.id == $link.record.id
 assert $ourLink.kind == $link.record.kind
 
@@ -87,7 +87,6 @@ sleep 0.1
 guard dumpAfter <- bpftool map dump id $mapID -j
 let after     = $dumpAfter.stdout |> jq $sumFilter
 let delta     = $after - $before
-print $delta
 assert $delta > 0
 
 # Clean up: detach the link, then unload the program.

@@ -9,10 +9,10 @@
 # consumer, then detaches and unloads. Any inconsistency exits
 # non-zero.
 #
-# Mirrors the `examples/tracepoint.bpfman` REPL walkthrough but
+# Mirrors the `examples/tracepoint.bpfman` shell walkthrough but
 # exercises the CLI from plain shell, validating that the wrapped
 # `{"programs": [...]}` JSON shape and the load-order contract
-# hold end-to-end for a non-REPL consumer.
+# hold end-to-end for a non-shell-DSL consumer.
 #
 # This script intentionally relies only on `bpfman -o jsonpath=`
 # for value extraction. No `jq`. The goal is to confirm that the

@@ -139,7 +139,6 @@ func TestParallel_GRPC(t *testing.T) {
 	})
 
 	for _, spec := range specs {
-		spec := spec
 		counter := counts[spec.name]
 		t.Run(spec.name, func(t *testing.T) {
 			t.Parallel()

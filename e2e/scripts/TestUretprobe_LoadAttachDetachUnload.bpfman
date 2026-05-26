@@ -1,5 +1,5 @@
 # -*- mode: bpfman -*-
-# REPL equivalent of e2e/TestUretprobe_LoadAttachDetachUnload.
+# .bpfman equivalent of e2e/TestUretprobe_LoadAttachDetachUnload.
 #
 # Loads the same uprobe counter object as the uprobe test but
 # declares it at program-type uretprobe, attaches it to
@@ -19,7 +19,7 @@
 # first (`make bin/e2e.test`).
 
 # Pull in the shared lifecycle assertion helpers.
-source ../lib.bpfman
+import ../lib.bpfman
 
 # Load the uprobe counter ELF as a uretprobe program.
 guard loaded <- bpfman program load file --path testdata/bpf/uprobe_counter.bpf.o --programs uretprobe:uprobe_counter
@@ -38,7 +38,7 @@ expect_program_round_trip $got $prog
 guard listed <- bpfman program list -o json
 let progFilter = ".programs[] | select(.record.program_id == ${pid})"
 let ours = $listed |> jq $progFilter
-require not nil ours
+require not null ours
 assert $ours.record.meta.name == $prog.record.meta.name
 assert $ours.status.kernel.id == $prog.status.kernel.id
 
@@ -72,7 +72,7 @@ assert $gotLink.record.details.retprobe == $link.record.details.retprobe
 guard listedLinks <- bpfman link list -o json
 let linkFilter = ".links[] | select(.id == ${linkID})"
 let ourLink = $listedLinks |> jq $linkFilter
-require not nil ourLink
+require not null ourLink
 assert $ourLink.id == $link.record.id
 assert $ourLink.kind == $link.record.kind
 
@@ -86,7 +86,7 @@ let before     = $dumpBefore.stdout |> jq $sumFilter
 
 # Each invocation of e2e.test in helper mode runs e2e_uprobe_call_malloc
 # once, so five invocations fire the uretprobe exactly five times.
-# The REPL exec builtin doesn't take per-command env vars; env(1)
+# The shell exec builtin doesn't take per-command env vars; env(1)
 # sets BPFMAN_E2E_MODE=uprobe-trigger-call-malloc on the spawned process so
 # TestMain dispatches to the helper instead of running tests.
 foreach _ in (range 5) {
@@ -96,7 +96,6 @@ foreach _ in (range 5) {
 guard dumpAfter <- bpftool map dump id $mapID -j
 let after     = $dumpAfter.stdout |> jq $sumFilter
 let delta     = $after - $before
-print $delta
 assert $delta == 5
 
 # Clean up: detach the link, then unload the program.

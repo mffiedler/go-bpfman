@@ -56,7 +56,6 @@ assert $pid_a != $pid_b
 # proves the map is shared, not duplicated.
 let mapID_a = $prog_a |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 let mapID_b = $prog_b |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
-print "tc_stats_map: prog_a=${mapID_a} prog_b=${mapID_b}"
 assert $mapID_a == $mapID_b
 
 # Both links are detached explicitly mid-script (to freeze the
@@ -89,7 +88,6 @@ guard dump_b <- bpftool map dump id $mapID_b -j
 let count_a = $dump_a.stdout |> jq $sumFilter
 let count_b = $dump_b.stdout |> jq $sumFilter
 
-print "packets: a=${count_a} b=${count_b}"
 
 # Both pins reference the same kernel map, so writes via
 # either must be observable through both.

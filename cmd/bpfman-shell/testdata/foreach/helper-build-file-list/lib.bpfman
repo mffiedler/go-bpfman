@@ -1,0 +1,4 @@
+def mk(name) {
+  let f <- file temp $name
+  return $f
+}

@@ -58,7 +58,6 @@ let count_0   = $dump_0.stdout   |> jq $sumFilter
 let count_55  = $dump_55.stdout  |> jq $sumFilter
 let count_100 = $dump_100.stdout |> jq $sumFilter
 
-print "packets: prio=0 -> ${count_0}, prio=55 -> ${count_55}, prio=100 -> ${count_100}"
 
 # Position 0 runs and counts; positions 1 and 2 are downstream
 # of the chain-break and must not count anything.

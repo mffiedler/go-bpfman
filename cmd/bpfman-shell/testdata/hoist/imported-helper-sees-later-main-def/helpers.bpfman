@@ -1,0 +1,4 @@
+def outer(x) {
+  let v <- inner $x
+  return $v
+}

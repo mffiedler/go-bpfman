@@ -48,7 +48,7 @@ func (c *LoadFileCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 
 // executeLoadFileResult is the shared implementation for loading a
 // BPF program from a local object file, returning the result without
-// formatting. Both the CLI command and the REPL call this function.
+// formatting. Both the CLI command and bpfman-shell call this function.
 func executeLoadFileResult(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, c *LoadFileCmd) (loadFileResult, error) {
 	_ = cli // reserved for future use; load no longer takes the writer lock.
 
@@ -102,7 +102,7 @@ func executeLoadFileResult(ctx context.Context, cli *bpfmancli.CLI, mgr *manager
 
 // executeLoadFile is the shared implementation for loading a BPF
 // program from a local object file. The CLI command calls this
-// function; the REPL uses executeLoadFileResult directly.
+// function; bpfman-shell uses executeLoadFileResult directly.
 func executeLoadFile(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, c *LoadFileCmd) error {
 	result, err := executeLoadFileResult(ctx, cli, mgr, c)
 	if err != nil {

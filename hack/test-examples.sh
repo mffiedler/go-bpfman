@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Run every REPL script under examples/ against the built
+# Run every .bpfman script under examples/ against the built
 # bpfman-shell binary. Each script executes from the repo root
 # because the scripts reference testdata with paths like
 # "e2e/testdata/bpf/<obj>.bpf.o". The loop reports failures as it

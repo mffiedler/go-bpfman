@@ -1,0 +1,97 @@
+body entry=bb0
+
+bb0:
+  EnterDeferScope kind=program
+  BuildArgs t0 = [net veth-pair]
+  DispatchBind t1 = t0 policy=def-then-exec-bind lane=builtin(net)
+  ApplyBind src=t1 argv=t0 primary=pair rc=_ guard=true fail=bb1
+  BuildArgs t2 = [net release $pair]
+  RegisterDefer argv=t2 policy=def-then-exec-bind lane=builtin(net)
+  BuildArgs t3 = [bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats]
+  DispatchBind t4 = t3 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t4 argv=t3 primary=loaded rc=_ guard=true fail=bb2
+  Eval t5 = $loaded.programs[0]
+  BindName prog = t5
+  Eval t6 = $prog.record.program_id
+  BindName pid = t6
+  BuildArgs t7 = [bpfman program unload $pid]
+  RegisterDefer argv=t7 policy=def-then-exec-bind lane=builtin(bpfman)
+  Eval t8 = [100 200 300 500 600 700 800 900 1000]
+  BindName keep_priorities = t8
+  Eval t9 = $keep_priorities
+  ForEachCollect list=t9 names=[prio] primary=kept rc=_ guard=true body=bb3 exit=bb4
+
+bb1:
+  RunDefers policy=program
+  PropagateError
+
+bb2:
+  RunDefers policy=program
+  PropagateError
+
+bb3:
+  BuildArgs t10 = [bpfman link attach tc -i $pair.host_link -d ingress -p $prio $pid]
+  DispatchBind t11 = t10 policy=def-then-exec-bind lane=builtin(bpfman)
+  CollectProduce t11
+
+bb4:
+  Eval t12 = $kept
+  ForEach list=t12 names=[l] body=bb5 exit=bb6
+
+bb5:
+  BuildArgs t13 = [bpfman link detach $l]
+  RegisterDefer argv=t13 policy=def-then-exec-bind lane=builtin(bpfman)
+  ForEachContinue
+
+bb6:
+  BuildArgs t14 = [bpfman link attach tc -i $pair.host_link -d ingress -p 400 $pid]
+  DispatchBind t15 = t14 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t15 argv=t14 primary=l_400 rc=_ guard=true fail=bb7
+  BuildArgs t16 = [bpfman dispatcher get tc-ingress $pair.host_nsid $pair.host_ifindex]
+  DispatchBind t17 = t16 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t17 argv=t16 primary=snap_full rc=_ guard=true fail=bb8
+  Eval t18 = $snap_full |> jq ".members | length"
+  BindName count_full = t18
+  Assert $count_full == 10
+  BuildArgs t19 = [bpfman link detach $l_400]
+  DispatchCommand argv=t19 policy=def-then-exec-command lane=builtin(bpfman)
+  BuildArgs t20 = [bpfman dispatcher get tc-ingress $pair.host_nsid $pair.host_ifindex]
+  DispatchBind t21 = t20 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t21 argv=t20 primary=snap_partial rc=_ guard=true fail=bb9
+  Eval t22 = $snap_partial |> jq ".members | length"
+  BindName count_partial = t22
+  Assert $count_partial == 9
+  BuildArgs t23 = [bpfman link attach tc -i $pair.host_link -d ingress -p 350 $pid]
+  DispatchBind t24 = t23 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t24 argv=t23 primary=l_350 rc=_ guard=true fail=bb10
+  BuildArgs t25 = [bpfman link detach $l_350]
+  RegisterDefer argv=t25 policy=def-then-exec-bind lane=builtin(bpfman)
+  BuildArgs t26 = [bpfman dispatcher get tc-ingress $pair.host_nsid $pair.host_ifindex]
+  DispatchBind t27 = t26 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t27 argv=t26 primary=snap_refilled rc=_ guard=true fail=bb11
+  Eval t28 = $snap_refilled |> jq ".members | length"
+  BindName count_refilled = t28
+  Assert $count_refilled == 10
+  Assert $l_350.record.details.position == 3
+  RunDefers policy=program
+  Stop
+
+bb7:
+  RunDefers policy=program
+  PropagateError
+
+bb8:
+  RunDefers policy=program
+  PropagateError
+
+bb9:
+  RunDefers policy=program
+  PropagateError
+
+bb10:
+  RunDefers policy=program
+  PropagateError
+
+bb11:
+  RunDefers policy=program
+  PropagateError

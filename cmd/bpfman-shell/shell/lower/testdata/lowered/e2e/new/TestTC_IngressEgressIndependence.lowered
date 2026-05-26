@@ -1,0 +1,98 @@
+body entry=bb0
+
+bb0:
+  EnterDeferScope kind=program
+  BuildArgs t0 = [net veth-pair]
+  DispatchBind t1 = t0 policy=def-then-exec-bind lane=builtin(net)
+  ApplyBind src=t1 argv=t0 primary=pair rc=_ guard=true fail=bb1
+  BuildArgs t2 = [net release $pair]
+  RegisterDefer argv=t2 policy=def-then-exec-bind lane=builtin(net)
+  BuildArgs t3 = [bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats]
+  DispatchBind t4 = t3 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t4 argv=t3 primary=loaded rc=_ guard=true fail=bb2
+  Eval t5 = $loaded.programs[0]
+  BindName prog = t5
+  Eval t6 = $prog.record.program_id
+  BindName pid = t6
+  BuildArgs t7 = [bpfman program unload $pid]
+  RegisterDefer argv=t7 policy=def-then-exec-bind lane=builtin(bpfman)
+  BuildArgs t8 = [bpfman link attach tc -i $pair.host_link -d ingress -p 0 $pid]
+  DispatchBind t9 = t8 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t9 argv=t8 primary=in_0 rc=_ guard=true fail=bb3
+  BuildArgs t10 = [bpfman link attach tc -i $pair.host_link -d ingress -p 100 $pid]
+  DispatchBind t11 = t10 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t11 argv=t10 primary=in_100 rc=_ guard=true fail=bb4
+  BuildArgs t12 = [bpfman link attach tc -i $pair.host_link -d ingress -p 200 $pid]
+  DispatchBind t13 = t12 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t13 argv=t12 primary=in_200 rc=_ guard=true fail=bb5
+  BuildArgs t14 = [bpfman link detach $in_0]
+  RegisterDefer argv=t14 policy=def-then-exec-bind lane=builtin(bpfman)
+  BuildArgs t15 = [bpfman link detach $in_100]
+  RegisterDefer argv=t15 policy=def-then-exec-bind lane=builtin(bpfman)
+  BuildArgs t16 = [bpfman link detach $in_200]
+  RegisterDefer argv=t16 policy=def-then-exec-bind lane=builtin(bpfman)
+  BuildArgs t17 = [bpfman dispatcher get tc-ingress $pair.host_nsid $pair.host_ifindex]
+  DispatchBind t18 = t17 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t18 argv=t17 primary=snap_in_before rc=_ guard=true fail=bb6
+  Assert ($snap_in_before |> jq ".members | length") == 3
+  BuildArgs t19 = [bpfman link attach tc -i $pair.host_link -d egress -p 0 $pid]
+  DispatchBind t20 = t19 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t20 argv=t19 primary=eg_0 rc=_ guard=true fail=bb7
+  BuildArgs t21 = [bpfman link attach tc -i $pair.host_link -d egress -p 100 $pid]
+  DispatchBind t22 = t21 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t22 argv=t21 primary=eg_100 rc=_ guard=true fail=bb8
+  BuildArgs t23 = [bpfman dispatcher get tc-egress $pair.host_nsid $pair.host_ifindex]
+  DispatchBind t24 = t23 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t24 argv=t23 primary=snap_eg rc=_ guard=true fail=bb9
+  Assert ($snap_eg |> jq ".members | length") == 2
+  BuildArgs t25 = [bpfman link detach $eg_0]
+  DispatchCommand argv=t25 policy=def-then-exec-command lane=builtin(bpfman)
+  BuildArgs t26 = [bpfman link detach $eg_100]
+  DispatchCommand argv=t26 policy=def-then-exec-command lane=builtin(bpfman)
+  Assert fail bpfman dispatcher get tc-egress $pair.host_nsid $pair.host_ifindex
+  BuildArgs t27 = [bpfman dispatcher get tc-ingress $pair.host_nsid $pair.host_ifindex]
+  DispatchBind t28 = t27 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t28 argv=t27 primary=snap_in_after rc=_ guard=true fail=bb10
+  Assert ($snap_in_after |> jq ".members | length") == 3
+  RunDefers policy=program
+  Stop
+
+bb1:
+  RunDefers policy=program
+  PropagateError
+
+bb2:
+  RunDefers policy=program
+  PropagateError
+
+bb3:
+  RunDefers policy=program
+  PropagateError
+
+bb4:
+  RunDefers policy=program
+  PropagateError
+
+bb5:
+  RunDefers policy=program
+  PropagateError
+
+bb6:
+  RunDefers policy=program
+  PropagateError
+
+bb7:
+  RunDefers policy=program
+  PropagateError
+
+bb8:
+  RunDefers policy=program
+  PropagateError
+
+bb9:
+  RunDefers policy=program
+  PropagateError
+
+bb10:
+  RunDefers policy=program
+  PropagateError

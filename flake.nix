@@ -138,49 +138,11 @@
           ];
 
           shellHook = ''
-            export CGO_ENABLED=1
-            # Linker chain in this dev shell. `go build`'s
-            # final link is:
+            # Build env values (CGO_ENABLED, linker mode, STATIC) are
+            # owned by the Makefile so `make` behaves identically on
+            # Fedora and in this Nix shell. The hook below only
+            # handles Nix-shell-specific concerns (HOME, CPATH).
             #
-            #   cmd/link (external) -> $CC -> gcc-wrapper -> ld
-            #
-            # Every binary in that chain comes from /nix/store;
-            # /usr/bin/ld and /usr/lib/gcc never participate.
-            # cmd/link only takes this path because
-            # GO_EXTLINK_ENABLED=1 (below) forces external
-            # linkmode -- nixpkgs's compiled-in default is
-            # =0, which would keep the link inside cmd/link
-            # and never subprocess out at all. $CC and $CXX
-            # come from stdenv's cc-wrapper setup-hook, which
-            # runs before this shellHook.
-            #
-            # Override nixpkgs Go's compiled-in GO_EXTLINK_ENABLED=0
-            # default, which pins cmd/link to internal linkmode
-            # whenever the user does not pass -linkmode explicitly.
-            # That breaks `make test STATIC=1` from the .#static
-            # shell: the race runtime's syso (runtime/race/internal/
-            # amd64v1) is in cmd/link's internal-OK allowlist, so
-            # auto-mode picks internal -- but with glibc.static on
-            # the .#static shell's link path, ld pulls libc.a's
-            # archive members for __errno_location, getuid,
-            # pthread_self, etc., and the internal linker cannot
-            # relocate them ("relocation target X not defined").
-            # osusergo,netgo do not save us here -- those drop the
-            # cgo NSS resolvers from Go's net and os/user, but the
-            # race runtime itself references general libc symbols.
-            # Setting this to 1 lets cmd/link auto-detect external
-            # mode (which then defers libc resolution to the system
-            # linker, which handles it correctly).
-            #
-            # Trap to remember: GO_EXTLINK_ENABLED is *not* part of
-            # Go's build-cache key. Removing this export and re-
-            # running `make test` against a warm cache is a
-            # cache-hit on every prebuilt link result and looks
-            # like a clean build; the regression only surfaces on a
-            # cold cache (CI, fresh clone, or `rm -rf .cache`).
-            # Treat any "this turned out to be redundant" claim
-            # about this variable with extreme suspicion.
-            export GO_EXTLINK_ENABLED=1
             # `nix develop --ignore-env` (--pure) strips HOME, which
             # Go uses to locate ~/.cache/go-build and ~/go/pkg/mod
             # (and which `~`-using tools like git also need). When
@@ -207,14 +169,13 @@
           '';
         };
 
-        # Opt-in shell for `make STATIC=1`. glibc.static supplies
-        # libc.a and libpthread.a, but its `-L` entry contains only
-        # archives — placing it in the default shell makes ld pick
-        # libc.a over libc.so for ordinary dynamic builds and emit
-        # glibc's NSS dlopen-at-runtime warnings. Keeping it isolated
-        # here means `nix develop` is the warning-free everyday path
-        # and `nix develop .#static` is the explicit static-link
-        # entry point.
+        # Static-link shell. glibc.static must stay out of the
+        # default shell: its `-L` entry contains only archives, so
+        # leaving it on the link path would make ld pick libc.a
+        # over libc.so for ordinary dynamic builds and emit glibc's
+        # NSS dlopen-at-runtime warnings. Keeping the two shells
+        # separate makes the linker inputs unambiguous in either
+        # direction; .envrc picks which one the daily loop uses.
         static = default.overrideAttrs (old: {
           buildInputs = (old.buildInputs or [ ]) ++ [ pkgs.glibc.static ];
           shellHook = (old.shellHook or "") + ''

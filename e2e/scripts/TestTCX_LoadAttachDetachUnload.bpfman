@@ -1,5 +1,5 @@
 # -*- mode: bpfman -*-
-# REPL equivalent of e2e/TestTCX_LoadAttachDetachUnload.
+# .bpfman equivalent of e2e/TestTCX_LoadAttachDetachUnload.
 #
 # Loads a TCX counter, creates a veth pair straddling the root
 # netns and a test netns, attaches the counter to the root side's
@@ -17,7 +17,7 @@
 # support.
 
 # Pull in the shared lifecycle assertion helpers.
-source ../lib.bpfman
+import ../lib.bpfman
 
 # Build the veth pair via the bpfman-shell builtin so each run gets
 # uniquely-named interfaces and a leased /30 address slot: no
@@ -43,7 +43,7 @@ expect_program_round_trip $got $prog
 guard listed <- bpfman program list -o json
 let progFilter = ".programs[] | select(.record.program_id == ${pid})"
 let ours = $listed |> jq $progFilter
-require not nil ours
+require not null ours
 assert $ours.record.meta.name == $prog.record.meta.name
 assert $ours.status.kernel.id == $prog.status.kernel.id
 
@@ -74,7 +74,7 @@ assert $gotLink.record.details.priority == $link.record.details.priority
 guard listedLinks <- bpfman link list -o json
 let linkFilter = ".links[] | select(.id == ${linkID})"
 let ourLink = $listedLinks |> jq $linkFilter
-require not nil ourLink
+require not null ourLink
 assert $ourLink.id == $link.record.id
 assert $ourLink.kind == $link.record.kind
 
@@ -93,7 +93,6 @@ guard _ <- net exec $pair ping -c 5 -i 0.05 -W 1 $pair.host_addr
 guard dumpAfter <- bpftool map dump id $mapID -j
 let after     = $dumpAfter.stdout |> jq $sumFilter
 let delta     = $after - $before
-print $delta
 assert $delta >= 5
 
 # Clean up: detach, unload. The veth pair is torn down by the

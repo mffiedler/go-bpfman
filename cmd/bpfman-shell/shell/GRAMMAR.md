@@ -1,22 +1,14 @@
 # bpfman-shell grammar
 
 This document is the reference grammar for the language driven by
-`cmd/bpfman-shell`. The parser source in `parse.go`, `token.go`,
-`expr.go`, and `matches.go` is the load-bearing ground truth; this
-document is the human-readable shape of what that code accepts.
+`cmd/bpfman-shell`. The parser and AST in `shell/syntax` are the
+load-bearing ground truth; this document is the human-readable shape
+of what that code accepts.
 
-**Implementation status.** The SCOPE-DESIGN.md ten-commit plan
-has landed: `EventuallyStmt` / `EventuallyCommand` are live,
-`retry` / `until` are reserved tombstone keywords that emit
-targeted diagnostics, the runtime and the checker both push a
-fresh frame on each block-shaped construct, and the typed
-retryable/fatal error layer classifies attempt failures
-uniformly via `errors.As`. `return` is no longer a tombstone:
-SCOPE-DESIGN.md Section 9's value-returning def form has landed,
-so `ReturnStmt` is a real statement (see the production below).
-The single-name `let _ = EXPR` rejection and the restriction of
-`break` / `continue` to `foreach` bodies are still tracked in
-`GRAMMAR-FOLLOW-UP.md` as small follow-on items.
+**Implementation status.** The current language includes
+statement-only `poll timeout DUR every DUR { ... }`, explicit
+`retry` inside `poll`, value-returning `def`s with `return`, and
+`matches` as a first-class expression operator.
 
 ## Scope
 
@@ -24,8 +16,7 @@ The doc describes parsing: what tokens the lexer emits, what
 productions the parser recognises, where the binding sites live,
 and how operator precedence is layered. Evaluation semantics and
 runtime errors are mentioned only where they affect what is
-parseable; the full runtime semantics live in `expr.go`'s
-evaluator.
+parseable; the full runtime semantics live in `shell/runtime`.
 
 ## Notation
 
@@ -61,7 +52,7 @@ CLI-shaped text as single Word tokens so paths, flags, key=value
 pairs, comma-separated program specs, and colon-qualified
 arguments can be written without quoting. Expression syntax is
 opt-in at specific parser sites: `let X = EXPR`, `assert` /
-`require` expression form, parenthesised command arguments,
+`require` clauses, parenthesised command arguments,
 interpolation bodies, list literals, `if` / `elif` conditions,
 `foreach ... in` operands, and thread pipelines. Everywhere
 else, Word text stays opaque.
@@ -273,7 +264,7 @@ tests by name.
 
 Statement-leading reserved words (tested in `parseStmt`):
 
-    let guard foreach if eventually defer def return break
+    let guard foreach if poll retry defer def return break
     continue assert require
 
 Branch-keyword words (tested in `parseIfStmt` after a block's
@@ -281,28 +272,16 @@ closing `}`):
 
     elif else
 
-Removed tombstone words (reserved only to produce a targeted
-diagnostic for old scripts; never valid as statement forms):
-
-    retry until
-
-`retry` and `until` are reserved tombstones after the
-SCOPE-DESIGN rework removes the construct; the parser emits
-"retry is removed; use eventually" rather than letting the
-words parse as ordinary command names.
-
 `return` was a tombstone until the value-returning def form
 landed; it is now a real statement keyword tested at
 `parseStmt` and routed to `parseReturnStmt`. See the
-`ReturnStmt` section below for the grammar and SCOPE-DESIGN.md
-Section 9 for the semantics.
+`ReturnStmt` section below for the grammar and the later def
+discussion for the bind-position semantics.
 
-Inside `eventually`, the keyword words `timeout` and
-`interval` are recognised at the leading statement form
-only (between `eventually` and the block). Outside that
-position they remain ordinary Words. `timeout` was
-previously a unary expression form attached to the old
-`retry ... until` clause; that role is gone.
+Inside `poll`, the keyword words `timeout` and `every` are
+recognised at the leading statement form only (between
+`poll` and the block). Outside that position they remain
+ordinary Words.
 
 ForEach separator word (tested in `parseForEachStmt` between the
 name list and the iteration expression):
@@ -323,23 +302,23 @@ Expression primary words (tested in `parseTerm` and
 
     not-empty true false
 
-Assert-command predicate words (tested in `assertTakesExprForm`
-to route into the command-form path):
+Assert command-head words (tested in `isAssertCommandHead`
+inside the assert parser to route into the transitional
+command-shaped clause):
 
-    ok fail path-exists contains nil present missing empty
+    ok fail
 
 Predicate semantics:
 
   - `ok COMMAND`             command exits with ok envelope
   - `fail COMMAND`           command exits with non-ok envelope
-  - `path-exists FILE`       filesystem path exists (renamed from
-                             the previous `path exists FILE`
-                             two-arg form; reserves the word
-                             "path" so it never carries both
-                             filesystem and object-path meaning)
+Named assertion predicates now live on the expression lane as
+pure calls:
+
+  - `path-exists FILE`       filesystem path exists
   - `contains HAYSTACK NEEDLE`
                              HAYSTACK string contains NEEDLE
-  - `nil $X.field`           path resolves and terminal value is
+  - `null $X.field`          path resolves and terminal value is
                              JSON null (strict; a missing path
                              fails)
   - `present $X.field`       path resolves; terminal value may
@@ -351,11 +330,11 @@ Predicate semantics:
                              or map; a missing or null terminal
                              fails)
 
-`present`, `missing`, `nil`, and `empty` all accept either a
+`present`, `missing`, `null`, and `empty` all accept either a
 $-prefixed variable expression or a bareword variable-name with
-optional dotted path; the verb dispatch reads the underlying
-LookupClass from the runtime path walker so the three states
-(absent / null / value) are distinguishable.
+optional dotted path; the predicate evaluator reads the
+underlying presence state from the runtime path walker so the
+three states (absent / null / value) are distinguishable.
 
 Match-tail word (tested by `parseCommandStmt`):
 
@@ -366,10 +345,10 @@ Adapter prefix words (registered in `token.go`'s
 
     file
 
-Pure-builtin names (registered via `RegisterPureBuiltin`):
+Pure-builtin names (owned by `shell/semantics` and mirrored by
+`shell/syntax`'s parser-visible table):
 
-    jq                           (registered by the shell package)
-    range zip u32le u64le        (registered by cmd/bpfman-shell)
+    jq range zip u32le u64le     (registered by the shell package)
 
 Anywhere outside the contexts above, these texts are ordinary
 Words. A Tree-sitter derivation should model them as Word with a
@@ -390,8 +369,8 @@ Branch continuations after a `}` are not separate statements.
 `elif` and `else` are consumed by `IfStmt`. `IfStmt` skips
 any number of Sep tokens between the closing `}` and the
 trailing keyword, so the global SepSeq rule does not apply.
-`eventually` has no trailing control clause: its `timeout`
-and `interval` keywords appear in the leading statement
+`poll` has no trailing control clause: its `timeout`
+and `every` keywords appear in the leading statement
 form, before the block.
 
 ## Program
@@ -405,14 +384,13 @@ optional Sep tokens between, before, and after them.
                    | BindStmt             (* let X <- CMD, guard X <- CMD *)
                    | ForEachStmt
                    | IfStmt
-                   | EventuallyStmt
+                   | PollStmt
                    | DeferStmt
                    | DefStmt
                    | ReturnStmt
                    | BreakStmt
                    | ContinueStmt
                    | AssertStmt
-                   | AssertCommand
                    | ExprStmt
                    | CommandStmt
                    .
@@ -420,28 +398,25 @@ optional Sep tokens between, before, and after them.
 `LetStmt` covers only the single-name `let X = EXPR` form;
 `let (NAMES) = EXPR` produces a `LetDestructureStmt`. Both
 `let X <- CMD` and `guard X <- CMD` produce a `BindStmt`
-(distinguished by the `Guard` flag). `AssertStmt` and `AssertCommand` share the
-keywords `assert` / `require` and disambiguate at statement
-dispatch; `AssertCommand` is structurally a `CommandStmt` whose
-head is the keyword.
+(distinguished by the `Guard` flag). `AssertStmt` always owns
+`assert` / `require`; the assertion clause inside the statement
+then distinguishes ordinary expression forms and transitional
+command-shaped forms. `matches` is now an expression operator,
+not a dedicated assertion-clause shape.
 
 Statement dispatch is decided by the first token of the
 statement. Reserved words `let`, `guard`, `foreach`, `if`,
-`eventually`, `defer`, `def`, `return`, `break`, `continue`
+`poll`, `retry`, `defer`, `def`, `return`, `break`, `continue`
 route to their named parsers. `assert` and `require` route
-to the assert parser, which chooses between `AssertStmt`,
-`AssertCommand` predicate form, and `AssertCommand` matches
-form using the disambiguation rule in the AssertStmt
-section. Tombstone words `retry` and `until` at statement
-position raise targeted parse errors rather than routing as
-command names. A statement-leading VarRef, Quoted,
+to the assert parser, which always produces `AssertStmt` and
+then chooses the clause form using the disambiguation rule in
+the AssertStmt section. A statement-leading VarRef, Quoted,
 InterpString, AdapterRef, or one of the Words `(`, `not`,
 `not-empty`, `true`, `false` routes to ExprStmt. Anything
-else routes to CommandStmt. `source` has no dedicated
+else routes to CommandStmt. `import` has no dedicated
 production; it parses as a CommandStmt and is recognised by
-the command dispatcher in `repl/loop.go`, which evaluates
-the referenced file under the module-scope rules in
-SCOPE-DESIGN.md Section 5.
+the command dispatcher in the shell runner, which loads a
+def-only library file.
 
 A bare `{` or `}` at statement position is a parse error: the
 parser has already routed block-introducing keywords elsewhere,
@@ -453,7 +428,7 @@ construct above.
 ### Block
 
 A block is a brace-delimited statement sequence used by `if`,
-`elif`, `else`, `foreach`, `eventually`, and `def`.
+`elif`, `else`, `foreach`, `poll`, and `def`.
 
     Block          = '{' { Sep } [ Statement { SepSeq Statement } { Sep } ] '}' .
 
@@ -508,13 +483,16 @@ Examples:
 `let X <- CMD` and `guard X <- CMD` both produce a `BindStmt`.
 The keyword chooses whether a non-ok result envelope halts the
 script (`guard`) or carries through normally (`let`).
+On the success path, `guard` has already checked the envelope's
+`ok` field; scripts usually bind the envelope only to inspect
+post-success data such as `stdout`, `stderr`, or the primary
+value, not to repeat `assert $rc.ok`.
 
     BindStmt       = ('let' | 'guard') BindTarget '<-' BindRHS .
     BindTarget     = Name
                    | '(' Name Name ')' .
     BindRHS        = CommandForm
-                   | ForEachStmt           (* bind-collect *)
-                   | EventuallyCommand .
+                   | ForEachStmt .         (* bind-collect *)
 
 `CommandForm` is the shared command-shape production; its
 definition is in the CommandStmt section. `Name` is the shared
@@ -549,15 +527,6 @@ The `BindRHS` has three shapes:
    primary value is collected into a list bound to the BindStmt
    target. An empty body or a non-CommandStmt last statement is
    rejected at parse time.
-
-3. **Eventually form.** When the RHS begins with the keyword
-   `eventually`, the parser delegates to a dedicated
-   `parseEventuallyBindRHS`. The generic `takeBindRHSTokens`
-   path cannot handle the trailing block (it stops at `{`),
-   so `eventually` requires the same special-case routing as
-   `foreach`. The construct's structured result becomes the
-   bound primary value; see `EventuallyCommand` below and
-   SCOPE-DESIGN.md Section 3.4 for the result shape.
 
 Examples:
 
@@ -628,19 +597,20 @@ Example:
         print "some"
     }
 
-### EventuallyStmt and EventuallyCommand
+### PollStmt and RetryStmt
 
-`eventually` retries a body until it succeeds or until a
-mandatory timeout elapses. Two syntactic placements share one
-operation: a statement form and a bindable command form. See
-SCOPE-DESIGN.md Section 3.4 for the full semantics (attempt
-frames, retryable/fatal classification, result shape).
+`poll` is the retrying control-flow construct. It is
+statement-only. `retry` is the only recoverable "not ready
+yet" signal. It appears directly inside `poll`, and helper
+defs may execute it when they are called from an active
+`poll`.
 
-    EventuallyStmt = 'eventually' 'timeout' DurationWord
-                         [ 'interval' DurationWord ] Block .
-    EventuallyCommand
-                   = 'eventually' 'timeout' DurationWord
-                         [ 'interval' DurationWord ] Block .
+    PollStmt       = 'poll' 'timeout' DurationWord
+                         'every' DurationWord Block .
+    RetryStmt      = 'retry'
+                   | 'retry' StringLike
+                   | 'retry' 'unless' Expression
+                   | 'retry' StringLike 'unless' Expression .
     DurationWord   = Word whose text is accepted by
                      time.ParseDuration .
 
@@ -649,66 +619,39 @@ expects a Word at each duration slot and validates its text
 with `time.ParseDuration`. Elsewhere, the same text is just
 an ordinary Word.
 
-`timeout DUR` is mandatory; an `eventually` without it is a
-parse error. `interval DUR` is optional and named; the
-default interval is `100ms`. The keywords `timeout` and
-`interval` are recognised at this position only.
+`timeout DUR every DUR` is mandatory; there is no default
+cadence and no bindable poll result object.
 
 Examples:
 
-    eventually timeout 5s {
-        require path-exists "${ack}.1"
+    poll timeout 5s every 100ms {
+        retry "waiting for ack" unless path-exists "${ack}.1"
     }
 
-    eventually timeout 10s interval 250ms {
-        guard got <- bpfman program get $pid
-        assert $got.status.kernel.id == $pid
+    poll timeout 30s every 250ms {
+        let rc <- exec test -f $ack
+        retry "ack file absent" unless $rc.ok
     }
 
-    let r <- eventually timeout 1s interval 50ms {
-        test -f "${ack}.1"
-    }
-    # r is { ok, timed_out, attempts, elapsed_ms, error,
-    #        last_command }
+**Polling semantics.**
 
-**Bind form result.** The bindable form publishes a structured
-value summarising the run:
-
-    {
-      ok:           bool
-      timed_out:    bool
-      attempts:     int
-      elapsed_ms:   int
-      error:        string-or-nil
-      last_command: envelope-or-nil
-    }
-
-`error` is the rendered failure message for the last
-retryable failure, nil on success. `last_command` is the
-captured command envelope `{ ok, code, stdout, stderr }` when
-the last retryable failure was command-shaped (ordinary
-command, guard, or subprocess exit); nil otherwise. Assertion-
-shaped failures (`assert`, `require`) set `error` and leave
-`last_command` nil rather than manufacturing a synthetic
-envelope. The internal RetryableError taxonomy stays internal
--- callers branch on `ok` and on `last_command`'s presence,
-not on which evaluator error class fired. See
-SCOPE-DESIGN.md Section 3.4 for the full contract.
-
-**Commands as conditions.** Inside an `eventually` block, an
-uncaptured command statement whose envelope is non-ok is a
-retryable attempt failure. This is stricter than ordinary
-block execution, where a command may run for side effects
-and the caller can ignore its envelope. Use
-`let rc <- CMD` or `let (rc value) <- CMD` inside the block
-when the script wants to inspect and handle the result
-itself rather than have it count against the attempt.
-
-**Loop control.** `break` and `continue` are not valid
-inside an `eventually` body. `eventually` is not an
-iteration construct in the user-language sense; it is a
-retrying assertion block whose success boundary is the body
-as a whole. See `BreakStmt and ContinueStmt` below.
+- One attempt runs the body from top to bottom.
+- `retry` means "this attempt is not ready; start another one if
+  the deadline allows".
+- `retry MSG` records `MSG` as the last retry reason shown on
+  timeout.
+- `retry unless EXPR` retries when `EXPR` is false.
+- Helpers called from `poll` may execute `retry`; the retry
+  still targets the caller's active poll attempt.
+- A helper that executes `retry` outside an active `poll`
+  fails at runtime with `retry: outside any poll`.
+- `require` is fatal immediately, including inside `poll`.
+- `assert` is not valid inside `poll`, including helper calls
+  reached from `poll`; use `retry unless ...` for recoverable
+  waiting and `require ...` for fail-now invariants.
+- Ordinary command, guard, and expression failures inside `poll`
+  are fatal unless the script handles them and turns the state
+  into an explicit `retry`.
 
 ### DeferStmt
 
@@ -720,6 +663,15 @@ emits a `DeferStmt` whose child is a `CommandStmt`.
 Example:
 
     defer bpfman program unload $pid
+
+A possible future local-cleanup block form such as
+`defer { CMD ... }` is not part of the grammar today. If it
+lands, it should be treated as sugar over multiple ordinary
+deferred commands rather than as a different cleanup model.
+The intended ordering is source-order execution of the block
+body: lowering would reverse registration so ordinary LIFO
+unwind still fires the captured commands in the order they
+were written.
 
 ### DefStmt
 
@@ -738,10 +690,15 @@ parameter list can wrap. A token whose text contains `,` (which
 the lexer does not split on its own) is rejected explicitly with
 "comma is not a parameter separator".
 
-`_` qualifies as an Identifier so it may appear as a parameter
-name, but unlike bind and foreach positions it is not treated as
-a discard slot here: it is an ordinary parameter name, and the
-duplicate-name rule rejects two `_` parameters in the same list.
+`_` is rejected in a def parameter list. Def parameters must use
+real names; there is no discard-slot meaning for call arguments,
+so the parser reports "def parameters cannot bind '_'" rather
+than letting `_` through as a one-off ordinary name.
+
+`def` is a top-level declaration. The static checker rejects a
+`def` nested inside if/elif/else, foreach, poll, or
+another def body with `def "NAME" must be declared at top
+level`.
 
 Examples:
 
@@ -785,7 +742,7 @@ At a def's call site:
   `ValueFromEnvelope(Rc)`, matching the no-payload command-bind
   family (exec, bpftool, wait).
 
-Defer interaction (SCOPE-DESIGN.md Section 9):
+Defer interaction:
 
 1. evaluate `return EXPR` in the call frame; obtain the Value;
 2. stash the Value -- it is now independent of the call frame;
@@ -818,8 +775,8 @@ the existing list / destructure story:
 
     guard pair <- load_xdp ./xdp.o eth0
     let (prog link) = $pair
-    defer bpfman link detach $link
     defer bpfman program unload $prog
+    defer bpfman link detach $link
 
 The cleanup `defer`s live at the call site, not inside the
 helper. A def opens its own defer scope on entry, so anything
@@ -827,10 +784,12 @@ helper. A def opens its own defer scope on entry, so anything
 the caller binds the result. Putting `defer bpfman program
 unload $prog` inside `load_xdp` would unload the program at
 function return and leave the caller's `$prog` naming a freed
-resource. The lifecycle metaphor has to put cleanup with the
-consumer; the runtime is doing exactly what the spec says.
-See LANGUAGE-DIRECTION.md's "The sweet spot" section for the
-shape and the partial-cleanup trade-off.
+resource. The runtime is doing exactly what the spec says.
+Today that means the caller must register cleanup itself.
+Registration order matters: unwind is LIFO, so the example
+registers unload first and detach second so detach runs
+before unload at scope exit.
+Explicit caller-side `defer` remains the baseline.
 
 The single-name bind form intentionally discards the envelope,
 matching the existing command-bind family. Scripts that require
@@ -847,60 +806,47 @@ Both keywords take no arguments; trailing tokens before the next
 separator are rejected at parse time.
 
 `break` and `continue` are valid only inside `foreach`. Using
-either inside `eventually`, `if`, `def`, a sourced file, or
-at top level is a static/runtime error. `eventually`
+either inside `poll`, `if`, `def`, an imported file, or
+at top level is a static/runtime error. `poll`
 deliberately does not let `continue` mean "next attempt": the
-attempt boundary is the body succeeding or producing a
-retryable failure, not a user-driven control transfer.
+attempt boundary is explicit `retry`, not a user-driven
+control transfer.
 
-### AssertStmt and AssertCommand
+### AssertStmt
 
-`assert` and `require` have two surface forms: an expression
-form that asserts the truth of an expression, and a command form
-that asserts a property of a command invocation or a value's
-structure.
+`assert` and `require` always parse as `AssertStmt`. The
+statement carries one assertion clause chosen by the parser:
+an expression clause or a transitional command-shaped clause.
 
-    AssertStmt              = AssertKeyword Expression .
-    AssertCommand           = AssertCommandPredicateForm
-                            | AssertCommandMatchesForm .
-    AssertCommandPredicateForm
-                            = AssertKeyword [ 'not' ]
-                              AssertCommandPredicate { CommandArg } .
-    AssertCommandMatchesForm
-                            = AssertKeyword { CommandArg } MatchesBlock .
-    AssertCommandPredicate  = 'ok' | 'fail' | 'path-exists'
-                            | 'contains' | 'nil' | 'present'
-                            | 'missing' | 'empty' .
-    AssertKeyword           = 'assert' | 'require' .
+    AssertStmt                = AssertKeyword AssertClause .
+    AssertClause              = AssertCommandClause
+                              | AssertExprClause .
+    AssertExprClause          = Expression .
+    AssertCommandClause       = [ 'not' ]
+                                AssertCommandHead { CommandArg } .
+    AssertCommandHead         = 'ok' | 'fail' .
+    AssertKeyword             = 'assert' | 'require' .
 
-Disambiguation at statement dispatch: a statement that begins
-with `assert` or `require` parses as `AssertCommandPredicateForm`
-when the next non-Sep token (after a skippable `not`) is one of
-the `AssertCommandPredicate` words. Otherwise, if the statement
-has a trailing `MatchesBlock` (the bare word `matches`
-immediately before a top-level `{`), it parses as
-`AssertCommandMatchesForm`. Otherwise it parses as `AssertStmt`.
+Disambiguation inside the assertion parser:
 
-The `{ CommandArg }` repetition in `AssertCommandPredicateForm`
-is unconstrained at parse time: `assert ok` with no trailing
-command is syntactically valid but is rejected (or no-op'd) at
-evaluation time. Each predicate (`ok`, `fail`, `path`,
-`contains`, `nil`) imposes its own arity expectation on the
-following arguments at runtime rather than in this grammar.
+- If the next non-`Sep` token (after an optional leading `not`)
+  is one of the `AssertCommandHead` words, the clause is an
+  `AssertCommandClause`.
+- Otherwise the clause is an `AssertExprClause`.
 
-The `{ CommandArg }` in `AssertCommandMatchesForm` is also
-unconstrained at parse time: `assert matches { ... }` with no
-intervening CommandArg parses (the matches block carries the
-whole shape). This is deliberate; runtime semantics decide
-whether the LHS-less form is meaningful.
+`AssertCommandClause` is the one deliberate transitional bucket.
+It now preserves only the command-status forms (`assert ok
+exec ...`, `assert fail exec ...`). Named predicates have
+already moved to the expression lane. The keyword remains
+syntax-owned even when the clause payload looks command-like.
 
 Examples:
 
-    assert $count > 0                           # AssertStmt
-    require not-empty $links                    # AssertStmt
-    assert ok bpfman program get $pid           # AssertCommandPredicateForm
-    require not ok bpfman program get $pid      # AssertCommandPredicateForm
-    assert $output matches { ... }              # AssertCommandMatchesForm
+    assert $count > 0                           # AssertExprClause
+    require not-empty $links                    # AssertExprClause
+    assert ok bpfman program get $pid           # AssertCommandClause
+    require not ok bpfman program get $pid      # AssertCommandClause
+    assert $output matches { ... }              # AssertExprClause
 
 ### ExprStmt
 
@@ -917,9 +863,9 @@ Examples:
     $x > 10
     $count == 5
 
-`takeStmtTokens` stops at the next Sep or `{`, so a trailing
-`matches { ... }` does not reach the expression statement path;
-it only attaches via the CommandStmt grammar (see below).
+`matches { ... }` is part of the expression grammar, so
+`assert $x matches { ... }` and `if $x matches { ... } { ... }`
+both flow through the ordinary expression parser.
 
 ### CommandStmt
 
@@ -974,27 +920,19 @@ termination rule is the same.
 - *Language rule.* `CommandHead = Word`. A command statement
   begins with a bare word naming the command.
 
-- *Parser accident.* `parseCommandArgs` builds `CommandStmt.Args`
-  from any sequence of CommandArg forms, so a leading `[` at
-  statement position (which is not in the expression-leading
-  set) routes to `CommandStmt` and produces a single-element
-  `Args` whose only element is a `ListExpr`. That construct
-  parses but has no useful runtime dispatch.
+- *Parser rule.* A leading `[` at statement position is rejected
+  with "list literal at statement position is not allowed".
+  List literals remain valid in expression position and in
+  command argument position, but not as standalone statements.
 
 For Tree-sitter, follow the language rule and treat leading-`[`
-statements as a parse error. The parser's permissiveness here is
-a side effect of `parseCommandArgs` operating on a slice without
-a separate head check; do not model it.
+statements as a parse error.
 
 The command head is the first Word token; subsequent tokens are
 arguments. Arguments accept the argv-style primaries plus the two
 expression-bearing forms `(EXPR)` and `[EXPR...]`. `[...]` runs
 through `parseListLiteral` and produces a `ListExpr`; the parser
 has no separate command-substitution form.
-
-A trailing `matches { ... }` tail, where the token immediately
-before `{` is the bare word `matches`, attaches as the command's
-last argument; see the `MatchesBlock` production.
 
 Examples:
 
@@ -1024,7 +962,9 @@ and loops for its own operator. From loosest to tightest binding:
     AndExpr        = NotExpr        { 'and' NotExpr } .
     NotExpr        = 'not' NotExpr
                    | ComparisonExpr .
-    ComparisonExpr = AdditiveExpr   [ CompareOp AdditiveExpr ] .
+    ComparisonExpr = AdditiveExpr
+                     [ CompareOp AdditiveExpr
+                     | 'matches' [ 'exhaustive' ] MatchesBlockBody ] .
     CompareOp      = '==' | '!=' | '<' | '<=' | '>' | '>=' .
     AdditiveExpr   = MultExpr       { ('+' | '-') MultExpr } .
     MultExpr       = PredicateExpr  { ('*' | '/' | '%') PredicateExpr } .
@@ -1154,8 +1094,8 @@ A primary is one of:
 `MatchesBlock` is not in this alternation. Although it produces
 a `MatchesBlockExpr` node that implements the `Expr` interface,
 the general expression parser does not accept it; it is attached
-only by `parseCommandStmt` and `AssertCommandMatchesForm` as a
-trailing tail (see CommandStmt / AssertCommand).
+only by `parseCommandStmt` and the assert-clause parser as a
+trailing tail (see CommandStmt / AssertStmt).
 
 ### LiteralExpr
 
@@ -1240,8 +1180,8 @@ transparent so a long list can wrap across lines.
 
 ### PureCallExpr
 
-A name registered via `RegisterPureBuiltin` invoked at expression
-position. The arity is fixed at registration time; each argument
+A name from the pure-builtin table invoked at expression position.
+Its arity is fixed by the language's semantic table; each argument
 is parsed by `parsePureCallArg`.
 
 EBNF cannot express the per-name fixed arity directly; the
@@ -1257,10 +1197,9 @@ already Primary, but they let the argument parser dispatch
 directly to the right sub-parser.
 
 Pure-builtin dispatch is by name lookup against the registry at
-parse time. The shell package itself registers `jq` (arity 2,
-filter and input). Additional names may be registered by the
-hosting binary at startup; `cmd/bpfman-shell` adds `range`,
-`zip`, `u32le`, and `u64le` via `kindshapes.go`'s init.
+parse time. The shell package registers the language-level set:
+`jq` (arity 2, filter and input), plus `range`, `zip`, `u32le`,
+and `u64le`.
 
 Tree-sitter note: a grammar derived from this document cannot
 discover runtime registrations. A Tree-sitter implementation for
@@ -1281,22 +1220,18 @@ Known builtin arities for `cmd/bpfman-shell`:
 
 ### MatchesBlock
 
-A `matches { ... }` tail attached as the last argument of a
-CommandStmt or AssertCommand. The parser recognises this shape
-by sniffing the token immediately before `{`: when it is the
-bare word `matches`, the brace block following is parsed as a
-MatchesBlock and attached as the host command's last argument.
+`matches` owns a structural block on the right-hand side of the
+expression operator:
 
-    MatchesBlock   = 'matches' '{' MatcherBody '}' .
+    MatchesExpr        = Expression 'matches'
+                         [ 'exhaustive' ] MatchesBlockBody .
+    MatchesBlockBody   = '{' MatcherBody '}' .
 
 `MatcherBody`'s detailed grammar is defined in `matches.go`; it
 is parsed as a sequence of matcher entries against the LHS
-value.
-
-In the AST this production produces a `MatchesBlockExpr` node;
-it implements the `Expr` interface but is not reachable from the
-general expression parser, only from the command-tail dispatch
-in `parseCommandStmt`.
+value. In the AST the overall expression is `MatchesExpr`, which
+owns a `MatchesBlockExpr` payload for the structural matcher
+body.
 
 ## Binding sites
 
@@ -1422,8 +1357,9 @@ the body is tokenised and parsed at the full Expression level:
 
 Empty bodies (`${}` or whitespace-only `${ }`) are rejected as
 "empty interpolation". Position information from the inner parse
-is translated back to original-source coordinates so error spans
-point at the offending byte inside the original source.
+is stamped directly with the surrounding source file and absolute
+line/column, so error spans point at the offending byte inside the
+original source without later rebasing.
 
 Statements (let, if, foreach, etc) are not reachable inside
 `${...}` because the inner parse uses the Expression entry point,

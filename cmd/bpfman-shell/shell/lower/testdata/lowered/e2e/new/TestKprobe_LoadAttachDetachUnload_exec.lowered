@@ -1,0 +1,193 @@
+body entry=bb0
+
+bb0:
+  EnterDeferScope kind=program
+  BuildArgs t0 = [import ../lib.bpfman]
+  DispatchCommand argv=t0 policy=def-then-exec-command lane=builtin(import)
+  Eval t1 = 5
+  BindName n = t1
+  Eval t2 = 42
+  BindName weight = t2
+  Eval t3 = $n * $weight
+  BindName want = t3
+  BuildArgs t4 = [tempdir bpfman-shell-kprobe-exec]
+  DispatchBind t5 = t4 policy=def-then-exec-bind lane=builtin(tempdir)
+  ApplyBind src=t5 argv=t4 primary=workdir rc=_ guard=true fail=bb1
+  BuildArgs t6 = [rm -rf $workdir.path]
+  RegisterDefer argv=t6 policy=def-then-exec-bind lane=exec
+  Eval t7 = "${workdir.path}/sentinel"
+  BindName sentinel = t7
+  Eval t8 = "${workdir.path}/ack"
+  BindName ack = t8
+  BuildArgs t9 = [fire unlinkat $sentinel $ack --count $n --waves 1]
+  DispatchBind t10 = t9 policy=def-then-exec-bind lane=builtin(fire)
+  ApplyBind src=t10 argv=t9 primary=work rc=_ guard=true fail=bb2
+  BuildArgs t11 = [kill --signal=KILL $work]
+  RegisterDefer argv=t11 policy=def-then-exec-bind lane=builtin(kill)
+  BuildArgs t12 = [exec bpfman program load file --path testdata/bpf/kprobe_exact.bpf.o --programs kprobe:kprobe_counter -g "expected_pid=0x${u32le $work.pid}" -g "weight=0x${u64le $weight}" -o json]
+  DispatchBind t13 = t12 policy=def-then-exec-bind lane=builtin(exec)
+  ApplyBind src=t13 argv=t12 primary=load_r rc=_ guard=true fail=bb3
+  Eval t14 = $load_r.stdout |> jq "fromjson"
+  BindName loaded = t14
+  Eval t15 = $loaded.programs[0]
+  BindName prog = t15
+  Eval t16 = $prog.record.program_id
+  BindName pid = t16
+  BuildArgs t17 = [expect_program_load $prog kprobe kprobe kprobe_counter]
+  DispatchCommand argv=t17 policy=def-then-exec-command lane=exec
+  BuildArgs t18 = [exec bpfman program get $pid -o json]
+  DispatchBind t19 = t18 policy=def-then-exec-bind lane=builtin(exec)
+  ApplyBind src=t19 argv=t18 primary=get_r rc=_ guard=true fail=bb4
+  Eval t20 = $get_r.stdout |> jq "fromjson"
+  BindName got = t20
+  BuildArgs t21 = [expect_program_round_trip $got $prog]
+  DispatchCommand argv=t21 policy=def-then-exec-command lane=exec
+  BuildArgs t22 = [exec bpfman program list -o json]
+  DispatchBind t23 = t22 policy=def-then-exec-bind lane=builtin(exec)
+  ApplyBind src=t23 argv=t22 primary=list_r rc=_ guard=true fail=bb5
+  Eval t24 = $list_r.stdout |> jq "fromjson"
+  BindName listed = t24
+  Eval t25 = ".programs[] | select(.record.program_id == ${pid})"
+  BindName progFilter = t25
+  Eval t26 = $listed |> jq $progFilter
+  BindName ours = t26
+  Require not null ours
+  Assert $ours.record.meta.name == $prog.record.meta.name
+  Assert $ours.status.kernel.id == $prog.status.kernel.id
+  BuildArgs t27 = [exec bpfman link attach kprobe --fn-name do_unlinkat $pid -o json]
+  DispatchBind t28 = t27 policy=def-then-exec-bind lane=builtin(exec)
+  ApplyBind src=t28 argv=t27 primary=attach_r rc=_ guard=true fail=bb6
+  Eval t29 = $attach_r.stdout |> jq "fromjson"
+  BindName link = t29
+  Eval t30 = $link.record.id
+  BindName linkID = t30
+  Assert $link.record.kind == kprobe
+  Assert $link.record.program_id == $pid
+  Assert $link.record.details.fn_name == do_unlinkat
+  Assert $link.record.details.offset == 0
+  Assert not $link.record.details.retprobe
+  Assert $link.status.kernel_seen
+  BuildArgs t31 = [exec bpfman link get $linkID -o json]
+  DispatchBind t32 = t31 policy=def-then-exec-bind lane=builtin(exec)
+  ApplyBind src=t32 argv=t31 primary=getlink_r rc=_ guard=true fail=bb7
+  Eval t33 = $getlink_r.stdout |> jq "fromjson"
+  BindName gotLink = t33
+  Assert $gotLink.record.id == $linkID
+  Assert $gotLink.record.kind == $link.record.kind
+  Assert $gotLink.record.details.fn_name == $link.record.details.fn_name
+  Assert $gotLink.record.details.retprobe == $link.record.details.retprobe
+  BuildArgs t34 = [exec bpfman link list -o json]
+  DispatchBind t35 = t34 policy=def-then-exec-bind lane=builtin(exec)
+  ApplyBind src=t35 argv=t34 primary=listlinks_r rc=_ guard=true fail=bb8
+  Eval t36 = $listlinks_r.stdout |> jq "fromjson"
+  BindName listedLinks = t36
+  Eval t37 = ".links[] | select(.id == ${linkID})"
+  BindName linkFilter = t37
+  Eval t38 = $listedLinks |> jq $linkFilter
+  BindName ourLink = t38
+  Require not null ourLink
+  Assert $ourLink.id == $link.record.id
+  Assert $ourLink.kind == $link.record.kind
+  BuildArgs t39 = [touch "${sentinel}.1"]
+  DispatchBind t40 = t39 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t40 argv=t39 primary=_ rc=_ guard=true fail=bb9
+  BuildArgs t41 = [wait $work]
+  DispatchBind t42 = t41 policy=def-then-exec-bind lane=builtin(wait)
+  ApplyBind src=t42 argv=t41 primary=work_r rc=_ guard=true fail=bb10
+  Assert $work_r.ok
+  Assert $work_r.code == 0
+  Eval t43 = $prog |> jq "[.status.maps[] | select(.name == \"kp_count\") | .id][0]"
+  BindName mapID = t43
+  Eval t44 = "fromjson | .[0].formatted.value | tonumber"
+  BindName sumFilter = t44
+  BuildArgs t45 = [bpftool map dump id $mapID -j]
+  DispatchBind t46 = t45 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t46 argv=t45 primary=dump rc=_ guard=true fail=bb11
+  Eval t47 = $dump.stdout |> jq $sumFilter
+  BindName got_counter = t47
+  BuildArgs t48 = [print "got=${got_counter} want=${want}"]
+  DispatchCommand argv=t48 policy=def-then-exec-command lane=builtin(print)
+  Assert $got_counter == $want
+  BuildArgs t49 = [exec bpfman link detach $linkID]
+  DispatchCommand argv=t49 policy=def-then-exec-command lane=builtin(exec)
+  BuildArgs t50 = [exec bpfman link get $linkID -o json]
+  DispatchBind t51 = t50 policy=def-then-exec-bind lane=builtin(exec)
+  ApplyBind src=t51 argv=t50 primary=getlink_after rc=_ guard=false
+  Assert not $getlink_after.ok
+  BuildArgs t52 = [bpftool map dump id $mapID -j]
+  DispatchBind t53 = t52 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t53 argv=t52 primary=before_dump rc=_ guard=true fail=bb12
+  Eval t54 = $before_dump.stdout |> jq $sumFilter
+  BindName before = t54
+  BuildArgs t55 = [sleep 0.1]
+  DispatchCommand argv=t55 policy=def-then-exec-command lane=exec
+  BuildArgs t56 = [bpftool map dump id $mapID -j]
+  DispatchBind t57 = t56 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t57 argv=t56 primary=after_dump rc=_ guard=true fail=bb13
+  Eval t58 = $after_dump.stdout |> jq $sumFilter
+  BindName after = t58
+  Eval t59 = $after - $before
+  BindName delta = t59
+  BuildArgs t60 = [print "post-detach delta=${delta}"]
+  DispatchCommand argv=t60 policy=def-then-exec-command lane=builtin(print)
+  Assert $delta == 0
+  BuildArgs t61 = [exec bpfman program unload $pid]
+  DispatchCommand argv=t61 policy=def-then-exec-command lane=builtin(exec)
+  BuildArgs t62 = [exec bpfman program get $pid -o json]
+  DispatchBind t63 = t62 policy=def-then-exec-bind lane=builtin(exec)
+  ApplyBind src=t63 argv=t62 primary=get_after rc=_ guard=false
+  Assert not $get_after.ok
+  RunDefers policy=program
+  Stop
+
+bb1:
+  RunDefers policy=program
+  PropagateError
+
+bb2:
+  RunDefers policy=program
+  PropagateError
+
+bb3:
+  RunDefers policy=program
+  PropagateError
+
+bb4:
+  RunDefers policy=program
+  PropagateError
+
+bb5:
+  RunDefers policy=program
+  PropagateError
+
+bb6:
+  RunDefers policy=program
+  PropagateError
+
+bb7:
+  RunDefers policy=program
+  PropagateError
+
+bb8:
+  RunDefers policy=program
+  PropagateError
+
+bb9:
+  RunDefers policy=program
+  PropagateError
+
+bb10:
+  RunDefers policy=program
+  PropagateError
+
+bb11:
+  RunDefers policy=program
+  PropagateError
+
+bb12:
+  RunDefers policy=program
+  PropagateError
+
+bb13:
+  RunDefers policy=program
+  PropagateError

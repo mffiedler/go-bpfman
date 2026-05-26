@@ -1,0 +1,2 @@
+guard (x x) <- exec true
+print unreachable

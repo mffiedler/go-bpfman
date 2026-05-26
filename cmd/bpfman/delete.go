@@ -73,8 +73,8 @@ func collectDeleteIDs(ctx context.Context, mgr *manager.Manager, all bool, expli
 }
 
 // executeDeletePrograms is the shared implementation for deleting
-// programs with cascading cleanup. Both the CLI command and the REPL
-// call this function. Locking is handled internally.
+// programs with cascading cleanup. Both the CLI command and
+// bpfman-shell call this function. Locking is handled internally.
 func executeDeletePrograms(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, ids []kernel.ProgramID, recursive bool) error {
 	type result struct {
 		id  kernel.ProgramID

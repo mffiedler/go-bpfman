@@ -1,0 +1,3 @@
+import ./lib.bpfman
+import ./helpers.bpfman
+let v <- outer "hi"
