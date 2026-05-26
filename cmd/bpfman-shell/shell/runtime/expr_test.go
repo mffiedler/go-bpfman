@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/ir"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/semantics"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
@@ -1447,6 +1448,38 @@ func TestExecSource_LetDestructure_NonListIsError(t *testing.T) {
 	evErr := execParsedProgram(t, prog, env)
 	require.Error(t, evErr)
 	assert.Contains(t, evErr.Error(), "not a list")
+}
+
+func TestNotEmpty_ASTAndIRAgreeOnOffSpecCarrier(t *testing.T) {
+	t.Parallel()
+
+	// The not-empty predicate has two definitions: evalUnary
+	// in expr.go (AST path) and the *ir.UnaryExpr case in
+	// evalIRExpr (IR path). The string / list / map /
+	// json.Number / float64 / bool branches are identical
+	// across both, but the fallback `default` diverges:
+	// the AST path delegates to Scalar() so an off-spec
+	// carrier surfaces as a clear "not-empty: value is not a
+	// scalar" error, while the IR path silently returns true.
+	// An int Value reaches the default branch because int is
+	// outside the documented carrier vocabulary; using it as
+	// the discriminator pins the agreement contract.
+	s := NewSession()
+	s.Set("x", ValueFromAny(42))
+	env := evalEnv(s)
+	unary := &syntax.UnaryExpr{Pred: "not-empty", Operand: &syntax.VarRefExpr{Name: "x"}}
+	astVal, astErr := EvalExpr(unary, env)
+
+	irUnary := &ir.UnaryExpr{Pred: "not-empty", Operand: &ir.VarRefExpr{Name: "x"}}
+	irVal, irErr := EvalIRExpr(irUnary, env)
+
+	if astErr == nil && irErr == nil {
+		assert.Equal(t, astVal.Raw(), irVal.Raw(), "AST and IR must return the same value for not-empty on an off-spec carrier")
+		return
+	}
+	// Both must agree on the error case too: same outcome from both paths.
+	require.True(t, astErr != nil && irErr != nil,
+		"AST and IR must agree on not-empty for an off-spec carrier; got astErr=%v, irErr=%v", astErr, irErr)
 }
 
 func TestRuntime_HexLiteralArithmeticRejected(t *testing.T) {

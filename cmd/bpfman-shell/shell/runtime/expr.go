@@ -1666,45 +1666,58 @@ func evalUnary(e *syntax.UnaryExpr, env *Env) (Value, error) {
 	}
 	switch e.Pred {
 	case "not-empty":
-		// not-empty is content-presence under the Go zero-value
-		// convention applied uniformly: null is empty, "" is
-		// empty, [] / nil-slice is empty, {} / nil-map is empty,
-		// numeric 0 is empty, false is empty. This matches the
-		// matches-block predicate semantics so `not-empty` reads
-		// the same inline (`assert not-empty $xs`) as inside a
-		// matches block (`field: not-empty`).
-		if operand.IsNil() || operand.IsNull() {
-			return BoolValue(false), nil
-		}
-		switch x := operand.Raw().(type) {
-		case string:
-			return BoolValue(x != ""), nil
-		case []any:
-			return BoolValue(len(x) > 0), nil
-		case map[string]any:
-			return BoolValue(len(x) > 0), nil
-		case json.Number:
-			f, ferr := x.Float64()
-			if ferr != nil {
-				return Value{}, syntax.SpanErrorf(e.Span, "not-empty: %v", ferr)
-			}
-			return BoolValue(f != 0), nil
-		case float64:
-			return BoolValue(x != 0), nil
-		case bool:
-			return BoolValue(x), nil
-		default:
-			// Any remaining carrier-type falls back to the
-			// pre-existing scalar text check for consistency
-			// with how Scalar() renders these types.
-			s, err := operand.Scalar()
-			if err != nil {
-				return Value{}, syntax.SpanErrorf(e.Span, "not-empty: %v", err)
-			}
-			return BoolValue(s != ""), nil
-		}
+		return evalNotEmpty(operand, e.Span)
 	default:
 		return Value{}, syntax.SpanErrorf(e.Span, "unknown unary predicate %q", e.Pred)
+	}
+}
+
+// evalNotEmpty implements the not-empty unary predicate shared by
+// the AST evalUnary path and the IR *ir.UnaryExpr case in
+// evalIRExpr. Keeping the body in one place is the load-bearing
+// part: a divergent default branch in either evaluator silently
+// disagrees on off-spec carrier types and that drift is exactly
+// the kind the IR migration is meant to eliminate. "Empty" is
+// applied uniformly under the Go zero-value convention -- null
+// is empty, "" is empty, [] / nil-slice is empty, {} / nil-map
+// is empty, numeric 0 is empty, false is empty -- so the
+// predicate reads the same inline (`assert not-empty $xs`) and
+// inside a matches block (`field: not-empty`).
+func evalNotEmpty(operand Value, span source.Span) (Value, error) {
+	if operand.IsNil() || operand.IsNull() {
+		return BoolValue(false), nil
+	}
+	switch x := operand.Raw().(type) {
+	case string:
+		return BoolValue(x != ""), nil
+	case []any:
+		return BoolValue(len(x) > 0), nil
+	case map[string]any:
+		return BoolValue(len(x) > 0), nil
+	case json.Number:
+		f, ferr := x.Float64()
+		if ferr != nil {
+			return Value{}, syntax.SpanErrorf(span, "not-empty: %v", ferr)
+		}
+		return BoolValue(f != 0), nil
+	case float64:
+		return BoolValue(x != 0), nil
+	case bool:
+		return BoolValue(x), nil
+	default:
+		// Any carrier outside the documented vocabulary
+		// (string / []any / map[string]any / json.Number /
+		// float64 / bool / nil) is a misuse of the Value
+		// API: ValueFromAny's doc lists those types, and
+		// anything else is a programmer error. Fall back to
+		// the scalar conversion so the diagnostic identifies
+		// the unsupported carrier rather than silently
+		// declaring it truthy.
+		s, err := operand.Scalar()
+		if err != nil {
+			return Value{}, syntax.SpanErrorf(span, "not-empty: %v", err)
+		}
+		return BoolValue(s != ""), nil
 	}
 }
 

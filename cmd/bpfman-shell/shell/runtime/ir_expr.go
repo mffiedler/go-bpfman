@@ -1,7 +1,6 @@
 package runtime
 
 import (
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -126,29 +125,7 @@ func evalIRExpr(expr ir.Expr, env *Env) (Value, error) {
 		}
 		switch e.Pred {
 		case "not-empty":
-			if operand.IsNil() || operand.IsNull() {
-				return BoolValue(false), nil
-			}
-			switch x := operand.Raw().(type) {
-			case string:
-				return BoolValue(x != ""), nil
-			case []any:
-				return BoolValue(len(x) > 0), nil
-			case map[string]any:
-				return BoolValue(len(x) > 0), nil
-			case json.Number:
-				f, ferr := x.Float64()
-				if ferr != nil {
-					return Value{}, syntax.SpanErrorf(e.Span, "not-empty: %v", ferr)
-				}
-				return BoolValue(f != 0), nil
-			case float64:
-				return BoolValue(x != 0), nil
-			case bool:
-				return BoolValue(x), nil
-			default:
-				return BoolValue(true), nil
-			}
+			return evalNotEmpty(operand, e.Span)
 		default:
 			return Value{}, syntax.SpanErrorf(e.Span, "unknown unary predicate %q", e.Pred)
 		}
