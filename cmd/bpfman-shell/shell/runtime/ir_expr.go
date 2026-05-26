@@ -72,7 +72,18 @@ func evalIRExpr(expr ir.Expr, env *Env) (Value, error) {
 		if err != nil {
 			return Value{}, syntax.SpanErrorf(threadSpan, "thread: %v", err)
 		}
-		result, err := env.ExecBind(append(args, lhsArg), e.Span)
+		// '|>' is expression-position bind-dispatch with the rc
+		// envelope discarded; head resolution follows the same
+		// def-first policy as the bind RHS, defer, and bind-
+		// collect lanes. The IR path used to call env.ExecBind
+		// directly, which let a `$value |> my_def` fall through
+		// to the external lane. Route through dispatchBindByPolicy
+		// so the rule lives in one place.
+		callLoc := e.PipePos
+		if callLoc.Line == 0 {
+			callLoc = e.Span.Pos
+		}
+		result, err := dispatchBindByPolicy(ir.DispatchPolicyDefThenExecBind, append(args, lhsArg), callLoc, e.Span, env)
 		if err != nil {
 			return Value{}, syntax.FrameAt(threadSpan, err)
 		}

@@ -1393,7 +1393,19 @@ func dispatchThread(e *syntax.ThreadExpr, env *Env) (Value, error) {
 	if err != nil {
 		return Value{}, syntax.SpanErrorf(threadSpan, "thread: %v", err)
 	}
-	result, err := env.ExecBind(append(args, lhsArg), e.Span)
+	// '|>' is expression-position bind-dispatch with the rc
+	// envelope discarded, so head resolution follows the same
+	// def-first policy as every other command-shaped construct
+	// that runs in value-producing position (bind RHS, defer,
+	// bind-collect). Bypassing the policy here let a `$value |>
+	// my_def` fall through to the external lane and silently
+	// bind the empty primary; routing through dispatchBindByPolicy
+	// keeps the rule centralised.
+	callLoc := e.PipePos
+	if callLoc.Line == 0 {
+		callLoc = e.Span.Pos
+	}
+	result, err := dispatchBindByPolicy(ir.DispatchPolicyDefThenExecBind, append(args, lhsArg), callLoc, e.Span, env)
 	if err != nil {
 		return Value{}, syntax.FrameAt(threadSpan, err)
 	}
