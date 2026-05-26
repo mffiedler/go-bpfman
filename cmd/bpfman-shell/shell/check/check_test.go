@@ -246,6 +246,61 @@ func TestCheck_ThreadDefArityExact(t *testing.T) {
 	assert.Empty(t, issues)
 }
 
+func TestCheck_BuiltinArity_DefShadowSkipped(t *testing.T) {
+	t.Parallel()
+
+	// `start` is a known builtin with min-arity 1, but the user
+	// has declared a def with the same name. Runtime dispatch
+	// resolves the head to the def, so the builtin arity rule
+	// no longer applies; the static checker must honour the
+	// same precedence and skip the builtin spec.
+	src := "def start() { print ok }\nstart"
+	issues := checkSource(t, src)
+	assert.Empty(t, issues, "shadowed start: builtin arity check must skip")
+}
+
+func TestCheck_KillFlags_DefShadowSkipped(t *testing.T) {
+	t.Parallel()
+
+	// `kill` shadowed by a def takes its own positional
+	// arguments and has no --signal / --grace semantics. The
+	// checker's kill-flag validator must not flag a literal
+	// that happens to look like a builtin flag when the head
+	// is actually a user def; the runtime never reaches the
+	// builtin path.
+	src := "def kill(arg) { print $arg }\nkill --signal=BOGUS"
+	issues := checkSource(t, src)
+	assert.Empty(t, issues, "shadowed kill: --signal flag check must skip")
+}
+
+func TestCheck_JobLeak_StartShadowedNoFalsePositive(t *testing.T) {
+	t.Parallel()
+
+	// A user `def start` does not create a job, so the bind
+	// target it produces is not subject to the job-leak rule.
+	// Before the def-aware gate, the checker recognised the
+	// head as the builtin start and demanded a matching wait
+	// or kill, generating a false-positive leak diagnostic.
+	src := "def start(name) { print $name }\nlet j <- start foo"
+	issues := checkSource(t, src)
+	assert.Empty(t, issues, "shadowed start: no false job-leak report")
+}
+
+func TestCheck_JobLeak_KillShadowedSurfacesRealLeak(t *testing.T) {
+	t.Parallel()
+
+	// Conversely, when the real `start` does create a job and
+	// the call that looks like `kill $j` is actually a user
+	// def, the def does not consume the job. The previous
+	// jobReferenceTarget rule marked $j as managed regardless
+	// of whether kill resolved to a def, hiding the real
+	// leak. The tightened rule lets the leak surface.
+	src := "def kill(arg) { print $arg }\nlet j <- start foo\nkill $j"
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "started job \"j\" has no matching wait or kill")
+}
+
 func TestCheck_BindCollect_ListExprIsChecked(t *testing.T) {
 	t.Parallel()
 

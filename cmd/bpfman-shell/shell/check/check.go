@@ -1223,19 +1223,19 @@ func (c *checker) checkJobLeaksInBody(stmts []syntax.Stmt) {
 		for _, st := range stmts {
 			switch s := st.(type) {
 			case *syntax.BindStmt:
-				if isStartCommand(s.Cmd) && s.Primary != "" && s.Primary != "_" {
+				if c.isStartCommand(s.Cmd) && s.Primary != "" && s.Primary != "_" {
 					started = append(started, jobBinding{Name: s.Primary, Span: s.Span})
 				}
-				if name := jobReferenceTarget(s.Cmd); name != "" {
+				if name := c.jobReferenceTarget(s.Cmd); name != "" {
 					managed[name] = true
 				}
 			case *syntax.CommandStmt:
-				if name := jobReferenceTarget(s); name != "" {
+				if name := c.jobReferenceTarget(s); name != "" {
 					managed[name] = true
 				}
 			case *syntax.DeferStmt:
 				if s.Cmd != nil {
-					if name := jobReferenceTarget(s.Cmd); name != "" {
+					if name := c.jobReferenceTarget(s.Cmd); name != "" {
 						managed[name] = true
 					}
 				}
@@ -1273,15 +1273,20 @@ func (c *checker) checkJobLeaksInBody(stmts []syntax.Stmt) {
 	}
 }
 
-// isStartCommand reports whether cmd is a 'start ...' invocation.
-// Used to recognise job-creating BindStmts; any other Cmd binds
-// a non-job value and is not subject to leak analysis.
-func isStartCommand(cmd *syntax.CommandStmt) bool {
+// isStartCommand reports whether cmd is a 'start ...' invocation
+// against the builtin. A user `def start(...)` resolves first at
+// runtime, so the bind it produces is not a job and is not
+// subject to leak analysis; the checker honours the same
+// precedence by consulting c.defs.
+func (c *checker) isStartCommand(cmd *syntax.CommandStmt) bool {
 	if cmd == nil || len(cmd.Args) == 0 {
 		return false
 	}
 	lit, ok := cmd.Args[0].(*syntax.LiteralExpr)
-	return ok && lit.Text == "start"
+	if !ok || lit.Text != "start" {
+		return false
+	}
+	return !c.defs[lit.Text]
 }
 
 // checkArithmeticOperands flags literal operands of arithmetic
@@ -1620,6 +1625,18 @@ func (c *checker) checkBuiltinArity(prog *syntax.Program) {
 		if !known {
 			return true
 		}
+		// Def-first dispatch is the language rule: a user `def
+		// start(...)` (or kill, wait, fire, jobs, reap) wins over
+		// the builtin at runtime via dispatchCommandByPolicy /
+		// dispatchBindByPolicy. The static check must honour the
+		// same precedence and skip the builtin arity spec when
+		// the name is locally redefined; otherwise a perfectly
+		// good def call gets a false-positive "expected N
+		// argument(s)" diagnostic against a rule the runtime
+		// never reaches.
+		if c.defs[head.Text] {
+			return true
+		}
 		got := nonFlagArgCount(cmd.Args[1:])
 		switch {
 		case got < spec.min:
@@ -1648,6 +1665,16 @@ func (c *checker) checkKillFlags(prog *syntax.Program) {
 		}
 		head, ok := cmd.Args[0].(*syntax.LiteralExpr)
 		if !ok || head.Text != "kill" {
+			return true
+		}
+		// A user `def kill(...)` resolves first at runtime, so
+		// its arguments are positionals to the def, not flags
+		// to the builtin. Skip the flag validator when the name
+		// is locally redefined; otherwise a literal that happens
+		// to look like a --signal / --grace flag triggers a
+		// false-positive diagnostic against a rule the runtime
+		// never applies.
+		if c.defs["kill"] {
 			return true
 		}
 		for _, arg := range cmd.Args[1:] {
@@ -1707,12 +1734,21 @@ func isKnownSignalName(name string) bool {
 // kill or wait, or its target is not a simple syntax.VarRefExpr.
 // Flag args (--signal=NAME, --grace=DUR) are skipped so 'kill
 // --signal=USR1 $job' still picks up $job as the target.
-func jobReferenceTarget(cmd *syntax.CommandStmt) string {
+func (c *checker) jobReferenceTarget(cmd *syntax.CommandStmt) string {
 	if cmd == nil || len(cmd.Args) == 0 {
 		return ""
 	}
 	lit, ok := cmd.Args[0].(*syntax.LiteralExpr)
 	if !ok || (lit.Text != "kill" && lit.Text != "wait") {
+		return ""
+	}
+	// A user `def kill(...)` or `def wait(...)` resolves first
+	// at runtime and does not consume a job. Returning a managed
+	// target here would silently mask a real leak when the user
+	// intended a job operation but actually called a shadowing
+	// def; defer to the def's own semantics by skipping the
+	// builtin-shape recognition.
+	if c.defs[lit.Text] {
 		return ""
 	}
 	for _, arg := range cmd.Args[1:] {
