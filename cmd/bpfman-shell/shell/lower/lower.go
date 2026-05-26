@@ -457,6 +457,19 @@ func (l *lowerer) lowerPollStmt(s *syntax.PollStmt) error {
 }
 
 func (l *lowerer) lowerRetryStmt(s *syntax.RetryStmt) error {
+	// retry only makes sense inside a poll attempt's lexical
+	// body (l.ctx.attempt set) or inside a helper def callable
+	// from a poll attempt (l.ctx.returnTo set). The emitted
+	// sequence drains attempt-local defers and pops the
+	// attempt frame; without an enclosing attempt or def
+	// frame it would dismantle the program-level frame and
+	// the runtime cannot recover. The static checker catches
+	// the same shape, but Lower runs without check as a
+	// precondition, so refuse the misplaced form here rather
+	// than emit IR that corrupts the executor's frame stack.
+	if l.ctx.attempt == nil && l.ctx.returnTo == nil {
+		return syntax.SpanErrorf(s.Span, "retry outside any poll or helper def")
+	}
 	if s.Unless == nil {
 		l.emitRetryStmt(s)
 		return nil
