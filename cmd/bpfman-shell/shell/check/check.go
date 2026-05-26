@@ -1292,13 +1292,13 @@ func isStartCommand(cmd *syntax.CommandStmt) bool {
 //
 // Variable-reference operands are trusted (we cannot know
 // their value at static time); only syntax.LiteralExpr operands are
-// inspected. The numeric-vs-not test is strconv.ParseFloat
-// which accepts the same lexical shapes the runtime
-// arithmetic does (decimal integer, decimal float, scientific
-// notation; hex via 0x prefix is rejected by ParseFloat but
-// accepted by the runtime, so '0x1a + 1' would false-flag --
-// match ParseFloat's behaviour by also trying ParseInt as a
-// fallback so the static and runtime acceptances agree).
+// inspected. The numeric-vs-not test is strconv.ParseFloat,
+// which accepts the same lexical shapes the runtime arithmetic
+// does: decimal integer, decimal float, scientific notation.
+// Hex (0x...) and octal (0...) forms are rejected by both
+// sides; the check reports them at preflight rather than
+// letting them surface later from the runtime's "operand is
+// not numeric" path.
 func (c *checker) checkArithmeticOperands(prog *syntax.Program) {
 	syntax.Inspect(prog, func(n syntax.Node) bool {
 		be, ok := n.(*syntax.BinaryExpr)
@@ -1484,20 +1484,17 @@ func isScalarLikeKind(k semantics.OriginKind) bool {
 }
 
 // isNumericLiteral reports whether text is a literal the
-// arithmetic evaluator will accept. Tries ParseFloat first
-// (handles decimal integers, floats, scientific notation),
-// then ParseInt with base 0 as a fallback (handles 0x... and
-// 0... that ParseFloat rejects). Matches the runtime's de
-// facto accepted shapes; if the runtime ever tightens this,
-// the check tightens with it via the same helper.
+// arithmetic evaluator will accept. The runtime parses operands
+// with strconv.ParseFloat (decimal integers, floats, scientific
+// notation), so the static check uses the same parser to keep
+// the two sides aligned. A previous ParseInt-with-base-0
+// fallback accepted hex / octal forms the runtime rejected,
+// silently letting `0x1a + 1` pass preflight and then fail
+// later with the runtime's less helpful "operand is not
+// numeric" diagnostic; that fallback is gone.
 func isNumericLiteral(text string) bool {
-	if _, err := strconv.ParseFloat(text, 64); err == nil {
-		return true
-	}
-	if _, err := strconv.ParseInt(text, 0, 64); err == nil {
-		return true
-	}
-	return false
+	_, err := strconv.ParseFloat(text, 64)
+	return err == nil
 }
 
 // checkLoopExits walks stmts with a foreach-depth counter,

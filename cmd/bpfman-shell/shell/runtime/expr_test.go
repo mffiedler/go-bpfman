@@ -1449,6 +1449,22 @@ func TestExecSource_LetDestructure_NonListIsError(t *testing.T) {
 	assert.Contains(t, evErr.Error(), "not a list")
 }
 
+func TestRuntime_HexLiteralArithmeticRejected(t *testing.T) {
+	t.Parallel()
+
+	// Pins the runtime side of the static / runtime numeric
+	// acceptance contract. evalArithmetic parses operands with
+	// strconv.ParseFloat, which rejects the 0x-prefixed hex
+	// form, so any hex literal in arithmetic position must
+	// surface as "operand is not numeric" at runtime. The
+	// static checker uses the same parser so the diagnostic
+	// arrives at preflight; this test guards the runtime
+	// half of that agreement.
+	err := runScriptError(t, "let r = 0x1a + 1", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not numeric")
+}
+
 func TestExecSource_CommandArg_ParenExprArithmetic(t *testing.T) {
 	t.Parallel()
 
