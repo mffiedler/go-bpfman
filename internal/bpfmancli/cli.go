@@ -33,7 +33,7 @@ type CLI struct {
 	ImageCacheDir string        `name:"image-cache-dir" group:"global" help:"Root directory for OCI image cache." default:"${default_image_cache_dir}"`
 	Config        string        `name:"config" group:"global" help:"Config file path." default:"${default_config_path}"`
 	Log           string        `name:"log" group:"global" help:"Log spec (e.g., 'info,manager=debug')." env:"BPFMAN_LOG"`
-	LockTimeout   time.Duration `name:"lock-timeout" group:"global" help:"Timeout for acquiring the global writer lock (0 for indefinite)." default:"30s"`
+	LockTimeout   time.Duration `name:"lock-timeout" group:"global" help:"Timeout for acquiring the global writer lock (0 for indefinite)." default:"30s" env:"BPFMAN_LOCK_TIMEOUT"`
 
 	// Out is the writer for command output. Defaults to os.Stdout
 	// when DefaultWriters is called. Injected for testability.
