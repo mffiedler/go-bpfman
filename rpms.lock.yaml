@@ -109,13 +109,13 @@ arches:
     name: gcc-toolset-15-runtime
     evr: 15.0-9.el9
     sourcerpm: gcc-toolset-15-15.0-9.el9.src.rpm
-  - url: https://cdn.redhat.com/content/dist/rhel9/9/aarch64/appstream/os/Packages/g/glibc-devel-2.34-266.el9_8.aarch64.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/aarch64/appstream/os/Packages/g/glibc-devel-2.34-270.el9_8.aarch64.rpm
     repoid: rhel-9-for-aarch64-appstream-rpms
-    size: 577601
-    checksum: sha256:5ffa33b3054faa784aa531c617b78cee587b2c365f8a6ac227ab6cb55da70bcb
+    size: 578011
+    checksum: sha256:dc745c58066e323f08bdc8b613163c59899e764eed95899afa64d58b424c5a57
     name: glibc-devel
-    evr: 2.34-266.el9_8
-    sourcerpm: glibc-2.34-266.el9_8.src.rpm
+    evr: 2.34-270.el9_8
+    sourcerpm: glibc-2.34-270.el9_8.src.rpm
   - url: https://cdn.redhat.com/content/dist/rhel9/9/aarch64/appstream/os/Packages/k/kernel-headers-5.14.0-687.10.1.el9_8.aarch64.rpm
     repoid: rhel-9-for-aarch64-appstream-rpms
     size: 2798909
@@ -641,13 +641,13 @@ arches:
     name: vim-filesystem
     evr: 2:8.2.2637-26.el9_8.4
     sourcerpm: vim-8.2.2637-26.el9_8.4.src.rpm
-  - url: https://cdn.redhat.com/content/dist/rhel9/9/aarch64/codeready-builder/os/Packages/g/glibc-static-2.34-266.el9_8.aarch64.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/aarch64/codeready-builder/os/Packages/g/glibc-static-2.34-270.el9_8.aarch64.rpm
     repoid: codeready-builder-for-rhel-9-aarch64-rpms
-    size: 1252481
-    checksum: sha256:df9353d0fc534071e81f095f885e1ebdee9b0c9bf851498ce5d436bee0aee149
+    size: 1252216
+    checksum: sha256:6b7b6050d59c5413784dc5bc65416f72dc9a5aee9f1f8a81d223d27df1fb4541
     name: glibc-static
-    evr: 2.34-266.el9_8
-    sourcerpm: glibc-2.34-266.el9_8.src.rpm
+    evr: 2.34-270.el9_8
+    sourcerpm: glibc-2.34-270.el9_8.src.rpm
   - url: https://cdn.redhat.com/content/dist/rhel9/9/aarch64/codeready-builder/os/Packages/l/libbpf-devel-1.5.0-3.el9.aarch64.rpm
     repoid: codeready-builder-for-rhel-9-aarch64-rpms
     size: 90583
@@ -771,13 +771,13 @@ arches:
     name: gcc-toolset-15-runtime
     evr: 15.0-9.el9
     sourcerpm: gcc-toolset-15-15.0-9.el9.src.rpm
-  - url: https://cdn.redhat.com/content/dist/rhel9/9/ppc64le/appstream/os/Packages/g/glibc-devel-2.34-266.el9_8.ppc64le.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/ppc64le/appstream/os/Packages/g/glibc-devel-2.34-270.el9_8.ppc64le.rpm
     repoid: rhel-9-for-ppc64le-appstream-rpms
-    size: 588615
-    checksum: sha256:a5cd394872d03cad1275fd9f2598e80c8111e257a6870262cc6fc33cac8b9de6
+    size: 588949
+    checksum: sha256:d9f77ee546f6fb00410aba8f6211df271515f3601de604ce38ba5e57c8c0944d
     name: glibc-devel
-    evr: 2.34-266.el9_8
-    sourcerpm: glibc-2.34-266.el9_8.src.rpm
+    evr: 2.34-270.el9_8
+    sourcerpm: glibc-2.34-270.el9_8.src.rpm
   - url: https://cdn.redhat.com/content/dist/rhel9/9/ppc64le/appstream/os/Packages/k/kernel-headers-5.14.0-687.10.1.el9_8.ppc64le.rpm
     repoid: rhel-9-for-ppc64le-appstream-rpms
     size: 2822733
@@ -1310,13 +1310,13 @@ arches:
     name: vim-filesystem
     evr: 2:8.2.2637-26.el9_8.4
     sourcerpm: vim-8.2.2637-26.el9_8.4.src.rpm
-  - url: https://cdn.redhat.com/content/dist/rhel9/9/ppc64le/codeready-builder/os/Packages/g/glibc-static-2.34-266.el9_8.ppc64le.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/ppc64le/codeready-builder/os/Packages/g/glibc-static-2.34-270.el9_8.ppc64le.rpm
     repoid: codeready-builder-for-rhel-9-ppc64le-rpms
-    size: 1583678
-    checksum: sha256:347360bae636a767fb961ebe11d8c78e71f07aaf4693933881b70f9031fcf208
+    size: 1582567
+    checksum: sha256:8777ef07ebc0348371f8df3e2adf1f8a95a7896f2a9b9d10b62f9a5a205a49b6
     name: glibc-static
-    evr: 2.34-266.el9_8
-    sourcerpm: glibc-2.34-266.el9_8.src.rpm
+    evr: 2.34-270.el9_8
+    sourcerpm: glibc-2.34-270.el9_8.src.rpm
   - url: https://cdn.redhat.com/content/dist/rhel9/9/ppc64le/codeready-builder/os/Packages/l/libbpf-devel-1.5.0-3.el9.ppc64le.rpm
     repoid: codeready-builder-for-rhel-9-ppc64le-rpms
     size: 90595
@@ -1440,20 +1440,20 @@ arches:
     name: gcc-toolset-15-runtime
     evr: 15.0-9.el9
     sourcerpm: gcc-toolset-15-15.0-9.el9.src.rpm
-  - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/appstream/os/Packages/g/glibc-devel-2.34-266.el9_8.s390x.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/appstream/os/Packages/g/glibc-devel-2.34-270.el9_8.s390x.rpm
     repoid: rhel-9-for-s390x-appstream-rpms
-    size: 54861
-    checksum: sha256:214b0067655eb3a508109ae7686a41c5d6d875348821262aa9550912e193a847
+    size: 55236
+    checksum: sha256:005bbfb5939c2affb600736d72f1d3807d641708a5aa454aa45672ae563fe874
     name: glibc-devel
-    evr: 2.34-266.el9_8
-    sourcerpm: glibc-2.34-266.el9_8.src.rpm
-  - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/appstream/os/Packages/g/glibc-headers-2.34-266.el9_8.s390x.rpm
+    evr: 2.34-270.el9_8
+    sourcerpm: glibc-2.34-270.el9_8.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/appstream/os/Packages/g/glibc-headers-2.34-270.el9_8.s390x.rpm
     repoid: rhel-9-for-s390x-appstream-rpms
-    size: 558502
-    checksum: sha256:239dd18a080a335abeb116c90b797a56fdd0709a8d120836b7e96e6b6c3d5dc6
+    size: 558813
+    checksum: sha256:90640d9701d7f880d6330fb83bc87ee8cf7c8d9e3ecebcb905a54717b693edc5
     name: glibc-headers
-    evr: 2.34-266.el9_8
-    sourcerpm: glibc-2.34-266.el9_8.src.rpm
+    evr: 2.34-270.el9_8
+    sourcerpm: glibc-2.34-270.el9_8.src.rpm
   - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/appstream/os/Packages/k/kernel-headers-5.14.0-687.10.1.el9_8.s390x.rpm
     repoid: rhel-9-for-s390x-appstream-rpms
     size: 2828909
@@ -1979,13 +1979,13 @@ arches:
     name: vim-filesystem
     evr: 2:8.2.2637-26.el9_8.4
     sourcerpm: vim-8.2.2637-26.el9_8.4.src.rpm
-  - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/codeready-builder/os/Packages/g/glibc-static-2.34-266.el9_8.s390x.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/codeready-builder/os/Packages/g/glibc-static-2.34-270.el9_8.s390x.rpm
     repoid: codeready-builder-for-rhel-9-s390x-rpms
-    size: 1202315
-    checksum: sha256:afc0940ec0576eb55d1f035fbb9b7c0a64b548a8d1b97d30c630a4edb4d198c0
+    size: 1202542
+    checksum: sha256:b09884aa210b4c33d08c605fb5b76104d02b0b92219b62ac0dc730c9f85bac34
     name: glibc-static
-    evr: 2.34-266.el9_8
-    sourcerpm: glibc-2.34-266.el9_8.src.rpm
+    evr: 2.34-270.el9_8
+    sourcerpm: glibc-2.34-270.el9_8.src.rpm
   - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/codeready-builder/os/Packages/l/libbpf-devel-1.5.0-3.el9.s390x.rpm
     repoid: codeready-builder-for-rhel-9-s390x-rpms
     size: 90572
@@ -2109,20 +2109,20 @@ arches:
     name: gcc-toolset-15-runtime
     evr: 15.0-9.el9
     sourcerpm: gcc-toolset-15-15.0-9.el9.src.rpm
-  - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/appstream/os/Packages/g/glibc-devel-2.34-266.el9_8.x86_64.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/appstream/os/Packages/g/glibc-devel-2.34-270.el9_8.x86_64.rpm
     repoid: rhel-9-for-x86_64-appstream-rpms
-    size: 47101
-    checksum: sha256:9cce153edd234a16deb0c5a981f73fa2b5a6d7b42b5fb9e1f4a010612318d408
+    size: 47451
+    checksum: sha256:ac596cb6c59f74558e4b9b3674abc34d79c9772c4165f5cda866c1c24c81f939
     name: glibc-devel
-    evr: 2.34-266.el9_8
-    sourcerpm: glibc-2.34-266.el9_8.src.rpm
-  - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/appstream/os/Packages/g/glibc-headers-2.34-266.el9_8.x86_64.rpm
+    evr: 2.34-270.el9_8
+    sourcerpm: glibc-2.34-270.el9_8.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/appstream/os/Packages/g/glibc-headers-2.34-270.el9_8.x86_64.rpm
     repoid: rhel-9-for-x86_64-appstream-rpms
-    size: 567846
-    checksum: sha256:9dbaaaec43b9fc78ce26b660e75081c5de09245d7431a77c3f0c47ae0b657c9d
+    size: 568001
+    checksum: sha256:0eab0982c27442a8e4acbd7b32a66757174482dcc183ef27412427f54f8f36d7
     name: glibc-headers
-    evr: 2.34-266.el9_8
-    sourcerpm: glibc-2.34-266.el9_8.src.rpm
+    evr: 2.34-270.el9_8
+    sourcerpm: glibc-2.34-270.el9_8.src.rpm
   - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/appstream/os/Packages/k/kernel-headers-5.14.0-687.10.1.el9_8.x86_64.rpm
     repoid: rhel-9-for-x86_64-appstream-rpms
     size: 2838185
@@ -2648,13 +2648,13 @@ arches:
     name: vim-filesystem
     evr: 2:8.2.2637-26.el9_8.4
     sourcerpm: vim-8.2.2637-26.el9_8.4.src.rpm
-  - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/codeready-builder/os/Packages/g/glibc-static-2.34-266.el9_8.x86_64.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/codeready-builder/os/Packages/g/glibc-static-2.34-270.el9_8.x86_64.rpm
     repoid: codeready-builder-for-rhel-9-x86_64-rpms
-    size: 1532684
-    checksum: sha256:27806199133035a40427c3c67ebbadfdf0caadcc5302aea1677a8537b865b981
+    size: 1532745
+    checksum: sha256:c26f2ead3aea8d9c8a63c6e03c185a6e76834d6b9d5335f56ffa160107af5acf
     name: glibc-static
-    evr: 2.34-266.el9_8
-    sourcerpm: glibc-2.34-266.el9_8.src.rpm
+    evr: 2.34-270.el9_8
+    sourcerpm: glibc-2.34-270.el9_8.src.rpm
   - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/codeready-builder/os/Packages/l/libbpf-devel-1.5.0-3.el9.x86_64.rpm
     repoid: codeready-builder-for-rhel-9-x86_64-rpms
     size: 90609
