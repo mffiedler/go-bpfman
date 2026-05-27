@@ -56,17 +56,60 @@ prepare_kernel_dev() {
 	cp -rs "$kernel_build"/. "$kbuild"/
 	find "$kbuild" -type d -exec chmod u+w {} +
 
-	if [[ -e "${kernel_dev}/vmlinux" ]]; then
-		ln -sf "${kernel_dev}/vmlinux" "$kbuild/vmlinux"
+	# Seed vmlinux for the kbuild BTF [M] step. Without it kbuild
+	# silently prints "Skipping BTF generation ... due to
+	# unavailability of vmlinux" and the resulting .ko has no .BTF
+	# section; then libbpf cannot resolve module functions to a BTF
+	# ID and fentry/fexit attach fails at load time with a cryptic
+	# "not supported" from the kernel. We never want the silent
+	# path: if no vmlinux source is reachable, fail here with a
+	# clear diagnostic.
+	local vmlinux_src=""
+	if [[ -n "$kernel_dev" && -e "${kernel_dev}/vmlinux" ]]; then
+		vmlinux_src=${kernel_dev}/vmlinux
 	elif [[ -e /sys/kernel/btf/vmlinux ]]; then
-		ln -sf /sys/kernel/btf/vmlinux "$kbuild/vmlinux"
+		vmlinux_src=/sys/kernel/btf/vmlinux
 	fi
+
+	if [[ -z "$vmlinux_src" ]]; then
+		{
+			echo "error: vmlinux required for module BTF generation, but none found"
+			if [[ -n "$kernel_dev" ]]; then
+				echo "  checked: ${kernel_dev}/vmlinux (absent)"
+			fi
+			echo "  checked: /sys/kernel/btf/vmlinux (absent)"
+			echo ""
+			echo "Without a vmlinux that kbuild can read, the kmod has no"
+			echo ".BTF section, and fentry/fexit attach to its functions"
+			echo "fails at load time. On hosts running a"
+			echo "CONFIG_DEBUG_INFO_BTF=y kernel, /sys/kernel/btf/vmlinux"
+			echo "is the expected source; otherwise pass KERNEL_DEV=<path>"
+			echo "with <path>/vmlinux pointing at a vmlinux ELF or BTF blob."
+		} >&2
+		exit 1
+	fi
+
+	ln -sf "$vmlinux_src" "$kbuild/vmlinux"
 
 	printf '%s\n' "$kbuild"
 }
 
 if [[ -d "$kdir" ]]; then
-	printf '%s\n' "$kdir"
+	# Fast path: a conventional Fedora/Ubuntu kdir is usable as-is
+	# ONLY if it already carries a vmlinux that pahole can read
+	# during the kbuild BTF [M] step. Distro `linux-headers`
+	# packages typically omit vmlinux (Ubuntu's noble linux-headers
+	# is the motivating case), so check for it and fall through to
+	# the mirror path when missing -- prepare_kernel_dev will seed
+	# a vmlinux symlink from /sys/kernel/btf/vmlinux (or the
+	# user-supplied $KERNEL_DEV/vmlinux) so kbuild generates BTF
+	# for the .ko rather than emitting "Skipping BTF generation
+	# ... due to unavailability of vmlinux".
+	if [[ -e "$kdir/vmlinux" ]]; then
+		printf '%s\n' "$kdir"
+		exit 0
+	fi
+	prepare_kernel_dev "$kdir"
 	exit 0
 fi
 
