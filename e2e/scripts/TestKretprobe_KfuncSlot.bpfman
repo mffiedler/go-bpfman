@@ -1,0 +1,45 @@
+# -*- mode: bpfman -*-
+# Exercises a kretprobe on a leased kernel-function slot from
+# bpfman_e2e_targets. This is the return-probe counterpart to
+# TestKprobe_KfuncSlot and uses the same leased kfunc fixture.
+
+import ../lib.bpfman
+
+let events = 5
+
+guard fn <- kfunc acquire
+defer kfunc release $fn
+
+guard loaded <- bpfman program load file \
+    --path testdata/bpf/kprobe_counter.bpf.o \
+    --programs kretprobe:kprobe_counter
+let prog = $loaded.programs[0]
+let pid = $prog.record.program_id
+
+expect_program_load $prog kretprobe kprobe kprobe_counter
+
+guard link <- bpfman link attach kprobe --fn-name $fn.name $prog
+let linkID = $link.record.id
+
+assert $link.record.kind == kretprobe
+assert $link.record.program_id == $pid
+assert $link.record.details.fn_name == $fn.name
+assert $link.record.details.offset == 0
+assert $link.record.details.retprobe
+assert $link.status.kernel_seen
+
+guard fired <- kfunc fire $fn $events
+assert $fired.ok
+
+let mapID = $prog.status.maps[0].id
+let sumFilter = "fromjson | [.[0].formatted.values[].value | tonumber] | add"
+guard dump <- bpftool map dump id $mapID -j
+let got = $dump.stdout |> jq $sumFilter
+print "kfunc=${fn.name} got=${got} want=${events}"
+assert $got == $events
+
+bpfman link detach $link
+assert fail bpfman link get $linkID
+
+bpfman program unload $pid
+assert fail bpfman program get $prog

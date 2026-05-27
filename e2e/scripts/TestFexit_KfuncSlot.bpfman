@@ -1,0 +1,46 @@
+# -*- mode: bpfman -*-
+# Exercises fexit on a leased kernel-function slot from
+# bpfman_e2e_targets. The leased kfunc gives this test an isolated
+# attach target and exact trigger count.
+
+import ../lib.bpfman
+
+let events = 5
+let weight = 1
+let want = $events * $weight
+
+guard fn <- kfunc acquire
+defer kfunc release $fn
+
+guard loaded <- bpfman program load file \
+    --path testdata/bpf/fexit_kmod_exact.bpf.o \
+    --programs "fexit:test_fexit:${fn.name}" \
+    -g "weight=0x${u64le $weight}"
+let prog = $loaded.programs[0]
+let pid = $prog.record.program_id
+
+expect_program_load $prog fexit tracing test_fexit
+
+guard link <- bpfman link attach fexit $prog
+let linkID = $link.record.id
+
+assert $link.record.kind == fexit
+assert $link.record.program_id == $pid
+assert $link.record.details.fn_name == $fn.name
+assert $link.status.kernel_seen
+
+guard fired <- kfunc fire $fn $events
+assert $fired.ok
+
+let mapID = $prog.status.maps[0].id
+let counterFilter = "fromjson | .[0].formatted.value | tonumber"
+guard dump <- bpftool map dump id $mapID -j
+let got = $dump.stdout |> jq $counterFilter
+print "kfunc=${fn.name} got=${got} want=${want}"
+assert $got == $want
+
+bpfman link detach $link
+assert fail bpfman link get $linkID
+
+bpfman program unload $pid
+assert fail bpfman program get $prog
