@@ -1,0 +1,71 @@
+# -*- mode: bpfman -*-
+# Link-CRUD round-trip for TCX attaches.
+#
+# Loads tcx_counter, builds a veth pair, attaches the program to
+# the host side's ingress (TCX uses native kernel multi-prog
+# support, no dispatcher), and asserts the structural shape of the
+# resulting link record. Verifies Get and List both return matching
+# fields, and that after detach the link record is gone from both
+# the store and the listing.
+#
+# No counter assertions and no ping phase -- this script isolates
+# the link-CRUD surface so a regression in the TCX link encoder
+# surfaces here.
+#
+# Counterpart to TestTCX_LoadAndGet (program structural shape) and
+# TestTCX_LoadAttachDetachUnload (behavioural counter arithmetic).
+#
+# Invoke from e2e/:
+#
+#   cd e2e
+#   sudo bpfman-shell scripts/TestTCX_LinkRoundTrip.bpfman
+#
+# Requires root, iproute2 and kernel 6.6+ for native TCX multi-prog
+# support.
+
+import ../lib.bpfman
+
+guard pair <- net veth-pair
+defer net release $pair
+
+guard loaded <- bpfman program load file \
+    --path testdata/bpf/tcx_counter.bpf.o \
+    --programs tcx:tcx_stats
+let prog = $loaded.programs[0]
+let pid = $prog.record.program_id
+defer bpfman program unload $pid
+
+guard link <- bpfman link attach tcx --iface $pair.host_link --direction ingress --priority 50 $prog
+let linkID = $link.record.id
+
+# Structural shape of the attach response. TCX has no dispatcher;
+# details carry the attach point directly.
+assert $link.record.kind == tcx
+assert $link.record.program_id == $pid
+assert $link.record.details.interface == $pair.host_link
+assert $link.record.details.direction == ingress
+assert $link.record.details.priority == 50
+assert $link.status.kernel_seen
+
+# Get round-trip: same shape, same values.
+guard gotLink <- bpfman link get $linkID
+assert $gotLink.record.id == $linkID
+assert $gotLink.record.kind == tcx
+assert $gotLink.record.program_id == $pid
+assert $gotLink.record.details.interface == $pair.host_link
+assert $gotLink.record.details.direction == ingress
+assert $gotLink.record.details.priority == 50
+
+# List round-trip: link appears in the listing with matching id/kind.
+guard listed <- bpfman link list -o json
+let ourLink = $listed |> jq ".links[] | select(.id == ${linkID})"
+require not null ourLink
+assert $ourLink.id == $linkID
+assert $ourLink.kind == tcx
+
+# Detach, then verify the link is gone from both Get and List.
+bpfman link detach $link
+assert fail bpfman link get $linkID
+
+guard listedAfter <- bpfman link list -o json
+assert_link_absent $listedAfter $linkID

@@ -65,3 +65,19 @@ def expect_program_round_trip(got prog) {
 def await_wave_completion(ack n) {
     retry "waiting for ack.${n}" unless path-exists "${ack}.${n}"
 }
+
+# Assert that a given linkID is not present in a `bpfman link list
+# -o json` result. Used by the Test*_LinkRoundTrip.bpfman scripts to
+# verify post-detach absence.
+#
+# We count via `[<filter>] | length` rather than testing `assert null
+# (<filter>)`: a bare `select(...)` that matches nothing yields jq's
+# empty stream, which the DSL binds as the command-result envelope
+# (ok/code/stdout/stderr) rather than as null. Wrapping the filter
+# in `[...]` collapses the stream to a single array and `| length`
+# collapses that to a single number, so the bind always sees one
+# value regardless of how many entries matched.
+def assert_link_absent(listed linkID) {
+    let count = $listed |> jq "[.links[] | select(.id == ${linkID})] | length"
+    assert $count == 0
+}

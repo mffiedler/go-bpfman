@@ -1,0 +1,69 @@
+# -*- mode: bpfman -*-
+# Link-CRUD round-trip for fentry attaches.
+#
+# Loads fentry_counter with do_unlinkat as the target (encoded in
+# the --programs 3-tuple TYPE:NAME:ATTACH_FUNC because fentry
+# captures the target function at load time) and attaches it.
+# Asserts the structural shape of the resulting link record. Verifies
+# Get and List both return matching fields, and that after detach
+# the link record is gone from both the store and the listing.
+#
+# No counter assertions and no trigger phase -- this script isolates
+# the link-CRUD surface so a regression in the fentry link encoder
+# surfaces here.
+# NOPARALLEL: fentry attach to do_unlinkat rebuilds the kernel trampoline; concurrent attaches from other scripts to the same target can race.
+#
+# Counterpart to TestFentry_LoadAndGet (program structural shape)
+# and TestFentry_LoadAttachDetachUnload (behavioural counter
+# arithmetic).
+#
+# Invoke from e2e/:
+#
+#   cd e2e
+#   sudo bpfman-shell scripts/TestFentry_LinkRoundTrip.bpfman
+#
+# Requires root and kernel BTF.
+
+import ../lib.bpfman
+
+require path-exists /sys/kernel/btf/vmlinux
+
+guard loaded <- bpfman program load file \
+    --path testdata/bpf/fentry_counter.bpf.o \
+    --programs fentry:test_fentry:do_unlinkat
+let prog = $loaded.programs[0]
+let pid = $prog.record.program_id
+defer bpfman program unload $pid
+
+# fentry attach takes no extra args -- the target function was set
+# at load time as part of the program spec.
+guard link <- bpfman link attach fentry $prog
+let linkID = $link.record.id
+
+# Structural shape of the attach response. fentry details carry the
+# attach function but neither offset nor retprobe.
+assert $link.record.kind == fentry
+assert $link.record.program_id == $pid
+assert $link.record.details.fn_name == do_unlinkat
+assert $link.status.kernel_seen
+
+# Get round-trip: same shape, same values.
+guard gotLink <- bpfman link get $linkID
+assert $gotLink.record.id == $linkID
+assert $gotLink.record.kind == fentry
+assert $gotLink.record.program_id == $pid
+assert $gotLink.record.details.fn_name == do_unlinkat
+
+# List round-trip: link appears in the listing with matching id/kind.
+guard listed <- bpfman link list -o json
+let ourLink = $listed |> jq ".links[] | select(.id == ${linkID})"
+require not null ourLink
+assert $ourLink.id == $linkID
+assert $ourLink.kind == fentry
+
+# Detach, then verify the link is gone from both Get and List.
+bpfman link detach $link
+assert fail bpfman link get $linkID
+
+guard listedAfter <- bpfman link list -o json
+assert_link_absent $listedAfter $linkID

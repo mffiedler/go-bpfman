@@ -56,6 +56,23 @@ bb4:
   ExitFrame
   EmitBindResult rc=synthetic primary=nil
 
+def assert_link_absent(listed linkID) entry=bb0
+
+bb0:
+  EnterFrame kind=def
+  EnterDeferScope kind=def
+  BindName listed = t0
+  BindName linkID = t1
+  Eval t2 = $listed |> jq "[.links[] | select(.id == ${linkID})] | length"
+  BindName count = t2
+  Assert $count == 0
+  Jump bb1
+
+bb1:
+  RunDefers policy=def-local
+  ExitFrame
+  EmitBindResult rc=synthetic primary=nil
+
 body entry=bb0
 
 bb0:
