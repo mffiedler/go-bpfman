@@ -16,27 +16,19 @@
 import ../lib.bpfman
 
 let n      = 5
-let waves  = 3
 let weight_a = 41
 let weight_b = 42
 let weight_c = 43
 
-guard workdir <- tempdir bpfman-shell-mkp-exec
-defer rm -rf $workdir.path
-let sentinel = "${workdir.path}/sentinel"
-let ack      = "${workdir.path}/ack"
-
-guard work <- fire unlinkat $sentinel $ack --count $n --waves $waves
-defer kill --signal=KILL $work
-
+guard fn <- kfunc acquire
+defer kfunc release $fn
 
 # Load via subprocess; capture stdout, parse the JSON load result,
 # index into the programs list the same way the in-process variant
 # does.
 guard load_r <- exec bpfman program load file \
-    --path testdata/bpf/multi_prog_kprobe_counter.bpf.o \
+    --path testdata/bpf/multi_prog_kprobe_kmod_counter.bpf.o \
     --programs kprobe:mkp_a,kprobe:mkp_b,kprobe:mkp_c \
-    -g "expected_pid=0x${u32le $work.pid}" \
     -g "weight_a=0x${u64le $weight_a}" \
     -g "weight_b=0x${u64le $weight_b}" \
     -g "weight_c=0x${u64le $weight_c}" \
@@ -56,10 +48,10 @@ let mapID_a = $prog_a |> jq '[.status.maps[] | select(.name == "mkp_a_count") | 
 let mapID_b = $prog_b |> jq '[.status.maps[] | select(.name == "mkp_b_count") | .id][0]'
 let mapID_c = $prog_c |> jq '[.status.maps[] | select(.name == "mkp_c_count") | .id][0]'
 
-# Attach each program to do_unlinkat via subprocess.
-guard attach_a_r <- exec bpfman link attach kprobe --fn-name do_unlinkat $pid_a -o json
-guard attach_b_r <- exec bpfman link attach kprobe --fn-name do_unlinkat $pid_b -o json
-guard attach_c_r <- exec bpfman link attach kprobe --fn-name do_unlinkat $pid_c -o json
+# Attach all three programs to the leased slot via subprocess.
+guard attach_a_r <- exec bpfman link attach kprobe --fn-name $fn.name $pid_a -o json
+guard attach_b_r <- exec bpfman link attach kprobe --fn-name $fn.name $pid_b -o json
+guard attach_c_r <- exec bpfman link attach kprobe --fn-name $fn.name $pid_c -o json
 let link_a = $attach_a_r.stdout |> jq "fromjson"
 let link_b = $attach_b_r.stdout |> jq "fromjson"
 let link_c = $attach_c_r.stdout |> jq "fromjson"
@@ -69,26 +61,7 @@ let link_c_id = $link_c.record.id
 
 let counter_filter = "fromjson | .[0].formatted.value | tonumber"
 
-# --- Wave 1: a, b, c all attached ---
-guard _ <- touch "${sentinel}.1"
-poll timeout 5s every 100ms { await_wave_completion $ack 1 }
-
-# Detach c via subprocess; brief settle for the perf-link RCU GP.
-exec bpfman link detach $link_c_id
-sleep 0.1
-
-# --- Wave 2: a, b attached; c detached ---
-guard _ <- touch "${sentinel}.2"
-poll timeout 5s every 100ms { await_wave_completion $ack 2 }
-
-exec bpfman link detach $link_b_id
-sleep 0.1
-
-# --- Wave 3: only a attached ---
-guard _ <- touch "${sentinel}.3"
-poll timeout 5s every 100ms { await_wave_completion $ack 3 }
-
-guard _ <- wait $work
+kfunc fire $fn $n
 
 guard dump_a <- bpftool map dump id $mapID_a -j
 guard dump_b <- bpftool map dump id $mapID_b -j
@@ -98,9 +71,9 @@ let count_a = $dump_a.stdout |> jq $counter_filter
 let count_b = $dump_b.stdout |> jq $counter_filter
 let count_c = $dump_c.stdout |> jq $counter_filter
 
-let want_a = 3 * $n * $weight_a
-let want_b = 2 * $n * $weight_b
-let want_c = 1 * $n * $weight_c
+let want_a = $n * $weight_a
+let want_b = $n * $weight_b
+let want_c = $n * $weight_c
 
 print "a: got=${count_a} want=${want_a}"
 print "b: got=${count_b} want=${want_b}"
@@ -110,6 +83,7 @@ assert $count_a == $want_a
 assert $count_b == $want_b
 assert $count_c == $want_c
 
-# link_a is still attached on the happy path; detach explicitly
-# before the deferred program-unloads fire.
+# Detach explicitly before the deferred program-unloads fire.
+exec bpfman link detach $link_c_id
+exec bpfman link detach $link_b_id
 exec bpfman link detach $link_a_id
