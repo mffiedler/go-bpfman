@@ -8,8 +8,8 @@
 # Coverage:
 #
 #   build/runtime: golang git make gcc clang llvm libbpf-devel
-#                  kernel-headers bpftool pkgconf-pkg-config iproute
-#                  jq sqlite-devel file
+#                  kernel-headers kernel-devel bpftool dwarves kmod
+#                  pkgconf-pkg-config iproute jq sqlite-devel file
 #   static link:   glibc-static  (required for `make STATIC=1`)
 #   protobuf:      protobuf-compiler  (provides `protoc`)
 #   linters:       golangci-lint ShellCheck hadolint checkmake
@@ -43,6 +43,7 @@ rpms=(
     bpftool
     checkmake
     clang
+    dwarves
     file
     gcc
     git
@@ -52,7 +53,9 @@ rpms=(
     hadolint
     iproute
     jq
+    kernel-devel
     kernel-headers
+    kmod
     libbpf-devel
     llvm
     make
