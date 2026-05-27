@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	kfuncPoolSize  = 32
+	kfuncPoolSize  = 128
 	kfuncPoolRoot  = "/run/bpfman-kfunc-pool"
 	kfuncDebugRoot = "/sys/kernel/debug/bpfman_e2e"
 )
