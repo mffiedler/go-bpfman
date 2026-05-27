@@ -582,7 +582,7 @@ LINT_MAKE_TARGETS := \
 	bpfman-compile \
 	build-image build-image-amd64 build-image-dev \
 	build-image-csi-sanity build-image-openshift \
-	ci-build ci-check-fmt ci-check-vendor ci-check-vet ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-grpc ci-test-e2e-scripts \
+	ci-build ci-check-fmt ci-check-goimports ci-check-goldens ci-check-vendor ci-check-vet ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-grpc ci-test-e2e-scripts \
 	cosign-sign coverage clean
 
 # Lint every Dockerfile / Containerfile with hadolint. The existing
@@ -639,6 +639,7 @@ help:
 	@echo "  ci-build                    Compile bpfman binary inside the CI container"
 	@echo "  ci-check-fmt                Verify Go formatting is tidy (matches CI check-fmt)"
 	@echo "  ci-check-goimports          Verify Go imports are tidy (matches CI check-goimports)"
+	@echo "  ci-check-goldens            Verify generated golden corpora are tidy (matches CI check-goldens)"
 	@echo "  ci-check-vendor             Verify go.mod and vendor are tidy (matches CI check-vendor)"
 	@echo "  ci-check-vet                Run go vet over every build-tag combo (matches CI check-vet)"
 	@echo "  ci-image                    Build the CI base image (loaded as bpfman-ci)"
@@ -1453,6 +1454,15 @@ ci-check-goimports:
 	$(MAKE) bpfman-goimports
 	git diff --exit-code
 
+# Reproduce the workflow's check-goldens job locally. Runs every
+# generated-golden refresh target, then verifies the tree is still
+# clean. This catches commits that edit .bpfman scripts, the lowerer,
+# or corpus inputs without also committing the regenerated lowered IR
+# goldens.
+ci-check-goldens:
+	$(MAKE) update-lowered-corpus
+	git diff --exit-code
+
 # Reproduce the workflow's lint job locally. Runs the full
 # `make lint` umbrella (golangci-lint + hadolint + shellcheck +
 # checkmake) inside the CI container.
@@ -1535,7 +1545,7 @@ ci-test-e2e-grpc:
 # attach failures to shell counter assertions seeing the other
 # suite's events. Don't `make -j ci-test-e2e ci-test-e2e-scripts`
 # locally, and don't run them in two shells at once.
-ci: ci-check-vendor ci-check-fmt ci-check-goimports ci-check-vet ci-build ci-lint ci-test ci-test-e2e ci-test-e2e-scripts ci-test-e2e-grpc
+ci: ci-check-vendor ci-check-fmt ci-check-goimports ci-check-goldens ci-check-vet ci-build ci-lint ci-test ci-test-e2e ci-test-e2e-scripts ci-test-e2e-grpc
 
 # ---------------------------------------------------------------------------
 # gRPC integration test.
@@ -1557,7 +1567,7 @@ bpfman-test-grpc: build-image-dev
 .PHONY: bpfman-shell-build bpfman-shell-compile clean-bpfman-shell
 .PHONY: bpfman-e2e-cleanup-build bpfman-e2e-cleanup-compile clean-bpfman-e2e-cleanup
 .PHONY: build-image build-image-amd64 build-image-arm64 build-image-csi-sanity build-image-dev build-image-nix build-image-openshift build-image-ppc64le build-image-s390x cosign-sign
-.PHONY: ci ci-build ci-check-fmt ci-check-goimports ci-check-vendor ci-check-vet ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-grpc ci-test-e2e-scripts
+.PHONY: ci ci-build ci-check-fmt ci-check-goimports ci-check-goldens ci-check-vendor ci-check-vet ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-grpc ci-test-e2e-scripts
 .PHONY: coverage clean-coverage coverage-func coverage-html coverage-open
 .PHONY: doc doc-text
 .PHONY: print-fedora-version print-go-version print-golangci-lint-version

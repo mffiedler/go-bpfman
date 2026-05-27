@@ -66,6 +66,22 @@ jobs:
 
       - run: make ci-check-goimports
 
+  check-goldens:
+    name: Check generated goldens
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read Go version from Makefile
+        run: echo "GO_VERSION=$(make -s print-go-version)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+
+      - run: make ci-check-goldens
+
   check-vet:
     name: Check go vet
     runs-on: ubuntu-latest
@@ -178,7 +194,7 @@ jobs:
 
   ci-complete:
     name: CI complete
-    needs: [check-vendor, check-fmt, check-goimports, check-vet, build, tests, lint, nix, test-nsenter-qemu]
+    needs: [check-vendor, check-fmt, check-goimports, check-goldens, check-vet, build, tests, lint, nix, test-nsenter-qemu]
     if: always()
     runs-on: ubuntu-latest
     steps:
