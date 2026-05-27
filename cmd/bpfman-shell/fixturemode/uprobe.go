@@ -36,6 +36,14 @@ import (
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/driver"
 )
 
+// UprobeTargetSymbol names the cgo'd target the
+// `bpfman_shell_uprobe_call_malloc` function above defines. The
+// `uprobe-target` builtin publishes this string so attach-only
+// tests (e.g. Test*_LinkRoundTrip.bpfman) reach the same symbol
+// the `fire uprobe` workload driver uses, without taking a
+// compile-time dep on this package.
+const UprobeTargetSymbol = "bpfman_shell_uprobe_call_malloc"
+
 func init() {
 	driver.RegisterFireKind("uprobe", driver.FireKind{
 		Mode:        "uprobe-fire-worker",

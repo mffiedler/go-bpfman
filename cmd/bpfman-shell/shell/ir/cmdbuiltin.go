@@ -26,6 +26,7 @@ func init() {
 		"zip",
 		"u32le",
 		"u64le",
+		"uprobe-target",
 		"wait",
 	} {
 		commandBuiltinNames[name] = true

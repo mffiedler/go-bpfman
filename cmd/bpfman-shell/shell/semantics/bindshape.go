@@ -21,15 +21,16 @@ func staticBindShape(s Shape) bindShapeFn {
 }
 
 var bindShapeRegistry = map[string]bindShapeFn{
-	"start":   staticBindShape(KindShape(OriginJob)),
-	"fire":    staticBindShape(KindShape(OriginJob)),
-	"kill":    staticBindShape(KindShape(OriginEnvelope)),
-	"wait":    staticBindShape(KindShape(OriginEnvelope)),
-	"exec":    staticBindShape(KindShape(OriginEnvelope)),
-	"file":    staticBindShape(Shape{Sealed: false, Kind: OriginUnknown}),
-	"tempdir": staticBindShape(Shape{Sealed: false, Kind: OriginUnknown}),
-	"net":     inferNetBindShape,
-	"bpfman":  inferBpfmanBindShape,
+	"start":         staticBindShape(KindShape(OriginJob)),
+	"fire":          staticBindShape(KindShape(OriginJob)),
+	"kill":          staticBindShape(KindShape(OriginEnvelope)),
+	"wait":          staticBindShape(KindShape(OriginEnvelope)),
+	"exec":          staticBindShape(KindShape(OriginEnvelope)),
+	"file":          staticBindShape(Shape{Sealed: false, Kind: OriginUnknown}),
+	"tempdir":       staticBindShape(Shape{Sealed: false, Kind: OriginUnknown}),
+	"uprobe-target": staticBindShape(Shape{Sealed: false, Kind: OriginUnknown}),
+	"net":           inferNetBindShape,
+	"bpfman":        inferBpfmanBindShape,
 }
 
 // HasBindShape reports whether name has a semantics-owned bind-shape
