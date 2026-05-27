@@ -33,7 +33,7 @@ bb0:
   ApplyBind src=t15 argv=t14 primary=work rc=_ guard=true fail=bb3
   BuildArgs t16 = [kill --signal=KILL $work]
   RegisterDefer argv=t16 policy=def-then-exec-bind lane=builtin(kill)
-  BuildArgs t17 = [bpfman program load file --path testdata/bpf/multi_prog_mixed_counter.bpf.o --programs tracepoint:mixed_tp,kprobe:mixed_kp,kretprobe:mixed_krp -g "expected_pid=0x${u32le $work.pid}" -g "weight_tp=0x${u64le $weight_tp}" -g "weight_kp=0x${u64le $weight_kp}" -g "weight_krp=0x${u64le $weight_krp}"]
+  BuildArgs t17 = [bpfman program load file --path testdata/bpf/multi_prog_mixed_counter_script.bpf.o --programs tracepoint:mixed_tp,kprobe:mixed_kp,kretprobe:mixed_krp -g "expected_pid=0x${u32le $work.pid}" -g "weight_tp=0x${u64le $weight_tp}" -g "weight_kp=0x${u64le $weight_kp}" -g "weight_krp=0x${u64le $weight_krp}"]
   DispatchBind t18 = t17 policy=def-then-exec-bind lane=builtin(bpfman)
   ApplyBind src=t18 argv=t17 primary=loaded rc=_ guard=true fail=bb4
   Eval t19 = [$loaded.programs[0] $loaded.programs[0].record.program_id]
