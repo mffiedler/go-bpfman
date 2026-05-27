@@ -618,6 +618,7 @@ help:
 	@echo ""
 	@echo "Testing:"
 	@echo "  test                        Run all tests"
+	@echo "  test-all                    Run every host-side test surface in CI order (pre-push gate)"
 	@echo "  test-lowered-corpus         Compare the shell lowered-IR corpus against checked-in goldens"
 	@echo "  update-lowered-corpus       Regenerate the shell lowered-IR corpus goldens"
 	@echo "  test-e2e                    Run e2e tests (requires root)"
@@ -762,6 +763,27 @@ lint-dockerfile:
 # e2e/testdata/bpf/ at runtime.
 test: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS)
 	$(strip go test $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") $(if $(PARALLEL),-parallel $(PARALLEL)) ./...)
+
+# Local test-all: runs every host-side test surface in the order
+# CI's tests/* matrix runs them, bypassing the Dockerfile.ci
+# container build path. Intended as a pre-push gate so a change
+# that touches code reachable from more than one suite (e.g. a
+# shared BPF object loaded by both test-e2e and test-e2e-scripts)
+# is exercised end-to-end before the change leaves the working
+# tree. Order is cheapest-first so a regression fails fast and
+# points at a small surface.
+#
+# Each phase is invoked via $(MAKE) in the recipe rather than as
+# a prerequisite so GNU make sequences them strictly even under
+# `make -j`, mirroring the test-e2e-scripts ordering shape.
+test-all:
+	$(Q)$(MAKE) test
+	$(Q)$(MAKE) test-lowered-corpus
+	$(Q)$(MAKE) lint-go
+	$(Q)$(MAKE) lint-make
+	$(Q)$(MAKE) test-e2e-scripts
+	$(Q)$(MAKE) test-e2e
+	$(Q)$(MAKE) test-e2e-grpc
 
 test-lowered-corpus:
 	$(strip go test $(if $(RACE),-race,) $(strip $(EXTRA_GOFLAGS) -run=TestLoweredCorpus) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") ./cmd/bpfman-shell/shell/lower)
@@ -1571,5 +1593,5 @@ bpfman-test-grpc: build-image-dev
 .PHONY: coverage clean-coverage coverage-func coverage-html coverage-open
 .PHONY: doc doc-text
 .PHONY: print-fedora-version print-go-version print-golangci-lint-version
-.PHONY: build-e2e-grpc build-e2e-scripts $(BIN_DIR)/e2e.test $(BIN_DIR)/e2e-grpc.test $(BIN_DIR)/e2e-scripts.test run-e2e-grpc run-e2e-scripts test test-lowered-corpus update-lowered-corpus test-e2e test-e2e-grpc test-e2e-scripts test-examples
+.PHONY: build-e2e-grpc build-e2e-scripts $(BIN_DIR)/e2e.test $(BIN_DIR)/e2e-grpc.test $(BIN_DIR)/e2e-scripts.test run-e2e-grpc run-e2e-scripts test test-all test-lowered-corpus update-lowered-corpus test-e2e test-e2e-grpc test-e2e-scripts test-examples
 .PHONY: test-nsenter test-nsenter-amd64 test-nsenter-arm64 test-nsenter-cross test-nsenter-ppc64le test-nsenter-s390x
