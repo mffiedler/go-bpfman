@@ -825,6 +825,39 @@ func TestListLinks_EmptyWhenNoLinks(t *testing.T) {
 	assert.Empty(t, links, "should have 0 links")
 }
 
+// TestListLinks_EmptyReturnsNonNilSlice pins the contract that
+// ListLinks returns a non-nil slice when no links exist. The shell
+// binds this result through ValueFromStruct -> json.Marshal, where
+// a nil slice would serialise as `null` rather than `[]` and break
+// downstream jq expressions like `.links[]`. The "no links"
+// representation in Go-space is an empty slice, not nil.
+func TestListLinks_EmptyReturnsNonNilSlice(t *testing.T) {
+	t.Parallel()
+
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	links, err := fix.Manager.ListLinks(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, links, "ListLinks must return an empty slice, not nil, when no links exist")
+	assert.Empty(t, links)
+}
+
+// TestListPrograms_EmptyReturnsNonNilSlice pins the same contract
+// for ListPrograms.Programs. See TestListLinks_EmptyReturnsNonNilSlice
+// for the reasoning.
+func TestListPrograms_EmptyReturnsNonNilSlice(t *testing.T) {
+	t.Parallel()
+
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	result, err := fix.Manager.ListPrograms(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, result.Programs, "ListPrograms must return Programs as an empty slice, not nil, when no programs exist")
+	assert.Empty(t, result.Programs)
+}
+
 // =============================================================================
 // Validation Tests
 // =============================================================================

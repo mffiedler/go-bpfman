@@ -220,7 +220,12 @@ func (m *Manager) ListLinks(ctx context.Context, opts ...bpfman.LinkListOption) 
 
 	filter := bpfman.ApplyLinkListOptions(opts...)
 
-	var result []bpfman.LinkRecord
+	// Initialise non-nil so an empty result is len()==0 rather than
+	// nil. The shell binds this slice through ValueFromStruct, which
+	// json.Marshals it; a nil slice would serialise as `null` and a
+	// jq filter like `.links[]` would error on iteration. The wire
+	// contract is "empty collection", not "absent".
+	result := []bpfman.LinkRecord{}
 	for _, link := range links {
 		l := link // explicit copy
 		if filter.Matches(&l) {
@@ -359,7 +364,9 @@ func (m *Manager) ListPrograms(ctx context.Context, opts ...bpfman.ListOption) (
 		return bpfman.ProgramListResult{}, fmt.Errorf("snapshot: %w", err)
 	}
 
-	var programs []bpfman.Program
+	// Initialise non-nil so an empty result is len()==0 rather than
+	// nil. Same wire-contract reasoning as ListLinks above.
+	programs := []bpfman.Program{}
 	for _, row := range obs.ManagedPrograms() {
 		if prog, ok := row.AsProgram(); ok {
 			p := prog // explicit copy for clarity

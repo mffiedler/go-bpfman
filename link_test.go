@@ -142,3 +142,22 @@ func TestLinkAttachKindDetailsType_CoversEveryAttachKind(t *testing.T) {
 
 	assert.Nil(t, bpfman.LinkAttachKindDetailsType("nonexistent_kind"))
 }
+
+// TestLinkListResult_EmptyMarshalsAsEmptyArray pins the wire
+// contract that an empty link list serialises as `"links": []`,
+// never `"links": null`. The shell binds list results through
+// ValueFromStruct -> json.Marshal, and a `null` payload would
+// break consumer jq expressions such as `.links[]`. The producer
+// (manager.ListLinks) is responsible for returning a non-nil
+// slice on the empty case; this test pins the resulting wire
+// shape so an accidental regression in the producer is caught
+// at the shell-facing boundary rather than in distant e2e
+// scripts.
+func TestLinkListResult_EmptyMarshalsAsEmptyArray(t *testing.T) {
+	t.Parallel()
+
+	result := bpfman.LinkListResult{Links: []bpfman.LinkRecord{}}
+	data, err := json.Marshal(result)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"links": []}`, string(data))
+}
