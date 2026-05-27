@@ -673,7 +673,10 @@ help:
 	@echo "  (no bpf-build target -- consumers depend directly on .bpf.o outputs)"
 	@echo ""
 	@echo "E2E kmod:"
-	@echo "  e2e-kmod-build              Build private fentry/fexit target module via kbuild (override KDIR=... or KERNEL_DEV=...)"
+	@echo "  e2e-kmod-build              Build private kernel-function target module via kbuild (override KDIR=... or KERNEL_DEV=...)"
+	@echo "  e2e-kmod-insmod             Load the built module into the running kernel (idempotent; sudos internally)"
+	@echo "  e2e-kmod-rmmod              Unload the module from the running kernel (idempotent; sudos internally)"
+	@echo "  e2e-kmod-reload             Rebuild and reload the module; ensures the running .ko matches the latest source (sudos internally)"
 	@echo "  clean-e2e-kmod              Remove e2e kmod build artefacts and result symlink"
 	@echo ""
 	@echo "SQLite driver:"
@@ -915,7 +918,16 @@ run-e2e-scripts:
 	    -test.count=$(STRESS_COUNT) $(if $(PARALLEL),-test.parallel $(PARALLEL)) \
 	    -test.run $(if $(TEST),$(TEST),TestBPFManScripts)
 
-test-e2e-scripts: build-e2e-scripts run-e2e-scripts
+# `run-e2e-scripts` lives in the recipe rather than the
+# prerequisite list because GNU make does not sequence
+# prerequisites against each other, only against the target. Under
+# `make -j` the runner could otherwise start before
+# e2e-kmod-reload finished, and the scripts would exercise the
+# previously-loaded (or absent) module. The sub-make invocation
+# enforces the phase boundary: build + reload complete first, then
+# the runner kicks off.
+test-e2e-scripts: build-e2e-scripts e2e-kmod-reload
+	$(Q)$(MAKE) run-e2e-scripts
 
 # Run every .bpfman script under examples/ against the built bpfman
 # binary. The examples are load/attach/detach/unload
@@ -951,6 +963,13 @@ clean-coverage:
 # ---------------------------------------------------------------------------
 # E2E kmod.
 # ---------------------------------------------------------------------------
+# Kept phony rather than a file rule keyed off source timestamps:
+# a kmod's correctness is tied to the kernel it was built against,
+# and a file-level rule would miss reboots into a different kernel
+# or changes to KDIR / KERNEL_DEV / KERNEL_RELEASE. Letting kbuild
+# decide is the conservative choice -- the prepare-kdir step plus
+# a no-op kbuild are fast enough that the unconditional re-check
+# costs little.
 e2e-kmod-build:
 	$(call quiet_cmd,KMOD,$(E2E_KMOD))
 	$(Q)set -e; \
@@ -976,6 +995,46 @@ clean-e2e-kmod:
 	        $(E2E_KMOD_DIR)/Module.symvers $(E2E_KMOD_DIR)/modules.order; \
 	fi
 	$(Q)$(RM) -r $(E2E_KMOD_KBUILD)
+
+# Load the built module into the running kernel. Idempotent: if
+# the module is already present in lsmod, the target succeeds
+# without re-loading (insmod would otherwise fail with "File
+# exists"). Depends on e2e-kmod-build so a stale .ko gets rebuilt
+# before load. Requires root; the recipe sudos internally so the
+# normal `make` invocation stays unprivileged.
+e2e-kmod-insmod: e2e-kmod-build
+	$(call quiet_cmd,INSMOD,$(E2E_KMOD))
+	$(Q)if lsmod | awk '{print $$1}' | grep -qx bpfman_e2e_targets; then \
+	    echo "  bpfman_e2e_targets already loaded; skipping"; \
+	else \
+	    sudo insmod $(E2E_KMOD); \
+	fi
+
+# Unload the module from the running kernel. Idempotent: if the
+# module is not present in lsmod, the target succeeds without
+# action (rmmod would otherwise fail with "Module ... is not
+# currently loaded"). Requires root; the recipe sudos internally.
+e2e-kmod-rmmod:
+	$(call quiet_cmd,RMMOD,bpfman_e2e_targets)
+	$(Q)if lsmod | awk '{print $$1}' | grep -qx bpfman_e2e_targets; then \
+	    sudo rmmod bpfman_e2e_targets; \
+	else \
+	    echo "  bpfman_e2e_targets not loaded; skipping"; \
+	fi
+
+# Rebuild and reload the module. Unlike e2e-kmod-insmod this is
+# NOT idempotent on the "already loaded" path: it unloads the
+# current module (if any) and inserts a freshly-built one, so a
+# stale .ko from before a source edit cannot silently shadow the
+# new build. Used as the test-e2e-scripts dep so a test run
+# always exercises the just-built code. Requires root; the
+# recipe sudos internally.
+e2e-kmod-reload: e2e-kmod-build
+	$(call quiet_cmd,RELOAD,$(E2E_KMOD))
+	$(Q)if lsmod | awk '{print $$1}' | grep -qx bpfman_e2e_targets; then \
+	    sudo rmmod bpfman_e2e_targets; \
+	fi
+	$(Q)sudo insmod $(E2E_KMOD)
 
 # ---------------------------------------------------------------------------
 # Documentation.
@@ -1483,7 +1542,7 @@ bpfman-test-grpc: build-image-dev
 # stand-alone declaration.
 .PHONY: all build-all clean clean-mrproper help lint lint-dockerfile lint-go lint-hack lint-make
 .PHONY: clean-bpf
-.PHONY: e2e-kmod-build clean-e2e-kmod
+.PHONY: e2e-kmod-build e2e-kmod-insmod e2e-kmod-rmmod e2e-kmod-reload clean-e2e-kmod
 .PHONY: bpfman-build clean-bpfman bpfman-compile bpfman-fmt bpfman-goimports bpfman-proto bpfman-test-grpc bpfman-vet
 .PHONY: bpfman-shell-build bpfman-shell-compile clean-bpfman-shell
 .PHONY: bpfman-e2e-cleanup-build bpfman-e2e-cleanup-compile clean-bpfman-e2e-cleanup
