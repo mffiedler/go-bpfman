@@ -1,4 +1,5 @@
 # -*- mode: bpfman -*-
+# NOPARALLEL: asserts an exact delta of 5; uprobe is inode-scoped on ../bin/e2e.test, so another concurrent exec of that binary inflates the count.
 # .bpfman equivalent of e2e/TestUprobe_LoadAttachDetachUnload.
 #
 # Loads a uprobe counter, attaches it to e2e_uprobe_call_malloc() in the

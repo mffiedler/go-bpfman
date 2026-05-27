@@ -1,4 +1,5 @@
 # -*- mode: bpfman -*-
+# NOPARALLEL: fexit attach to do_unlinkat rebuilds the kernel trampoline; concurrent attaches from other scripts to the same target can race.
 # .bpfman equivalent of e2e/TestFexit_LoadAttachDetachUnload.
 #
 # Loads a fexit counter targeting do_unlinkat(), attaches it,

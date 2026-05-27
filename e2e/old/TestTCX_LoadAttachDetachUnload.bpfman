@@ -1,0 +1,104 @@
+# -*- mode: bpfman -*-
+# .bpfman equivalent of e2e/TestTCX_LoadAttachDetachUnload.
+#
+# Loads a TCX counter, creates a veth pair straddling the root
+# netns and a test netns, attaches the counter to the root side's
+# ingress, asserts the load and attach responses round-trip
+# through Get/GetLink, pings across the pair, and verifies the
+# counter advanced by the number of packets generated.
+#
+# Path conventions follow the Go e2e tests: testdata is referenced
+# relative to e2e/, so invoke from e2e/:
+#
+#   cd e2e
+#   sudo bpfman-shell scripts/TestTCX_LoadAttachDetachUnload.bpfman
+#
+# Requires root, bpftool, and kernel 6.6+ for native TCX multi-prog
+# support.
+
+# Pull in the shared lifecycle assertion helpers.
+import ../lib.bpfman
+
+# Build the veth pair via the bpfman-shell builtin so each run gets
+# uniquely-named interfaces and a leased /30 address slot: no
+# pre-clean stanza, no cross-test subnet collisions.
+guard pair <- net veth-pair
+defer net release $pair
+
+# Load the TCX counter. The map is unpinned (LIBBPF_PIN_NONE) so each load gets a private map.
+guard loaded <- bpfman program load file --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
+let prog = $loaded.programs[0]
+let pid = $prog.record.program_id
+
+# Structural assertions on the load response. The kernel reports
+# program_type "schedcls" for TCX.
+expect_program_load $prog tcx schedcls tcx_stats
+
+# Round-trip: Get returns the same program record.
+guard got <- bpfman program get $pid
+expect_program_round_trip $got $prog
+
+# Round-trip: our program appears in the program list with the
+# same meta and kernel ids.
+guard listed <- bpfman program list -o json
+let progFilter = ".programs[] | select(.record.program_id == ${pid})"
+let ours = $listed |> jq $progFilter
+require not null ours
+assert $ours.record.meta.name == $prog.record.meta.name
+assert $ours.status.kernel.id == $prog.status.kernel.id
+
+# Attach to the host-side veth ingress, priority 50. TCX uses
+# native kernel multi-prog support — no dispatcher.
+guard link <- bpfman link attach tcx --iface $pair.host_link --direction ingress --priority 50 $prog
+let linkID = $link.record.id
+
+# Structural assertions on the attach response.
+assert $link.record.kind == tcx
+assert $link.record.program_id == $pid
+assert $link.record.details.interface == $pair.host_link
+assert $link.record.details.direction == ingress
+assert $link.record.details.priority == 50
+assert $link.status.kernel_seen
+
+# Round-trip: GetLink returns the same link record.
+guard gotLink <- bpfman link get $linkID
+assert $gotLink.record.id == $linkID
+assert $gotLink.record.kind == $link.record.kind
+assert $gotLink.record.details.interface == $link.record.details.interface
+assert $gotLink.record.details.direction == $link.record.details.direction
+assert $gotLink.record.details.priority == $link.record.details.priority
+
+
+# Round-trip: our link appears in the link list with the same
+# kind and id.
+guard listedLinks <- bpfman link list -o json
+let linkFilter = ".links[] | select(.id == ${linkID})"
+let ourLink = $listedLinks |> jq $linkFilter
+require not null ourLink
+assert $ourLink.id == $link.record.id
+assert $ourLink.kind == $link.record.kind
+
+# Snapshot the per-CPU counter before and after a burst of pings.
+let mapID     = $prog.status.maps[0].id
+let sumFilter = "fromjson | [.[0].formatted.values[].value | tonumber] | add"
+
+guard dumpBefore <- bpftool map dump id $mapID -j
+let before     = $dumpBefore.stdout |> jq $sumFilter
+
+# Send 5 ICMP echo requests from the test netns. ARP and other
+# control traffic may add a small amount on the first run, so the
+# assertion is a lower bound rather than an equality.
+guard _ <- net exec $pair ping -c 5 -i 0.05 -W 1 $pair.host_addr
+
+guard dumpAfter <- bpftool map dump id $mapID -j
+let after     = $dumpAfter.stdout |> jq $sumFilter
+let delta     = $after - $before
+assert $delta >= 5
+
+# Clean up: detach, unload. The veth pair is torn down by the
+# `defer net release $pair` at the top of the script.
+bpfman link detach $link
+assert fail bpfman link get $linkID
+
+bpfman program unload $pid
+assert fail bpfman program get $prog

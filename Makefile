@@ -608,7 +608,7 @@ help:
 	@echo "  update-lowered-corpus       Regenerate the shell lowered-IR corpus goldens"
 	@echo "  test-e2e                    Run e2e tests (requires root)"
 	@echo "  test-e2e-grpc               Run the parallel gRPC e2e test against a real bpfman serve daemon (requires root)"
-	@echo "  test-e2e-scripts            Run .bpfman e2e scripts under e2e/scripts/ and e2e/new/ via the Go test binary in e2e/scriptrunner (requires root)"
+	@echo "  test-e2e-scripts            Run .bpfman e2e scripts under e2e/scripts/ via the Go test binary in e2e/scriptrunner (requires root)"
 	@echo "  test-examples               Run .bpfman scripts under examples/ (requires root)"
 	@echo "  test-nsenter                Run nsenter tests (native amd64)"
 	@echo "  test-nsenter-cross          Run nsenter tests on amd64/arm64/ppc64le/s390x"
@@ -845,8 +845,8 @@ run-e2e-grpc:
 
 test-e2e-grpc: build-e2e-grpc run-e2e-grpc
 
-# Run every .bpfman script under e2e/scripts/ and e2e/new/ against
-# the built bpfman binary. Each script executes from e2e/ so
+# Run every .bpfman script under e2e/scripts/ against the built
+# bpfman binary. Each script executes from e2e/ so
 # testdata paths match the Go e2e tests. The target runs them
 # sequentially, reports failures as it goes, and exits non-zero
 # at the end if any script failed. Pass TEST=<name> to restrict
@@ -1371,8 +1371,8 @@ ci-test-e2e:
 	sudo $(call forward-env,BPFMAN_E2E_ISOLATED_RUNTIME) $(CI_E2E_BUNDLE)/bin/e2e.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(PARALLEL),-test.parallel $(PARALLEL))
 
 # Reproduce the workflow's e2e-scripts job locally. The .bpfman
-# scripts under e2e/scripts/ and e2e/new/ are driven by the Go
-# test binary at bin/e2e-scripts.test, which execs the bundle's
+# scripts under e2e/scripts/ are driven by the Go test binary
+# at bin/e2e-scripts.test, which execs the bundle's
 # bpfman-shell per subtest. The bundle's binaries + testdata are
 # extracted into the source tree (the layout matches) and the
 # scripts run via `make run-e2e-scripts`, which sudo-execs

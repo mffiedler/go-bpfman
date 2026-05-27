@@ -1,34 +1,33 @@
 # -*- mode: bpfman -*-
-# NOPARALLEL: conservative; assertion is `delta > 0` and kretprobes on try_to_wake_up are independent perf-event links, so parallelism is safe in principle but not exercised.
-# .bpfman equivalent of e2e/TestKretprobe_LoadAttachDetachUnload.
+# .bpfman equivalent of e2e/TestUretprobe_LoadAttachDetachUnload.
 #
-# Loads the same kprobe counter object as the kprobe test but
-# declares it at program-type kretprobe, attaches it to
-# try_to_wake_up, asserts the load and attach responses round-trip
-# through Get/GetLink, gives the scheduler a moment to fire the
-# return probe, verifies the counter map advanced, and cleans up.
+# Loads the same uprobe counter object as the uprobe test but
+# declares it at program-type uretprobe, attaches it to
+# e2e_uprobe_call_malloc() in the e2e.test binary itself (which exposes the
+# cgo'd symbol as a uprobe attach target -- see
+# e2e/uprobe_target.go), asserts the load and attach responses
+# round-trip through Get/GetLink, re-execs e2e.test in helper
+# mode N times, and asserts the counter advanced by exactly N.
 #
 # Path conventions follow the Go e2e tests: testdata is referenced
 # relative to e2e/, so invoke from e2e/:
 #
 #   cd e2e
-#   sudo bpfman-shell scripts/TestKretprobe_LoadAttachDetachUnload.bpfman
+#   sudo bpfman-shell scripts/TestUretprobe_LoadAttachDetachUnload.bpfman
 #
-# Requires root and bpftool.
+# Requires root and bpftool. The e2e.test binary must be built
+# first (`make bin/e2e.test`).
 
-# Load the kprobe counter ELF as a kretprobe program. The same
-# object serves both kprobe and kretprobe; the program type at
-# load time governs whether attaches fire on entry or return.
 # Pull in the shared lifecycle assertion helpers.
 import ../lib.bpfman
 
-guard loaded <- bpfman program load file --path testdata/bpf/kprobe_counter.bpf.o --programs kretprobe:kprobe_counter
+# Load the uprobe counter ELF as a uretprobe program.
+guard loaded <- bpfman program load file --path testdata/bpf/uprobe_counter.bpf.o --programs uretprobe:uprobe_counter
 let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 
-# Structural assertions on the load response. The kernel reports
-# program_type "kprobe" for both kprobe and kretprobe.
-expect_program_load $prog kretprobe kprobe kprobe_counter
+# Structural assertions on the load response.
+expect_program_load $prog uretprobe kprobe uprobe_counter
 
 # Round-trip: Get returns the same program record.
 guard got <- bpfman program get $pid
@@ -43,16 +42,18 @@ require not null ours
 assert $ours.record.meta.name == $prog.record.meta.name
 assert $ours.status.kernel.id == $prog.status.kernel.id
 
-# Attach to try_to_wake_up. The attach command is the same as for
-# kprobe — retprobe semantics come from the program type declared
-# at load, so the server returns kind=kretprobe and retprobe=true.
-guard link <- bpfman link attach kprobe --fn-name try_to_wake_up $prog
+# Attach to e2e_uprobe_call_malloc() in the e2e.test binary. The attach
+# command is the same as for uprobe; retprobe semantics come from
+# the program type. The binary lives at $(BIN_DIR)/e2e.test;
+# from cwd=e2e/ that resolves to ../bin/e2e.test.
+guard link <- bpfman link attach uprobe --target ../bin/e2e.test --fn-name e2e_uprobe_call_malloc $prog
 let linkID = $link.record.id
 
 # Structural assertions on the attach response.
-assert $link.record.kind == kretprobe
+assert $link.record.kind == uretprobe
 assert $link.record.program_id == $pid
-assert $link.record.details.fn_name == try_to_wake_up
+assert $link.record.details.target == ../bin/e2e.test
+assert $link.record.details.fn_name == e2e_uprobe_call_malloc
 assert $link.record.details.offset == 0
 assert $link.record.details.retprobe
 assert $link.status.kernel_seen
@@ -61,6 +62,7 @@ assert $link.status.kernel_seen
 guard gotLink <- bpfman link get $linkID
 assert $gotLink.record.id == $linkID
 assert $gotLink.record.kind == $link.record.kind
+assert $gotLink.record.details.target == $link.record.details.target
 assert $gotLink.record.details.fn_name == $link.record.details.fn_name
 assert $gotLink.record.details.retprobe == $link.record.details.retprobe
 
@@ -74,21 +76,27 @@ require not null ourLink
 assert $ourLink.id == $link.record.id
 assert $ourLink.kind == $link.record.kind
 
-# Snapshot the per-CPU counter before and after a short sleep.
-# try_to_wake_up fires incidentally on background scheduler
-# activity, so the assertion is a lower bound.
+# Snapshot the per-CPU counter before and after the trigger loop.
+# Uretprobes are inode-scoped, so the delta is exact.
 let mapID     = $prog.status.maps[0].id
 let sumFilter = "fromjson | [.[0].formatted.values[].value | tonumber] | add"
 
 guard dumpBefore <- bpftool map dump id $mapID -j
 let before     = $dumpBefore.stdout |> jq $sumFilter
 
-sleep 0.1
+# Each invocation of e2e.test in helper mode runs e2e_uprobe_call_malloc
+# once, so five invocations fire the uretprobe exactly five times.
+# The shell exec builtin doesn't take per-command env vars; env(1)
+# sets BPFMAN_E2E_MODE=uprobe-trigger-call-malloc on the spawned process so
+# TestMain dispatches to the helper instead of running tests.
+foreach _ in (range 5) {
+    guard _ <- env BPFMAN_E2E_MODE=uprobe-trigger-call-malloc ../bin/e2e.test
+}
 
 guard dumpAfter <- bpftool map dump id $mapID -j
 let after     = $dumpAfter.stdout |> jq $sumFilter
 let delta     = $after - $before
-assert $delta > 0
+assert $delta == 5
 
 # Clean up: detach the link, then unload the program.
 bpfman link detach $link

@@ -1,20 +1,19 @@
 # -*- mode: bpfman -*-
-# NOPARALLEL: asserts an exact delta of 5; uretprobe is inode-scoped on ../bin/e2e.test, so another concurrent exec of that binary inflates the count.
-# .bpfman equivalent of e2e/TestUretprobe_LoadAttachDetachUnload.
+# .bpfman equivalent of e2e/TestUprobe_LoadAttachDetachUnload.
 #
-# Loads the same uprobe counter object as the uprobe test but
-# declares it at program-type uretprobe, attaches it to
-# e2e_uprobe_call_malloc() in the e2e.test binary itself (which exposes the
-# cgo'd symbol as a uprobe attach target -- see
-# e2e/uprobe_target.go), asserts the load and attach responses
-# round-trip through Get/GetLink, re-execs e2e.test in helper
-# mode N times, and asserts the counter advanced by exactly N.
+# Loads a uprobe counter, attaches it to e2e_uprobe_call_malloc() in the
+# e2e.test binary itself (which exposes the cgo'd symbol as a
+# uprobe attach target -- see e2e/uprobe_target.go), asserts the
+# load and attach responses round-trip through Get/GetLink, re-execs
+# e2e.test in helper mode N times to fire the probe exactly N
+# times, verifies the counter map advanced by exactly N, and
+# cleans up.
 #
 # Path conventions follow the Go e2e tests: testdata is referenced
 # relative to e2e/, so invoke from e2e/:
 #
 #   cd e2e
-#   sudo bpfman-shell scripts/TestUretprobe_LoadAttachDetachUnload.bpfman
+#   sudo bpfman-shell scripts/TestUprobe_LoadAttachDetachUnload.bpfman
 #
 # Requires root and bpftool. The e2e.test binary must be built
 # first (`make bin/e2e.test`).
@@ -22,13 +21,14 @@
 # Pull in the shared lifecycle assertion helpers.
 import ../lib.bpfman
 
-# Load the uprobe counter ELF as a uretprobe program.
-guard loaded <- bpfman program load file --path testdata/bpf/uprobe_counter.bpf.o --programs uretprobe:uprobe_counter
+# Load the uprobe counter. The map is unpinned (LIBBPF_PIN_NONE) so each load gets a private map.
+guard loaded <- bpfman program load file --path testdata/bpf/uprobe_counter.bpf.o --programs uprobe:uprobe_counter
 let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 
-# Structural assertions on the load response.
-expect_program_load $prog uretprobe kprobe uprobe_counter
+# Structural assertions on the load response. The kernel reports
+# program_type "kprobe" for uprobes.
+expect_program_load $prog uprobe kprobe uprobe_counter
 
 # Round-trip: Get returns the same program record.
 guard got <- bpfman program get $pid
@@ -43,20 +43,22 @@ require not null ours
 assert $ours.record.meta.name == $prog.record.meta.name
 assert $ours.status.kernel.id == $prog.status.kernel.id
 
-# Attach to e2e_uprobe_call_malloc() in the e2e.test binary. The attach
-# command is the same as for uprobe; retprobe semantics come from
-# the program type. The binary lives at $(BIN_DIR)/e2e.test;
+# Attach to e2e_uprobe_call_malloc() in the e2e.test binary. The Go test
+# targets the running binary itself (via os.Executable) so it
+# does not depend on finding the correct libc path across
+# distributions; this .bpfman script targets the same binary on
+# disk for symmetry. The binary lives at $(BIN_DIR)/e2e.test;
 # from cwd=e2e/ that resolves to ../bin/e2e.test.
 guard link <- bpfman link attach uprobe --target ../bin/e2e.test --fn-name e2e_uprobe_call_malloc $prog
 let linkID = $link.record.id
 
 # Structural assertions on the attach response.
-assert $link.record.kind == uretprobe
+assert $link.record.kind == uprobe
 assert $link.record.program_id == $pid
 assert $link.record.details.target == ../bin/e2e.test
 assert $link.record.details.fn_name == e2e_uprobe_call_malloc
 assert $link.record.details.offset == 0
-assert $link.record.details.retprobe
+assert not $link.record.details.retprobe
 assert $link.status.kernel_seen
 
 # Round-trip: GetLink returns the same link record.
@@ -78,7 +80,9 @@ assert $ourLink.id == $link.record.id
 assert $ourLink.kind == $link.record.kind
 
 # Snapshot the per-CPU counter before and after the trigger loop.
-# Uretprobes are inode-scoped, so the delta is exact.
+# Uprobes are attached by inode; only invocations of THIS binary
+# fire the probe, so the delta is an exact count of our exec
+# calls.
 let mapID     = $prog.status.maps[0].id
 let sumFilter = "fromjson | [.[0].formatted.values[].value | tonumber] | add"
 
@@ -86,7 +90,7 @@ guard dumpBefore <- bpftool map dump id $mapID -j
 let before     = $dumpBefore.stdout |> jq $sumFilter
 
 # Each invocation of e2e.test in helper mode runs e2e_uprobe_call_malloc
-# once, so five invocations fire the uretprobe exactly five times.
+# once, so five invocations fire the uprobe exactly five times.
 # The shell exec builtin doesn't take per-command env vars; env(1)
 # sets BPFMAN_E2E_MODE=uprobe-trigger-call-malloc on the spawned process so
 # TestMain dispatches to the helper instead of running tests.

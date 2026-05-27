@@ -201,7 +201,7 @@ func runParallelLifecycles(t *testing.T, spec typeSpec, counter *atomic.Int64) {
 // ListLinks -> Detach -> Unload cycle for the given type, with
 // round-trip and post-condition assertions at each step. No
 // counter-delta or shape assertions: those live in the .bpfman
-// scripts under e2e/new/. We only verify that the daemon's gRPC
+// scripts under e2e/scripts/. We only verify that the daemon's gRPC
 // surface behaves correctly under concurrency.
 func runOneLifecycle(t *testing.T, spec typeSpec, buildAttach func() *pb.AttachInfo, gid, iter int) error {
 	// 180s per-iteration safety net. With 5 sub-tests fanning in

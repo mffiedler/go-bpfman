@@ -1,5 +1,5 @@
-// Test-fixture mode for the e2e/new translations that need a
-// stable-PID worker firing kill(2) syscalls.
+// Test-fixture mode for the e2e/scripts translations that need
+// a stable-PID worker firing kill(2) syscalls.
 package fixturemode
 
 import (

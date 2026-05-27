@@ -1,5 +1,4 @@
 # -*- mode: bpfman -*-
-# NOPARALLEL: conservative; assertion is `delta > 0` and kretprobes on try_to_wake_up are independent perf-event links, so parallelism is safe in principle but not exercised.
 # .bpfman equivalent of e2e/TestKretprobe_LoadAttachDetachUnload.
 #
 # Loads the same kprobe counter object as the kprobe test but

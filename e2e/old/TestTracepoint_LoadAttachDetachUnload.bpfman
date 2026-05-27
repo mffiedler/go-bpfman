@@ -1,5 +1,4 @@
 # -*- mode: bpfman -*-
-# NOPARALLEL: asserts an exact delta of 5; any other process firing kill(2) inflates the count.
 # .bpfman equivalent of e2e/TestTracepoint_LoadAttachDetachUnload.
 #
 # Loads a tracepoint counter, attaches it to syscalls/sys_enter_kill,

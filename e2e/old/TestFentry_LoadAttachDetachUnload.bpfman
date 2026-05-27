@@ -1,5 +1,4 @@
 # -*- mode: bpfman -*-
-# NOPARALLEL: fentry attach to do_unlinkat rebuilds the kernel trampoline; concurrent attaches from other scripts to the same target can race.
 # .bpfman equivalent of e2e/TestFentry_LoadAttachDetachUnload.
 #
 # Loads a fentry counter targeting do_unlinkat(), attaches it,

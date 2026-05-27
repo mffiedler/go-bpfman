@@ -9,7 +9,7 @@
 // unloads of different program types concurrently, on top of the
 // within-sub-test goroutine fan-out.
 //
-// The .bpfman scripts under e2e/new/ remain the canonical
+// The .bpfman scripts under e2e/scripts/ remain the canonical
 // correctness suite (exhaustive `matches exhaustive` blocks per
 // program type); this test is deliberately thin and exists to
 // stress the daemon-side surface the in-process mutex removal

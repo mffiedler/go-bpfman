@@ -37,8 +37,8 @@ type corpusEntry struct {
 func TestLoweredCorpus(t *testing.T) {
 	t.Parallel()
 	entries := []corpusEntry{
-		{Label: "e2e/new", Source: "../../../../e2e/new"},
 		{Label: "e2e/scripts", Source: "../../../../e2e/scripts"},
+		{Label: "e2e/old", Source: "../../../../e2e/old"},
 		{Label: "e2e/lib", Source: "../../../../e2e"},
 	}
 	for _, e := range entries {

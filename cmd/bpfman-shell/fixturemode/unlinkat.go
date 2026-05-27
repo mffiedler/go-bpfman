@@ -1,5 +1,5 @@
-// Test-fixture mode for the e2e/new translations that need a
-// stable-PID worker firing unlinkat(2) syscalls. Unlinkat fires
+// Test-fixture mode for the e2e/scripts translations that need
+// a stable-PID worker firing unlinkat(2) syscalls. Unlinkat fires
 // both:
 //   - sys_enter_unlinkat tracepoint (and sys_exit_unlinkat)
 //   - do_unlinkat kernel function (kprobe / kretprobe / fentry / fexit)

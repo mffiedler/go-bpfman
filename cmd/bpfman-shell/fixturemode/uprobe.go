@@ -1,4 +1,4 @@
-// Test-fixture mode for the uprobe family of e2e/new translations.
+// Test-fixture mode for the uprobe family of e2e/scripts translations.
 // When BPFMAN_SHELL_MODE=uprobe-fire-worker, bpfman-shell runs as
 // a stable-PID worker that fires bpfman_shell_uprobe_call_malloc
 // N times per wave, gated by numbered sentinel/ack files.

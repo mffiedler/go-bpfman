@@ -1,14 +1,11 @@
 #!/usr/bin/env bash
 #
-# parallel-scripts.sh -- run the e2e/new/ .bpfman corpus in parallel
-# against the built bpfman-shell binary.
+# parallel-scripts.sh -- run the e2e/scripts/ .bpfman corpus in
+# parallel against the built bpfman-shell binary.
 #
-# Scope is deliberately limited to e2e/new/. The legacy scripts
-# under e2e/scripts/ hardcode 198.51.100.1/24 via raw `ip addr
-# add` and collide when run concurrently; the e2e/new/ corpus
-# uses the address-pool-backed `net veth-pair` builtin, so
-# parallel runs are safe by construction. Migrating the legacy
-# scripts is a separate effort.
+# Every script in e2e/scripts/ uses the address-pool-backed
+# `net veth-pair` builtin (see cmd/bpfman-shell/shell/netpool.go),
+# so parallel runs are safe by construction.
 #
 # Each script runs from e2e/ so testdata paths match the Go e2e
 # tests. This harness is the right place to exercise the pool's
@@ -158,14 +155,12 @@ joblog="$logdir/joblog.txt"
 trap 'echo "logs: $logdir"' EXIT
 
 # Build the script list. Each entry is a relative path under
-# e2e/ (e.g. "new/TestMultiProgTC_AllProceed_CustomProceedOn.bpfman").
+# e2e/ (e.g. "scripts/TestMultiProgTC_AllProceed_CustomProceedOn.bpfman").
 # Filtering is a substring match on the basename so callers can
-# narrow with the same convention test-e2e-scripts.sh uses. Scope
-# is fixed to e2e/new/; see the file header for why e2e/scripts/
-# is excluded.
+# narrow with the same convention test-e2e-scripts.sh uses.
 mapfile -t scripts < <(
     cd "$e2e_dir" && \
-    for f in new/*.bpfman; do
+    for f in scripts/*.bpfman; do
         [[ -e "$f" ]] || continue
         if [[ -n "$filter" ]] && ! echo "$(basename "$f")" | grep -q -- "$filter"; then
             continue
