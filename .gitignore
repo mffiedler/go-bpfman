@@ -16,5 +16,15 @@ archive/bpfman-kernel/bpfman-kernel
 # are already covered by /bin/ above.
 *.test
 
+# Kernel module build outputs for e2e/kmod.
+/e2e/kmod/.kbuild/
+/e2e/kmod/*.ko
+/e2e/kmod/*.o
+/e2e/kmod/*.mod
+/e2e/kmod/*.mod.c
+/e2e/kmod/.*.cmd
+/e2e/kmod/Module.symvers
+/e2e/kmod/modules.order
+
 /ci-e2e-bundle/
 .cache/

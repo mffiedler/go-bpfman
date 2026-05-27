@@ -473,6 +473,20 @@ E2E_BPF_DEPS    := $(E2E_BPF_SOURCES:.bpf.c=.bpf.d)
 PLATFORM_EBPF_BPF_EMBEDS := platform/ebpf/xdp_pass.bpf.o
 PLATFORM_EBPF_BPF_DEPS   := $(PLATFORM_EBPF_BPF_EMBEDS:.bpf.o=.bpf.d)
 
+# E2E kmod: private kernel functions used as deterministic fentry/fexit
+# targets. The plain kbuild target defaults to the conventional
+# Fedora/Ubuntu kernel build tree; override KDIR for other layouts.
+# On NixOS, the helper tries to derive the matching kernel.dev output
+# from /run/current-system/kernel when /lib/modules/.../build is absent.
+E2E_KMOD_DIR          := e2e/kmod
+E2E_KMOD              := $(E2E_KMOD_DIR)/bpfman_e2e_targets.ko
+KERNEL_RELEASE        ?= $(shell uname -r)
+KERNEL_MOD_DIR_VERSION ?= $(KERNEL_RELEASE)
+KDIR                  ?= /lib/modules/$(KERNEL_RELEASE)/build
+KERNEL_DEV            ?=
+E2E_KMOD_KBUILD       ?= $(E2E_KMOD_DIR)/.kbuild
+E2E_KMOD_PREPARE_KDIR := $(E2E_KMOD_DIR)/prepare-kdir.sh
+
 # ---------------------------------------------------------------------------
 # Multi-arch buildx knobs.
 #
@@ -658,6 +672,10 @@ help:
 	@echo "  clean-bpf                   Remove BPF build artefacts"
 	@echo "  (no bpf-build target -- consumers depend directly on .bpf.o outputs)"
 	@echo ""
+	@echo "E2E kmod:"
+	@echo "  e2e-kmod-build              Build private fentry/fexit target module via kbuild (override KDIR=... or KERNEL_DEV=...)"
+	@echo "  clean-e2e-kmod              Remove e2e kmod build artefacts and result symlink"
+	@echo ""
 	@echo "SQLite driver:"
 	@echo "  The default SQLite driver is modernc.org/sqlite (pure Go)."
 	@echo "  To use mattn/go-sqlite3 (CGO) instead, pass -tags cgo_sqlite:"
@@ -673,7 +691,7 @@ print-fedora-version:
 print-golangci-lint-version:
 	@echo $(GOLANGCI_LINT_VERSION)
 
-clean: clean-bpfman clean-bpfman-shell clean-bpfman-e2e-cleanup clean-bpf clean-coverage
+clean: clean-bpfman clean-bpfman-shell clean-bpfman-e2e-cleanup clean-bpf clean-e2e-kmod clean-coverage
 	$(RM) -r $(BIN_DIR) $(CI_E2E_BUNDLE)
 
 # Nuclear option, modeled on `make mrproper` in the kernel tree:
@@ -929,6 +947,35 @@ coverage-open: coverage-html
 
 clean-coverage:
 	$(RM) -r $(COVERAGE_DIR)
+
+# ---------------------------------------------------------------------------
+# E2E kmod.
+# ---------------------------------------------------------------------------
+e2e-kmod-build:
+	$(call quiet_cmd,KMOD,$(E2E_KMOD))
+	$(Q)set -e; \
+	    kdir=$$(KDIR="$(KDIR)" \
+	    KERNEL_DEV="$(KERNEL_DEV)" \
+	    KERNEL_RELEASE="$(KERNEL_RELEASE)" \
+	    KERNEL_MOD_DIR_VERSION="$(KERNEL_MOD_DIR_VERSION)" \
+	    E2E_KMOD_KBUILD="$(E2E_KMOD_KBUILD)" \
+	    bash $(E2E_KMOD_PREPARE_KDIR)); \
+	    $(MAKE) -C $(E2E_KMOD_DIR) KDIR="$$kdir"
+	$(Q)test -f $(E2E_KMOD)
+
+clean-e2e-kmod:
+	$(call quiet_cmd,CLEAN,$(E2E_KMOD_DIR))
+	$(Q)if [ -d "$(E2E_KMOD_KBUILD)" ]; then \
+	    find "$(E2E_KMOD_KBUILD)" -type d -exec chmod u+w {} +; \
+	fi
+	$(Q)if [ -d "$(KDIR)" ]; then \
+	    $(MAKE) -C $(E2E_KMOD_DIR) KDIR=$(KDIR) clean; \
+	else \
+	    $(RM) $(E2E_KMOD_DIR)/*.ko $(E2E_KMOD_DIR)/*.o $(E2E_KMOD_DIR)/*.mod \
+	        $(E2E_KMOD_DIR)/*.mod.c $(E2E_KMOD_DIR)/.*.cmd \
+	        $(E2E_KMOD_DIR)/Module.symvers $(E2E_KMOD_DIR)/modules.order; \
+	fi
+	$(Q)$(RM) -r $(E2E_KMOD_KBUILD)
 
 # ---------------------------------------------------------------------------
 # Documentation.
@@ -1436,6 +1483,7 @@ bpfman-test-grpc: build-image-dev
 # stand-alone declaration.
 .PHONY: all build-all clean clean-mrproper help lint lint-dockerfile lint-go lint-hack lint-make
 .PHONY: clean-bpf
+.PHONY: e2e-kmod-build clean-e2e-kmod
 .PHONY: bpfman-build clean-bpfman bpfman-compile bpfman-fmt bpfman-goimports bpfman-proto bpfman-test-grpc bpfman-vet
 .PHONY: bpfman-shell-build bpfman-shell-compile clean-bpfman-shell
 .PHONY: bpfman-e2e-cleanup-build bpfman-e2e-cleanup-compile clean-bpfman-e2e-cleanup
