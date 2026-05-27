@@ -21,6 +21,7 @@ func init() {
 		"start",
 		"fire",
 		"net",
+		"kfunc",
 		"bpfman",
 		"range",
 		"zip",

@@ -1,0 +1,77 @@
+body entry=bb0
+
+bb0:
+  EnterDeferScope kind=program
+  BuildArgs t0 = [import ../lib.bpfman]
+  DispatchCommand argv=t0 policy=def-then-exec-command lane=builtin(import)
+  Eval t1 = 5
+  BindName events = t1
+  BuildArgs t2 = [kfunc acquire]
+  DispatchBind t3 = t2 policy=def-then-exec-bind lane=builtin(kfunc)
+  ApplyBind src=t3 argv=t2 primary=fn rc=_ guard=true fail=bb1
+  BuildArgs t4 = [kfunc release $fn]
+  RegisterDefer argv=t4 policy=def-then-exec-bind lane=builtin(kfunc)
+  BuildArgs t5 = [bpfman program load file --path testdata/bpf/kprobe_counter.bpf.o --programs kprobe:kprobe_counter]
+  DispatchBind t6 = t5 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t6 argv=t5 primary=loaded rc=_ guard=true fail=bb2
+  Eval t7 = $loaded.programs[0]
+  BindName prog = t7
+  Eval t8 = $prog.record.program_id
+  BindName pid = t8
+  BuildArgs t9 = [expect_program_load $prog kprobe kprobe kprobe_counter]
+  DispatchCommand argv=t9 policy=def-then-exec-command lane=exec
+  BuildArgs t10 = [bpfman link attach kprobe --fn-name $fn.name $prog]
+  DispatchBind t11 = t10 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t11 argv=t10 primary=link rc=_ guard=true fail=bb3
+  Eval t12 = $link.record.id
+  BindName linkID = t12
+  Assert $link.record.kind == kprobe
+  Assert $link.record.program_id == $pid
+  Assert $link.record.details.fn_name == $fn.name
+  Assert $link.record.details.offset == 0
+  Assert not $link.record.details.retprobe
+  Assert $link.status.kernel_seen
+  BuildArgs t13 = [kfunc fire $fn $events]
+  DispatchBind t14 = t13 policy=def-then-exec-bind lane=builtin(kfunc)
+  ApplyBind src=t14 argv=t13 primary=fired rc=_ guard=true fail=bb4
+  Assert $fired.ok
+  Eval t15 = $prog.status.maps[0].id
+  BindName mapID = t15
+  Eval t16 = "fromjson | [.[0].formatted.values[].value | tonumber] | add"
+  BindName sumFilter = t16
+  BuildArgs t17 = [bpftool map dump id $mapID -j]
+  DispatchBind t18 = t17 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t18 argv=t17 primary=dump rc=_ guard=true fail=bb5
+  Eval t19 = $dump.stdout |> jq $sumFilter
+  BindName got = t19
+  BuildArgs t20 = [print "kfunc=${fn.name} got=${got} want=${events}"]
+  DispatchCommand argv=t20 policy=def-then-exec-command lane=builtin(print)
+  Assert $got == $events
+  BuildArgs t21 = [bpfman link detach $link]
+  DispatchCommand argv=t21 policy=def-then-exec-command lane=builtin(bpfman)
+  Assert fail bpfman link get $linkID
+  BuildArgs t22 = [bpfman program unload $pid]
+  DispatchCommand argv=t22 policy=def-then-exec-command lane=builtin(bpfman)
+  Assert fail bpfman program get $prog
+  RunDefers policy=program
+  Stop
+
+bb1:
+  RunDefers policy=program
+  PropagateError
+
+bb2:
+  RunDefers policy=program
+  PropagateError
+
+bb3:
+  RunDefers policy=program
+  PropagateError
+
+bb4:
+  RunDefers policy=program
+  PropagateError
+
+bb5:
+  RunDefers policy=program
+  PropagateError

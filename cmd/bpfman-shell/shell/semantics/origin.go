@@ -67,6 +67,13 @@ const (
 	// remain valid after release because the strings are a
 	// historical description of what existed.
 	OriginNetPair
+	// OriginKfunc tags a Value that wraps a Kfunc: one private
+	// kernel function exported by the bpfman_e2e_targets module.
+	// Tests use it as an isolated attach point for fentry/fexit
+	// and kprobe/kretprobe programs. Like NetPair, it is a
+	// lifecycle capability: kfunc release returns the slot to the
+	// cross-process pool; field reads remain valid after release.
+	OriginKfunc
 )
 
 // String returns the canonical name used in user-facing error
@@ -98,6 +105,8 @@ func (k OriginKind) String() string {
 		return "null"
 	case OriginNetPair:
 		return "net pair"
+	case OriginKfunc:
+		return "kernel function"
 	default:
 		return fmt.Sprintf("OriginKind(%d)", int(k))
 	}
@@ -192,6 +201,16 @@ var (
 				"peer_addr":    {Sealed: true, Kind: OriginScalar},
 				"host_ifindex": {Sealed: true, Kind: OriginScalar},
 				"host_nsid":    {Sealed: true, Kind: OriginScalar},
+			},
+		},
+		OriginKfunc: {
+			Sealed: true,
+			Kind:   OriginKfunc,
+			Fields: map[string]Shape{
+				"index":   {Sealed: true, Kind: OriginScalar},
+				"name":    {Sealed: true, Kind: OriginScalar},
+				"trigger": {Sealed: true, Kind: OriginScalar},
+				"count":   {Sealed: true, Kind: OriginScalar},
 			},
 		},
 		// OriginDispatcher is reserved: the kind exists in the

@@ -9,6 +9,7 @@ func TestCommandBuiltinNames_ContainsCanonicalHeads(t *testing.T) {
 		"print",
 		"trace",
 		"net",
+		"kfunc",
 		"bpfman",
 		"wait",
 		"import",

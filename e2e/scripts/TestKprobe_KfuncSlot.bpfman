@@ -1,0 +1,45 @@
+# -*- mode: bpfman -*-
+# Exercises the kfunc builtin with a private kernel function from
+# bpfman_e2e_targets. The same fixture shape will be shared by
+# fentry/fexit and kprobe/kretprobe tests.
+
+import ../lib.bpfman
+
+let events = 5
+
+guard fn <- kfunc acquire
+defer kfunc release $fn
+
+guard loaded <- bpfman program load file \
+    --path testdata/bpf/kprobe_counter.bpf.o \
+    --programs kprobe:kprobe_counter
+let prog = $loaded.programs[0]
+let pid = $prog.record.program_id
+
+expect_program_load $prog kprobe kprobe kprobe_counter
+
+guard link <- bpfman link attach kprobe --fn-name $fn.name $prog
+let linkID = $link.record.id
+
+assert $link.record.kind == kprobe
+assert $link.record.program_id == $pid
+assert $link.record.details.fn_name == $fn.name
+assert $link.record.details.offset == 0
+assert not $link.record.details.retprobe
+assert $link.status.kernel_seen
+
+guard fired <- kfunc fire $fn $events
+assert $fired.ok
+
+let mapID = $prog.status.maps[0].id
+let sumFilter = "fromjson | [.[0].formatted.values[].value | tonumber] | add"
+guard dump <- bpftool map dump id $mapID -j
+let got = $dump.stdout |> jq $sumFilter
+print "kfunc=${fn.name} got=${got} want=${events}"
+assert $got == $events
+
+bpfman link detach $link
+assert fail bpfman link get $linkID
+
+bpfman program unload $pid
+assert fail bpfman program get $prog

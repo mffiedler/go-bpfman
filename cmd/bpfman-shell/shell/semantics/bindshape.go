@@ -30,6 +30,7 @@ var bindShapeRegistry = map[string]bindShapeFn{
 	"tempdir":       staticBindShape(Shape{Sealed: false, Kind: OriginUnknown}),
 	"uprobe-target": staticBindShape(Shape{Sealed: false, Kind: OriginUnknown}),
 	"net":           inferNetBindShape,
+	"kfunc":         inferKfuncBindShape,
 	"bpfman":        inferBpfmanBindShape,
 }
 
@@ -67,6 +68,23 @@ func inferNetBindShape(args []syntax.Expr) Shape {
 		return KindShape(OriginEnvelope)
 	case "start":
 		return KindShape(OriginJob)
+	}
+	return Shape{Sealed: false, Kind: OriginUnknown}
+}
+
+func inferKfuncBindShape(args []syntax.Expr) Shape {
+	if len(args) < 1 {
+		return Shape{Sealed: false, Kind: OriginUnknown}
+	}
+	sub, ok := args[0].(*syntax.LiteralExpr)
+	if !ok || sub.Quoted {
+		return Shape{Sealed: false, Kind: OriginUnknown}
+	}
+	switch sub.Text {
+	case "acquire":
+		return KindShape(OriginKfunc)
+	case "release", "fire":
+		return KindShape(OriginEnvelope)
 	}
 	return Shape{Sealed: false, Kind: OriginUnknown}
 }
