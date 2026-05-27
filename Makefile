@@ -970,6 +970,14 @@ clean-coverage:
 # decide is the conservative choice -- the prepare-kdir step plus
 # a no-op kbuild are fast enough that the unconditional re-check
 # costs little.
+#
+# `MAKEFLAGS=` on the kbuild sub-make scrubs any flags the parent
+# pushed down through MAKEFLAGS before the sub-make starts; in
+# practice this is here so `make lint-make`'s
+# `--warn-undefined-variables` (which the parent make detects as
+# recursive and runs even under -n via the `$(MAKE)` literal in
+# this recipe) does not propagate into the kernel's top-level
+# Makefile, which is not warning-clean and is not ours to fix.
 e2e-kmod-build:
 	$(call quiet_cmd,KMOD,$(E2E_KMOD))
 	$(Q)set -e; \
@@ -979,7 +987,7 @@ e2e-kmod-build:
 	    KERNEL_MOD_DIR_VERSION="$(KERNEL_MOD_DIR_VERSION)" \
 	    E2E_KMOD_KBUILD="$(E2E_KMOD_KBUILD)" \
 	    bash $(E2E_KMOD_PREPARE_KDIR)); \
-	    $(MAKE) -C $(E2E_KMOD_DIR) KDIR="$$kdir"
+	    MAKEFLAGS= $(MAKE) -C $(E2E_KMOD_DIR) KDIR="$$kdir"
 	$(Q)test -f $(E2E_KMOD)
 
 clean-e2e-kmod:
@@ -988,7 +996,7 @@ clean-e2e-kmod:
 	    find "$(E2E_KMOD_KBUILD)" -type d -exec chmod u+w {} +; \
 	fi
 	$(Q)if [ -d "$(KDIR)" ]; then \
-	    $(MAKE) -C $(E2E_KMOD_DIR) KDIR=$(KDIR) clean; \
+	    MAKEFLAGS= $(MAKE) -C $(E2E_KMOD_DIR) KDIR=$(KDIR) clean; \
 	else \
 	    $(RM) $(E2E_KMOD_DIR)/*.ko $(E2E_KMOD_DIR)/*.o $(E2E_KMOD_DIR)/*.mod \
 	        $(E2E_KMOD_DIR)/*.mod.c $(E2E_KMOD_DIR)/.*.cmd \
