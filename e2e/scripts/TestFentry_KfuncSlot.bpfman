@@ -29,6 +29,18 @@ assert $link.record.program_id == $pid
 assert $link.record.details.fn_name == $fn.name
 assert $link.status.kernel_seen
 
+guard gotLink <- bpfman link get $linkID
+assert $gotLink.record.id == $linkID
+assert $gotLink.record.kind == fentry
+assert $gotLink.record.program_id == $pid
+assert $gotLink.record.details.fn_name == $fn.name
+
+guard listed <- bpfman link list -o json
+let ourLink = $listed |> jq ".links[] | select(.id == ${linkID})"
+require not null ourLink
+assert $ourLink.id == $linkID
+assert $ourLink.kind == fentry
+
 guard fired <- kfunc fire $fn $events
 assert $fired.ok
 
@@ -41,6 +53,9 @@ assert $got == $want
 
 bpfman link detach $link
 assert fail bpfman link get $linkID
+
+guard listedAfter <- bpfman link list -o json
+assert_link_absent $listedAfter $linkID
 
 bpfman program unload $pid
 assert fail bpfman program get $prog

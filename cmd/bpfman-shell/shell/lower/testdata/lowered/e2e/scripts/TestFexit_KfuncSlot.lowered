@@ -33,27 +33,47 @@ bb0:
   Assert $link.record.program_id == $pid
   Assert $link.record.details.fn_name == $fn.name
   Assert $link.status.kernel_seen
-  BuildArgs t15 = [kfunc fire $fn $events]
-  DispatchBind t16 = t15 policy=def-then-exec-bind lane=builtin(kfunc)
-  ApplyBind src=t16 argv=t15 primary=fired rc=_ guard=true fail=bb4
+  BuildArgs t15 = [bpfman link get $linkID]
+  DispatchBind t16 = t15 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t16 argv=t15 primary=gotLink rc=_ guard=true fail=bb4
+  Assert $gotLink.record.id == $linkID
+  Assert $gotLink.record.kind == fexit
+  Assert $gotLink.record.program_id == $pid
+  Assert $gotLink.record.details.fn_name == $fn.name
+  BuildArgs t17 = [bpfman link list -o json]
+  DispatchBind t18 = t17 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t18 argv=t17 primary=listed rc=_ guard=true fail=bb5
+  Eval t19 = $listed |> jq ".links[] | select(.id == ${linkID})"
+  BindName ourLink = t19
+  Require not null ourLink
+  Assert $ourLink.id == $linkID
+  Assert $ourLink.kind == fexit
+  BuildArgs t20 = [kfunc fire $fn $events]
+  DispatchBind t21 = t20 policy=def-then-exec-bind lane=builtin(kfunc)
+  ApplyBind src=t21 argv=t20 primary=fired rc=_ guard=true fail=bb6
   Assert $fired.ok
-  Eval t17 = $prog.status.maps[0].id
-  BindName mapID = t17
-  Eval t18 = "fromjson | .[0].formatted.value | tonumber"
-  BindName counterFilter = t18
-  BuildArgs t19 = [bpftool map dump id $mapID -j]
-  DispatchBind t20 = t19 policy=def-then-exec-bind lane=exec
-  ApplyBind src=t20 argv=t19 primary=dump rc=_ guard=true fail=bb5
-  Eval t21 = $dump.stdout |> jq $counterFilter
-  BindName got = t21
-  BuildArgs t22 = [print "kfunc=${fn.name} got=${got} want=${want}"]
-  DispatchCommand argv=t22 policy=def-then-exec-command lane=builtin(print)
+  Eval t22 = $prog.status.maps[0].id
+  BindName mapID = t22
+  Eval t23 = "fromjson | .[0].formatted.value | tonumber"
+  BindName counterFilter = t23
+  BuildArgs t24 = [bpftool map dump id $mapID -j]
+  DispatchBind t25 = t24 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t25 argv=t24 primary=dump rc=_ guard=true fail=bb7
+  Eval t26 = $dump.stdout |> jq $counterFilter
+  BindName got = t26
+  BuildArgs t27 = [print "kfunc=${fn.name} got=${got} want=${want}"]
+  DispatchCommand argv=t27 policy=def-then-exec-command lane=builtin(print)
   Assert $got == $want
-  BuildArgs t23 = [bpfman link detach $link]
-  DispatchCommand argv=t23 policy=def-then-exec-command lane=builtin(bpfman)
+  BuildArgs t28 = [bpfman link detach $link]
+  DispatchCommand argv=t28 policy=def-then-exec-command lane=builtin(bpfman)
   Assert fail bpfman link get $linkID
-  BuildArgs t24 = [bpfman program unload $pid]
-  DispatchCommand argv=t24 policy=def-then-exec-command lane=builtin(bpfman)
+  BuildArgs t29 = [bpfman link list -o json]
+  DispatchBind t30 = t29 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t30 argv=t29 primary=listedAfter rc=_ guard=true fail=bb8
+  BuildArgs t31 = [assert_link_absent $listedAfter $linkID]
+  DispatchCommand argv=t31 policy=def-then-exec-command lane=exec
+  BuildArgs t32 = [bpfman program unload $pid]
+  DispatchCommand argv=t32 policy=def-then-exec-command lane=builtin(bpfman)
   Assert fail bpfman program get $prog
   RunDefers policy=program
   Stop
@@ -75,5 +95,17 @@ bb4:
   PropagateError
 
 bb5:
+  RunDefers policy=program
+  PropagateError
+
+bb6:
+  RunDefers policy=program
+  PropagateError
+
+bb7:
+  RunDefers policy=program
+  PropagateError
+
+bb8:
   RunDefers policy=program
   PropagateError
