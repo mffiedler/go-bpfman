@@ -106,6 +106,7 @@
             libbpf
             linuxHeaders
             llvm
+            pahole
 
             # Proto/gRPC codegen (make bpfman-proto).
             protobuf
