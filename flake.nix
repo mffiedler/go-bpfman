@@ -3,37 +3,18 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-
-    # Separate pin used only for building the e2e kernel module
-    # (bpfman-e2e-targets-kmod). The kernel headers a kmod is
-    # built against must match the running kernel's vermagic
-    # exactly (including patch level), otherwise the kernel
-    # rejects insmod. The branch URL "nixos-25.11" advances
-    # over time, so a matching consumer would have to update
-    # both their NixOS pin and this one in lockstep. We pin to
-    # an exact revision instead so the kmod is reproducibly
-    # tied to one kernel version. Hosts running a different
-    # kernel should override the `kernel` arg of
-    # bpfman-e2e-targets-kmod from their NixOS module rather
-    # than expecting this default to match.
-    nixpkgs-kmod.url = "github:NixOS/nixpkgs/10e7ad5bbcb421fe07e3a4ad53a634b0cd57ffac";
   };
 
-  outputs = { self, nixpkgs, nixpkgs-kmod }:
+  outputs = { self, nixpkgs }:
     let
       systems = [ "x86_64-linux" "aarch64-linux" ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system:
         f (import nixpkgs { inherit system; }));
-      # Per-system pkgs from the kmod-pinned nixpkgs, used only
-      # for the bpfman-e2e-targets-kmod derivation so its
-      # kernel matches NixOS hosts tracking the same channel.
-      kmodPkgsFor = system: import nixpkgs-kmod { inherit system; };
     in
     {
       packages = nixpkgs.lib.genAttrs systems (system:
         let
           pkgs = import nixpkgs { inherit system; };
-          kmodPkgs = kmodPkgsFor system;
         in rec {
         default = bpfman;
         # Statically linked against a scratch-compatible base; the
@@ -57,21 +38,6 @@
         # build-and-load convenience target.
         bpfman-image = pkgs.callPackage ./nix/image.nix {
           inherit bpfman;
-        };
-        # Out-of-tree kernel module exporting private fentry/fexit
-        # targets for the e2e suite. Built against the kmod-pinned
-        # nixpkgs (nixos-25.11) rather than the unstable channel,
-        # so its kernel headers match NixOS hosts on that channel
-        # for vermagic compatibility. On a host running a different
-        # kernel, override `kernel` from your NixOS module to align:
-        #
-        #   bpfman-e2e-targets-kmod.override {
-        #     kernel = config.boot.kernelPackages.kernel;
-        #   }
-        #
-        # See docs/HERMETIC-FENTRY-FEXIT-KMOD.md for context.
-        bpfman-e2e-targets-kmod = kmodPkgs.callPackage ./nix/kmod.nix {
-          kernel = kmodPkgs.linuxPackages.kernel;
         };
       });
 
