@@ -67,8 +67,8 @@ const (
 	// remain valid after release because the strings are a
 	// historical description of what existed.
 	OriginNetPair
-	// OriginKfunc tags a Value that wraps a Kfunc: one private
-	// kernel function exported by the bpfman_e2e_targets module.
+	// OriginKfunc tags a Value that wraps a Kfunc: one leased
+	// kernel-function slot exported by the bpfman_e2e_targets module.
 	// Tests use it as an isolated attach point for fentry/fexit
 	// and kprobe/kretprobe programs. Like NetPair, it is a
 	// lifecycle capability: kfunc release returns the slot to the

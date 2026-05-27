@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * bpfman_e2e_targets: private fentry/fexit targets for the bpfman
- * e2e test suite. Exports a fixed pool of noinline functions that
+ * bpfman_e2e_targets: dedicated kmod-backed attach targets for the
+ * bpfman e2e test suite. Exports a fixed pool of noinline functions that
  * tests attach BPF programs to, plus per-slot debugfs trigger
  * files that invoke the corresponding function on write(2).
  *
- * The pool gives each fentry/fexit test a private kernel function
- * with its own BPF trampoline, eliminating the rebuild contention
- * that sharing a public function (e.g. do_unlinkat) introduces
- * when several parallel tests attach and detach concurrently.
+ * The pool gives each fentry/fexit and kprobe/kretprobe test a
+ * leased kernel-function slot with its own BPF trampoline, eliminating
+ * the rebuild contention that sharing a common function (e.g. do_unlinkat)
+ * introduces when several parallel tests attach and detach concurrently.
+ * The lease is a test-harness convention, not kernel access control.
  *
  * See docs/HERMETIC-FENTRY-FEXIT-KMOD.md in the bpfman tree.
  */
@@ -159,5 +160,5 @@ module_exit(bpfman_e2e_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("bpfman authors");
-MODULE_DESCRIPTION("Private fentry/fexit targets for bpfman e2e tests");
+MODULE_DESCRIPTION("Dedicated kmod-backed attach targets for bpfman e2e tests");
 MODULE_VERSION("0.1");

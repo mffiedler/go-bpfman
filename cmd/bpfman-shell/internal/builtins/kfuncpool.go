@@ -1,6 +1,6 @@
 // kfuncpool is the cross-process slot allocator backing
 // `kfunc acquire`. Each running bpfman-shell process competes for
-// one of the private kernel functions exported by the
+// one of the kmod-backed kernel-function slots exported by the
 // bpfman_e2e_targets module. Exclusion is via flock on a per-slot
 // lockfile under /run/bpfman-kfunc-pool, matching the net veth-pair
 // pool's crash-safe shape.

@@ -1,5 +1,5 @@
 # -*- mode: bpfman -*-
-# Exercises the kfunc builtin with a private kernel function from
+# Exercises the kfunc builtin with a leased kernel-function slot from
 # bpfman_e2e_targets. The same fixture shape will be shared by
 # fentry/fexit and kprobe/kretprobe tests.
 

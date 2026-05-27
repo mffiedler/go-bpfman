@@ -8,7 +8,7 @@ import (
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/semantics"
 )
 
-// Kfunc is the user-visible handle for one private kernel function
+// Kfunc is the user-visible handle for one leased kernel-function slot
 // exported by the bpfman_e2e_targets module. The handle is produced
 // by `kfunc acquire` and consumed by `kfunc release`; `kfunc fire`
 // writes the trigger file to invoke the function.

@@ -473,8 +473,8 @@ E2E_BPF_DEPS    := $(E2E_BPF_SOURCES:.bpf.c=.bpf.d)
 PLATFORM_EBPF_BPF_EMBEDS := platform/ebpf/xdp_pass.bpf.o
 PLATFORM_EBPF_BPF_DEPS   := $(PLATFORM_EBPF_BPF_EMBEDS:.bpf.o=.bpf.d)
 
-# E2E kmod: private kernel functions used as deterministic fentry/fexit
-# targets. The plain kbuild target defaults to the conventional
+# E2E kmod: leased kernel-function slots used as deterministic fentry/fexit
+# and kprobe/kretprobe targets. The plain kbuild target defaults to the conventional
 # Fedora/Ubuntu kernel build tree; override KDIR for other layouts.
 # On NixOS, the helper tries to derive the matching kernel.dev output
 # from /run/current-system/kernel when /lib/modules/.../build is absent.
@@ -673,7 +673,7 @@ help:
 	@echo "  (no bpf-build target -- consumers depend directly on .bpf.o outputs)"
 	@echo ""
 	@echo "E2E kmod:"
-	@echo "  e2e-kmod-build              Build private kernel-function target module via kbuild (override KDIR=... or KERNEL_DEV=...)"
+	@echo "  e2e-kmod-build              Build leased kernel-function target module via kbuild (override KDIR=... or KERNEL_DEV=...)"
 	@echo "  e2e-kmod-insmod             Load the built module into the running kernel (idempotent; sudos internally)"
 	@echo "  e2e-kmod-rmmod              Unload the module from the running kernel (idempotent; sudos internally)"
 	@echo "  e2e-kmod-reload             Rebuild and reload the module; ensures the running .ko matches the latest source (sudos internally)"

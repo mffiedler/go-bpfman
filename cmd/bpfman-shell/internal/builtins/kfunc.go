@@ -1,5 +1,5 @@
-// kfunc is the e2e built-in for private kernel-function attach
-// targets exported by the bpfman_e2e_targets module. It gives
+// kfunc is the e2e built-in for leased kernel-function attach
+// slots exported by the bpfman_e2e_targets module. It gives
 // fentry/fexit and kprobe/kretprobe tests an isolated function
 // symbol plus debugfs trigger/count files.
 package builtins
@@ -20,8 +20,8 @@ func init() {
 		Handler:  handleKfunc,
 		Category: driver.CategoryJobs,
 		Usage:    "kfunc acquire  |  kfunc release $fn  |  kfunc fire $fn N",
-		Summary:  "Lease and trigger private kernel-function targets for e2e tests.",
-		Detail: "kfunc acquires one private kernel function exported by the " +
+		Summary:  "Lease and trigger kmod-backed kernel-function slots for e2e tests.",
+		Detail: "kfunc acquires one kernel-function slot exported by the " +
 			"bpfman_e2e_targets module. The returned $fn exposes index, name, " +
 			"trigger, and count. Use $fn.name as a fentry/fexit or kprobe/" +
 			"kretprobe attach target, kfunc fire to invoke it, and kfunc " +
