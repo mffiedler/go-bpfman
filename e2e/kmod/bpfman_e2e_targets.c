@@ -16,6 +16,8 @@
 #include <linux/module.h>
 #include <linux/debugfs.h>
 #include <linux/fs.h>
+#include <linux/atomic.h>
+#include <linux/uaccess.h>
 
 #define BPFMAN_E2E_NUM_SLOTS 32
 
@@ -38,6 +40,11 @@
  * notrace excludes a function from, so marking these notrace would
  * make them unattachable.
  */
+#define BPFMAN_E2E_DECLARE_TARGET(n)                                 \
+	noinline long bpfman_e2e_target_##n(unsigned long arg);
+BPFMAN_E2E_FOR_EACH_SLOT(BPFMAN_E2E_DECLARE_TARGET)
+#undef BPFMAN_E2E_DECLARE_TARGET
+
 #define BPFMAN_E2E_DEFINE_TARGET(n)                                  \
 	noinline long bpfman_e2e_target_##n(unsigned long arg)       \
 	{                                                            \
@@ -49,11 +56,17 @@ BPFMAN_E2E_FOR_EACH_SLOT(BPFMAN_E2E_DEFINE_TARGET)
 
 typedef long (*bpfman_e2e_target_fn)(unsigned long);
 
-#define BPFMAN_E2E_TABLE_ENTRY(n) bpfman_e2e_target_##n,
-static bpfman_e2e_target_fn bpfman_e2e_targets[BPFMAN_E2E_NUM_SLOTS] = {
-	BPFMAN_E2E_FOR_EACH_SLOT(BPFMAN_E2E_TABLE_ENTRY)
+struct bpfman_e2e_slot {
+	bpfman_e2e_target_fn fn;
+	atomic64_t trigger_count;
 };
-#undef BPFMAN_E2E_TABLE_ENTRY
+
+#define BPFMAN_E2E_SLOT_ENTRY(n)                                     \
+	{ .fn = bpfman_e2e_target_##n, .trigger_count = ATOMIC64_INIT(0) },
+static struct bpfman_e2e_slot bpfman_e2e_slots[BPFMAN_E2E_NUM_SLOTS] = {
+	BPFMAN_E2E_FOR_EACH_SLOT(BPFMAN_E2E_SLOT_ENTRY)
+};
+#undef BPFMAN_E2E_SLOT_ENTRY
 
 static struct dentry *bpfman_e2e_root;
 
@@ -70,18 +83,42 @@ static ssize_t bpfman_e2e_trigger_write(struct file *file,
 					const char __user *buf,
 					size_t count, loff_t *ppos)
 {
-	bpfman_e2e_target_fn fn = file->private_data;
+	struct bpfman_e2e_slot *slot = file->private_data;
 
-	if (!fn)
+	if (!slot || !slot->fn)
 		return -EINVAL;
-	(void)fn(0);
+	(void)slot->fn(0);
+	atomic64_inc(&slot->trigger_count);
 	return count;
+}
+
+static ssize_t bpfman_e2e_count_read(struct file *file,
+				     char __user *buf,
+				     size_t count, loff_t *ppos)
+{
+	struct bpfman_e2e_slot *slot = file->private_data;
+	char tmp[32];
+	int len;
+
+	if (!slot)
+		return -EINVAL;
+
+	len = scnprintf(tmp, sizeof(tmp), "%lld\n",
+			(long long)atomic64_read(&slot->trigger_count));
+	return simple_read_from_buffer(buf, count, ppos, tmp, len);
 }
 
 static const struct file_operations bpfman_e2e_trigger_fops = {
 	.owner   = THIS_MODULE,
 	.open    = simple_open,
 	.write   = bpfman_e2e_trigger_write,
+	.llseek  = noop_llseek,
+};
+
+static const struct file_operations bpfman_e2e_count_fops = {
+	.owner   = THIS_MODULE,
+	.open    = simple_open,
+	.read    = bpfman_e2e_count_read,
 	.llseek  = noop_llseek,
 };
 
@@ -97,8 +134,13 @@ static int __init bpfman_e2e_init(void)
 	for (i = 0; i < BPFMAN_E2E_NUM_SLOTS; i++) {
 		snprintf(name, sizeof(name), "trigger_%03d", i);
 		debugfs_create_file(name, 0600, bpfman_e2e_root,
-				    bpfman_e2e_targets[i],
+				    &bpfman_e2e_slots[i],
 				    &bpfman_e2e_trigger_fops);
+
+		snprintf(name, sizeof(name), "count_%03d", i);
+		debugfs_create_file(name, 0400, bpfman_e2e_root,
+				    &bpfman_e2e_slots[i],
+				    &bpfman_e2e_count_fops);
 	}
 
 	pr_info("bpfman_e2e_targets: %d slots ready under /sys/kernel/debug/bpfman_e2e/\n",
