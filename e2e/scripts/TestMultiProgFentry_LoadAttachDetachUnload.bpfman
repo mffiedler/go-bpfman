@@ -1,34 +1,20 @@
 # -*- mode: bpfman -*-
 # Translation experiment: e2e/TestMultiProgFentry_LoadAttachDetachUnload.
 #
-# Three fentry programs (mfe_a/b/c) all attached to do_unlinkat. Three
-# waves of N unlinks each, with a staggered detach between waves so
-# each program ends up with a distinct event count:
+# Three fentry programs (mfe_a/b/c) all attached to one leased
+# bpfman_e2e_targets function slot. One wave of N firings proves
+# all three programs run from the same hook while updating discrete
+# maps:
 #
-#     a counts waves 1+2+3   = 3 * N events
-#     b counts waves 1+2     = 2 * N events
-#     c counts wave 1        = 1 * N events
+#     a counts N events
+#     b counts N events
+#     c counts N events
 #
 # Each program owns its own counter map and weight; final assertion is
 # `events * weight` exactly per program.
 #
-# Difference from the Go test:
-#   - One stable-PID worker drives all three waves over a numbered
-#     sentinel/ack protocol; the worker is bpfman-shell
-#     in BPFMAN_SHELL_MODE=unlinkat-fire-worker mode (see
-#     cmd/bpfman-shell/unlink_helper.go).
-#   - Between detach and the next wave we sleep briefly to let the
-#     kernel's perf-link RCU deferral window close, instead of running
-#     waitDetachQuiescent.
-#   - The Go test calls waitProgramActive after the last attach
-#     because fentry/fexit on a shared target rebuilds the kernel
-#     trampoline on every attach and is racy under parallel-suite
-#     contention. A serial DSL has no contention, so the three
-#     attaches commit sequentially and we proceed straight to wave
-#     1 without a warm-up barrier. If a future run sees wave 1
-#     undercount on c, the symptom is a trampoline-still-rebuilding
-#     window and a small sleep (or a port of waitProgramActive)
-#     becomes necessary.
+# The leased slot keeps repeated/parallel runs from stacking dozens
+# of fentry programs onto the same host kernel function.
 #
 # Run from e2e/:
 #
@@ -40,28 +26,19 @@
 import ../lib.bpfman
 
 let n      = 5
-let waves  = 3
 let weight_a = 41
 let weight_b = 42
 let weight_c = 43
 
-guard workdir <- tempdir bpfman-shell-mfe
-defer rm -rf $workdir.path
-let sentinel = "${workdir.path}/sentinel"
-let ack      = "${workdir.path}/ack"
-
-# Start the worker. Stable PID across all 3 waves.
-
-guard work <- fire unlinkat $sentinel $ack --count $n --waves $waves
-defer kill --signal=KILL $work
+guard fn <- kfunc acquire
+defer kfunc release $fn
 
 # Load three fentry programs. Each --programs spec is a 3-tuple
 # TYPE:NAME:ATTACH_FUNC because fentry/fexit encode the target
 # function at load time (no separate --fn-name on attach).
 guard loaded <- bpfman program load file \
-    --path testdata/bpf/multi_prog_fentry_counter.bpf.o \
-    --programs fentry:mfe_a:do_unlinkat,fentry:mfe_b:do_unlinkat,fentry:mfe_c:do_unlinkat \
-    -g "expected_pid=0x${u32le $work.pid}" \
+    --path testdata/bpf/multi_prog_fentry_kmod_counter.bpf.o \
+    --programs "fentry:mfe_a:${fn.name},fentry:mfe_b:${fn.name},fentry:mfe_c:${fn.name}" \
     -g "weight_a=0x${u64le $weight_a}" \
     -g "weight_b=0x${u64le $weight_b}" \
     -g "weight_c=0x${u64le $weight_c}"
@@ -90,30 +67,8 @@ guard link_c <- bpfman link attach fentry $pid_c
 
 let counter_filter = "fromjson | .[0].formatted.value | tonumber"
 
-# --- Wave 1: a, b, c all attached ---
-guard _ <- touch "${sentinel}.1"
-poll timeout 5s every 100ms { await_wave_completion $ack 1 }
-
-# Detach c. Sleep briefly so the perf-link RCU GP completes before the
-# next wave fires, otherwise some of wave 2's events could still hit
-# c's program.
-bpfman link detach $link_c
-sleep 0.1
-
-# --- Wave 2: a, b attached; c detached ---
-guard _ <- touch "${sentinel}.2"
-poll timeout 5s every 100ms { await_wave_completion $ack 2 }
-
-# Detach b.
-bpfman link detach $link_b
-sleep 0.1
-
-# --- Wave 3: only a attached ---
-guard _ <- touch "${sentinel}.3"
-poll timeout 5s every 100ms { await_wave_completion $ack 3 }
-
-# Worker has fired all 3 waves and exited.
-guard _ <- wait $work
+# Fire one wave with a, b, and c all attached.
+kfunc fire $fn $n
 
 # Read counters and assert exactness.
 guard dump_a <- bpftool map dump id $mapID_a -j
@@ -124,9 +79,9 @@ let count_a = $dump_a.stdout |> jq $counter_filter
 let count_b = $dump_b.stdout |> jq $counter_filter
 let count_c = $dump_c.stdout |> jq $counter_filter
 
-let want_a = 3 * $n * $weight_a
-let want_b = 2 * $n * $weight_b
-let want_c = 1 * $n * $weight_c
+let want_a = $n * $weight_a
+let want_b = $n * $weight_b
+let want_c = $n * $weight_c
 
 print "a: got=${count_a} want=${want_a}"
 print "b: got=${count_b} want=${want_b}"
@@ -136,7 +91,7 @@ assert $count_a == $want_a
 assert $count_b == $want_b
 assert $count_c == $want_c
 
-# link_a is still attached on the happy path; detach it explicitly
-# before the deferred program-unloads fire (an attached program
-# refuses to unload).
+# Detach explicitly before the deferred program-unloads fire.
+bpfman link detach $link_c
+bpfman link detach $link_b
 bpfman link detach $link_a
