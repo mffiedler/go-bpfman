@@ -916,7 +916,7 @@ run-e2e-scripts:
 	    $(call forward-env,$(E2E_SCRIPTS_FORWARD_VARS)) \
 	    $(E2E_SCRIPTS_TEST_BIN) -test.v -test.failfast \
 	    -test.count=$(STRESS_COUNT) $(if $(PARALLEL),-test.parallel $(PARALLEL)) \
-	    -test.run $(if $(TEST),$(TEST),TestBPFManScripts)
+	    -test.run "$(if $(TEST),$(TEST),TestBPFManScripts)"
 
 # `run-e2e-scripts` lives in the recipe rather than the
 # prerequisite list because GNU make does not sequence
