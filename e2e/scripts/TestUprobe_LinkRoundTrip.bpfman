@@ -1,22 +1,21 @@
 # -*- mode: bpfman -*-
 # Link-CRUD round-trip for uprobe attaches.
 #
-# Loads uprobe_counter, resolves the running bpfman-shell binary
-# and its cgo'd uprobe target symbol via `uprobe-target`, attaches
-# the program to that (inode, offset) pair, and asserts the
-# structural shape of the resulting link record. Verifies Get and
-# List both return matching fields, and that after detach the link
-# record is gone from both the store and the listing.
+# Loads uprobe_counter, starts a bpfman-shell uprobe worker,
+# attaches the program to the worker's cgo'd target symbol, and
+# asserts the structural shape of the resulting link record.
+# Verifies Get and List both return matching fields, fires the
+# target exactly N times, asserts the private counter map advanced
+# by N * weight, and verifies that after detach the link record is
+# gone from both the store and the listing.
 #
-# No counter assertions and no trigger phase -- this script
-# isolates the link-CRUD surface so a regression in the uprobe link
-# encoder surfaces here. Uprobes attached to the same (inode,
-# offset) by independent scripts are independent perf-event links
-# in the kernel, so concurrent runs are safe by construction.
+# The uprobe attachment is inode/symbol scoped, but the BPF program
+# filters on the worker PID. Concurrent runs can attach to the same
+# bpfman-shell symbol without inflating this script's counter.
 #
 # Counterpart to TestUprobe_LoadAndGet (program structural shape)
-# and TestUprobe_LoadAttachDetachUnload (behavioural counter
-# arithmetic).
+# and TestMultiProgUprobe_LoadAttachDetachUnload (plural
+# same-symbol attachments with discrete maps).
 #
 # Invoke from e2e/:
 #
@@ -27,16 +26,29 @@
 
 import ../lib.bpfman
 
+let n = 5
+let weight = 11
+
+guard workdir <- tempdir bpfman-shell-up
+defer rm -rf $workdir.path
+let sentinel = "${workdir.path}/sentinel"
+let ack = "${workdir.path}/ack"
+
+guard work <- fire uprobe $sentinel $ack --count $n
+defer kill --signal=KILL $work
+
 guard target <- uprobe-target
 
 guard loaded <- bpfman program load file \
-    --path testdata/bpf/uprobe_counter.bpf.o \
-    --programs uprobe:uprobe_counter
+    --path testdata/bpf/uprobe_exact.bpf.o \
+    --programs uprobe:uprobe_counter \
+    -g "expected_pid=0x${u32le $work.pid}" \
+    -g "weight=0x${u64le $weight}"
 let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 defer bpfman program unload $pid
 
-guard link <- bpfman link attach uprobe --target $target.path --fn-name $target.symbol $prog
+guard link <- bpfman link attach uprobe --target $work.target_binary --fn-name $target.symbol $prog
 let linkID = $link.record.id
 
 # Structural shape of the attach response. uprobe details record
@@ -44,7 +56,7 @@ let linkID = $link.record.id
 # (0 when attaching by name), and retprobe=false.
 assert $link.record.kind == uprobe
 assert $link.record.program_id == $pid
-assert $link.record.details.target == $target.path
+assert $link.record.details.target == $work.target_binary
 assert $link.record.details.fn_name == $target.symbol
 assert $link.record.details.offset == 0
 assert not $link.record.details.retprobe
@@ -55,7 +67,7 @@ guard gotLink <- bpfman link get $linkID
 assert $gotLink.record.id == $linkID
 assert $gotLink.record.kind == uprobe
 assert $gotLink.record.program_id == $pid
-assert $gotLink.record.details.target == $target.path
+assert $gotLink.record.details.target == $work.target_binary
 assert $gotLink.record.details.fn_name == $target.symbol
 assert $gotLink.record.details.offset == 0
 assert not $gotLink.record.details.retprobe
@@ -66,6 +78,20 @@ let ourLink = $listed |> jq ".links[] | select(.id == ${linkID})"
 require not null ourLink
 assert $ourLink.id == $linkID
 assert $ourLink.kind == uprobe
+
+# Trigger the worker once and assert exact counter arithmetic.
+let mapID = $prog |> jq '[.status.maps[] | select(.name == "up_count") | .id][0]'
+let counter_filter = "fromjson | .[0].formatted.value | tonumber"
+
+guard _ <- touch "${sentinel}.1"
+poll timeout 5s every 100ms { await_wave_completion $ack 1 }
+guard _ <- wait $work
+
+guard dump <- bpftool map dump id $mapID -j
+let count = $dump.stdout |> jq $counter_filter
+let want = $n * $weight
+print "uprobe count: got=${count} want=${want}"
+assert $count == $want
 
 # Detach, then verify the link is gone from both Get and List.
 bpfman link detach $link

@@ -4,58 +4,74 @@ bb0:
   EnterDeferScope kind=program
   BuildArgs t0 = [import ../lib.bpfman]
   DispatchCommand argv=t0 policy=def-then-exec-command lane=builtin(import)
-  BuildArgs t1 = [uprobe-target]
-  DispatchBind t2 = t1 policy=def-then-exec-bind lane=builtin(uprobe-target)
-  ApplyBind src=t2 argv=t1 primary=target rc=_ guard=true fail=bb1
-  BuildArgs t3 = [bpfman program load file --path testdata/bpf/uprobe_counter.bpf.o --programs uprobe:uprobe_counter]
-  DispatchBind t4 = t3 policy=def-then-exec-bind lane=builtin(bpfman)
-  ApplyBind src=t4 argv=t3 primary=loaded rc=_ guard=true fail=bb2
-  Eval t5 = $loaded.programs[0]
-  BindName prog = t5
-  Eval t6 = $prog.record.program_id
-  BindName pid = t6
-  BuildArgs t7 = [bpfman program unload $pid]
-  RegisterDefer argv=t7 policy=def-then-exec-bind lane=builtin(bpfman)
-  BuildArgs t8 = [bpfman link attach uprobe --target $target.path --fn-name $target.symbol $prog]
-  DispatchBind t9 = t8 policy=def-then-exec-bind lane=builtin(bpfman)
-  ApplyBind src=t9 argv=t8 primary=link rc=_ guard=true fail=bb3
-  Eval t10 = $link.record.id
-  BindName linkID = t10
+  Eval t1 = 5
+  BindName n = t1
+  Eval t2 = 11
+  BindName weight = t2
+  BuildArgs t3 = [tempdir bpfman-shell-up]
+  DispatchBind t4 = t3 policy=def-then-exec-bind lane=builtin(tempdir)
+  ApplyBind src=t4 argv=t3 primary=workdir rc=_ guard=true fail=bb1
+  BuildArgs t5 = [rm -rf $workdir.path]
+  RegisterDefer argv=t5 policy=def-then-exec-bind lane=exec
+  Eval t6 = "${workdir.path}/sentinel"
+  BindName sentinel = t6
+  Eval t7 = "${workdir.path}/ack"
+  BindName ack = t7
+  BuildArgs t8 = [fire uprobe $sentinel $ack --count $n]
+  DispatchBind t9 = t8 policy=def-then-exec-bind lane=builtin(fire)
+  ApplyBind src=t9 argv=t8 primary=work rc=_ guard=true fail=bb2
+  BuildArgs t10 = [kill --signal=KILL $work]
+  RegisterDefer argv=t10 policy=def-then-exec-bind lane=builtin(kill)
+  BuildArgs t11 = [uprobe-target]
+  DispatchBind t12 = t11 policy=def-then-exec-bind lane=builtin(uprobe-target)
+  ApplyBind src=t12 argv=t11 primary=target rc=_ guard=true fail=bb3
+  BuildArgs t13 = [bpfman program load file --path testdata/bpf/uprobe_exact.bpf.o --programs uprobe:uprobe_counter -g "expected_pid=0x${u32le $work.pid}" -g "weight=0x${u64le $weight}"]
+  DispatchBind t14 = t13 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t14 argv=t13 primary=loaded rc=_ guard=true fail=bb4
+  Eval t15 = $loaded.programs[0]
+  BindName prog = t15
+  Eval t16 = $prog.record.program_id
+  BindName pid = t16
+  BuildArgs t17 = [bpfman program unload $pid]
+  RegisterDefer argv=t17 policy=def-then-exec-bind lane=builtin(bpfman)
+  BuildArgs t18 = [bpfman link attach uprobe --target $work.target_binary --fn-name $target.symbol $prog]
+  DispatchBind t19 = t18 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t19 argv=t18 primary=link rc=_ guard=true fail=bb5
+  Eval t20 = $link.record.id
+  BindName linkID = t20
   Assert $link.record.kind == uprobe
   Assert $link.record.program_id == $pid
-  Assert $link.record.details.target == $target.path
+  Assert $link.record.details.target == $work.target_binary
   Assert $link.record.details.fn_name == $target.symbol
   Assert $link.record.details.offset == 0
   Assert not $link.record.details.retprobe
   Assert $link.status.kernel_seen
-  BuildArgs t11 = [bpfman link get $linkID]
-  DispatchBind t12 = t11 policy=def-then-exec-bind lane=builtin(bpfman)
-  ApplyBind src=t12 argv=t11 primary=gotLink rc=_ guard=true fail=bb4
+  BuildArgs t21 = [bpfman link get $linkID]
+  DispatchBind t22 = t21 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t22 argv=t21 primary=gotLink rc=_ guard=true fail=bb6
   Assert $gotLink.record.id == $linkID
   Assert $gotLink.record.kind == uprobe
   Assert $gotLink.record.program_id == $pid
-  Assert $gotLink.record.details.target == $target.path
+  Assert $gotLink.record.details.target == $work.target_binary
   Assert $gotLink.record.details.fn_name == $target.symbol
   Assert $gotLink.record.details.offset == 0
   Assert not $gotLink.record.details.retprobe
-  BuildArgs t13 = [bpfman link list -o json]
-  DispatchBind t14 = t13 policy=def-then-exec-bind lane=builtin(bpfman)
-  ApplyBind src=t14 argv=t13 primary=listed rc=_ guard=true fail=bb5
-  Eval t15 = $listed |> jq ".links[] | select(.id == ${linkID})"
-  BindName ourLink = t15
+  BuildArgs t23 = [bpfman link list -o json]
+  DispatchBind t24 = t23 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t24 argv=t23 primary=listed rc=_ guard=true fail=bb7
+  Eval t25 = $listed |> jq ".links[] | select(.id == ${linkID})"
+  BindName ourLink = t25
   Require not null ourLink
   Assert $ourLink.id == $linkID
   Assert $ourLink.kind == uprobe
-  BuildArgs t16 = [bpfman link detach $link]
-  DispatchCommand argv=t16 policy=def-then-exec-command lane=builtin(bpfman)
-  Assert fail bpfman link get $linkID
-  BuildArgs t17 = [bpfman link list -o json]
-  DispatchBind t18 = t17 policy=def-then-exec-bind lane=builtin(bpfman)
-  ApplyBind src=t18 argv=t17 primary=listedAfter rc=_ guard=true fail=bb6
-  BuildArgs t19 = [assert_link_absent $listedAfter $linkID]
-  DispatchCommand argv=t19 policy=def-then-exec-command lane=exec
-  RunDefers policy=program
-  Stop
+  Eval t26 = $prog |> jq "[.status.maps[] | select(.name == \"up_count\") | .id][0]"
+  BindName mapID = t26
+  Eval t27 = "fromjson | .[0].formatted.value | tonumber"
+  BindName counter_filter = t27
+  BuildArgs t28 = [touch "${sentinel}.1"]
+  DispatchBind t29 = t28 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t29 argv=t28 primary=_ rc=_ guard=true fail=bb8
+  BeginPoll timeout=5s every=100ms attempt=bb9 timeout=bb10 success=bb11
 
 bb1:
   RunDefers policy=program
@@ -78,5 +94,62 @@ bb5:
   PropagateError
 
 bb6:
+  RunDefers policy=program
+  PropagateError
+
+bb7:
+  RunDefers policy=program
+  PropagateError
+
+bb8:
+  RunDefers policy=program
+  PropagateError
+
+bb9:
+  EnterFrame kind=poll-attempt
+  EnterDeferScope kind=poll-attempt
+  BuildArgs t30 = [await_wave_completion $ack 1]
+  DispatchCommand argv=t30 policy=def-then-exec-command lane=exec
+  RunDefers policy=attempt-fatal
+  ExitFrame
+  Jump bb11
+
+bb10:
+  PropagateError
+
+bb11:
+  BuildArgs t31 = [wait $work]
+  DispatchBind t32 = t31 policy=def-then-exec-bind lane=builtin(wait)
+  ApplyBind src=t32 argv=t31 primary=_ rc=_ guard=true fail=bb12
+  BuildArgs t33 = [bpftool map dump id $mapID -j]
+  DispatchBind t34 = t33 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t34 argv=t33 primary=dump rc=_ guard=true fail=bb13
+  Eval t35 = $dump.stdout |> jq $counter_filter
+  BindName count = t35
+  Eval t36 = $n * $weight
+  BindName want = t36
+  BuildArgs t37 = [print "uprobe count: got=${count} want=${want}"]
+  DispatchCommand argv=t37 policy=def-then-exec-command lane=builtin(print)
+  Assert $count == $want
+  BuildArgs t38 = [bpfman link detach $link]
+  DispatchCommand argv=t38 policy=def-then-exec-command lane=builtin(bpfman)
+  Assert fail bpfman link get $linkID
+  BuildArgs t39 = [bpfman link list -o json]
+  DispatchBind t40 = t39 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t40 argv=t39 primary=listedAfter rc=_ guard=true fail=bb14
+  BuildArgs t41 = [assert_link_absent $listedAfter $linkID]
+  DispatchCommand argv=t41 policy=def-then-exec-command lane=exec
+  RunDefers policy=program
+  Stop
+
+bb12:
+  RunDefers policy=program
+  PropagateError
+
+bb13:
+  RunDefers policy=program
+  PropagateError
+
+bb14:
   RunDefers policy=program
   PropagateError
