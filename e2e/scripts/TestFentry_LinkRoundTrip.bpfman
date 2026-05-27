@@ -1,7 +1,16 @@
 # -*- mode: bpfman -*-
-# Exercises fexit on a leased kernel-function slot from
-# bpfman_e2e_targets. The leased kfunc gives this test an isolated
-# attach target and exact trigger count.
+# Link-CRUD round-trip for fentry attaches: load + attach +
+# per-kind structural assertions + bpfman link get round-trip +
+# bpfman link list presence + detach + post-detach get/list
+# absence checks. Adds a deterministic trigger/counter phase
+# the non-probe LinkRoundTrip variants do not have.
+#
+# Uses a leased kfunc slot from bpfman_e2e_targets as the
+# attach target. The slot fixture is an implementation detail
+# of how this kind gets an isolated kernel function with an
+# exact debugfs trigger; the user-facing surface is the link
+# round-trip. See TestKprobe_LinkRoundTrip.bpfman for the
+# rationale behind the probe-style vs non-probe split.
 
 import ../lib.bpfman
 
@@ -13,25 +22,25 @@ guard fn <- kfunc acquire
 defer kfunc release $fn
 
 guard loaded <- bpfman program load file \
-    --path testdata/bpf/fexit_kmod_exact.bpf.o \
-    --programs "fexit:test_fexit:${fn.name}" \
+    --path testdata/bpf/fentry_kmod_exact.bpf.o \
+    --programs "fentry:test_fentry:${fn.name}" \
     -g "weight=0x${u64le $weight}"
 let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 
-expect_program_load $prog fexit tracing test_fexit
+expect_program_load $prog fentry tracing test_fentry
 
-guard link <- bpfman link attach fexit $prog
+guard link <- bpfman link attach fentry $prog
 let linkID = $link.record.id
 
-assert $link.record.kind == fexit
+assert $link.record.kind == fentry
 assert $link.record.program_id == $pid
 assert $link.record.details.fn_name == $fn.name
 assert $link.status.kernel_seen
 
 guard gotLink <- bpfman link get $linkID
 assert $gotLink.record.id == $linkID
-assert $gotLink.record.kind == fexit
+assert $gotLink.record.kind == fentry
 assert $gotLink.record.program_id == $pid
 assert $gotLink.record.details.fn_name == $fn.name
 
@@ -39,7 +48,7 @@ guard listed <- bpfman link list -o json
 let ourLink = $listed |> jq ".links[] | select(.id == ${linkID})"
 require not null ourLink
 assert $ourLink.id == $linkID
-assert $ourLink.kind == fexit
+assert $ourLink.kind == fentry
 
 guard fired <- kfunc fire $fn $events
 assert $fired.ok
