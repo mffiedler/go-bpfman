@@ -1480,8 +1480,9 @@ ci-test-e2e:
 # scripts under e2e/scripts/ are driven by the Go test binary
 # at bin/e2e-scripts.test, which execs the bundle's
 # bpfman-shell per subtest. The bundle's binaries + testdata are
-# extracted into the source tree (the layout matches) and the
-# scripts run via `make run-e2e-scripts`, which sudo-execs
+# extracted into the source tree (the layout matches); the host
+# then builds and reloads the e2e kmod, after which the scripts
+# run via `make run-e2e-scripts`, which sudo-execs
 # e2e-scripts.test with BIN_DIR pointing at the bundle so
 # bpfman-shell resolves despite sudo's secure_path.
 #
@@ -1496,6 +1497,7 @@ ci-test-e2e-scripts:
 	$(RM) bin/bpfman bin/bpfman-shell bin/e2e.test bin/e2e-scripts.test
 	$(MAKE) clean-bpf
 	$(OCI_BIN) buildx build --target=e2e-export --output type=local,dest=. -f $(CI_DOCKERFILE) --build-arg RACE=$(RACE) --build-arg EXTRA_TAGS=$(EXTRA_TAGS) $(CI_BUILDX_CACHE) .
+	$(MAKE) e2e-kmod-reload
 	$(MAKE) run-e2e-scripts
 
 # Reproduce the workflow's gRPC parallel e2e job locally. The
