@@ -32,8 +32,8 @@ import (
 //
 // Subtests call t.Parallel() by default: scripts use the
 // address-pool-backed `net veth-pair` builtin (see
-// cmd/bpfman-shell/shell/netpool.go) and are safe to run
-// concurrently by construction.
+// cmd/bpfman-shell/internal/builtins/netpool.go) and are safe
+// to run concurrently by construction.
 //
 // Per-script opt-out: a `.bpfman` script can declare itself
 // non-parallel by putting `# NOPARALLEL` on a line within the
@@ -50,7 +50,20 @@ import (
 // Subtest names are the script's path relative to e2e/, so
 // `go test -run 'TestBPFManScripts/scripts/Foo\.bpfman$'`
 // selects one script (escape the dot and anchor the end to
-// avoid prefix matches against longer names).
+// avoid prefix matches against longer names). Under stress mode
+// (BPFMAN_E2E_SCRIPT_REPEATS>1, see below) the registered name
+// for a parallel-eligible script gains a `#<r>` suffix, so the
+// $-anchored form silently matches no subtests. The portable
+// shapes are:
+//
+//   - one script, one run:
+//     go test -run 'TestBPFManScripts/scripts/Foo\.bpfman$'
+//   - one script, all repetitions:
+//     BPFMAN_E2E_SCRIPT_REPEATS=10 \
+//     go test -run 'TestBPFManScripts/scripts/Foo\.bpfman(#\d+)?$'
+//   - one script, either mode (drop the anchor; prefix-matches
+//     longer-named scripts that share the prefix):
+//     go test -run 'TestBPFManScripts/scripts/Foo\.bpfman'
 //
 // BPFMAN_E2E_SCRIPT_REPEATS turns the corpus into a stress
 // run: each script is registered N times as
@@ -166,10 +179,10 @@ func e2ePackageDir(t *testing.T) string {
 // go test's outer -timeout.
 //
 // bpfmanShellRepeatsEnv is the stress knob: each script is
-// registered N times so the t.Parallel queue under new/ holds
-// a wave-diverse mix the dispatcher can fan out at the
-// configured -test.parallel concurrency. Unset or N<=1 keeps
-// the default one-pass behaviour.
+// registered N times so the t.Parallel queue holds a wave-
+// diverse mix the dispatcher can fan out at the configured
+// -test.parallel concurrency. Unset or N<=1 keeps the default
+// one-pass behaviour.
 const (
 	bpfmanShellTimeoutEnv     = "BPFMAN_E2E_SCRIPT_TIMEOUT"
 	bpfmanShellTimeoutDefault = 5 * time.Minute
