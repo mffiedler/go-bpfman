@@ -15,6 +15,7 @@ import (
 	"github.com/frobware/go-bpfman/fs"
 	fsruntime "github.com/frobware/go-bpfman/fs/runtime"
 	"github.com/frobware/go-bpfman/kernel"
+	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/logging"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/platform"
@@ -139,7 +140,12 @@ func buildSuiteRuntime() (*suiteRuntime, error) {
 	}
 
 	ctx := context.Background()
-	store, err := sqlite.New(ctx, layout.DBPath(), logger)
+	var store platform.Store
+	err = lock.RunWithTiming(ctx, layout.LockPath(), logger, func(ctx context.Context, writeLock lock.WriterScope) error {
+		var err error
+		store, err = sqlite.New(ctx, layout.DBPath(), logger, writeLock)
+		return err
+	})
 	if err != nil {
 		return nil, fmt.Errorf("create suite store: %w", err)
 	}

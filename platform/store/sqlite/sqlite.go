@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	_ "embed"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/platform"
 )
 
@@ -111,6 +113,9 @@ func msec(d time.Duration) string {
 //go:embed schema.sql
 var schemaSQL string
 
+// errSchemaMismatch tells New to recreate the file-backed store.
+var errSchemaMismatch = errors.New("schema version mismatch")
+
 // dbConn abstracts *sql.DB and *sql.Tx for query execution.
 type dbConn interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
@@ -200,9 +205,14 @@ type sqliteStore struct {
 	stmtDeleteDispatcher        *sql.Stmt
 }
 
-// New creates a new SQLite store at the given path.
+// New creates a new SQLite store at the given path. The writer lock
+// scope proves the caller has serialised open/migrate/init against
+// other runtime processes before entering SQLite.
 // If the schema version doesn't match, the database is deleted and recreated.
-func New(ctx context.Context, dbPath string, logger *slog.Logger) (platform.Store, error) {
+func New(ctx context.Context, dbPath string, logger *slog.Logger, writeLock lock.WriterScope) (platform.Store, error) {
+	if writeLock == nil {
+		return nil, fmt.Errorf("writer lock required")
+	}
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -237,6 +247,50 @@ func New(ctx context.Context, dbPath string, logger *slog.Logger) (platform.Stor
 	// the long-tail outlier where a single slow flock holder
 	// in the bpfman daemon pins the writer for longer.
 	busyTimeout, txRetryBackoffs := resolveTuning(logger)
+	recreatedForSchemaMismatch := false
+	for attempt := 0; ; attempt++ {
+		s, err := newFileStoreAttempt(ctx, dbPath, logger, busyTimeout, txRetryBackoffs)
+		if err == nil {
+			if attempt > 0 {
+				logger.InfoContext(ctx, "database opened after retry",
+					"attempts", attempt+1)
+			}
+			return s, nil
+		}
+		if errors.Is(err, errSchemaMismatch) {
+			if recreatedForSchemaMismatch {
+				return nil, fmt.Errorf("schema still mismatched after recreate: %w", err)
+			}
+			recreatedForSchemaMismatch = true
+			logger.Warn("schema version mismatch, recreating database", "error", err)
+			if err := deleteDatabase(dbPath); err != nil {
+				return nil, fmt.Errorf("failed to delete old database: %w", err)
+			}
+			attempt = -1
+			continue
+		}
+		if !isBusyError(err) || attempt >= len(txRetryBackoffs) {
+			return nil, err
+		}
+		wait := txRetryBackoffs[attempt]
+		logger.WarnContext(ctx, "database open busy, retrying",
+			"attempt", attempt+1, "max_attempts", len(txRetryBackoffs)+1,
+			"backoff_ms", wait.Milliseconds(), "error", err)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(wait):
+		}
+	}
+}
+
+func newFileStoreAttempt(
+	ctx context.Context,
+	dbPath string,
+	logger *slog.Logger,
+	busyTimeout time.Duration,
+	txRetryBackoffs []time.Duration,
+) (platform.Store, error) {
 	db, err := sql.Open(driverName, dsn(dbPath, [][2]string{
 		{"journal_mode", "WAL"},
 		{"synchronous", "NORMAL"},
@@ -250,14 +304,6 @@ func New(ctx context.Context, dbPath string, logger *slog.Logger) (platform.Stor
 	s := &sqliteStore{db: db, conn: db, logger: logger, txRetryBackoffs: txRetryBackoffs}
 	if err := s.migrate(ctx); err != nil {
 		db.Close()
-		// Schema version mismatch - delete and recreate
-		if strings.Contains(err.Error(), "schema version mismatch") {
-			logger.Warn("schema version mismatch, recreating database", "error", err)
-			if err := deleteDatabase(dbPath); err != nil {
-				return nil, fmt.Errorf("failed to delete old database: %w", err)
-			}
-			return New(ctx, dbPath, logger) // Recursive call with fresh DB
-		}
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
 	}
 	if err := s.prepareStatements(ctx); err != nil {
@@ -420,7 +466,7 @@ func (s *sqliteStore) migrate(ctx context.Context) error {
 
 	if version != 0 && version != schemaVersion {
 		// Version mismatch - caller needs to delete and recreate
-		return fmt.Errorf("schema version mismatch: have %d, want %d", version, schemaVersion)
+		return fmt.Errorf("%w: have %d, want %d", errSchemaMismatch, version, schemaVersion)
 	}
 
 	// Execute the embedded schema (idempotent due to IF NOT EXISTS)

@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/kernel"
+	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/platform"
 	"github.com/frobware/go-bpfman/platform/store/sqlite"
 )
@@ -40,6 +42,29 @@ func testProgram() bpfman.ProgramRecord {
 		},
 		CreatedAt: time.Now(),
 	}
+}
+
+func TestNewRequiresWriterLock(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "store.db")
+	store, err := sqlite.New(context.Background(), dbPath, testLogger(), nil)
+	require.Error(t, err)
+	require.Nil(t, store)
+	assert.Contains(t, err.Error(), "writer lock required")
+}
+
+func TestNewFileBackedStoreUnderWriterLock(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	err := lock.Run(context.Background(), filepath.Join(dir, ".lock"), func(ctx context.Context, writeLock lock.WriterScope) error {
+		store, err := sqlite.New(ctx, filepath.Join(dir, "store.db"), testLogger(), writeLock)
+		require.NoError(t, err)
+		defer store.Close()
+		return nil
+	})
+	require.NoError(t, err)
 }
 
 func TestForeignKey_LinkRequiresProgram(t *testing.T) {

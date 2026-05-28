@@ -88,18 +88,22 @@
 //
 // # Concurrency Model
 //
-// There is no in-process application-level mutex coordinating
-// store access. Writers are serialised by the cross-process writer
-// flock from the lock package (lock/), which the bpfman daemon
-// takes for mutating RPCs and which mutating CLI invocations take
-// directly. Within a process, concurrent transactions are
-// coordinated by SQLite itself: BeginTx uses the IMMEDIATE
-// transaction type (via the _txlock=immediate DSN parameter, see
-// New), so any transaction that may write acquires the writer lock
-// at BeginTx and contention waits at a single well-defined point
-// with busy_timeout applying cleanly. Read RPCs in the server
-// proceed lockless and rely on WAL mode to observe a consistent
-// snapshot without blocking writers.
+// There is no in-process application-level mutex coordinating store
+// access. File-backed store open/init requires a lock.WriterScope
+// capability, so schema migration, schema creation, and statement
+// preparation are serialised by the same cross-process writer flock
+// that protects runtime mutations. The bpfman daemon takes that
+// flock for mutating RPCs, and mutating CLI invocations take it
+// directly.
+//
+// Within a process, concurrent transactions are coordinated by
+// SQLite itself: BeginTx uses the IMMEDIATE transaction type (via
+// the _txlock=immediate DSN parameter, see New), so any transaction
+// that may write acquires the SQLite writer lock at BeginTx and
+// contention waits at a single well-defined point with busy_timeout
+// applying cleanly. Read RPCs in the server proceed lockless and
+// rely on WAL mode to observe a consistent snapshot without
+// blocking writers.
 //
 // # SQLite Transaction Types
 //
@@ -147,9 +151,11 @@
 //   - BPFMAN_SQLITE_TX_RETRY_BACKOFFS: comma-separated durations
 //     ("50ms,200ms,800ms") naming the Go-level retry schedule
 //     applied on top of busy_timeout when a transaction still
-//     fails with SQLITE_BUSY. Setting the env var to the empty
-//     string disables retry entirely. Default
-//     "50ms,200ms,800ms".
+//     fails with SQLITE_BUSY. The same bounded schedule is also
+//     used during file-backed store open/init if migration or
+//     statement preparation sees a transient SQLITE_BUSY. Setting
+//     the env var to the empty string disables retry entirely.
+//     Default "50ms,200ms,800ms".
 //
 // Invalid values are logged at WARN and the package default is
 // used so a misconfigured env never prevents the store from

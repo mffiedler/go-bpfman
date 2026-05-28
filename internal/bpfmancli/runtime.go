@@ -3,8 +3,10 @@ package bpfmancli
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/frobware/go-bpfman/fs/runtime"
+	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/platform"
 	"github.com/frobware/go-bpfman/platform/ebpf"
@@ -24,8 +26,7 @@ func (c *CLI) NewManager(ctx context.Context) (*manager.Manager, func() error, e
 
 	logger := c.Logger()
 
-	// Create store
-	store, err := sqlite.New(ctx, layout.DBPath(), logger)
+	store, err := c.newStore(ctx, layout.DBPath(), logger)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open database: %w", err)
 	}
@@ -65,8 +66,7 @@ func (c *CLI) NewManagerWithPuller(ctx context.Context) (*manager.Manager, func(
 
 	logger := c.Logger()
 
-	// Create store
-	store, err := sqlite.New(ctx, layout.DBPath(), logger)
+	store, err := c.newStore(ctx, layout.DBPath(), logger)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open database: %w", err)
 	}
@@ -100,6 +100,12 @@ func (c *CLI) NewManagerWithPuller(ctx context.Context) (*manager.Manager, func(
 	}
 
 	return mgr, cleanup, nil
+}
+
+func (c *CLI) newStore(ctx context.Context, dbPath string, logger *slog.Logger) (platform.Store, error) {
+	return RunWithLockValue(ctx, c, func(ctx context.Context, writeLock lock.WriterScope) (platform.Store, error) {
+		return sqlite.New(ctx, dbPath, logger, writeLock)
+	})
 }
 
 // buildImagePuller creates an image puller with signature verification settings from config.

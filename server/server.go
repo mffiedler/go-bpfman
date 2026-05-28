@@ -96,7 +96,12 @@ func Run(ctx context.Context, cfg RunConfig) error {
 
 	// Open shared SQLite store
 	dbPath := layout.DBPath()
-	st, err := sqlite.New(ctx, dbPath, logger)
+	var st platform.Store
+	err := lock.RunWithTiming(ctx, layout.LockPath(), logger, func(ctx context.Context, writeLock lock.WriterScope) error {
+		var err error
+		st, err = sqlite.New(ctx, dbPath, logger, writeLock)
+		return err
+	})
 	if err != nil {
 		return fmt.Errorf("failed to open store at %s: %w", dbPath, err)
 	}
