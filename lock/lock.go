@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"syscall"
 	"time"
 )
@@ -100,7 +101,13 @@ func RunWithTiming(ctx context.Context, lockPath string, logger *slog.Logger, fn
 }
 
 // acquireWriter opens the lock file and acquires exclusive lock.
+// The parent directory is created on demand so first-touch
+// invocations (no daemon has set up the runtime root yet) succeed
+// in the same way O_CREATE handles the lock file itself.
 func acquireWriter(ctx context.Context, path string) (*os.File, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, fmt.Errorf("ensure lock dir: %w", err)
+	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("open lock file: %w", err)
