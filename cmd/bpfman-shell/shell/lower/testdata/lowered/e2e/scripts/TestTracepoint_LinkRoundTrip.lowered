@@ -71,8 +71,26 @@ bb0:
   ApplyBind src=t29 argv=t28 primary=listedAfter rc=_ guard=true fail=bb8
   BuildArgs t30 = [assert_link_absent $listedAfter $linkID]
   DispatchCommand argv=t30 policy=def-then-exec-command lane=exec
-  BuildArgs t31 = [bpfman program unload $pid]
-  DispatchCommand argv=t31 policy=def-then-exec-command lane=builtin(bpfman)
+  BuildArgs t31 = [sleep 0.1]
+  DispatchCommand argv=t31 policy=def-then-exec-command lane=exec
+  BuildArgs t32 = [bpftool map dump id $mapID -j]
+  DispatchBind t33 = t32 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t33 argv=t32 primary=dumpDetached rc=_ guard=true fail=bb9
+  Eval t34 = $dumpDetached.stdout |> jq $counterFilter
+  BindName detached = t34
+  BuildArgs t35 = [kfunc fire $fn $events]
+  DispatchBind t36 = t35 policy=def-then-exec-bind lane=builtin(kfunc)
+  ApplyBind src=t36 argv=t35 primary=_ rc=_ guard=true fail=bb10
+  BuildArgs t37 = [bpftool map dump id $mapID -j]
+  DispatchBind t38 = t37 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t38 argv=t37 primary=dumpAfterDetach rc=_ guard=true fail=bb11
+  Eval t39 = $dumpAfterDetach.stdout |> jq $counterFilter
+  BindName afterDetach = t39
+  BuildArgs t40 = [print "tracepoint after-detach=${afterDetach} want=${detached}"]
+  DispatchCommand argv=t40 policy=def-then-exec-command lane=builtin(print)
+  Assert $afterDetach == $detached
+  BuildArgs t41 = [bpfman program unload $pid]
+  DispatchCommand argv=t41 policy=def-then-exec-command lane=builtin(bpfman)
   Assert fail bpfman program get $prog
   RunDefers policy=program
   Stop
@@ -106,5 +124,17 @@ bb7:
   PropagateError
 
 bb8:
+  RunDefers policy=program
+  PropagateError
+
+bb9:
+  RunDefers policy=program
+  PropagateError
+
+bb10:
+  RunDefers policy=program
+  PropagateError
+
+bb11:
   RunDefers policy=program
   PropagateError

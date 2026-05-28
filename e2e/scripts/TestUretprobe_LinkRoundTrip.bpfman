@@ -91,3 +91,16 @@ assert fail bpfman link get $linkID
 
 guard listedAfter <- bpfman link list -o json
 assert_link_absent $listedAfter $linkID
+
+# Let any async detach teardown settle before establishing
+# the detached baseline.
+sleep 0.1
+
+guard dumpDetached <- bpftool map dump id $mapID -j
+let detached = $dumpDetached.stdout |> jq $counter_filter
+guard _ <- uprobe fire $n
+
+guard dumpAfterDetach <- bpftool map dump id $mapID -j
+let afterDetach = $dumpAfterDetach.stdout |> jq $counter_filter
+print "uretprobe after-detach=${afterDetach} want=${detached}"
+assert $afterDetach == $detached
