@@ -12,8 +12,8 @@
 # structure and behavioural delivery, plus a post-detach ping that
 # proves the private counter stays frozen once the link is gone.
 #
-# Counterpart to TestTCX_LoadAndGet (program structural shape) and
-# TestTCX_LoadAttachDetachUnload (behavioural counter arithmetic).
+# Complements TestTCX_LoadAndGet, which covers the exhaustive
+# program load/get/list/unload shape without attaching.
 #
 # Invoke from e2e/:
 #

@@ -13,8 +13,8 @@
 # structure and behavioural delivery, plus a post-detach ping that
 # proves the private counter stays frozen once the link is gone.
 #
-# Counterpart to TestTC_LoadAndGet (program structural shape) and
-# TestTC_LoadAttachDetachUnload (behavioural counter arithmetic).
+# Complements TestTC_LoadAndGet, which covers the exhaustive
+# program load/get/list/unload shape without attaching.
 #
 # Invoke from e2e/:
 #
@@ -59,6 +59,10 @@ assert $gotLink.record.details.interface == $pair.host_link
 assert $gotLink.record.details.direction == ingress
 assert $gotLink.record.details.priority == 50
 assert $gotLink.record.details.dispatcher_id == $link.record.details.dispatcher_id
+
+# The TC dispatcher should also be visible through tc(8) on the
+# host-side ingress hook.
+guard _ <- tc filter show dev $pair.host_link ingress
 
 # List round-trip: link appears in the listing with matching id/kind.
 guard listed <- bpfman link list -o json
