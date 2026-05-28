@@ -7,6 +7,7 @@
 # pinned kernel, etc.).
 
 obj-m += bpfman_e2e_targets.o
+ccflags-y += -I$(src)
 
 KDIR ?= /lib/modules/$(shell uname -r)/build
 PWD  := $(shell pwd)

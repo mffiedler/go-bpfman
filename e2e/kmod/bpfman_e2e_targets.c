@@ -20,6 +20,9 @@
 #include <linux/atomic.h>
 #include <linux/uaccess.h>
 
+#define CREATE_TRACE_POINTS
+#include "bpfman_e2e_trace.h"
+
 #define BPFMAN_E2E_NUM_SLOTS 128
 
 /*
@@ -70,12 +73,13 @@ BPFMAN_E2E_FOR_EACH_SLOT(BPFMAN_E2E_DEFINE_TARGET)
 typedef long (*bpfman_e2e_target_fn)(unsigned long);
 
 struct bpfman_e2e_slot {
+	unsigned int slot;
 	bpfman_e2e_target_fn fn;
 	atomic64_t trigger_count;
 };
 
 #define BPFMAN_E2E_SLOT_ENTRY(n)                                     \
-	{ .fn = bpfman_e2e_target_##n, .trigger_count = ATOMIC64_INIT(0) },
+	{ .slot = n, .fn = bpfman_e2e_target_##n, .trigger_count = ATOMIC64_INIT(0) },
 static struct bpfman_e2e_slot bpfman_e2e_slots[BPFMAN_E2E_NUM_SLOTS] = {
 	BPFMAN_E2E_FOR_EACH_SLOT(BPFMAN_E2E_SLOT_ENTRY)
 };
@@ -97,10 +101,12 @@ static ssize_t bpfman_e2e_trigger_write(struct file *file,
 					size_t count, loff_t *ppos)
 {
 	struct bpfman_e2e_slot *slot = file->private_data;
+	long ret;
 
 	if (!slot || !slot->fn)
 		return -EINVAL;
-	(void)slot->fn(0);
+	ret = slot->fn(slot->slot);
+	trace_bpfman_e2e_ping(slot->slot, ret);
 	atomic64_inc(&slot->trigger_count);
 	return count;
 }

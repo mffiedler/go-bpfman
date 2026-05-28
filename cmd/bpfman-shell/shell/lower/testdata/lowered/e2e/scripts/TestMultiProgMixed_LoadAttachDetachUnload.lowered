@@ -6,72 +6,100 @@ bb0:
   DispatchCommand argv=t0 policy=def-then-exec-command lane=builtin(import)
   Eval t1 = 5
   BindName n = t1
-  Eval t2 = 3
-  BindName waves = t2
-  Eval t3 = 41
-  BindName weight_tp = t3
-  Eval t4 = 42
-  BindName weight_kp = t4
-  Eval t5 = 43
-  BindName weight_krp = t5
-  BuildArgs t6 = [kfunc acquire]
-  DispatchBind t7 = t6 policy=def-then-exec-bind lane=builtin(kfunc)
-  ApplyBind src=t7 argv=t6 primary=fn rc=_ guard=true fail=bb1
-  BuildArgs t8 = [kfunc release $fn]
-  RegisterDefer argv=t8 policy=def-then-exec-bind lane=builtin(kfunc)
-  BuildArgs t9 = [tempdir bpfman-shell-mmix]
-  DispatchBind t10 = t9 policy=def-then-exec-bind lane=builtin(tempdir)
-  ApplyBind src=t10 argv=t9 primary=workdir rc=_ guard=true fail=bb2
-  BuildArgs t11 = [rm -rf $workdir.path]
-  RegisterDefer argv=t11 policy=def-then-exec-bind lane=exec
-  Eval t12 = "${workdir.path}/sentinel"
-  BindName sentinel = t12
-  Eval t13 = "${workdir.path}/ack"
-  BindName ack = t13
-  BuildArgs t14 = [fire unlinkat $sentinel $ack --count $n --waves $waves]
-  DispatchBind t15 = t14 policy=def-then-exec-bind lane=builtin(fire)
-  ApplyBind src=t15 argv=t14 primary=work rc=_ guard=true fail=bb3
-  BuildArgs t16 = [kill --signal=KILL $work]
-  RegisterDefer argv=t16 policy=def-then-exec-bind lane=builtin(kill)
-  BuildArgs t17 = [bpfman program load file --path testdata/bpf/multi_prog_mixed_counter_script.bpf.o --programs tracepoint:mixed_tp,kprobe:mixed_kp,kretprobe:mixed_krp -g "expected_pid=0x${u32le $work.pid}" -g "weight_tp=0x${u64le $weight_tp}" -g "weight_kp=0x${u64le $weight_kp}" -g "weight_krp=0x${u64le $weight_krp}"]
-  DispatchBind t18 = t17 policy=def-then-exec-bind lane=builtin(bpfman)
-  ApplyBind src=t18 argv=t17 primary=loaded rc=_ guard=true fail=bb4
-  Eval t19 = [$loaded.programs[0] $loaded.programs[0].record.program_id]
-  BindDestructure [prog_tp pid_tp] = t19
-  Eval t20 = [$loaded.programs[1] $loaded.programs[1].record.program_id]
-  BindDestructure [prog_kp pid_kp] = t20
-  Eval t21 = [$loaded.programs[2] $loaded.programs[2].record.program_id]
-  BindDestructure [prog_krp pid_krp] = t21
-  BuildArgs t22 = [bpfman program unload $pid_tp]
-  RegisterDefer argv=t22 policy=def-then-exec-bind lane=builtin(bpfman)
-  BuildArgs t23 = [bpfman program unload $pid_kp]
-  RegisterDefer argv=t23 policy=def-then-exec-bind lane=builtin(bpfman)
-  BuildArgs t24 = [bpfman program unload $pid_krp]
-  RegisterDefer argv=t24 policy=def-then-exec-bind lane=builtin(bpfman)
-  Eval t25 = $prog_tp |> jq "[.status.maps[] | select(.name == \"mtp_count\")  | .id][0]"
-  BindName mapID_tp = t25
-  Eval t26 = $prog_kp |> jq "[.status.maps[] | select(.name == \"mkp_count\")  | .id][0]"
-  BindName mapID_kp = t26
-  Eval t27 = $prog_krp |> jq "[.status.maps[] | select(.name == \"mkrp_count\") | .id][0]"
-  BindName mapID_krp = t27
-  BuildArgs t28 = [bpfman link attach tracepoint $pid_tp syscalls/sys_enter_unlinkat]
-  DispatchBind t29 = t28 policy=def-then-exec-bind lane=builtin(bpfman)
-  ApplyBind src=t29 argv=t28 primary=link_tp rc=_ guard=true fail=bb5
-  BuildArgs t30 = [bpfman link attach kprobe --fn-name $fn.name $pid_kp]
-  DispatchBind t31 = t30 policy=def-then-exec-bind lane=builtin(bpfman)
-  ApplyBind src=t31 argv=t30 primary=link_kp rc=_ guard=true fail=bb6
-  BuildArgs t32 = [bpfman link attach kprobe --fn-name $fn.name $pid_krp]
-  DispatchBind t33 = t32 policy=def-then-exec-bind lane=builtin(bpfman)
-  ApplyBind src=t33 argv=t32 primary=link_krp rc=_ guard=true fail=bb7
-  Eval t34 = "fromjson | .[0].formatted.value | tonumber"
-  BindName counter_filter = t34
-  BuildArgs t35 = [touch "${sentinel}.1"]
-  DispatchBind t36 = t35 policy=def-then-exec-bind lane=exec
-  ApplyBind src=t36 argv=t35 primary=_ rc=_ guard=true fail=bb8
-  BuildArgs t37 = [kfunc fire $fn $n]
-  DispatchBind t38 = t37 policy=def-then-exec-bind lane=builtin(kfunc)
-  ApplyBind src=t38 argv=t37 primary=_ rc=_ guard=true fail=bb9
-  BeginPoll timeout=5s every=100ms attempt=bb10 timeout=bb11 success=bb12
+  Eval t2 = 41
+  BindName weight_tp = t2
+  Eval t3 = 42
+  BindName weight_kp = t3
+  Eval t4 = 43
+  BindName weight_krp = t4
+  BuildArgs t5 = [kfunc acquire]
+  DispatchBind t6 = t5 policy=def-then-exec-bind lane=builtin(kfunc)
+  ApplyBind src=t6 argv=t5 primary=fn rc=_ guard=true fail=bb1
+  BuildArgs t7 = [kfunc release $fn]
+  RegisterDefer argv=t7 policy=def-then-exec-bind lane=builtin(kfunc)
+  BuildArgs t8 = [bpfman program load file --path testdata/bpf/multi_prog_mixed_counter_script.bpf.o --programs tracepoint:mixed_tp,kprobe:mixed_kp,kretprobe:mixed_krp -g "expected_slot=0x${u32le $fn.index}" -g "weight_tp=0x${u64le $weight_tp}" -g "weight_kp=0x${u64le $weight_kp}" -g "weight_krp=0x${u64le $weight_krp}"]
+  DispatchBind t9 = t8 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t9 argv=t8 primary=loaded rc=_ guard=true fail=bb2
+  Eval t10 = [$loaded.programs[0] $loaded.programs[0].record.program_id]
+  BindDestructure [prog_tp pid_tp] = t10
+  Eval t11 = [$loaded.programs[1] $loaded.programs[1].record.program_id]
+  BindDestructure [prog_kp pid_kp] = t11
+  Eval t12 = [$loaded.programs[2] $loaded.programs[2].record.program_id]
+  BindDestructure [prog_krp pid_krp] = t12
+  BuildArgs t13 = [bpfman program unload $pid_tp]
+  RegisterDefer argv=t13 policy=def-then-exec-bind lane=builtin(bpfman)
+  BuildArgs t14 = [bpfman program unload $pid_kp]
+  RegisterDefer argv=t14 policy=def-then-exec-bind lane=builtin(bpfman)
+  BuildArgs t15 = [bpfman program unload $pid_krp]
+  RegisterDefer argv=t15 policy=def-then-exec-bind lane=builtin(bpfman)
+  Eval t16 = $prog_tp |> jq "[.status.maps[] | select(.name == \"mtp_count\")  | .id][0]"
+  BindName mapID_tp = t16
+  Eval t17 = $prog_kp |> jq "[.status.maps[] | select(.name == \"mkp_count\")  | .id][0]"
+  BindName mapID_kp = t17
+  Eval t18 = $prog_krp |> jq "[.status.maps[] | select(.name == \"mkrp_count\") | .id][0]"
+  BindName mapID_krp = t18
+  BuildArgs t19 = [bpfman link attach tracepoint $pid_tp bpfman_e2e/bpfman_e2e_ping]
+  DispatchBind t20 = t19 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t20 argv=t19 primary=link_tp rc=_ guard=true fail=bb3
+  BuildArgs t21 = [bpfman link attach kprobe --fn-name $fn.name $pid_kp]
+  DispatchBind t22 = t21 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t22 argv=t21 primary=link_kp rc=_ guard=true fail=bb4
+  BuildArgs t23 = [bpfman link attach kprobe --fn-name $fn.name $pid_krp]
+  DispatchBind t24 = t23 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t24 argv=t23 primary=link_krp rc=_ guard=true fail=bb5
+  Eval t25 = "fromjson | .[0].formatted.value | tonumber"
+  BindName counter_filter = t25
+  BuildArgs t26 = [kfunc fire $fn $n]
+  DispatchBind t27 = t26 policy=def-then-exec-bind lane=builtin(kfunc)
+  ApplyBind src=t27 argv=t26 primary=_ rc=_ guard=true fail=bb6
+  BuildArgs t28 = [bpfman link detach $link_krp]
+  DispatchCommand argv=t28 policy=def-then-exec-command lane=builtin(bpfman)
+  BuildArgs t29 = [sleep 0.1]
+  DispatchCommand argv=t29 policy=def-then-exec-command lane=exec
+  BuildArgs t30 = [kfunc fire $fn $n]
+  DispatchBind t31 = t30 policy=def-then-exec-bind lane=builtin(kfunc)
+  ApplyBind src=t31 argv=t30 primary=_ rc=_ guard=true fail=bb7
+  BuildArgs t32 = [bpfman link detach $link_kp]
+  DispatchCommand argv=t32 policy=def-then-exec-command lane=builtin(bpfman)
+  BuildArgs t33 = [sleep 0.1]
+  DispatchCommand argv=t33 policy=def-then-exec-command lane=exec
+  BuildArgs t34 = [kfunc fire $fn $n]
+  DispatchBind t35 = t34 policy=def-then-exec-bind lane=builtin(kfunc)
+  ApplyBind src=t35 argv=t34 primary=_ rc=_ guard=true fail=bb8
+  BuildArgs t36 = [bpftool map dump id $mapID_tp -j]
+  DispatchBind t37 = t36 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t37 argv=t36 primary=dump_tp rc=_ guard=true fail=bb9
+  BuildArgs t38 = [bpftool map dump id $mapID_kp -j]
+  DispatchBind t39 = t38 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t39 argv=t38 primary=dump_kp rc=_ guard=true fail=bb10
+  BuildArgs t40 = [bpftool map dump id $mapID_krp -j]
+  DispatchBind t41 = t40 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t41 argv=t40 primary=dump_krp rc=_ guard=true fail=bb11
+  Eval t42 = $dump_tp.stdout |> jq $counter_filter
+  BindName count_tp = t42
+  Eval t43 = $dump_kp.stdout |> jq $counter_filter
+  BindName count_kp = t43
+  Eval t44 = $dump_krp.stdout |> jq $counter_filter
+  BindName count_krp = t44
+  Eval t45 = (3 * $n) * $weight_tp
+  BindName want_tp = t45
+  Eval t46 = (2 * $n) * $weight_kp
+  BindName want_kp = t46
+  Eval t47 = (1 * $n) * $weight_krp
+  BindName want_krp = t47
+  BuildArgs t48 = [print "tp:  got=${count_tp}  want=${want_tp}"]
+  DispatchCommand argv=t48 policy=def-then-exec-command lane=builtin(print)
+  BuildArgs t49 = [print "kp:  got=${count_kp}  want=${want_kp}"]
+  DispatchCommand argv=t49 policy=def-then-exec-command lane=builtin(print)
+  BuildArgs t50 = [print "krp: got=${count_krp} want=${want_krp}"]
+  DispatchCommand argv=t50 policy=def-then-exec-command lane=builtin(print)
+  Assert $count_tp == $want_tp
+  Assert $count_kp == $want_kp
+  Assert $count_krp == $want_krp
+  BuildArgs t51 = [bpfman link detach $link_tp]
+  DispatchCommand argv=t51 policy=def-then-exec-command lane=builtin(bpfman)
+  RunDefers policy=program
+  Stop
 
 bb1:
   RunDefers policy=program
@@ -110,127 +138,9 @@ bb9:
   PropagateError
 
 bb10:
-  EnterFrame kind=poll-attempt
-  EnterDeferScope kind=poll-attempt
-  BuildArgs t39 = [await_wave_completion $ack 1]
-  DispatchCommand argv=t39 policy=def-then-exec-command lane=exec
-  RunDefers policy=attempt-fatal
-  ExitFrame
-  Jump bb12
+  RunDefers policy=program
+  PropagateError
 
 bb11:
-  PropagateError
-
-bb12:
-  BuildArgs t40 = [bpfman link detach $link_krp]
-  DispatchCommand argv=t40 policy=def-then-exec-command lane=builtin(bpfman)
-  BuildArgs t41 = [sleep 0.1]
-  DispatchCommand argv=t41 policy=def-then-exec-command lane=exec
-  BuildArgs t42 = [touch "${sentinel}.2"]
-  DispatchBind t43 = t42 policy=def-then-exec-bind lane=exec
-  ApplyBind src=t43 argv=t42 primary=_ rc=_ guard=true fail=bb13
-  BuildArgs t44 = [kfunc fire $fn $n]
-  DispatchBind t45 = t44 policy=def-then-exec-bind lane=builtin(kfunc)
-  ApplyBind src=t45 argv=t44 primary=_ rc=_ guard=true fail=bb14
-  BeginPoll timeout=5s every=100ms attempt=bb15 timeout=bb16 success=bb17
-
-bb13:
-  RunDefers policy=program
-  PropagateError
-
-bb14:
-  RunDefers policy=program
-  PropagateError
-
-bb15:
-  EnterFrame kind=poll-attempt
-  EnterDeferScope kind=poll-attempt
-  BuildArgs t46 = [await_wave_completion $ack 2]
-  DispatchCommand argv=t46 policy=def-then-exec-command lane=exec
-  RunDefers policy=attempt-fatal
-  ExitFrame
-  Jump bb17
-
-bb16:
-  PropagateError
-
-bb17:
-  BuildArgs t47 = [bpfman link detach $link_kp]
-  DispatchCommand argv=t47 policy=def-then-exec-command lane=builtin(bpfman)
-  BuildArgs t48 = [sleep 0.1]
-  DispatchCommand argv=t48 policy=def-then-exec-command lane=exec
-  BuildArgs t49 = [touch "${sentinel}.3"]
-  DispatchBind t50 = t49 policy=def-then-exec-bind lane=exec
-  ApplyBind src=t50 argv=t49 primary=_ rc=_ guard=true fail=bb18
-  BeginPoll timeout=5s every=100ms attempt=bb19 timeout=bb20 success=bb21
-
-bb18:
-  RunDefers policy=program
-  PropagateError
-
-bb19:
-  EnterFrame kind=poll-attempt
-  EnterDeferScope kind=poll-attempt
-  BuildArgs t51 = [await_wave_completion $ack 3]
-  DispatchCommand argv=t51 policy=def-then-exec-command lane=exec
-  RunDefers policy=attempt-fatal
-  ExitFrame
-  Jump bb21
-
-bb20:
-  PropagateError
-
-bb21:
-  BuildArgs t52 = [wait $work]
-  DispatchBind t53 = t52 policy=def-then-exec-bind lane=builtin(wait)
-  ApplyBind src=t53 argv=t52 primary=_ rc=_ guard=true fail=bb22
-  BuildArgs t54 = [bpftool map dump id $mapID_tp -j]
-  DispatchBind t55 = t54 policy=def-then-exec-bind lane=exec
-  ApplyBind src=t55 argv=t54 primary=dump_tp rc=_ guard=true fail=bb23
-  BuildArgs t56 = [bpftool map dump id $mapID_kp -j]
-  DispatchBind t57 = t56 policy=def-then-exec-bind lane=exec
-  ApplyBind src=t57 argv=t56 primary=dump_kp rc=_ guard=true fail=bb24
-  BuildArgs t58 = [bpftool map dump id $mapID_krp -j]
-  DispatchBind t59 = t58 policy=def-then-exec-bind lane=exec
-  ApplyBind src=t59 argv=t58 primary=dump_krp rc=_ guard=true fail=bb25
-  Eval t60 = $dump_tp.stdout |> jq $counter_filter
-  BindName count_tp = t60
-  Eval t61 = $dump_kp.stdout |> jq $counter_filter
-  BindName count_kp = t61
-  Eval t62 = $dump_krp.stdout |> jq $counter_filter
-  BindName count_krp = t62
-  Eval t63 = (3 * $n) * $weight_tp
-  BindName want_tp = t63
-  Eval t64 = (2 * $n) * $weight_kp
-  BindName want_kp = t64
-  Eval t65 = (1 * $n) * $weight_krp
-  BindName want_krp = t65
-  BuildArgs t66 = [print "tp:  got=${count_tp}  want=${want_tp}"]
-  DispatchCommand argv=t66 policy=def-then-exec-command lane=builtin(print)
-  BuildArgs t67 = [print "kp:  got=${count_kp}  want=${want_kp}"]
-  DispatchCommand argv=t67 policy=def-then-exec-command lane=builtin(print)
-  BuildArgs t68 = [print "krp: got=${count_krp} want=${want_krp}"]
-  DispatchCommand argv=t68 policy=def-then-exec-command lane=builtin(print)
-  Assert $count_tp == $want_tp
-  Assert $count_kp == $want_kp
-  Assert $count_krp == $want_krp
-  BuildArgs t69 = [bpfman link detach $link_tp]
-  DispatchCommand argv=t69 policy=def-then-exec-command lane=builtin(bpfman)
-  RunDefers policy=program
-  Stop
-
-bb22:
-  RunDefers policy=program
-  PropagateError
-
-bb23:
-  RunDefers policy=program
-  PropagateError
-
-bb24:
-  RunDefers policy=program
-  PropagateError
-
-bb25:
   RunDefers policy=program
   PropagateError
