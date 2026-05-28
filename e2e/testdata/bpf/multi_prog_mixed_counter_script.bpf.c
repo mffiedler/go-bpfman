@@ -28,13 +28,6 @@
 
 #include "counter_common.bpf.h"
 
-struct trace_event_raw_bpfman_e2e_ping {
-	__u64 common;
-	__u32 slot;
-	__u32 __pad;
-	unsigned long value;
-};
-
 volatile const __u32 expected_slot = 0;
 volatile const __u64 weight_tp = 0;
 volatile const __u64 weight_kp = 0;
@@ -54,17 +47,7 @@ COUNTER_MAP(mkrp_count);
 	}
 
 SEC("tracepoint/mixed_tp")
-int mixed_tp(struct trace_event_raw_bpfman_e2e_ping *ctx)
-{
-	if (ctx->slot != expected_slot)
-		return 0;
-
-	__u32 key = 0;
-	__u64 *val = bpf_map_lookup_elem(&mtp_count, &key);
-	if (val)
-		__sync_fetch_and_add(val, weight_tp);
-	return 0;
-}
+TRACEPOINT_SLOT_COUNTER_PROG(mixed_tp, mtp_count, weight_tp)
 
 SEC("kprobe/mixed_kp")
 SLOT_COUNTER_PROG(mixed_kp, mkp_count, weight_kp)

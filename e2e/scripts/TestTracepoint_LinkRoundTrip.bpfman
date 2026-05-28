@@ -1,20 +1,15 @@
 # -*- mode: bpfman -*-
-# Link-CRUD round-trip for tracepoint attaches.
+# Link-CRUD and traffic round-trip for tracepoint attaches.
 #
-# Loads tracepoint_counter and attaches it to the
-# syscalls/sys_enter_kill tracepoint. Asserts the structural shape
+# Loads tracepoint_kmod_counter and attaches it to the e2e kmod's
+# bpfman_e2e/bpfman_e2e_ping tracepoint. Asserts the structural shape
 # of the resulting link record (kind=tracepoint with details.group
 # and details.name encoding the attach point). Verifies Get and
 # List both return matching fields, and that after detach the link
-# record is gone from both the store and the listing.
+# record is gone from both the store and the listing. Also fires the
+# leased slot and asserts the private counter moved exactly.
 #
-# No counter assertions and no trigger phase -- this script isolates
-# the link-CRUD surface so a regression in the tracepoint link
-# encoder surfaces here without parallel-safety constraints.
-#
-# Counterpart to TestTracepoint_LoadAndGet (program structural shape)
-# and TestTracepoint_LoadAttachDetachUnload (behavioural counter
-# arithmetic).
+# Counterpart to TestTracepoint_LoadAndGet (program structural shape).
 #
 # Invoke from e2e/:
 #
@@ -25,14 +20,21 @@
 
 import ../lib.bpfman
 
+let events = 5
+let weight = 17
+
+guard fn <- kfunc acquire
+defer kfunc release $fn
+
 guard loaded <- bpfman program load file \
-    --path testdata/bpf/tracepoint_counter.bpf.o \
-    --programs tracepoint:tracepoint_kill_recorder
+    --path testdata/bpf/tracepoint_kmod_counter.bpf.o \
+    --programs tracepoint:tracepoint_kmod_recorder \
+    -g "expected_slot=0x${u32le $fn.index}" \
+    -g "weight=0x${u64le $weight}"
 let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
-defer bpfman program unload $pid
 
-guard link <- bpfman link attach tracepoint $prog syscalls/sys_enter_kill
+guard link <- bpfman link attach tracepoint $prog bpfman_e2e/bpfman_e2e_ping
 let linkID = $link.record.id
 
 # Structural shape of the attach response. Tracepoint link details
@@ -40,8 +42,8 @@ let linkID = $link.record.id
 # tracepoints as <group>/<event>.
 assert $link.record.kind == tracepoint
 assert $link.record.program_id == $pid
-assert $link.record.details.group == syscalls
-assert $link.record.details.name == sys_enter_kill
+assert $link.record.details.group == bpfman_e2e
+assert $link.record.details.name == bpfman_e2e_ping
 assert $link.status.kernel_seen
 
 # Get round-trip: same shape, same values.
@@ -49,8 +51,8 @@ guard gotLink <- bpfman link get $linkID
 assert $gotLink.record.id == $linkID
 assert $gotLink.record.kind == tracepoint
 assert $gotLink.record.program_id == $pid
-assert $gotLink.record.details.group == syscalls
-assert $gotLink.record.details.name == sys_enter_kill
+assert $gotLink.record.details.group == bpfman_e2e
+assert $gotLink.record.details.name == bpfman_e2e_ping
 
 # List round-trip: link appears in the listing with matching id/kind.
 guard listed <- bpfman link list -o json
@@ -59,9 +61,22 @@ require not null ourLink
 assert $ourLink.id == $linkID
 assert $ourLink.kind == tracepoint
 
+guard _ <- kfunc fire $fn $events
+
+let mapID = $prog |> jq '[.status.maps[] | select(.name == "tp_kmod_count") | .id][0]'
+let counterFilter = "fromjson | .[0].formatted.value | tonumber"
+guard dump <- bpftool map dump id $mapID -j
+let got = $dump.stdout |> jq $counterFilter
+let want = $events * $weight
+print "tracepoint: got=${got} want=${want}"
+assert $got == $want
+
 # Detach, then verify the link is gone from both Get and List.
 bpfman link detach $link
 assert fail bpfman link get $linkID
 
 guard listedAfter <- bpfman link list -o json
 assert_link_absent $listedAfter $linkID
+
+bpfman program unload $pid
+assert fail bpfman program get $prog
