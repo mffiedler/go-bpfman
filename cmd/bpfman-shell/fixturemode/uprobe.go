@@ -58,6 +58,16 @@ func invokeUprobeCallMalloc() {
 	C.bpfman_shell_uprobe_call_malloc()
 }
 
+// FireUprobeTarget calls the cgo'd target symbol n times in the
+// current process. The synchronous `uprobe fire` builtin uses this
+// when a script wants the bpfman-shell process itself to be the
+// uprobe workload, avoiding the sentinel/ack worker protocol.
+func FireUprobeTarget(n int) {
+	for i := 0; i < n; i++ {
+		invokeUprobeCallMalloc()
+	}
+}
+
 func runUprobeFireWorker(args []string) error {
 	if len(args) != 4 {
 		return fmt.Errorf("uprobe-fire-worker: usage: SENTINEL_PREFIX ACK_PREFIX N K (got %d args)", len(args))
@@ -82,9 +92,7 @@ func runUprobeFireWorker(args []string) error {
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
-		for i := 0; i < n; i++ {
-			invokeUprobeCallMalloc()
-		}
+		FireUprobeTarget(n)
 		f, err := os.OpenFile(ack, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 		if err != nil {
 			return fmt.Errorf("uprobe-fire-worker: create ack %s: %w", ack, err)

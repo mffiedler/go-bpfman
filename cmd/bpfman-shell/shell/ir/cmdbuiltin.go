@@ -27,6 +27,7 @@ func init() {
 		"zip",
 		"u32le",
 		"u64le",
+		"uprobe",
 		"uprobe-target",
 		"wait",
 	} {
