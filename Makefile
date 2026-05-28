@@ -38,6 +38,11 @@ BIN_DIR ?= bin
 COVERAGE_DIR ?= .coverage
 COVERAGE_PROFILE ?= $(COVERAGE_DIR)/coverage.out
 COVERAGE_HTML ?= $(COVERAGE_DIR)/coverage.html
+GO_TEST_TIMELINE_EVENTS ?= $(COVERAGE_DIR)/test-timeline.events.json
+GO_TEST_TIMELINE_TRACE ?= $(COVERAGE_DIR)/test-timeline.trace.json
+E2E_SCRIPTS_TIMELINE_EVENTS ?= $(COVERAGE_DIR)/e2e-scripts-timeline.events.json
+E2E_SCRIPTS_TIMELINE_MARKERS ?= $(COVERAGE_DIR)/e2e-scripts-timeline.markers.json
+E2E_SCRIPTS_TIMELINE_TRACE ?= $(COVERAGE_DIR)/e2e-scripts-timeline.trace.json
 BPFMAN_PROTO_DIR := proto
 BPFMAN_PB_DIR := server/pb
 DOC_PORT ?= 6060
@@ -171,6 +176,8 @@ BPFMAN_LOCK_TIMEOUT ?=
 BPFMAN_DISPATCH ?=
 BPFMAN_E2E_SCRIPT_TIMEOUT ?=
 BPFMAN_E2E_SCRIPT_REPEATS ?=
+BPFMAN_E2E_SCRIPT_STRESS_REPEATS ?= 16
+BPFMAN_E2E_SCRIPT_STRESS_PARALLEL ?= 128
 
 # ---------------------------------------------------------------------------
 # Verbose-build switch, modelled on the Linux kernel tree's V=
@@ -624,6 +631,8 @@ help:
 	@echo "  test-e2e                    Run e2e tests (requires root)"
 	@echo "  test-e2e-grpc               Run the parallel gRPC e2e test against a real bpfman serve daemon (requires root)"
 	@echo "  test-e2e-scripts            Run .bpfman e2e scripts under e2e/scripts/ via the Go test binary in e2e/scriptrunner (requires root)"
+	@echo "  test-e2e-scripts-stress     Run .bpfman e2e scripts with high repeat/parallel defaults (requires root)"
+	@echo "  test-e2e-scripts-timeline   Run .bpfman e2e scripts and render $(E2E_SCRIPTS_TIMELINE_TRACE) (requires root)"
 	@echo "  e2e-kmod-force-reload       Delete managed bpfman state, then rebuild and reload the e2e kmod (requires root)"
 	@echo "  test-examples               Run .bpfman scripts under examples/ (requires root)"
 	@echo "  test-nsenter                Run nsenter tests (native amd64)"
@@ -635,6 +644,8 @@ help:
 	@echo "  coverage-html               Generate HTML coverage report"
 	@echo "  coverage-open               Generate and open HTML coverage report"
 	@echo "  clean-coverage              Remove coverage artifacts"
+	@echo "  go-test-timeline-build      Build go-test-timeline, a Go test JSON to Chrome trace converter"
+	@echo "  test-timeline               Run Go tests with JSON output and render $(GO_TEST_TIMELINE_TRACE)"
 	@echo ""
 	@echo "Local CI reproducer (Dockerfile.ci):"
 	@echo "  ci                          Run every ci-* target"
@@ -698,7 +709,7 @@ print-fedora-version:
 print-golangci-lint-version:
 	@echo $(GOLANGCI_LINT_VERSION)
 
-clean: clean-bpfman clean-bpfman-shell clean-bpfman-e2e-cleanup clean-bpf clean-e2e-kmod clean-coverage
+clean: clean-bpfman clean-bpfman-shell clean-bpfman-e2e-cleanup clean-go-test-timeline clean-bpf clean-e2e-kmod clean-coverage
 	$(RM) -r $(BIN_DIR) $(CI_E2E_BUNDLE)
 
 # Nuclear option, modeled on `make mrproper` in the kernel tree:
@@ -765,6 +776,14 @@ lint-dockerfile:
 # e2e/testdata/bpf/ at runtime.
 test: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS)
 	$(strip go test $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") $(if $(PARALLEL),-parallel $(PARALLEL)) ./...)
+
+test-timeline: go-test-timeline-compile $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS)
+	$(Q)mkdir -p $(dir $(GO_TEST_TIMELINE_EVENTS)) $(dir $(GO_TEST_TIMELINE_TRACE))
+	$(Q)rc=0; \
+	    $(strip go test $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") $(if $(PARALLEL),-parallel $(PARALLEL)) $(if $(TEST),-run "$(TEST)") -json ./...) > $(GO_TEST_TIMELINE_EVENTS) || rc=$$?; \
+	    $(BIN_DIR)/go-test-timeline -input $(GO_TEST_TIMELINE_EVENTS) -output $(GO_TEST_TIMELINE_TRACE); \
+	    printf "wrote %s\n" "$(GO_TEST_TIMELINE_TRACE)"; \
+	    exit $$rc
 
 # Local test-all: runs every host-side test surface in the order
 # CI's tests/* matrix runs them, bypassing the Dockerfile.ci
@@ -908,6 +927,7 @@ test-e2e-grpc: build-e2e-grpc run-e2e-grpc
 # bin/e2e.test on a single host.
 
 E2E_SCRIPTS_TEST_BIN := $(BIN_DIR)/e2e-scripts.test
+E2E_SCRIPTS_TEST_PKG := github.com/frobware/go-bpfman/e2e/scriptrunner
 
 # Env vars forwarded into the sudo'd test process.
 # BPFMAN_E2E_SCRIPT_TIMEOUT widens the per-script deadline;
@@ -915,6 +935,10 @@ E2E_SCRIPTS_TEST_BIN := $(BIN_DIR)/e2e-scripts.test
 # (each script registered N times, wave-diverse dispatch);
 # BPFMAN_DISPATCH selects the bpfman-shell backend (library vs
 # external); BPFMAN_LOG threads through to bpfman-shell when set.
+# BPFMAN_LOCK_TIMEOUT is set directly in run-e2e-scripts below:
+# high-parallel stress runs can leave many short-lived bpfman
+# invocations queued behind the global writer lock, so the script
+# target uses a wider default than the CLI's interactive 30s.
 # BIN_DIR is passed explicitly below rather than via this list
 # because the value gets abspath'd at the call site.
 E2E_SCRIPTS_FORWARD_VARS := \
@@ -938,6 +962,7 @@ build-e2e-scripts: bpfman-compile bpfman-shell-compile $(E2E_SCRIPTS_TEST_BIN)
 run-e2e-scripts:
 	sudo env PATH=$(abspath $(BIN_DIR)):$$PATH \
 	    BPFMAN_E2E_DIR=$(abspath e2e) \
+	    BPFMAN_LOCK_TIMEOUT=$(if $(BPFMAN_LOCK_TIMEOUT),$(BPFMAN_LOCK_TIMEOUT),5m) \
 	    $(call forward-env,$(E2E_SCRIPTS_FORWARD_VARS)) \
 	    $(E2E_SCRIPTS_TEST_BIN) -test.v -test.failfast \
 	    -test.count=$(STRESS_COUNT) $(if $(PARALLEL),-test.parallel $(PARALLEL)) \
@@ -953,6 +978,35 @@ run-e2e-scripts:
 # the runner kicks off.
 test-e2e-scripts: build-e2e-scripts e2e-kmod-reload
 	$(Q)$(MAKE) run-e2e-scripts
+
+test-e2e-scripts-stress:
+	$(Q)$(MAKE) test-e2e-scripts \
+	    BPFMAN_E2E_SCRIPT_REPEATS=$(if $(BPFMAN_E2E_SCRIPT_REPEATS),$(BPFMAN_E2E_SCRIPT_REPEATS),$(BPFMAN_E2E_SCRIPT_STRESS_REPEATS)) \
+	    PARALLEL=$(if $(PARALLEL),$(PARALLEL),$(BPFMAN_E2E_SCRIPT_STRESS_PARALLEL)) \
+	    BPFMAN_LOCK_TIMEOUT=$(if $(BPFMAN_LOCK_TIMEOUT),$(BPFMAN_LOCK_TIMEOUT),5m)
+
+run-e2e-scripts-timeline: go-test-timeline-compile
+	$(Q)mkdir -p $(dir $(E2E_SCRIPTS_TIMELINE_EVENTS)) $(dir $(E2E_SCRIPTS_TIMELINE_MARKERS)) $(dir $(E2E_SCRIPTS_TIMELINE_TRACE))
+	$(Q)$(RM) $(E2E_SCRIPTS_TIMELINE_MARKERS)
+	$(Q)rc=0; \
+	    sudo env PATH=$(abspath $(BIN_DIR)):$$PATH \
+	        BPFMAN_E2E_DIR=$(abspath e2e) \
+	        BPFMAN_E2E_SCRIPT_TIMELINE=$(abspath $(E2E_SCRIPTS_TIMELINE_MARKERS)) \
+	        BPFMAN_LOCK_TIMEOUT=$(if $(BPFMAN_LOCK_TIMEOUT),$(BPFMAN_LOCK_TIMEOUT),5m) \
+	        $(call forward-env,$(E2E_SCRIPTS_FORWARD_VARS)) \
+	        go tool test2json -t -p $(E2E_SCRIPTS_TEST_PKG) \
+	        $(E2E_SCRIPTS_TEST_BIN) -test.v -test.failfast \
+	        -test.count=$(STRESS_COUNT) $(if $(PARALLEL),-test.parallel $(PARALLEL)) \
+	        -test.run "$(if $(TEST),$(TEST),TestBPFManScripts)" > $(E2E_SCRIPTS_TIMELINE_EVENTS) || rc=$$?; \
+	    sudo chmod a+r $(E2E_SCRIPTS_TIMELINE_MARKERS); \
+	    convert_rc=0; \
+	    $(BIN_DIR)/go-test-timeline -input $(E2E_SCRIPTS_TIMELINE_EVENTS) -markers $(E2E_SCRIPTS_TIMELINE_MARKERS) -output $(E2E_SCRIPTS_TIMELINE_TRACE) -title "bpfman e2e scripts timeline" -test-name-match "/scripts/" || convert_rc=$$?; \
+	    if [ $$convert_rc -eq 0 ]; then printf "wrote %s\n" "$(E2E_SCRIPTS_TIMELINE_TRACE)"; fi; \
+	    if [ $$rc -ne 0 ]; then exit $$rc; fi; \
+	    exit $$convert_rc
+
+test-e2e-scripts-timeline: build-e2e-scripts e2e-kmod-reload
+	$(Q)$(MAKE) run-e2e-scripts-timeline
 
 # Run every .bpfman script under examples/ against the built bpfman
 # binary. The examples are load/attach/detach/unload
@@ -1174,6 +1228,18 @@ bpfman-e2e-cleanup-compile: | $(BIN_DIR)
 
 clean-bpfman-e2e-cleanup:
 	$(RM) $(BIN_DIR)/bpfman-e2e-cleanup
+
+# go-test-timeline turns `go test -json` or `go tool test2json -t`
+# streams into Chrome Trace Event JSON loadable by chrome://tracing
+# or https://ui.perfetto.dev. It is intentionally a dev tool rather
+# than part of the production bpfman binary set.
+go-test-timeline-build: bpfman-fmt go-test-timeline-compile
+
+go-test-timeline-compile: | $(BIN_DIR)
+	$(strip go build $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(BUILD_TAGS),-tags '$(BUILD_TAGS)') $(if $(BIN_LDFLAGS),-ldflags "$(BIN_LDFLAGS)") -o $(BIN_DIR)/go-test-timeline ./cmd/go-test-timeline)
+
+clean-go-test-timeline:
+	$(RM) $(BIN_DIR)/go-test-timeline
 
 # ---------------------------------------------------------------------------
 # Proto generation for bpfman gRPC API.
@@ -1604,10 +1670,11 @@ bpfman-test-grpc: build-image-dev
 .PHONY: bpfman-build clean-bpfman bpfman-compile bpfman-fmt bpfman-goimports bpfman-proto bpfman-test-grpc bpfman-vet
 .PHONY: bpfman-shell-build bpfman-shell-compile clean-bpfman-shell
 .PHONY: bpfman-e2e-cleanup-build bpfman-e2e-cleanup-compile clean-bpfman-e2e-cleanup
+.PHONY: go-test-timeline-build go-test-timeline-compile clean-go-test-timeline
 .PHONY: build-image build-image-amd64 build-image-arm64 build-image-csi-sanity build-image-dev build-image-nix build-image-openshift build-image-ppc64le build-image-s390x cosign-sign
 .PHONY: ci ci-build ci-check-fmt ci-check-goimports ci-check-goldens ci-check-vendor ci-check-vet ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-grpc ci-test-e2e-scripts
 .PHONY: coverage clean-coverage coverage-func coverage-html coverage-open
 .PHONY: doc doc-text
 .PHONY: print-fedora-version print-go-version print-golangci-lint-version
-.PHONY: build-e2e-grpc build-e2e-scripts $(BIN_DIR)/e2e.test $(BIN_DIR)/e2e-grpc.test $(BIN_DIR)/e2e-scripts.test run-e2e-grpc run-e2e-scripts test test-all test-lowered-corpus update-lowered-corpus test-e2e test-e2e-grpc test-e2e-scripts test-examples
+.PHONY: build-e2e-grpc build-e2e-scripts $(BIN_DIR)/e2e.test $(BIN_DIR)/e2e-grpc.test $(BIN_DIR)/e2e-scripts.test run-e2e-grpc run-e2e-scripts run-e2e-scripts-timeline test test-timeline test-all test-lowered-corpus update-lowered-corpus test-e2e test-e2e-grpc test-e2e-scripts test-e2e-scripts-stress test-e2e-scripts-timeline test-examples
 .PHONY: test-nsenter test-nsenter-amd64 test-nsenter-arm64 test-nsenter-cross test-nsenter-ppc64le test-nsenter-s390x

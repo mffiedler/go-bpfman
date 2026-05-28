@@ -32,6 +32,16 @@ import (
 // address management cost for no near-term gain.
 const poolSize = 64
 
+// defaultPoolAcquireTimeout bounds how long an auto-address
+// `net veth-pair` waits for another process to release a pool
+// slot. Stress runs can legitimately dispatch more net-using
+// scripts than the pool has slots; that should back-pressure the
+// caller rather than fail a script that would have run correctly
+// once a lease became available.
+const defaultPoolAcquireTimeout = 5 * time.Minute
+
+const poolAcquirePollInterval = 25 * time.Millisecond
+
 // defaultPoolRoot is the production location of the pool, sibling
 // of `/run/bpfman`. Callers that pass an empty Root in
 // poolAcquireRequest get this; tests pass a t.TempDir() so the
@@ -118,6 +128,13 @@ type poolAcquireRequest struct {
 	// without needing CAP_NET_ADMIN.
 	linkExists  linkExistsFn
 	netnsExists netnsExistsFn
+
+	// waitTimeout bounds how long acquirePoolSlot waits for an
+	// in-flight lease to be released when every slot is held.
+	// Zero uses defaultPoolAcquireTimeout. Tests set a tiny value
+	// when they need to exercise exhaustion without sleeping for
+	// the production budget.
+	waitTimeout time.Duration
 }
 
 var (
@@ -153,7 +170,36 @@ type provenance struct {
 // The mkdir is best-effort: a pre-existing pool root is fine; a
 // permissions failure surfaces here rather than during the first
 // flock.
+var errNetPoolExhausted = errors.New("net pool exhausted")
+
 func acquirePoolSlot(req poolAcquireRequest) (*poolLease, error) {
+	timeout := req.waitTimeout
+	if timeout == 0 {
+		timeout = defaultPoolAcquireTimeout
+	}
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+
+	var lastErr error
+	for {
+		lease, err := tryAcquirePoolSlot(req)
+		if err == nil {
+			return lease, nil
+		}
+		if !errors.Is(err, errNetPoolExhausted) {
+			return nil, err
+		}
+		lastErr = err
+
+		select {
+		case <-deadline.C:
+			return nil, lastErr
+		case <-time.After(poolAcquirePollInterval):
+		}
+	}
+}
+
+func tryAcquirePoolSlot(req poolAcquireRequest) (*poolLease, error) {
 	root := req.root
 	if root == "" {
 		root = defaultPoolRoot
@@ -226,7 +272,7 @@ func acquirePoolSlot(req poolAcquireRequest) (*poolLease, error) {
 			origin:   req.origin,
 		}, nil
 	}
-	return nil, errors.New("net pool: more than 64 concurrent pairs in flight")
+	return nil, fmt.Errorf("%w: more than %d concurrent pairs in flight", errNetPoolExhausted, poolSize)
 }
 
 // releasePoolSlot writes a final provenance body carrying

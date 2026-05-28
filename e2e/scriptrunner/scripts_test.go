@@ -5,6 +5,7 @@ package scriptrunner
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -35,17 +37,16 @@ import (
 // cmd/bpfman-shell/internal/builtins/netpool.go) and are safe
 // to run concurrently by construction.
 //
-// Per-script opt-out: a `.bpfman` script can declare itself
-// non-parallel by putting `# NOPARALLEL` on a line within the
+// Per-script serial lane: a `.bpfman` script can declare
+// itself serial by putting `# SERIAL` on a line within the
 // first scriptHeaderLines lines of the file (the
-// scriptOptsOutOfParallel helper pre-scans for it). Such a
-// script's subtest runs sequentially in the parent's
-// registration loop with no t.Parallel call, so it has the
-// kernel surface to itself for the duration of its run; the
-// other subtests stay paused in the parallel queue until the
-// parent body returns. The marker lives with the script, so
-// the constraint is discoverable from the file that has it
-// rather than from a central registry.
+// scriptOptsIntoSerial helper pre-scans for it). Such a
+// script still enters the Go parallel queue so registration
+// can complete and the parallel-eligible scripts can start,
+// but it takes a package-local serial mutex before executing.
+// That means SERIAL scripts run one-at-a-time with other
+// SERIAL scripts while parallel-eligible scripts continue to
+// run beside them.
 //
 // Subtest names are the script's path relative to e2e/, so
 // `go test -run 'TestBPFManScripts/scripts/Foo\.bpfman$'`
@@ -98,7 +99,7 @@ func TestBPFManScripts(t *testing.T) {
 	// the file as opt-in to parallel.
 	serial := make(map[string]bool, len(matches))
 	for _, abs := range matches {
-		if scriptOptsOutOfParallel(t, abs) {
+		if scriptOptsIntoSerial(t, abs) {
 			serial[abs] = true
 		}
 	}
@@ -106,11 +107,10 @@ func TestBPFManScripts(t *testing.T) {
 	// every script enters the dispatcher first, then r=1,
 	// and so on; the t.Parallel queue therefore holds
 	// [s1#0, s2#0, ..., sN#0, s1#1, ...] which preserves
-	// wave diversity across repeats. Scripts marked
-	// NOPARALLEL skip the repeat: they hold the kernel
-	// surface to themselves for their run, so extra
-	// registrations only burn wall-clock time without
-	// tickling new race windows.
+	// wave diversity across repeats. Scripts marked SERIAL
+	// skip the repeat: they are serialized with other SERIAL
+	// scripts by scriptSerialMu, so extra registrations only
+	// burn wall-clock time without tickling new race windows.
 	for r := 0; r < repeats; r++ {
 		for _, abs := range matches {
 			if serial[abs] && r > 0 {
@@ -119,20 +119,30 @@ func TestBPFManScripts(t *testing.T) {
 			rel := filepath.Join(sub, filepath.Base(abs))
 			// Suffix only when the script actually
 			// participates in the repeat cycle. A
-			// NOPARALLEL script runs exactly once even
-			// under stress, so it keeps its unsuffixed
-			// name; otherwise `-test.run 'Foo#3'` against
-			// a NOPARALLEL script would silently match no
+			// SERIAL script runs exactly once even under
+			// stress, so it keeps its unsuffixed name;
+			// otherwise `-test.run 'Foo#3'` against a
+			// SERIAL script would silently match no
 			// subtests.
 			name := filepath.ToSlash(rel)
 			if repeats > 1 && !serial[abs] {
 				name = fmt.Sprintf("%s#%d", name, r)
 			}
-			runParallel := !serial[abs]
+			runSerial := serial[abs]
 			t.Run(name, func(t *testing.T) {
-				if runParallel {
-					t.Parallel()
+				t.Parallel()
+				if runSerial {
+					scriptSerialMu.Lock()
+					defer scriptSerialMu.Unlock()
 				}
+				if err := emitScriptTimelineMarker("script_start", t.Name()); err != nil {
+					t.Fatalf("write script timeline start marker: %v", err)
+				}
+				defer func() {
+					if err := emitScriptTimelineMarker("script_end", t.Name()); err != nil {
+						t.Errorf("write script timeline end marker: %v", err)
+					}
+				}()
 				runBPFManScript(t, e2eDir, rel, timeout)
 			})
 		}
@@ -188,7 +198,44 @@ const (
 	bpfmanShellTimeoutDefault = 5 * time.Minute
 	bpfmanShellRepeatsEnv     = "BPFMAN_E2E_SCRIPT_REPEATS"
 	bpfmanShellRepeatsDefault = 1
+	bpfmanShellTimelineEnv    = "BPFMAN_E2E_SCRIPT_TIMELINE"
+	bpfmanShellTestPackage    = "github.com/frobware/go-bpfman/e2e/scriptrunner"
 )
+
+var scriptTimelineMu sync.Mutex
+var scriptSerialMu sync.Mutex
+
+type scriptTimelineMarker struct {
+	Time    time.Time `json:"Time"`
+	Action  string    `json:"Action"`
+	Package string    `json:"Package"`
+	Test    string    `json:"Test"`
+}
+
+func emitScriptTimelineMarker(action, testName string) error {
+	path := os.Getenv(bpfmanShellTimelineEnv)
+	if path == "" {
+		return nil
+	}
+	scriptTimelineMu.Lock()
+	defer scriptTimelineMu.Unlock()
+
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+
+	if err := json.NewEncoder(f).Encode(scriptTimelineMarker{
+		Time:    time.Now(),
+		Action:  action,
+		Package: bpfmanShellTestPackage,
+		Test:    testName,
+	}); err != nil {
+		return err
+	}
+	return nil
+}
 
 func scriptTimeout() time.Duration {
 	raw := os.Getenv(bpfmanShellTimeoutEnv)
@@ -215,7 +262,7 @@ func scriptRepeats() int {
 }
 
 // scriptHeaderLines bounds the prescan window for the
-// # NOPARALLEL marker so the helper does no more I/O than
+// # SERIAL marker so the helper does no more I/O than
 // reading a small script header. Any marker has to appear in
 // the file's first scriptHeaderLines lines; that keeps the
 // convention explicit (the script header is where the
@@ -224,33 +271,32 @@ func scriptRepeats() int {
 // the per-script scan cost at a tiny bounded read.
 const (
 	scriptHeaderLines = 20
-	scriptNoParallel  = "# NOPARALLEL"
+	scriptSerial      = "# SERIAL"
 )
 
-// scriptOptsOutOfParallel reports whether the script at path
-// declares itself non-parallel via a `# NOPARALLEL` line in
-// its header. Match is a prefix on the trimmed line so
-// trailing rationale is allowed (e.g. "# NOPARALLEL: shares
-// pinned-map state"). Any read error is fatal -- a script
-// the runner cannot even open is not a script the runner
-// can run; better to surface the read error here than to
-// silently default the missing-or-unreadable script into
-// the parallel pool.
-func scriptOptsOutOfParallel(t *testing.T, path string) bool {
+// scriptOptsIntoSerial reports whether the script at path
+// declares itself serial via a `# SERIAL` line in its header.
+// Match is a prefix on the trimmed line so trailing rationale
+// is allowed (e.g. "# SERIAL: shares pinned-map state"). Any
+// read error is fatal -- a script the runner cannot even open
+// is not a script the runner can run; better to surface the
+// read error here than to silently default the
+// missing-or-unreadable script into the parallel pool.
+func scriptOptsIntoSerial(t *testing.T, path string) bool {
 	t.Helper()
 	f, err := os.Open(path)
 	if err != nil {
-		t.Fatalf("open script %s for NOPARALLEL prescan: %v", path, err)
+		t.Fatalf("open script %s for serial-marker prescan: %v", path, err)
 	}
 	defer f.Close()
 	scanner := bufio.NewScanner(f)
 	for i := 0; i < scriptHeaderLines && scanner.Scan(); i++ {
-		if strings.HasPrefix(strings.TrimSpace(scanner.Text()), scriptNoParallel) {
+		if strings.HasPrefix(strings.TrimSpace(scanner.Text()), scriptSerial) {
 			return true
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		t.Fatalf("read script %s for NOPARALLEL prescan: %v", path, err)
+		t.Fatalf("read script %s for serial-marker prescan: %v", path, err)
 	}
 	return false
 }

@@ -176,10 +176,10 @@ func TestAcquirePoolSlot_PreferReleasedOverHeld(t *testing.T) {
 	assert.Equalf(t, uint32(3), next.slot, "expected the longest-released slot (3); got %d", next.slot)
 }
 
-// TestAcquirePoolSlot_Exhaustion acquires all 64 slots and
-// confirms the 65th attempt errors with a clear "more than 64
-// concurrent pairs in flight" message rather than retrying
-// forever or returning a stale slot.
+// TestAcquirePoolSlot_Exhaustion acquires all slots and confirms
+// the next attempt returns the typed exhaustion error once the
+// caller's wait budget expires rather than retrying forever or
+// returning a stale slot.
 func TestAcquirePoolSlot_Exhaustion(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -196,9 +196,11 @@ func TestAcquirePoolSlot_Exhaustion(t *testing.T) {
 		held = append(held, l)
 	}
 
-	_, err := acquirePoolSlot(poolReq(root, "overflow", "", ""))
+	req := poolReq(root, "overflow", "", "")
+	req.waitTimeout = time.Millisecond
+	_, err := acquirePoolSlot(req)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "more than 64")
+	assert.ErrorIs(t, err, errNetPoolExhausted)
 }
 
 // TestAcquirePoolSlot_ReleasedSlotIgnoresExtantLink confirms
