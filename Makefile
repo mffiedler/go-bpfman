@@ -624,6 +624,7 @@ help:
 	@echo "  test-e2e                    Run e2e tests (requires root)"
 	@echo "  test-e2e-grpc               Run the parallel gRPC e2e test against a real bpfman serve daemon (requires root)"
 	@echo "  test-e2e-scripts            Run .bpfman e2e scripts under e2e/scripts/ via the Go test binary in e2e/scriptrunner (requires root)"
+	@echo "  e2e-kmod-force-reload       Delete managed bpfman state, then rebuild and reload the e2e kmod (requires root)"
 	@echo "  test-examples               Run .bpfman scripts under examples/ (requires root)"
 	@echo "  test-nsenter                Run nsenter tests (native amd64)"
 	@echo "  test-nsenter-cross          Run nsenter tests on amd64/arm64/ppc64le/s390x"
@@ -679,6 +680,7 @@ help:
 	@echo "  e2e-kmod-insmod             Load the built module into the running kernel (idempotent; sudos internally)"
 	@echo "  e2e-kmod-rmmod              Unload the module from the running kernel (idempotent; sudos internally)"
 	@echo "  e2e-kmod-reload             Rebuild and reload the module; ensures the running .ko matches the latest source (sudos internally)"
+	@echo "  e2e-kmod-force-reload       Delete managed bpfman state, apply e2e cleanup, then rebuild and reload the module (sudos internally)"
 	@echo "  clean-e2e-kmod              Remove e2e kmod build artefacts and result symlink"
 	@echo ""
 	@echo "SQLite driver:"
@@ -1059,13 +1061,27 @@ e2e-kmod-rmmod:
 # stale .ko from before a source edit cannot silently shadow the
 # new build. Used as the test-e2e-scripts dep so a test run
 # always exercises the just-built code. Requires root; the
-# recipe sudos internally.
+# recipe sudos internally. If rmmod fails with "Module ... is in
+# use", a previous interrupted run may have left managed bpfman
+# programs attached to the module; use e2e-kmod-force-reload to
+# delete that managed state before reloading.
 e2e-kmod-reload: e2e-kmod-build
 	$(call quiet_cmd,RELOAD,$(E2E_KMOD))
 	$(Q)if lsmod | awk '{print $$1}' | grep -qx bpfman_e2e_targets; then \
 	    sudo rmmod bpfman_e2e_targets; \
 	fi
 	$(Q)sudo insmod $(E2E_KMOD)
+
+# Force a clean e2e kmod reload after an interrupted stress run.
+# This is intentionally opt-in: `bpfman program delete -r --all`
+# tears down every managed bpfman program on the host, so it is
+# appropriate for a dedicated e2e development machine but too broad
+# for the ordinary e2e-kmod-reload path.
+e2e-kmod-force-reload: bpfman-build bpfman-e2e-cleanup-build
+	$(call quiet_cmd,RESET,bpfman managed state)
+	$(Q)sudo $(BIN_DIR)/bpfman program delete -r --all
+	$(Q)sudo $(BIN_DIR)/bpfman-e2e-cleanup --apply
+	$(Q)$(MAKE) e2e-kmod-reload
 
 # ---------------------------------------------------------------------------
 # Documentation.
@@ -1584,7 +1600,7 @@ bpfman-test-grpc: build-image-dev
 # stand-alone declaration.
 .PHONY: all build-all clean clean-mrproper help lint lint-dockerfile lint-go lint-hack lint-make
 .PHONY: clean-bpf
-.PHONY: e2e-kmod-build e2e-kmod-insmod e2e-kmod-rmmod e2e-kmod-reload clean-e2e-kmod
+.PHONY: e2e-kmod-build e2e-kmod-insmod e2e-kmod-rmmod e2e-kmod-reload e2e-kmod-force-reload clean-e2e-kmod
 .PHONY: bpfman-build clean-bpfman bpfman-compile bpfman-fmt bpfman-goimports bpfman-proto bpfman-test-grpc bpfman-vet
 .PHONY: bpfman-shell-build bpfman-shell-compile clean-bpfman-shell
 .PHONY: bpfman-e2e-cleanup-build bpfman-e2e-cleanup-compile clean-bpfman-e2e-cleanup
