@@ -94,7 +94,7 @@ func (p Plan) Dedup() Plan {
 }
 
 // RemoveTree recursively removes a directory tree. Used by the
-// --nuke path to clear bpfman's runtime FS subtree wholesale,
+// --wipe path to clear bpfman's runtime FS subtree wholesale,
 // ignoring DB ownership. Missing trees are not an error.
 type RemoveTree struct {
 	Path string

@@ -8,12 +8,12 @@ import (
 	"github.com/frobware/go-bpfman/fs"
 )
 
-// ScanNuke returns a Plan that removes bpfman's runtime
+// ScanWipe returns a Plan that removes bpfman's runtime
 // directory contents wholesale: every file under the bpf fs
 // mount point, the SQLite database (plus its WAL and shared
 // memory files), and every bytecode cache directory.
 //
-// Unlike ScanE2EResidue and PlanFromObservation, ScanNuke does
+// Unlike ScanE2EResidue and PlanFromObservation, ScanWipe does
 // not consult the store. It is the escape hatch for when the
 // store and the bpf fs have drifted out of sync to a state
 // where the normal cleanup flows cannot reconcile them. Next
@@ -21,7 +21,7 @@ import (
 //
 // The bpf fs mount point itself is not removed -- the mount is
 // still there. Only its contents are cleared.
-func ScanNuke(layout fs.Layout) (Plan, error) {
+func ScanWipe(layout fs.Layout) (Plan, error) {
 	var plan Plan
 
 	bpffsRoot := layout.BPFFS().MountPoint()

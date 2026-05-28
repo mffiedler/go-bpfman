@@ -64,7 +64,7 @@ func (c *CLI) Execute(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("resolve layout: %w", err)
 		}
-		wipePlan, err := bpfresidue.ScanNuke(layout)
+		wipePlan, err := bpfresidue.ScanWipe(layout)
 		if err != nil {
 			return fmt.Errorf("scan runtime dir for wipe: %w", err)
 		}
