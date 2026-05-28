@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"github.com/cilium/ebpf/link"
 	"github.com/vishvananda/netlink"
@@ -107,6 +108,26 @@ func (a RemoveTree) Describe() string { return fmt.Sprintf("rm -rf -- %s", a.Pat
 func (a RemoveTree) Apply() error {
 	if err := os.RemoveAll(a.Path); err != nil {
 		return fmt.Errorf("remove tree %s: %w", a.Path, err)
+	}
+	return nil
+}
+
+// UnmountBPFFS unmounts the bpffs at Path. Used by the --wipe
+// path so the subsequent RemoveTree on the runtime root can also
+// drain the mount point directory. Already-unmounted paths
+// surface as an Apply failure rather than a silent success
+// because a stale plan entry is worth flagging.
+type UnmountBPFFS struct {
+	Path string
+}
+
+// Describe implements Action.
+func (a UnmountBPFFS) Describe() string { return fmt.Sprintf("umount -- %s", a.Path) }
+
+// Apply implements Action.
+func (a UnmountBPFFS) Apply() error {
+	if err := syscall.Unmount(a.Path, 0); err != nil {
+		return fmt.Errorf("unmount %s: %w", a.Path, err)
 	}
 	return nil
 }

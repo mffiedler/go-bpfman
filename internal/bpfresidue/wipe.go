@@ -3,51 +3,38 @@ package bpfresidue
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/frobware/go-bpfman/fs"
+	"github.com/frobware/go-bpfman/fs/runtime"
 )
 
-// ScanWipe returns a Plan that removes bpfman's runtime
-// directory contents wholesale: every file under the bpf fs
-// mount point, the SQLite database (plus its WAL and shared
-// memory files), and every bytecode cache directory.
+// ScanWipe returns a Plan that returns bpfman's runtime directory
+// to a fresh-box state: unmount the bpffs at the runtime root if
+// present, then remove the runtime root wholesale. The next
+// `bpfman` invocation recreates the lock file, the runtime
+// subdirectories, and re-mounts bpffs from scratch -- which is
+// exactly the first-touch path the lock-on-startup code now
+// relies on.
 //
 // Unlike ScanE2EResidue and PlanFromObservation, ScanWipe does
 // not consult the store. It is the escape hatch for when the
-// store and the bpf fs have drifted out of sync to a state
-// where the normal cleanup flows cannot reconcile them. Next
-// `bpfman` invocation rebuilds a clean tree.
-//
-// The bpf fs mount point itself is not removed -- the mount is
-// still there. Only its contents are cleared.
+// store and the bpf fs have drifted out of sync to a state where
+// the normal cleanup flows cannot reconcile them.
 func ScanWipe(layout fs.Layout) (Plan, error) {
 	var plan Plan
 
 	bpffsRoot := layout.BPFFS().MountPoint()
-	entries, err := os.ReadDir(bpffsRoot)
-	if err != nil && !os.IsNotExist(err) {
-		return plan, fmt.Errorf("read bpffs root %s: %w", bpffsRoot, err)
-	}
-	for _, e := range entries {
-		plan = append(plan, RemoveTree{Path: filepath.Join(bpffsRoot, e.Name())})
+	if mounted, err := runtime.IsMounted(runtime.DefaultMountInfoPath, bpffsRoot); err != nil {
+		return nil, fmt.Errorf("check bpffs mount %s: %w", bpffsRoot, err)
+	} else if mounted {
+		plan = append(plan, UnmountBPFFS{Path: bpffsRoot})
 	}
 
-	dbPath := layout.DBPath()
-	for _, suffix := range []string{"", "-wal", "-shm"} {
-		path := dbPath + suffix
-		if _, err := os.Stat(path); err == nil {
-			plan = append(plan, RemovePin{Path: path})
-		}
-	}
-
-	bytecodeRoot := filepath.Join(layout.Base(), "programs")
-	cacheEntries, err := os.ReadDir(bytecodeRoot)
-	if err != nil && !os.IsNotExist(err) {
-		return plan, fmt.Errorf("read %s: %w", bytecodeRoot, err)
-	}
-	for _, e := range cacheEntries {
-		plan = append(plan, RemoveTree{Path: filepath.Join(bytecodeRoot, e.Name())})
+	base := layout.Base()
+	if _, err := os.Stat(base); err == nil {
+		plan = append(plan, RemoveTree{Path: base})
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("stat %s: %w", base, err)
 	}
 
 	return plan, nil

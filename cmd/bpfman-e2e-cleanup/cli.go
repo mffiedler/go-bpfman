@@ -23,7 +23,7 @@ type CLI struct {
 	kctx *kong.Context `kong:"-"`
 
 	Apply bool `name:"apply" help:"Execute the planned actions. Without this flag the command lists what would change and exits zero."`
-	Wipe  bool `name:"wipe" help:"Ignore the store and remove every file under --runtime-dir (bpf fs, store DB, bytecode caches). Use when the store and bpf fs have drifted out of sync. The next bpfman invocation rebuilds a clean tree."`
+	Wipe  bool `name:"wipe" help:"Ignore the store and return --runtime-dir to a fresh-box state: unmount the bpffs at the runtime root if mounted, then remove the runtime root tree wholesale (lock file, store DB, bytecode caches, every subdirectory). Use when the store and bpf fs have drifted out of sync. The next bpfman invocation rebuilds a clean tree from scratch."`
 }
 
 // NewCLI parses argv and returns the configured root.
