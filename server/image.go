@@ -2,10 +2,12 @@ package server
 
 import (
 	"context"
+	"errors"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/platform"
 	pb "github.com/frobware/go-bpfman/server/pb"
 )
@@ -13,11 +15,6 @@ import (
 // PullBytecode implements the PullBytecode RPC method.
 // It pre-pulls an OCI image to the local cache without loading any programs.
 func (s *Server) PullBytecode(ctx context.Context, req *pb.PullBytecodeRequest) (*pb.PullBytecodeResponse, error) {
-	puller := s.mgr.ImagePuller()
-	if puller == nil {
-		return nil, status.Error(codes.Unimplemented, "OCI image pulling not configured on this server")
-	}
-
 	if req.Image == nil {
 		return nil, status.Error(codes.InvalidArgument, "image is required")
 	}
@@ -38,8 +35,10 @@ func (s *Server) PullBytecode(ctx context.Context, req *pb.PullBytecodeRequest) 
 		ref.Auth = auth
 	}
 
-	// Pull the image (this caches it)
-	_, err = puller.Pull(ctx, ref)
+	_, err = s.mgr.PullBytecode(ctx, ref)
+	if errors.Is(err, manager.ErrImagePullerNotConfigured) {
+		return nil, status.Error(codes.Unimplemented, "OCI image pulling not configured on this server")
+	}
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to pull image %s: %v", req.Image.Url, err)
 	}

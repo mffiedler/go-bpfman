@@ -113,6 +113,7 @@ type fakeImagePuller struct {
 	objectPath string
 	digest     string
 	pullErr    error
+	pulls      []platform.ImageRef
 }
 
 func newFakeImagePuller() *fakeImagePuller {
@@ -130,6 +131,7 @@ func (p *fakeImagePuller) SetPullError(err error) {
 }
 
 func (p *fakeImagePuller) Pull(_ context.Context, ref platform.ImageRef) (platform.PulledImage, error) {
+	p.pulls = append(p.pulls, ref)
 	if p.pullErr != nil {
 		return platform.PulledImage{}, p.pullErr
 	}
@@ -137,6 +139,10 @@ func (p *fakeImagePuller) Pull(_ context.Context, ref platform.ImageRef) (platfo
 		ObjectPath: p.objectPath,
 		Digest:     p.digest,
 	}, nil
+}
+
+func (p *fakeImagePuller) Pulls() []platform.ImageRef {
+	return append([]platform.ImageRef(nil), p.pulls...)
 }
 
 // Ensure fakeImagePuller implements the interface.

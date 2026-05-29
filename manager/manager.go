@@ -85,8 +85,3 @@ func (m *Manager) Layout() fs.Layout {
 func (m *Manager) Runtime() fs.Runtime {
 	return m.rt
 }
-
-// ImagePuller returns the image puller, or nil if not configured.
-func (m *Manager) ImagePuller() platform.ImagePuller {
-	return m.imagePuller
-}

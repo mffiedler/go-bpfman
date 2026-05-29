@@ -24,6 +24,15 @@ var loadedKey = operation.NewKey[bpfman.LoadOutput]("loaded")
 // requested but the manager was created without an OCI image puller.
 var ErrImagePullerNotConfigured = errors.New("OCI image loading not configured")
 
+// PullBytecode pre-pulls an OCI image to the local cache without
+// loading any programs.
+func (m *Manager) PullBytecode(ctx context.Context, ref platform.ImageRef) (platform.PulledImage, error) {
+	if m.imagePuller == nil {
+		return platform.PulledImage{}, ErrImagePullerNotConfigured
+	}
+	return m.imagePuller.Pull(ctx, ref)
+}
+
 // loadOpts contains optional metadata for a single-program load operation.
 type loadOpts struct {
 	UserMetadata map[string]string
