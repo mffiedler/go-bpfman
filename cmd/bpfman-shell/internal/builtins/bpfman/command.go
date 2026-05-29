@@ -1772,21 +1772,11 @@ func parseDeleteProgram(args []runtime.Arg) (*DeleteProgramCommand, error) {
 // is set, every managed program is collected first. Each program is
 // deleted with cascading cleanup under lock.
 func execDeleteProgram(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *DeleteProgramCommand) error {
-	ids, err := collectDeleteIDs(ctx, mgr, cmd.All, programIDsToProgramIDs(cmd.ProgramIDs))
+	ids, err := collectDeleteIDs(ctx, mgr, cmd.All, cmd.ProgramIDs)
 	if err != nil {
 		return err
 	}
 	return executeDeletePrograms(ctx, cli, mgr, ids, cmd.Recursive)
-}
-
-// programIDsToProgramIDs converts a slice of kernel.ProgramID to the
-// bpfmancli.ProgramID wrapper type used by collectDeleteIDs.
-func programIDsToProgramIDs(ids []kernel.ProgramID) []bpfmancli.ProgramID {
-	result := make([]bpfmancli.ProgramID, len(ids))
-	for i, id := range ids {
-		result[i] = bpfmancli.ProgramID{Value: id}
-	}
-	return result
 }
 
 // DeleteLinkCommand represents a fully parsed "link delete" command
@@ -1844,9 +1834,9 @@ func execDeleteLink(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manage
 	results := make([]result, 0, len(cmd.LinkIDs))
 
 	lockErr := bpfmancli.RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
-		for _, id := range cmd.LinkIDs {
-			err := deleteLink(ctx, writeLock, mgr, id, cmd.Recursive)
-			results = append(results, result{id: id, err: err})
+		deleteResults := mgr.DeleteLinks(ctx, writeLock, cmd.LinkIDs, manager.DeleteLinksOpts{Recursive: cmd.Recursive})
+		for _, r := range deleteResults {
+			results = append(results, result{id: r.LinkID, err: r.Err})
 		}
 		return nil
 	})
