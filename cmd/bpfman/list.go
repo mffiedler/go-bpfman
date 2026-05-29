@@ -15,11 +15,11 @@ import (
 // ListProgramsCmd lists managed BPF programs.
 type ListProgramsCmd struct {
 	cliformat.OutputFlags
-	Quiet      bool     `short:"q" help:"Output only program IDs, one per line."`
-	Attached   bool     `name:"attached" help:"Show only programs with active links."`
-	Unattached bool     `name:"unattached" help:"Show only programs without active links."`
-	Type       []string `name:"type" sep:"," help:"Filter by program type (case-insensitive, e.g., --type=xdp,kprobe)."`
-	Selector   string   `name:"selector" short:"l" help:"Label selector (e.g., app=myapp,version!=v1)."`
+	Quiet      bool                 `short:"q" help:"Output only program IDs, one per line."`
+	Attached   bool                 `name:"attached" help:"Show only programs with active links."`
+	Unattached bool                 `name:"unattached" help:"Show only programs without active links."`
+	Type       []bpfman.ProgramType `name:"type" sep:"," help:"Filter by program type (case-insensitive, e.g., --type=xdp,kprobe)."`
+	Selector   string               `name:"selector" short:"l" help:"Label selector (e.g., app=myapp,version!=v1)."`
 }
 
 // Validate checks that the command flags are consistent.
@@ -42,11 +42,7 @@ func (c *ListProgramsCmd) buildListOptions() ([]bpfman.ListOption, error) {
 
 	// Type filter
 	if len(c.Type) > 0 {
-		types, err := bpfmancli.ParseProgramTypesSlice(c.Type)
-		if err != nil {
-			return nil, err
-		}
-		opts = append(opts, bpfman.WithTypes(types...))
+		opts = append(opts, bpfman.WithTypes(c.Type...))
 	}
 
 	// Label selector
@@ -107,7 +103,7 @@ type ListLinksCmd struct {
 	cliformat.OutputFlags
 	Quiet     bool                 `short:"q" help:"Output only link IDs, one per line."`
 	ProgramID *bpfmancli.ProgramID `name:"program-id" help:"Filter by program ID (supports hex with 0x prefix)."`
-	Kind      []string             `name:"kind" sep:"," help:"Filter by link kind (e.g., --kind=xdp,kprobe)."`
+	Kind      []bpfman.LinkKind    `name:"kind" sep:"," help:"Filter by link kind (e.g., --kind=xdp,kprobe)."`
 }
 
 func (c *ListLinksCmd) buildLinkListOptions() ([]bpfman.LinkListOption, error) {
@@ -118,11 +114,7 @@ func (c *ListLinksCmd) buildLinkListOptions() ([]bpfman.LinkListOption, error) {
 	}
 
 	if len(c.Kind) > 0 {
-		kinds, err := bpfmancli.ParseLinkKindsSlice(c.Kind)
-		if err != nil {
-			return nil, err
-		}
-		opts = append(opts, bpfman.WithKinds(kinds...))
+		opts = append(opts, bpfman.WithKinds(c.Kind...))
 	}
 
 	return opts, nil

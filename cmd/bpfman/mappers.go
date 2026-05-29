@@ -7,6 +7,7 @@ import (
 	"github.com/alecthomas/kong"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/internal/cliformat"
 )
@@ -107,6 +108,54 @@ func programSpecMapper() kong.MapperFunc {
 	}
 }
 
+// programTypeMapper creates a Kong mapper for bpfman.ProgramType.
+func programTypeMapper() kong.MapperFunc {
+	return func(ctx *kong.DecodeContext, target reflect.Value) error {
+		var s string
+		if err := ctx.Scan.PopValueInto("program-type", &s); err != nil {
+			return err
+		}
+		pt, err := bpfman.ParseProgramType(s)
+		if err != nil {
+			return err
+		}
+		target.Set(reflect.ValueOf(pt))
+		return nil
+	}
+}
+
+// linkKindMapper creates a Kong mapper for bpfman.LinkKind.
+func linkKindMapper() kong.MapperFunc {
+	return func(ctx *kong.DecodeContext, target reflect.Value) error {
+		var s string
+		if err := ctx.Scan.PopValueInto("link-kind", &s); err != nil {
+			return err
+		}
+		kind, err := bpfman.ParseLinkKind(s)
+		if err != nil {
+			return err
+		}
+		target.Set(reflect.ValueOf(kind))
+		return nil
+	}
+}
+
+// dispatcherTypeMapper creates a Kong mapper for dispatcher.DispatcherType.
+func dispatcherTypeMapper() kong.MapperFunc {
+	return func(ctx *kong.DecodeContext, target reflect.Value) error {
+		var s string
+		if err := ctx.Scan.PopValueInto("dispatcher-type", &s); err != nil {
+			return err
+		}
+		typ, err := dispatcher.ParseDispatcherType(s)
+		if err != nil {
+			return err
+		}
+		target.Set(reflect.ValueOf(typ))
+		return nil
+	}
+}
+
 // tracepointMapper creates a Kong mapper for bpfman.Tracepoint.
 func tracepointMapper() kong.MapperFunc {
 	return func(ctx *kong.DecodeContext, target reflect.Value) error {
@@ -139,14 +188,46 @@ func tcDirectionMapper() kong.MapperFunc {
 	}
 }
 
-// imagePullPolicyMapper creates a Kong mapper for bpfmancli.ImagePullPolicy.
+// xdpActionMapper creates a Kong mapper for bpfman.XDPAction.
+func xdpActionMapper() kong.MapperFunc {
+	return func(ctx *kong.DecodeContext, target reflect.Value) error {
+		var s string
+		if err := ctx.Scan.PopValueInto("xdp-action", &s); err != nil {
+			return err
+		}
+		action, err := bpfman.ParseXDPAction(s)
+		if err != nil {
+			return err
+		}
+		target.Set(reflect.ValueOf(action))
+		return nil
+	}
+}
+
+// tcActionMapper creates a Kong mapper for bpfman.TCAction.
+func tcActionMapper() kong.MapperFunc {
+	return func(ctx *kong.DecodeContext, target reflect.Value) error {
+		var s string
+		if err := ctx.Scan.PopValueInto("tc-action", &s); err != nil {
+			return err
+		}
+		action, err := bpfman.ParseTCAction(s)
+		if err != nil {
+			return err
+		}
+		target.Set(reflect.ValueOf(action))
+		return nil
+	}
+}
+
+// imagePullPolicyMapper creates a Kong mapper for bpfman.ImagePullPolicy.
 func imagePullPolicyMapper() kong.MapperFunc {
 	return func(ctx *kong.DecodeContext, target reflect.Value) error {
 		var s string
 		if err := ctx.Scan.PopValueInto("policy", &s); err != nil {
 			return err
 		}
-		pp, err := bpfmancli.ParseImagePullPolicy(s)
+		pp, err := bpfman.ParseImagePullPolicy(s)
 		if err != nil {
 			return err
 		}

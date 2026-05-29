@@ -12,6 +12,7 @@ import (
 	"github.com/alecthomas/kong"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/internal/cliformat"
@@ -133,9 +134,14 @@ func KongOptions() []kong.Option {
 		kong.TypeMapper(reflect.TypeOf(bpfmancli.GlobalData{}), globalDataMapper()),
 		kong.TypeMapper(reflect.TypeOf(bpfmancli.ObjectPath{}), objectPathMapper()),
 		kong.TypeMapper(reflect.TypeOf(bpfmancli.ProgramSpec{}), programSpecMapper()),
+		kong.TypeMapper(reflect.TypeOf(bpfman.ProgramType{}), programTypeMapper()),
+		kong.TypeMapper(reflect.TypeOf(bpfman.LinkKind{}), linkKindMapper()),
 		kong.TypeMapper(reflect.TypeOf(bpfman.Tracepoint{}), tracepointMapper()),
 		kong.TypeMapper(reflect.TypeOf(bpfman.TCDirection{}), tcDirectionMapper()),
-		kong.TypeMapper(reflect.TypeOf(bpfmancli.ImagePullPolicy{}), imagePullPolicyMapper()),
+		kong.TypeMapper(reflect.TypeOf(bpfman.XDPAction{}), xdpActionMapper()),
+		kong.TypeMapper(reflect.TypeOf(bpfman.TCAction{}), tcActionMapper()),
+		kong.TypeMapper(reflect.TypeOf(bpfman.ImagePullPolicy{}), imagePullPolicyMapper()),
+		kong.TypeMapper(reflect.TypeOf(dispatcher.DispatcherType{}), dispatcherTypeMapper()),
 		kong.TypeMapper(reflect.TypeOf(cliformat.OutputValue{}), outputValueMapper()),
 		kong.Vars{
 			"default_runtime_dir":     fs.DefaultRoot,

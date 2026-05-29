@@ -20,23 +20,17 @@ type LoadImageCmd struct {
 	MetadataFlags
 	GlobalDataFlags
 
-	Example      ExampleFlag               `name:"example" help:"Show working examples and exit."`
-	ImageURL     string                    `short:"i" name:"image-url" help:"OCI image reference (e.g., quay.io/bpfman-bytecode/xdp_pass:latest)." required:""`
-	Programs     []bpfmancli.ProgramSpec   `name:"programs" sep:"," help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (comma-separated or repeated). For fentry/fexit, ATTACH_FUNC is required. If not specified, all programs in the image are loaded."`
-	PullPolicy   bpfmancli.ImagePullPolicy `short:"p" name:"pull-policy" help:"Image pull policy (Always, IfNotPresent, Never)." default:"IfNotPresent"`
-	RegistryAuth string                    `name:"registry-auth" env:"BPFMAN_REGISTRY_AUTH" help:"Base64-encoded registry auth (username:password). Prefer BPFMAN_REGISTRY_AUTH env var to avoid exposing credentials in process listings."`
-	Application  string                    `short:"a" name:"application" help:"Application name to group programs (stored as bpfman.io/application metadata)."`
-	MapOwnerID   kernel.ProgramID          `name:"map-owner-id" help:"Program ID of another program to share maps with."`
+	Example      ExampleFlag             `name:"example" help:"Show working examples and exit."`
+	ImageURL     string                  `short:"i" name:"image-url" help:"OCI image reference (e.g., quay.io/bpfman-bytecode/xdp_pass:latest)." required:""`
+	Programs     []bpfmancli.ProgramSpec `name:"programs" sep:"," help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (comma-separated or repeated). For fentry/fexit, ATTACH_FUNC is required. If not specified, all programs in the image are loaded."`
+	PullPolicy   bpfman.ImagePullPolicy  `short:"p" name:"pull-policy" help:"Image pull policy (Always, IfNotPresent, Never)." default:"IfNotPresent"`
+	RegistryAuth string                  `name:"registry-auth" env:"BPFMAN_REGISTRY_AUTH" help:"Base64-encoded registry auth (username:password). Prefer BPFMAN_REGISTRY_AUTH env var to avoid exposing credentials in process listings."`
+	Application  string                  `short:"a" name:"application" help:"Application name to group programs (stored as bpfman.io/application metadata)."`
+	MapOwnerID   kernel.ProgramID        `name:"map-owner-id" help:"Program ID of another program to share maps with."`
 }
 
 // Run executes the load image command.
 func (c *LoadImageCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
-	// Parse pull policy (before acquiring lock)
-	pullPolicy, err := bpfman.ParseImagePullPolicy(c.PullPolicy.Value)
-	if err != nil {
-		return fmt.Errorf("invalid pull policy %q: %w", c.PullPolicy.Value, err)
-	}
-
 	logger := cli.Logger()
 
 	// Use NewManagerWithPuller for image loading operations
@@ -49,7 +43,7 @@ func (c *LoadImageCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	logger.Info("loading BPF programs from OCI image",
 		"image", c.ImageURL,
 		"programs", len(c.Programs),
-		"pull_policy", c.PullPolicy.Value,
+		"pull_policy", c.PullPolicy.String(),
 	)
 
 	// loadImageResult captures the result of a load image operation.
@@ -94,7 +88,7 @@ func (c *LoadImageCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	// Build image ref.
 	ref := platform.ImageRef{
 		URL:        c.ImageURL,
-		PullPolicy: pullPolicy,
+		PullPolicy: c.PullPolicy,
 		Auth:       auth,
 	}
 

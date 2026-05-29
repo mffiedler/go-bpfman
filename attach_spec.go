@@ -201,6 +201,12 @@ func (s XDPAttachSpec) WithProceedOn(po []int32) XDPAttachSpec {
 	return s
 }
 
+// WithProceedOnActions returns a new XDPAttachSpec with the proceed-on
+// actions set from parsed domain values.
+func (s XDPAttachSpec) WithProceedOnActions(actions []XDPAction) XDPAttachSpec {
+	return s.WithProceedOn(XDPActionCodes(actions))
+}
+
 // WithNetns returns a new XDPAttachSpec with the network namespace path set.
 // If non-empty, attachment is performed in that network namespace.
 func (s XDPAttachSpec) WithNetns(netns string) XDPAttachSpec {
@@ -259,6 +265,12 @@ func (s TCAttachSpec) WithPriority(p int) TCAttachSpec {
 func (s TCAttachSpec) WithProceedOn(po []int32) TCAttachSpec {
 	s.proceedOn = po
 	return s
+}
+
+// WithProceedOnActions returns a new TCAttachSpec with the proceed-on
+// actions set from parsed domain values.
+func (s TCAttachSpec) WithProceedOnActions(actions []TCAction) TCAttachSpec {
+	return s.WithProceedOn(TCActionCodes(actions))
 }
 
 // WithNetns returns a new TCAttachSpec with the network namespace path set.

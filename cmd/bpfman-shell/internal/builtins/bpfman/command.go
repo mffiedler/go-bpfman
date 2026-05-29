@@ -674,7 +674,7 @@ func parseLinkAttachXDP(args []runtime.Arg) (*LinkAttachCommand, error) {
 	if err != nil {
 		return nil, fmt.Errorf("link attach xdp: %w", err)
 	}
-	spec = spec.WithPriority(priority).WithProceedOn(actions)
+	spec = spec.WithPriority(priority).WithProceedOnActions(actions)
 	if netns != "" {
 		spec = spec.WithNetns(netns)
 	}
@@ -788,7 +788,7 @@ func parseLinkAttachTC(args []runtime.Arg) (*LinkAttachCommand, error) {
 	if err != nil {
 		return nil, fmt.Errorf("link attach tc: %w", err)
 	}
-	spec = spec.WithPriority(priority).WithProceedOn(actions)
+	spec = spec.WithPriority(priority).WithProceedOnActions(actions)
 	if netns != "" {
 		spec = spec.WithNetns(netns)
 	}

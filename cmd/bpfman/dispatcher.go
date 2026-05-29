@@ -20,7 +20,7 @@ type DispatcherCmd struct {
 // ListDispatchersCmd lists all dispatchers.
 type ListDispatchersCmd struct {
 	cliformat.OutputFlags
-	Type string `name:"type" help:"Filter by dispatcher type (xdp, tc-ingress, tc-egress)."`
+	Type dispatcher.DispatcherType `name:"type" help:"Filter by dispatcher type (xdp, tc-ingress, tc-egress)."`
 }
 
 // Run executes the list dispatchers command.
@@ -37,14 +37,10 @@ func (c *ListDispatchersCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error 
 	}
 
 	// Client-side type filter
-	if c.Type != "" {
-		filterType, err := dispatcher.ParseDispatcherType(c.Type)
-		if err != nil {
-			return err
-		}
+	if c.Type != (dispatcher.DispatcherType{}) {
 		filtered := summaries[:0]
 		for _, s := range summaries {
-			if s.Key.Type == filterType {
+			if s.Key.Type == c.Type {
 				filtered = append(filtered, s)
 			}
 		}
@@ -65,20 +61,15 @@ func (c *ListDispatchersCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error 
 // GetDispatcherCmd gets details of a dispatcher by its key.
 type GetDispatcherCmd struct {
 	cliformat.OutputFlags
-	Type    string `arg:"" help:"Dispatcher type (xdp, tc-ingress, tc-egress)."`
-	Nsid    uint64 `arg:"" help:"Network namespace ID."`
-	Ifindex uint32 `arg:"" help:"Interface index."`
+	Type    dispatcher.DispatcherType `arg:"" help:"Dispatcher type (xdp, tc-ingress, tc-egress)."`
+	Nsid    uint64                    `arg:"" help:"Network namespace ID."`
+	Ifindex uint32                    `arg:"" help:"Interface index."`
 }
 
 // Run executes the get dispatcher command.
 func (c *GetDispatcherCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
-	dispType, err := dispatcher.ParseDispatcherType(c.Type)
-	if err != nil {
-		return err
-	}
-
 	key := dispatcher.Key{
-		Type:    dispType,
+		Type:    c.Type,
 		Nsid:    c.Nsid,
 		Ifindex: c.Ifindex,
 	}
@@ -103,20 +94,15 @@ func (c *GetDispatcherCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 
 // DeleteDispatcherCmd deletes a dispatcher by its key.
 type DeleteDispatcherCmd struct {
-	Type    string `arg:"" help:"Dispatcher type (xdp, tc-ingress, tc-egress)."`
-	Nsid    uint64 `arg:"" help:"Network namespace ID."`
-	Ifindex uint32 `arg:"" help:"Interface index."`
+	Type    dispatcher.DispatcherType `arg:"" help:"Dispatcher type (xdp, tc-ingress, tc-egress)."`
+	Nsid    uint64                    `arg:"" help:"Network namespace ID."`
+	Ifindex uint32                    `arg:"" help:"Interface index."`
 }
 
 // Run executes the delete dispatcher command.
 func (c *DeleteDispatcherCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
-	dispType, err := dispatcher.ParseDispatcherType(c.Type)
-	if err != nil {
-		return err
-	}
-
 	key := dispatcher.Key{
-		Type:    dispType,
+		Type:    c.Type,
 		Nsid:    c.Nsid,
 		Ifindex: c.Ifindex,
 	}

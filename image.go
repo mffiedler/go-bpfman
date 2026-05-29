@@ -1,6 +1,9 @@
 package bpfman
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // ImagePullPolicy specifies when to pull an OCI image.
 // It is an opaque value; the only valid instances are the
@@ -36,12 +39,14 @@ func (p *ImagePullPolicy) UnmarshalText(b []byte) error {
 // Returns the ImagePullPolicy and a nil error if valid, or the zero
 // value and an error if not recognised. Matching is case-insensitive.
 func ParseImagePullPolicy(s string) (ImagePullPolicy, error) {
-	switch s {
-	case "Always", "always":
-		return PullAlways, nil
-	case "IfNotPresent", "ifnotpresent":
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "":
 		return PullIfNotPresent, nil
-	case "Never", "never":
+	case "always":
+		return PullAlways, nil
+	case "ifnotpresent":
+		return PullIfNotPresent, nil
+	case "never":
 		return PullNever, nil
 	default:
 		return ImagePullPolicy{}, fmt.Errorf("unknown pull policy %q", s)
