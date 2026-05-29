@@ -3,7 +3,6 @@ package manager
 import (
 	"context"
 	"log/slog"
-	"sync"
 
 	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/manager/action"
@@ -35,15 +34,6 @@ type Manager struct {
 	programDiscoverer platform.ProgramDiscoverer
 	imagePuller       platform.ImagePuller // optional, nil if not configured
 	logger            *slog.Logger
-
-	// Diagnostic: per-(iface, direction) nsid that this manager
-	// has captured for prior TCX attaches. Used to detect when a
-	// new attach computes a different nsid than its siblings on
-	// the same interface, which indicates the calling OS thread
-	// is in the wrong netns and bpfman's per-thread nsid capture
-	// has been corrupted by an upstream thread-leak. Loaded /
-	// stored from manager/attach_tc.go.
-	tcxIfaceNsids sync.Map
 }
 
 // New creates a new Manager with all required dependencies.

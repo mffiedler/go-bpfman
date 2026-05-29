@@ -3,11 +3,6 @@ package manager
 import (
 	"context"
 	"fmt"
-	"os"
-	"strings"
-	"syscall"
-
-	"golang.org/x/sys/unix"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
@@ -109,49 +104,6 @@ func (m *Manager) attachTC(ctx context.Context, spec bpfman.TCAttachSpec) (bpfma
 // Preflight failures (getProgram, type check, NSID, stale pin
 // removal, link listing) return plain errors.
 
-// processNsid captures the network-namespace inode of this
-// process's main thread at startup, before any test goroutine
-// has had a chance to perturb thread state via setns/unshare.
-// The value is the truth bpfman's TCX attach path *should* be
-// recording in TCXDetails.Nsid: per-thread reads of
-// /proc/self/ns/net are unsafe under heavy parallel load (see
-// the panic assertion in attachTCX). Captured once and never
-// changed; comparing this against the per-attach reads
-// surfaces the contamination unambiguously.
-var processNsid uint64
-
-func init() {
-	// var stat syscall.Stat_t
-	// if err := syscall.Stat("/proc/self/ns/net", &stat); err != nil {
-	// 	panic(fmt.Errorf("manager: cannot stat /proc/self/ns/net at startup: %w", err))
-	// }
-	// processNsid = stat.Ino
-}
-
-// dumpThreadNetns walks /proc/<pid>/task/*/ns/net and returns a
-// formatted listing of every OS thread in the process and the
-// inode of the netns it is currently in. Used in the TCX attach
-// consistency-check panic to surface the cohort of contaminated
-// threads at the moment of detection.
-func dumpThreadNetns() string {
-	var b strings.Builder
-	pid := os.Getpid()
-	entries, err := os.ReadDir(fmt.Sprintf("/proc/%d/task", pid))
-	if err != nil {
-		fmt.Fprintf(&b, "  (read /proc/%d/task: %v)\n", pid, err)
-		return b.String()
-	}
-	for _, e := range entries {
-		var st syscall.Stat_t
-		path := fmt.Sprintf("/proc/%d/task/%s/ns/net", pid, e.Name())
-		if err := syscall.Stat(path, &st); err != nil {
-			continue
-		}
-		fmt.Fprintf(&b, "  tid=%s ino=%d\n", e.Name(), st.Ino)
-	}
-	return b.String()
-}
-
 func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpfman.Link, error) {
 	// --- Preflight (outside plan, plain errors) ---
 	programID := spec.ProgramID()
@@ -172,27 +124,6 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 	nsid, err := netns.NSID(netnsPath)
 	if err != nil {
 		return bpfman.Link{}, fmt.Errorf("get nsid: %w", err)
-	}
-
-	// Diagnostic invariant: every TCX attach that targets the
-	// same (interface, direction) must compute the same nsid as
-	// previous attaches did. If not, the calling OS thread is in
-	// a non-root netns (or just a different netns than the
-	// siblings) and bpfman's per-thread /proc/self/ns/net read
-	// has produced an inconsistent view of "the netns this
-	// interface is in". Persisting that row would silently
-	// corrupt link_tcx_details and break the position-counting
-	// subquery in GetTCXDetails. Panic instead so the
-	// thread-poisoning is surfaced loudly with the full stack of
-	// the offending attach goroutine.
-	tcxIfaceKey := ifname + "|" + direction.String()
-	if prev, loaded := m.tcxIfaceNsids.Load(tcxIfaceKey); loaded {
-		if prev.(uint64) != nsid {
-			panic(fmt.Errorf("tcx attach: interface %q (direction %s) was previously recorded with nsid=%d but this attach computed nsid=%d; process_nsid=%d (true root captured at init); tid=%d; OS thread is in the wrong netns -- bpfman per-thread nsid capture is unsafe here\n\nthread netns snapshot:\n%s",
-				ifname, direction, prev.(uint64), nsid, processNsid, unix.Gettid(), dumpThreadNetns()))
-		}
-	} else {
-		m.tcxIfaceNsids.Store(tcxIfaceKey, nsid)
 	}
 
 	linkPinPath := m.rt.BPFFS().TCXLinkPath(direction.String(), nsid, uint32(ifindex), programID)
