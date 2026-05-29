@@ -50,20 +50,32 @@ func (m *Manager) ResolveDeleteProgramIDs(ctx context.Context, all bool, explici
 }
 
 // DeletePrograms detaches each target program's links and unloads the
-// program. With Recursive, dependants that share the target's maps are
-// deleted before the target.
+// program. Selected programmes are ordered dependant-first so an owner and
+// one of its selected dependants can be deleted in either argument order. With
+// Recursive or All, unnamed dependants are also selected before their owners.
 func (m *Manager) DeletePrograms(ctx context.Context, writeLock lock.WriterScope, ids []kernel.ProgramID, opts DeleteProgramsOpts) []DeleteProgramResult {
 	results := make([]DeleteProgramResult, 0, len(ids))
-	removed := make(map[kernel.ProgramID]bool, len(ids))
-	for _, id := range ids {
-		if removed[id] {
+	expandDependents := opts.Recursive || opts.All
+	orderDependentsFirst := expandDependents || len(ids) > 1
+	dependentsByOwner, err := m.programDependentsByOwner(ctx, orderDependentsFirst)
+	if err != nil {
+		for _, id := range ids {
+			results = append(results, DeleteProgramResult{ProgramID: id, Err: err})
+		}
+		return results
+	}
+	batch := deleteBatch{
+		dependentsByOwner: dependentsByOwner,
+		removedPrograms:   make(map[kernel.ProgramID]bool, len(ids)),
+		removedLinks:      make(map[kernel.LinkID]bool),
+	}
+
+	for _, id := range orderProgramDeletes(ids, dependentsByOwner) {
+		if batch.removedPrograms[id] {
 			results = append(results, DeleteProgramResult{ProgramID: id})
 			continue
 		}
-		deleted, err := m.deleteProgram(ctx, writeLock, id, opts.Recursive)
-		for _, deletedID := range deleted {
-			removed[deletedID] = true
-		}
+		_, err := m.deleteProgram(ctx, writeLock, id, expandDependents, batch)
 		results = append(results, DeleteProgramResult{ProgramID: id, Err: err})
 	}
 	return results
@@ -74,44 +86,90 @@ func (m *Manager) DeletePrograms(ctx context.Context, writeLock lock.WriterScope
 // dependants of the orphaned program are deleted first.
 func (m *Manager) DeleteLinks(ctx context.Context, writeLock lock.WriterScope, ids []kernel.LinkID, opts DeleteLinksOpts) []DeleteLinkResult {
 	results := make([]DeleteLinkResult, 0, len(ids))
+	dependentsByOwner, err := m.programDependentsByOwner(ctx, opts.Recursive)
+	if err != nil {
+		for _, id := range ids {
+			results = append(results, DeleteLinkResult{LinkID: id, Err: err})
+		}
+		return results
+	}
+	batch := deleteBatch{
+		dependentsByOwner: dependentsByOwner,
+		removedPrograms:   make(map[kernel.ProgramID]bool),
+		removedLinks:      make(map[kernel.LinkID]bool, len(ids)),
+	}
+
 	for _, id := range ids {
-		err := m.deleteLink(ctx, writeLock, id, opts.Recursive)
+		if batch.removedLinks[id] {
+			results = append(results, DeleteLinkResult{LinkID: id})
+			continue
+		}
+		_, err := m.deleteLink(ctx, writeLock, id, opts.Recursive, batch)
 		results = append(results, DeleteLinkResult{LinkID: id, Err: err})
 	}
 	return results
 }
 
-func (m *Manager) deleteLink(ctx context.Context, writeLock lock.WriterScope, linkID kernel.LinkID, recursive bool) error {
+type deleteBatch struct {
+	dependentsByOwner map[kernel.ProgramID][]kernel.ProgramID
+	removedPrograms   map[kernel.ProgramID]bool
+	removedLinks      map[kernel.LinkID]bool
+}
+
+func (m *Manager) deleteLink(ctx context.Context, writeLock lock.WriterScope, linkID kernel.LinkID, recursive bool, batch deleteBatch) (deleteOutcome, error) {
+	if batch.removedLinks[linkID] {
+		return deleteOutcome{}, nil
+	}
+
 	link, err := m.GetLink(ctx, linkID)
 	if err != nil {
-		return fmt.Errorf("get link: %w", err)
+		return deleteOutcome{}, fmt.Errorf("get link: %w", err)
 	}
 
 	programID := link.ProgramID
 
 	if err := m.Detach(ctx, writeLock, linkID); err != nil {
-		return fmt.Errorf("detach: %w", err)
+		return deleteOutcome{}, fmt.Errorf("detach: %w", err)
 	}
+	batch.removedLinks[linkID] = true
 
 	links, err := m.ListLinksByProgram(ctx, programID)
 	if err != nil {
-		return fmt.Errorf("list links for program %d: %w", programID, err)
+		return deleteOutcome{}, fmt.Errorf("list links for program %d: %w", programID, err)
 	}
 
+	deleted := deleteOutcome{links: []kernel.LinkID{linkID}}
 	if len(links) == 0 {
-		if _, err := m.deleteProgram(ctx, writeLock, programID, recursive); err != nil {
-			return fmt.Errorf("delete orphaned program %d: %w", programID, err)
+		orphaned, err := m.deleteProgram(ctx, writeLock, programID, recursive, batch)
+		deleted = deleted.merge(orphaned)
+		if err != nil {
+			return deleted, fmt.Errorf("delete orphaned program %d: %w", programID, err)
 		}
 	}
 
-	return nil
+	return deleted, nil
 }
 
-func (m *Manager) deleteProgram(ctx context.Context, writeLock lock.WriterScope, programID kernel.ProgramID, recursive bool) ([]kernel.ProgramID, error) {
-	var deleted []kernel.ProgramID
+type deleteOutcome struct {
+	programs []kernel.ProgramID
+	links    []kernel.LinkID
+}
+
+func (d deleteOutcome) merge(other deleteOutcome) deleteOutcome {
+	d.programs = append(d.programs, other.programs...)
+	d.links = append(d.links, other.links...)
+	return d
+}
+
+func (m *Manager) deleteProgram(ctx context.Context, writeLock lock.WriterScope, programID kernel.ProgramID, recursive bool, batch deleteBatch) (deleteOutcome, error) {
+	if batch.removedPrograms[programID] {
+		return deleteOutcome{}, nil
+	}
+
+	var deleted deleteOutcome
 	if recursive {
-		dependents, err := m.deleteDependents(ctx, writeLock, programID)
-		deleted = append(deleted, dependents...)
+		dependents, err := m.deleteDependents(ctx, writeLock, programID, batch)
+		deleted = deleted.merge(dependents)
 		if err != nil {
 			return deleted, err
 		}
@@ -126,29 +184,81 @@ func (m *Manager) deleteProgram(ctx context.Context, writeLock lock.WriterScope,
 		if err := m.Detach(ctx, writeLock, link.ID); err != nil {
 			return deleted, fmt.Errorf("detach link %d: %w", link.ID, err)
 		}
+		batch.removedLinks[link.ID] = true
+		deleted.links = append(deleted.links, link.ID)
 	}
 
 	if err := m.Unload(ctx, writeLock, programID); err != nil {
 		return deleted, fmt.Errorf("unload: %w", err)
 	}
 
-	return append(deleted, programID), nil
+	batch.removedPrograms[programID] = true
+	deleted.programs = append(deleted.programs, programID)
+	return deleted, nil
 }
 
-func (m *Manager) deleteDependents(ctx context.Context, writeLock lock.WriterScope, ownerID kernel.ProgramID) ([]kernel.ProgramID, error) {
+func (m *Manager) programDependentsByOwner(ctx context.Context, recursive bool) (map[kernel.ProgramID][]kernel.ProgramID, error) {
+	if !recursive {
+		return nil, nil
+	}
+
 	result, err := m.ListPrograms(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list programs: %w", err)
 	}
 
-	var deleted []kernel.ProgramID
+	dependentsByOwner := make(map[kernel.ProgramID][]kernel.ProgramID)
 	for _, prog := range result.Programs {
-		if prog.Record.Handles.MapOwnerID != nil && *prog.Record.Handles.MapOwnerID == ownerID {
-			dependents, err := m.deleteProgram(ctx, writeLock, prog.Record.ProgramID, true)
-			deleted = append(deleted, dependents...)
-			if err != nil {
-				return deleted, fmt.Errorf("delete dependent program %d: %w", prog.Record.ProgramID, err)
+		if prog.Record.Handles.MapOwnerID != nil {
+			ownerID := *prog.Record.Handles.MapOwnerID
+			dependentsByOwner[ownerID] = append(dependentsByOwner[ownerID], prog.Record.ProgramID)
+		}
+	}
+	return dependentsByOwner, nil
+}
+
+func orderProgramDeletes(ids []kernel.ProgramID, dependentsByOwner map[kernel.ProgramID][]kernel.ProgramID) []kernel.ProgramID {
+	if len(ids) <= 1 || len(dependentsByOwner) == 0 {
+		return append([]kernel.ProgramID(nil), ids...)
+	}
+
+	selected := make(map[kernel.ProgramID]bool, len(ids))
+	for _, id := range ids {
+		selected[id] = true
+	}
+
+	ordered := make([]kernel.ProgramID, 0, len(ids))
+	seen := make(map[kernel.ProgramID]bool, len(ids))
+	var visit func(kernel.ProgramID)
+	visit = func(id kernel.ProgramID) {
+		if seen[id] {
+			return
+		}
+		seen[id] = true
+		for _, dependentID := range dependentsByOwner[id] {
+			if selected[dependentID] {
+				visit(dependentID)
 			}
+		}
+		ordered = append(ordered, id)
+	}
+
+	for _, id := range ids {
+		visit(id)
+	}
+	return ordered
+}
+
+func (m *Manager) deleteDependents(ctx context.Context, writeLock lock.WriterScope, ownerID kernel.ProgramID, batch deleteBatch) (deleteOutcome, error) {
+	var deleted deleteOutcome
+	for _, dependentID := range batch.dependentsByOwner[ownerID] {
+		if batch.removedPrograms[dependentID] {
+			continue
+		}
+		dependents, err := m.deleteProgram(ctx, writeLock, dependentID, true, batch)
+		deleted = deleted.merge(dependents)
+		if err != nil {
+			return deleted, fmt.Errorf("delete dependent program %d: %w", dependentID, err)
 		}
 	}
 

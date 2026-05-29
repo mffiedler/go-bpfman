@@ -73,7 +73,7 @@ func executeLoadFileResult(ctx context.Context, cli *bpfmancli.CLI, mgr *manager
 		Application:  c.Application,
 		MapOwnerID:   c.MapOwnerID,
 	})
-	loaded, loadErr := mgr.LoadRequest(ctx, req)
+	loaded, loadErr := mgr.LoadFromRequest(ctx, req)
 	if loadErr != nil {
 		return loadFileResult{}, fmt.Errorf("failed to load programs: %w", loadErr)
 	}

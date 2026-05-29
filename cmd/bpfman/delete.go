@@ -47,7 +47,7 @@ func (c *ProgramDeleteCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return executeDeletePrograms(ctx, cli, mgr, ids, c.Recursive)
+	return executeDeletePrograms(ctx, cli, mgr, ids, c.Recursive, c.All)
 }
 
 func programIDs(explicit []bpfmancli.ProgramID) []kernel.ProgramID {
@@ -61,7 +61,7 @@ func programIDs(explicit []bpfmancli.ProgramID) []kernel.ProgramID {
 // executeDeletePrograms is the shared implementation for deleting
 // programs with cascading cleanup. Both the CLI command and
 // bpfman-shell call this function. Locking is handled internally.
-func executeDeletePrograms(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, ids []kernel.ProgramID, recursive bool) error {
+func executeDeletePrograms(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, ids []kernel.ProgramID, recursive bool, all bool) error {
 	type result struct {
 		id  kernel.ProgramID
 		err error
@@ -69,7 +69,10 @@ func executeDeletePrograms(ctx context.Context, cli *bpfmancli.CLI, mgr *manager
 	results := make([]result, 0, len(ids))
 
 	lockErr := bpfmancli.RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
-		deleteResults := mgr.DeletePrograms(ctx, writeLock, ids, manager.DeleteProgramsOpts{Recursive: recursive})
+		deleteResults := mgr.DeletePrograms(ctx, writeLock, ids, manager.DeleteProgramsOpts{
+			Recursive: recursive,
+			All:       all,
+		})
 		for _, r := range deleteResults {
 			results = append(results, result{id: r.ProgramID, err: r.Err})
 		}

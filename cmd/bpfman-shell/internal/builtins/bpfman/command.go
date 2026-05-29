@@ -495,7 +495,7 @@ func execLoadFile(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 		Application:  cmd.Application,
 		MapOwnerID:   cmd.MapOwnerID,
 	})
-	loaded, err := mgr.LoadRequest(ctx, req)
+	loaded, err := mgr.LoadFromRequest(ctx, req)
 	if err != nil {
 		return runtime.Value{}, fmt.Errorf("failed to load programs: %w", err)
 	}
@@ -1456,7 +1456,7 @@ func execLoadImage(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager
 		Application:  cmd.Application,
 		MapOwnerID:   cmd.MapOwnerID,
 	})
-	loaded, err := mgr.LoadRequest(ctx, req)
+	loaded, err := mgr.LoadFromRequest(ctx, req)
 	if err != nil {
 		return runtime.Value{}, fmt.Errorf("failed to load from image: %w", err)
 	}
@@ -1742,7 +1742,7 @@ func execDeleteProgram(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Man
 	if err != nil {
 		return err
 	}
-	return executeDeletePrograms(ctx, cli, mgr, ids, cmd.Recursive)
+	return executeDeletePrograms(ctx, cli, mgr, ids, cmd.Recursive, cmd.All)
 }
 
 // DeleteLinkCommand represents a fully parsed "link delete" command

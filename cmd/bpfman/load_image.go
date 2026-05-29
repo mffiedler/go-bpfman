@@ -87,7 +87,7 @@ func (c *LoadImageCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 		Application:  c.Application,
 		MapOwnerID:   c.MapOwnerID,
 	})
-	loaded, err := mgr.LoadRequest(ctx, req)
+	loaded, err := mgr.LoadFromRequest(ctx, req)
 	if err != nil {
 		return fmt.Errorf("failed to load from image: %w", err)
 	}

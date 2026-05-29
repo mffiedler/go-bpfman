@@ -130,8 +130,8 @@ type LoadRequestOpts struct {
 	ShareMaps    bool
 }
 
-// NewLoadRequest applies manager-owned load defaults and returns the
-// request value consumed by LoadRequest.
+// NewLoadRequest applies manager-owned load defaults and returns a
+// request value for LoadFromRequest.
 func NewLoadRequest(source LoadSource, programs []ProgramSpec, opts LoadRequestOpts) LoadRequest {
 	return LoadRequest{
 		Source:   source,
@@ -173,8 +173,8 @@ func applyLoadRequestMapOwner(programs []ProgramSpec, mapOwnerID kernel.ProgramI
 	return out
 }
 
-// LoadRequest loads the programs described by req.
-func (m *Manager) LoadRequest(ctx context.Context, req LoadRequest) ([]bpfman.Program, error) {
+// LoadFromRequest loads the programs described by req.
+func (m *Manager) LoadFromRequest(ctx context.Context, req LoadRequest) ([]bpfman.Program, error) {
 	return m.Load(ctx, req.Source, req.Programs, req.Opts)
 }
 
