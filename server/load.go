@@ -36,9 +36,6 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 	case *pb.BytecodeLocation_File:
 		source.FilePath = loc.File
 	case *pb.BytecodeLocation_Image:
-		if s.mgr.ImagePuller() == nil {
-			return nil, status.Error(codes.Unimplemented, "OCI image loading not configured on this server")
-		}
 		pullPolicy, err := protoToPullPolicy(loc.Image.ImagePullPolicy)
 		if err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid pull policy: %v", err)
@@ -69,9 +66,6 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 		if err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid program type for %s: %v", info.Name, err)
 		}
-
-		// Check for actual type metadata to handle kretprobe/uretprobe
-		progType = resolveActualType(progType, info.Name, req.Metadata)
 
 		// Extract AttachFunc from ProgSpecificInfo for fentry/fexit
 		var attachFunc string
@@ -105,6 +99,9 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 		ShareMaps:    len(programs) > 1,
 	})
 	if err != nil {
+		if errors.Is(err, manager.ErrImagePullerNotConfigured) {
+			return nil, status.Error(codes.Unimplemented, "OCI image loading not configured on this server")
+		}
 		return nil, status.Errorf(codes.Internal, "failed to load programs: %v", err)
 	}
 

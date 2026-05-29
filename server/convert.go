@@ -56,30 +56,6 @@ func bpfmanTypeToProto(pt bpfman.ProgramType) uint32 {
 	}
 }
 
-// actualTypeMetadataKey returns the metadata key used to preserve the actual
-// program type when the proto enum doesn't distinguish (e.g., kretprobe vs kprobe).
-func actualTypeMetadataKey(programName string) string {
-	return "bpfman.io/actual-type:" + programName
-}
-
-// resolveActualType checks metadata for type hints and returns the actual
-// program type. This handles kretprobe/uretprobe which map to KPROBE/UPROBE
-// in the proto enum but need to be distinguished for attach semantics.
-func resolveActualType(protoType bpfman.ProgramType, programName string, metadata map[string]string) bpfman.ProgramType {
-	if metadata == nil {
-		return protoType
-	}
-
-	key := actualTypeMetadataKey(programName)
-	if actualTypeStr, ok := metadata[key]; ok {
-		if actualType, err := bpfman.ParseProgramType(actualTypeStr); err == nil {
-			return actualType
-		}
-	}
-
-	return protoType
-}
-
 // protoToPullPolicy converts a proto image pull policy to managed type.
 // Proto values: 0=Always, 1=IfNotPresent, 2=Never.
 func protoToPullPolicy(policy int32) (bpfman.ImagePullPolicy, error) {

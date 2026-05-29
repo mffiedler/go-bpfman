@@ -20,6 +20,10 @@ import (
 // loadedKey is the binding key for the per-program load plan.
 var loadedKey = operation.NewKey[bpfman.LoadOutput]("loaded")
 
+// ErrImagePullerNotConfigured is returned when an image LoadSource is
+// requested but the manager was created without an OCI image puller.
+var ErrImagePullerNotConfigured = errors.New("OCI image loading not configured")
+
 // loadOpts contains optional metadata for a single-program load operation.
 type loadOpts struct {
 	UserMetadata map[string]string
@@ -107,6 +111,8 @@ type LoadOpts struct {
 // On failure, all previously loaded programs are cleaned up by
 // calling Unload for each.
 func (m *Manager) Load(ctx context.Context, source LoadSource, programs []ProgramSpec, opts LoadOpts) ([]bpfman.Program, error) {
+	programs = normalizeLoadProgramSpecs(programs, opts)
+
 	objectPath, pulled, err := m.resolveBatchSource(ctx, source)
 	if err != nil {
 		return nil, err
@@ -169,6 +175,38 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 		return lerr
 	})
 	return loaded, runErr
+}
+
+func normalizeLoadProgramSpecs(programs []ProgramSpec, opts LoadOpts) []ProgramSpec {
+	if len(programs) == 0 || len(opts.UserMetadata) == 0 {
+		return programs
+	}
+
+	out := make([]ProgramSpec, len(programs))
+	copy(out, programs)
+	for i, spec := range out {
+		out[i].Type = resolveActualProgramType(spec.Type, spec.Name, opts.UserMetadata)
+	}
+	return out
+}
+
+func resolveActualProgramType(programType bpfman.ProgramType, programName string, metadata map[string]string) bpfman.ProgramType {
+	if metadata == nil {
+		return programType
+	}
+
+	key := actualTypeMetadataKey(programName)
+	if actualTypeStr, ok := metadata[key]; ok {
+		if actualType, err := bpfman.ParseProgramType(actualTypeStr); err == nil {
+			return actualType
+		}
+	}
+
+	return programType
+}
+
+func actualTypeMetadataKey(programName string) string {
+	return "bpfman.io/actual-type:" + programName
 }
 
 // reapDeadProgramRecords removes store records for managed programs
@@ -546,7 +584,7 @@ func (m *Manager) resolveBatchSource(
 
 	if source.Image != nil {
 		if m.imagePuller == nil {
-			return "", nil, fmt.Errorf("image puller is required")
+			return "", nil, ErrImagePullerNotConfigured
 		}
 		if !source.Image.PullPolicy.Valid() {
 			return "", nil, fmt.Errorf("image pull policy is required")

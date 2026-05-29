@@ -505,3 +505,29 @@ func TestLoad_FileSource(t *testing.T) {
 	assert.Equal(t, "test_prog", programs[0].Record.Meta.Name)
 	assert.Equal(t, 1, f.Kernel.ProgramCount())
 }
+
+func TestLoad_MetadataActualTypeResolvedInManager(t *testing.T) {
+	t.Parallel()
+
+	discoverer := newFakeDiscoverer()
+	f := newTestFixtureWithDiscoverer(t, discoverer)
+	objPath := f.BytecodeFile("object.o")
+	discoverer.SetPrograms(objPath, []platform.DiscoveredProgram{
+		{Name: "retprobe", SectionName: "kprobe", Type: bpfman.ProgramTypeKprobe},
+	})
+
+	programs, err := f.LoadDirect(context.Background(),
+		manager.LoadSource{FilePath: objPath},
+		[]manager.ProgramSpec{
+			{Name: "retprobe", Type: bpfman.ProgramTypeKprobe},
+		},
+		manager.LoadOpts{
+			UserMetadata: map[string]string{
+				"bpfman.io/actual-type:retprobe": "kretprobe",
+			},
+		})
+
+	require.NoError(t, err)
+	require.Len(t, programs, 1)
+	assert.Equal(t, bpfman.ProgramTypeKretprobe, programs[0].Record.Load.ProgramType())
+}
