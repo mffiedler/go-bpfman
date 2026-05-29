@@ -156,30 +156,27 @@ func (s FexitAttachSpec) ProgramID() kernel.ProgramID { return s.programID }
 type XDPAttachSpec struct {
 	programID kernel.ProgramID
 	ifname    string
-	ifindex   int
 	priority  int
 	proceedOn []int32
 	netns     string // optional network namespace path
 }
 
 // NewXDPAttachSpec creates an XDPAttachSpec with validated fields.
-func NewXDPAttachSpec(programID kernel.ProgramID, ifname string, ifindex int) (XDPAttachSpec, error) {
+// The interface is named, not pre-resolved: the manager resolves the
+// name to an ifindex inside the target namespace at attach time.
+func NewXDPAttachSpec(programID kernel.ProgramID, ifname string) (XDPAttachSpec, error) {
 	if programID == 0 {
 		return XDPAttachSpec{}, errors.New("programID is required")
 	}
 	if ifname == "" {
 		return XDPAttachSpec{}, errors.New("ifname is required")
 	}
-	if ifindex <= 0 {
-		return XDPAttachSpec{}, errors.New("ifindex must be positive")
-	}
-	return XDPAttachSpec{programID: programID, ifname: ifname, ifindex: ifindex}, nil
+	return XDPAttachSpec{programID: programID, ifname: ifname}, nil
 }
 
 func (XDPAttachSpec) attachSpec()                   {}
 func (s XDPAttachSpec) ProgramID() kernel.ProgramID { return s.programID }
 func (s XDPAttachSpec) Ifname() string              { return s.ifname }
-func (s XDPAttachSpec) Ifindex() int                { return s.ifindex }
 func (s XDPAttachSpec) Priority() int               { return s.priority }
 func (s XDPAttachSpec) ProceedOn() []int32          { return s.proceedOn }
 func (s XDPAttachSpec) Netns() string               { return s.netns }
@@ -207,7 +204,6 @@ func (s XDPAttachSpec) WithNetns(netns string) XDPAttachSpec {
 type TCAttachSpec struct {
 	programID kernel.ProgramID
 	ifname    string
-	ifindex   int
 	direction TCDirection
 	priority  int
 	proceedOn []int32
@@ -216,26 +212,22 @@ type TCAttachSpec struct {
 
 // NewTCAttachSpec creates a TCAttachSpec with validated fields.
 // direction must be a valid TCDirection (use ParseTCDirection to parse from strings).
-func NewTCAttachSpec(programID kernel.ProgramID, ifname string, ifindex int, direction TCDirection) (TCAttachSpec, error) {
+func NewTCAttachSpec(programID kernel.ProgramID, ifname string, direction TCDirection) (TCAttachSpec, error) {
 	if programID == 0 {
 		return TCAttachSpec{}, errors.New("programID is required")
 	}
 	if ifname == "" {
 		return TCAttachSpec{}, errors.New("ifname is required")
 	}
-	if ifindex <= 0 {
-		return TCAttachSpec{}, errors.New("ifindex must be positive")
-	}
 	if direction == (TCDirection{}) {
 		return TCAttachSpec{}, errors.New("direction is required")
 	}
-	return TCAttachSpec{programID: programID, ifname: ifname, ifindex: ifindex, direction: direction}, nil
+	return TCAttachSpec{programID: programID, ifname: ifname, direction: direction}, nil
 }
 
 func (TCAttachSpec) attachSpec()                   {}
 func (s TCAttachSpec) ProgramID() kernel.ProgramID { return s.programID }
 func (s TCAttachSpec) Ifname() string              { return s.ifname }
-func (s TCAttachSpec) Ifindex() int                { return s.ifindex }
 func (s TCAttachSpec) Direction() TCDirection      { return s.direction }
 func (s TCAttachSpec) Priority() int               { return s.priority }
 func (s TCAttachSpec) ProceedOn() []int32          { return s.proceedOn }
@@ -264,7 +256,6 @@ func (s TCAttachSpec) WithNetns(netns string) TCAttachSpec {
 type TCXAttachSpec struct {
 	programID kernel.ProgramID
 	ifname    string
-	ifindex   int
 	direction TCDirection
 	priority  int
 	netns     string // optional network namespace path
@@ -272,26 +263,22 @@ type TCXAttachSpec struct {
 
 // NewTCXAttachSpec creates a TCXAttachSpec with validated fields.
 // direction must be a valid TCDirection (use ParseTCDirection to parse from strings).
-func NewTCXAttachSpec(programID kernel.ProgramID, ifname string, ifindex int, direction TCDirection) (TCXAttachSpec, error) {
+func NewTCXAttachSpec(programID kernel.ProgramID, ifname string, direction TCDirection) (TCXAttachSpec, error) {
 	if programID == 0 {
 		return TCXAttachSpec{}, errors.New("programID is required")
 	}
 	if ifname == "" {
 		return TCXAttachSpec{}, errors.New("ifname is required")
 	}
-	if ifindex <= 0 {
-		return TCXAttachSpec{}, errors.New("ifindex must be positive")
-	}
 	if direction == (TCDirection{}) {
 		return TCXAttachSpec{}, errors.New("direction is required")
 	}
-	return TCXAttachSpec{programID: programID, ifname: ifname, ifindex: ifindex, direction: direction}, nil
+	return TCXAttachSpec{programID: programID, ifname: ifname, direction: direction}, nil
 }
 
 func (TCXAttachSpec) attachSpec()                   {}
 func (s TCXAttachSpec) ProgramID() kernel.ProgramID { return s.programID }
 func (s TCXAttachSpec) Ifname() string              { return s.ifname }
-func (s TCXAttachSpec) Ifindex() int                { return s.ifindex }
 func (s TCXAttachSpec) Direction() TCDirection      { return s.direction }
 func (s TCXAttachSpec) Priority() int               { return s.priority }
 func (s TCXAttachSpec) Netns() string               { return s.netns }

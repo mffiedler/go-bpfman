@@ -195,6 +195,11 @@ type fakeKernel struct {
 	failOnUnload      map[string]error
 	failOnUnloadCalls map[string]int
 
+	// Interface name -> ifindex resolution (what the manager now
+	// queries via InterfaceByName). Seeded with the conventional test
+	// interfaces; unknown names resolve to an error.
+	ifaceIndex map[string]int
+
 	// Interface error injection
 	failOnIfname  map[string]error // fail attach if interface name matches
 	failOnIfindex map[int]error    // fail attach if interface index matches
@@ -241,9 +246,38 @@ func newFakeKernel() *fakeKernel {
 		failOnIfindex:     make(map[int]error),
 		failOnUnload:      make(map[string]error),
 		failOnUnloadCalls: make(map[string]int),
+		ifaceIndex:        map[string]int{"lo": 1, "eth0": 2},
 	}
 	fk.nextID.Store(100)
 	return fk
+}
+
+// InjectInterface registers a name -> ifindex resolution for the fake
+// kernel's InterfaceByName, mirroring an interface existing in the
+// (possibly namespaced) target.
+func (f *fakeKernel) InjectInterface(name string, ifindex int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ifaceIndex[name] = ifindex
+}
+
+// InterfaceByName resolves a name to its ifindex. It honours
+// failOnIfname so existing lookup-failure injection still works, then
+// the registry, then errors for an unknown interface -- matching the
+// real adapter's "no such network interface".
+func (f *fakeKernel) InterfaceByName(_ context.Context, name, _ string) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err, ok := f.failOnIfname[name]; ok {
+		return 0, err
+	}
+	if idx, ok := f.ifaceIndex[name]; ok {
+		return idx, nil
+	}
+	// Mirror the real adapter: an unresolved interface wraps
+	// platform.ErrInterfaceNotFound so callers can map it to an
+	// invalid-argument status.
+	return 0, fmt.Errorf("interface %q: %w", name, platform.ErrInterfaceNotFound)
 }
 
 // Operations returns a copy of recorded operations for verification.
@@ -287,6 +321,16 @@ func (f *fakeKernel) InjectKernelProgram(id kernel.ProgramID, name string, progT
 		name:        name,
 		programType: progType,
 	}
+}
+
+// RemoveKernelProgram simulates a program disappearing from the kernel
+// (external unload, crash, or a daemon restart that lost the kernel
+// objects) while its store record remains. Used to set up the
+// dead-record reap path.
+func (f *fakeKernel) RemoveKernelProgram(id kernel.ProgramID) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.programs, id)
 }
 
 // recordExtensionAttach records an XDP/TC extension attachment with the progPinPath.
@@ -565,7 +609,10 @@ func (f *fakeKernel) Programs(_ context.Context) iter.Seq2[kernel.Program, error
 func (f *fakeKernel) GetProgramByID(_ context.Context, id kernel.ProgramID) (kernel.Program, error) {
 	p, ok := f.programs[id]
 	if !ok {
-		return kernel.Program{}, fmt.Errorf("program %d not found", id)
+		// Mirror the real adapter: cilium/ebpf reports a missing
+		// program ID as os.ErrNotExist, which the manager relies on to
+		// tell "gone" apart from "could not inspect".
+		return kernel.Program{}, fmt.Errorf("program %d: %w", id, os.ErrNotExist)
 	}
 	return kernel.Program{
 		ID:          id,

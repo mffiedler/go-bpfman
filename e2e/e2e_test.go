@@ -2131,7 +2131,7 @@ func TestMultiProgTC_ChainStopsAtOK_DefaultProceedOn(t *testing.T) {
 
 	links := make([]bpfman.LinkRecord, len(plans))
 	for i, prog := range programs {
-		spec, err := bpfman.NewTCAttachSpec(prog.Status.Kernel.ID, veth.A.Name, veth.A.Ifindex, bpfman.TCDirectionIngress)
+		spec, err := bpfman.NewTCAttachSpec(prog.Status.Kernel.ID, veth.A.Name, bpfman.TCDirectionIngress)
 		require.NoError(t, err)
 		spec = spec.WithPriority(plans[i].priority)
 		link, err := env.Attach(ctx, spec)
@@ -2222,7 +2222,7 @@ func TestMultiProgTC_AllProceed_CustomProceedOn(t *testing.T) {
 	}
 
 	for i, prog := range programs {
-		spec, err := bpfman.NewTCAttachSpec(prog.Status.Kernel.ID, veth.A.Name, veth.A.Ifindex, bpfman.TCDirectionIngress)
+		spec, err := bpfman.NewTCAttachSpec(prog.Status.Kernel.ID, veth.A.Name, bpfman.TCDirectionIngress)
 		require.NoError(t, err)
 		spec = spec.WithPriority(plans[i].priority).WithProceedOn(customProceedOn)
 		link, err := env.Attach(ctx, spec)
@@ -2302,7 +2302,7 @@ func TestMultiProgTC_ChainStopsAtPipe_CustomProceedOn(t *testing.T) {
 	}
 
 	for i, prog := range programs {
-		spec, err := bpfman.NewTCAttachSpec(prog.Status.Kernel.ID, veth.A.Name, veth.A.Ifindex, bpfman.TCDirectionIngress)
+		spec, err := bpfman.NewTCAttachSpec(prog.Status.Kernel.ID, veth.A.Name, bpfman.TCDirectionIngress)
 		require.NoError(t, err)
 		spec = spec.WithPriority(plans[i].priority).WithProceedOn(customProceedOn)
 		link, err := env.Attach(ctx, spec)
@@ -2383,7 +2383,7 @@ func TestMultiProgTC_AllProceed_DefaultProceedOn(t *testing.T) {
 
 	links := make([]bpfman.LinkRecord, len(plans))
 	for i, prog := range programs {
-		spec, err := bpfman.NewTCAttachSpec(prog.Status.Kernel.ID, veth.A.Name, veth.A.Ifindex, bpfman.TCDirectionIngress)
+		spec, err := bpfman.NewTCAttachSpec(prog.Status.Kernel.ID, veth.A.Name, bpfman.TCDirectionIngress)
 		require.NoError(t, err)
 		spec = spec.WithPriority(plans[i].priority)
 		link, err := env.Attach(ctx, spec)
@@ -2487,7 +2487,7 @@ func TestTC_LoadAttachDetachUnload(t *testing.T) {
 
 	// When: attach via client to test interface
 	// TC uses dispatchers and supports both ingress and egress
-	tcSpec, err := bpfman.NewTCAttachSpec(prog.Status.Kernel.ID, veth.A.Name, veth.A.Ifindex, bpfman.TCDirectionIngress)
+	tcSpec, err := bpfman.NewTCAttachSpec(prog.Status.Kernel.ID, veth.A.Name, bpfman.TCDirectionIngress)
 	require.NoError(t, err)
 	tcSpec = tcSpec.WithPriority(50)
 	link, err := env.Attach(ctx, tcSpec)
@@ -2638,7 +2638,7 @@ func TestMultiProgTCX_ChainStopsAtOK_DefaultProceedOn(t *testing.T) {
 
 	links := make([]bpfman.LinkRecord, len(plans))
 	for i, prog := range programs {
-		spec, err := bpfman.NewTCXAttachSpec(prog.Status.Kernel.ID, veth.A.Name, veth.A.Ifindex, bpfman.TCDirectionIngress)
+		spec, err := bpfman.NewTCXAttachSpec(prog.Status.Kernel.ID, veth.A.Name, bpfman.TCDirectionIngress)
 		require.NoError(t, err)
 		spec = spec.WithPriority(plans[i].priority)
 		link, err := env.Attach(ctx, spec)
@@ -2729,7 +2729,7 @@ func TestMultiProgTCX_AllProceed_DefaultProceedOn(t *testing.T) {
 
 	links := make([]bpfman.LinkRecord, len(plans))
 	for i, prog := range programs {
-		spec, err := bpfman.NewTCXAttachSpec(prog.Status.Kernel.ID, veth.A.Name, veth.A.Ifindex, bpfman.TCDirectionIngress)
+		spec, err := bpfman.NewTCXAttachSpec(prog.Status.Kernel.ID, veth.A.Name, bpfman.TCDirectionIngress)
 		require.NoError(t, err)
 		spec = spec.WithPriority(plans[i].priority)
 		link, err := env.Attach(ctx, spec)
@@ -2830,7 +2830,7 @@ func TestTCX_LoadAttachDetachUnload(t *testing.T) {
 	require.NotEmpty(t, listedProgs[0].Record.Handles.PinPath)
 
 	// When: attach via client to test interface
-	tcxSpec, err := bpfman.NewTCXAttachSpec(prog.Status.Kernel.ID, veth.A.Name, veth.A.Ifindex, bpfman.TCDirectionIngress)
+	tcxSpec, err := bpfman.NewTCXAttachSpec(prog.Status.Kernel.ID, veth.A.Name, bpfman.TCDirectionIngress)
 	require.NoError(t, err)
 	tcxSpec = tcxSpec.WithPriority(50)
 	link, err := env.Attach(ctx, tcxSpec)
@@ -2951,7 +2951,7 @@ func TestMultiProgXDP_ChainStopsAtDrop_DefaultProceedOn(t *testing.T) {
 
 	links := make([]bpfman.LinkRecord, len(plans))
 	for i, prog := range programs {
-		spec, err := bpfman.NewXDPAttachSpec(prog.Status.Kernel.ID, veth.A.Name, veth.A.Ifindex)
+		spec, err := bpfman.NewXDPAttachSpec(prog.Status.Kernel.ID, veth.A.Name)
 		require.NoError(t, err)
 		spec = spec.WithPriority(plans[i].priority)
 		link, err := env.Attach(ctx, spec)
@@ -3041,7 +3041,7 @@ func TestMultiProgXDP_AllProceed_CustomProceedOn(t *testing.T) {
 	}
 
 	for i, prog := range programs {
-		spec, err := bpfman.NewXDPAttachSpec(prog.Status.Kernel.ID, veth.A.Name, veth.A.Ifindex)
+		spec, err := bpfman.NewXDPAttachSpec(prog.Status.Kernel.ID, veth.A.Name)
 		require.NoError(t, err)
 		spec = spec.WithPriority(plans[i].priority).WithProceedOn(customProceedOn)
 		link, err := env.Attach(ctx, spec)
@@ -3118,7 +3118,7 @@ func TestMultiProgXDP_ChainStopsAtPass_CustomProceedOn(t *testing.T) {
 	}
 
 	for i, prog := range programs {
-		spec, err := bpfman.NewXDPAttachSpec(prog.Status.Kernel.ID, veth.A.Name, veth.A.Ifindex)
+		spec, err := bpfman.NewXDPAttachSpec(prog.Status.Kernel.ID, veth.A.Name)
 		require.NoError(t, err)
 		spec = spec.WithPriority(plans[i].priority).WithProceedOn(customProceedOn)
 		link, err := env.Attach(ctx, spec)
@@ -3199,7 +3199,7 @@ func TestMultiProgXDP_AllProceed_DefaultProceedOn(t *testing.T) {
 
 	links := make([]bpfman.LinkRecord, len(plans))
 	for i, prog := range programs {
-		spec, err := bpfman.NewXDPAttachSpec(prog.Status.Kernel.ID, veth.A.Name, veth.A.Ifindex)
+		spec, err := bpfman.NewXDPAttachSpec(prog.Status.Kernel.ID, veth.A.Name)
 		require.NoError(t, err)
 		spec = spec.WithPriority(plans[i].priority)
 		link, err := env.Attach(ctx, spec)
@@ -3301,7 +3301,7 @@ func TestXDP_LoadAttachDetachUnload(t *testing.T) {
 	require.NotEmpty(t, listedProgs[0].Record.Handles.PinPath)
 
 	// When: attach via client to test interface
-	xdpSpec, err := bpfman.NewXDPAttachSpec(prog.Status.Kernel.ID, veth.A.Name, veth.A.Ifindex)
+	xdpSpec, err := bpfman.NewXDPAttachSpec(prog.Status.Kernel.ID, veth.A.Name)
 	require.NoError(t, err)
 	link, err := env.Attach(ctx, xdpSpec)
 	require.NoError(t, err)

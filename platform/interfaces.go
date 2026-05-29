@@ -17,6 +17,13 @@ import (
 // matching row.
 var ErrRecordNotFound = errors.New("record not found")
 
+// ErrInterfaceNotFound marks a failure to resolve a network interface
+// name (in its netns) to an ifindex -- an unknown interface or an
+// unreachable netns path. Both stem from caller-supplied input, so a
+// front-end can map it to an invalid-argument status rather than an
+// internal error. InterfaceResolver implementations wrap it.
+var ErrInterfaceNotFound = errors.New("interface not found")
+
 // LinkWriter writes standalone link metadata to the store.
 // Dispatcher-backed XDP/TC member links are persisted and removed
 // through DispatcherStore snapshot operations, not through LinkWriter.
@@ -396,6 +403,19 @@ type KernelOperations interface {
 	MapRepinner
 	TCFilterDetacher
 	TracepointLister
+	InterfaceResolver
+}
+
+// InterfaceResolver resolves a network interface name to its kernel
+// ifindex within a network namespace. netnsPath is the path to the
+// target namespace (for example /proc/<pid>/ns/net); an empty path
+// resolves in the daemon's own namespace. Resolution must happen
+// inside the target namespace because a name like a pod's "eth0"
+// exists only there, not in the host. This is the single resolution
+// boundary: the manager owns it, and the gRPC server and CLI pass
+// interface names through untouched.
+type InterfaceResolver interface {
+	InterfaceByName(ctx context.Context, name, netnsPath string) (ifindex int, err error)
 }
 
 // ImageRef describes an OCI image to pull.

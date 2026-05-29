@@ -102,14 +102,9 @@ func (s *Server) attachTracepoint(ctx context.Context, writeLock lock.WriterScop
 
 // attachXDP handles XDP attachment via the manager.
 func (s *Server) attachXDP(ctx context.Context, writeLock lock.WriterScope, programID kernel.ProgramID, info *pb.XDPAttachInfo) (*pb.AttachResponse, error) {
-	// Get interface index from name
-	iface, err := s.netIface.InterfaceByName(info.Iface, info.GetNetns())
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "interface %q: %v", info.Iface, err)
-	}
-
-	// Construct AttachSpec with validation
-	spec, err := bpfman.NewXDPAttachSpec(programID, iface.Name, iface.Index)
+	// Build the spec from the request; the manager resolves the
+	// interface name inside the target netns.
+	spec, err := bpfman.NewXDPAttachSpec(programID, info.Iface)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid XDP attach spec: %v", err)
 	}
@@ -133,6 +128,9 @@ func (s *Server) attachXDP(ctx context.Context, writeLock lock.WriterScope, prog
 		if errors.As(err, &notFound) {
 			return nil, status.Errorf(codes.NotFound, "program with ID %d not found", programID)
 		}
+		if errors.Is(err, platform.ErrInterfaceNotFound) {
+			return nil, status.Errorf(codes.InvalidArgument, "attach XDP: %v", err)
+		}
 		return nil, status.Errorf(codes.Internal, "attach XDP: %v", err)
 	}
 
@@ -149,14 +147,9 @@ func (s *Server) attachTC(ctx context.Context, writeLock lock.WriterScope, progr
 		return nil, status.Errorf(codes.InvalidArgument, "invalid direction %q: must be 'ingress' or 'egress'", info.Direction)
 	}
 
-	// Get interface index from name
-	iface, err := s.netIface.InterfaceByName(info.Iface, info.GetNetns())
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "interface %q: %v", info.Iface, err)
-	}
-
-	// Construct AttachSpec with validation
-	spec, err := bpfman.NewTCAttachSpec(programID, iface.Name, iface.Index, direction)
+	// Build the spec from the request; the manager resolves the
+	// interface name inside the target netns.
+	spec, err := bpfman.NewTCAttachSpec(programID, info.Iface, direction)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid TC attach spec: %v", err)
 	}
@@ -181,6 +174,9 @@ func (s *Server) attachTC(ctx context.Context, writeLock lock.WriterScope, progr
 		if errors.As(err, &notFound) {
 			return nil, status.Errorf(codes.NotFound, "program with ID %d not found", programID)
 		}
+		if errors.Is(err, platform.ErrInterfaceNotFound) {
+			return nil, status.Errorf(codes.InvalidArgument, "attach TC: %v", err)
+		}
 		return nil, status.Errorf(codes.Internal, "attach TC: %v", err)
 	}
 
@@ -197,14 +193,9 @@ func (s *Server) attachTCX(ctx context.Context, writeLock lock.WriterScope, prog
 		return nil, status.Errorf(codes.InvalidArgument, "invalid direction %q: must be 'ingress' or 'egress'", info.Direction)
 	}
 
-	// Get interface index from name
-	iface, err := s.netIface.InterfaceByName(info.Iface, info.GetNetns())
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "interface %q: %v", info.Iface, err)
-	}
-
-	// Construct AttachSpec with validation
-	spec, err := bpfman.NewTCXAttachSpec(programID, iface.Name, iface.Index, direction)
+	// Build the spec from the request; the manager resolves the
+	// interface name inside the target netns.
+	spec, err := bpfman.NewTCXAttachSpec(programID, info.Iface, direction)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid TCX attach spec: %v", err)
 	}
@@ -222,6 +213,9 @@ func (s *Server) attachTCX(ctx context.Context, writeLock lock.WriterScope, prog
 		var notFound bpfman.ErrProgramNotFound
 		if errors.As(err, &notFound) {
 			return nil, status.Errorf(codes.NotFound, "program with ID %d not found", programID)
+		}
+		if errors.Is(err, platform.ErrInterfaceNotFound) {
+			return nil, status.Errorf(codes.InvalidArgument, "attach TCX: %v", err)
 		}
 		return nil, status.Errorf(codes.Internal, "attach TCX: %v", err)
 	}

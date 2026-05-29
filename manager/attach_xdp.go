@@ -21,8 +21,11 @@ import (
 //   - Extension links: /sys/fs/bpf/bpfman/xdp/dispatcher_{nsid}_{ifindex}_{revision}/link_{position}
 func (m *Manager) attachXDP(ctx context.Context, spec bpfman.XDPAttachSpec) (bpfman.Link, error) {
 	ifname := spec.Ifname()
-	ifindex := spec.Ifindex()
 	netnsPath := spec.Netns()
+	ifindex, err := m.kernel.InterfaceByName(ctx, ifname, netnsPath)
+	if err != nil {
+		return bpfman.Link{}, err
+	}
 
 	priority := spec.Priority()
 	proceedOn := spec.ProceedOn()

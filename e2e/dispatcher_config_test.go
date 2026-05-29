@@ -146,7 +146,7 @@ func newTCIngressHarness(t *testing.T) dispatcherTestHarness {
 		makeAttachSpec: func(t *testing.T, progID kernel.ProgramID, iface testnet.TestInterface, priority int) bpfman.AttachSpec {
 			t.Helper()
 			tcSpec, err := bpfman.NewTCAttachSpec(
-				progID, iface.Name, iface.Ifindex,
+				progID, iface.Name,
 				bpfman.TCDirectionIngress,
 			)
 			require.NoError(t, err)
@@ -197,7 +197,7 @@ func newXDPHarness(t *testing.T) dispatcherTestHarness {
 
 		makeAttachSpec: func(t *testing.T, progID kernel.ProgramID, iface testnet.TestInterface, priority int) bpfman.AttachSpec {
 			t.Helper()
-			xdpSpec, err := bpfman.NewXDPAttachSpec(progID, iface.Name, iface.Ifindex)
+			xdpSpec, err := bpfman.NewXDPAttachSpec(progID, iface.Name)
 			require.NoError(t, err)
 			return xdpSpec.WithPriority(priority)
 		},
@@ -330,7 +330,7 @@ func TestTCX_PriorityOrdering(t *testing.T) {
 		require.Len(t, programs, 1)
 		progID := programs[0].Status.Kernel.ID
 
-		tcxSpec, err := bpfman.NewTCXAttachSpec(progID, iface.Name, iface.Ifindex, bpfman.TCDirectionIngress)
+		tcxSpec, err := bpfman.NewTCXAttachSpec(progID, iface.Name, bpfman.TCDirectionIngress)
 		require.NoError(t, err)
 		tcxSpec = tcxSpec.WithPriority(prio)
 		link, err := env.Attach(ctx, tcxSpec)

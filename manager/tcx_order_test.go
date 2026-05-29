@@ -133,3 +133,54 @@ func TestComputeTCXAttachOrder(t *testing.T) {
 		})
 	}
 }
+
+func TestFilterLiveTCXLinks(t *testing.T) {
+	t.Parallel()
+
+	links := []bpfman.TCXLinkInfo{
+		{KernelLinkID: 1, KernelProgramID: 100, Priority: 100},
+		{KernelLinkID: 2, KernelProgramID: 200, Priority: 200},
+		{KernelLinkID: 3, KernelProgramID: 200, Priority: 200}, // duplicate program
+	}
+
+	t.Run("all live are kept", func(t *testing.T) {
+		t.Parallel()
+		got := filterLiveTCXLinks(links, func(kernel.ProgramID) bool { return true })
+		if len(got) != len(links) {
+			t.Fatalf("kept %d links, want %d", len(got), len(links))
+		}
+	})
+
+	t.Run("links to a dead program are dropped", func(t *testing.T) {
+		t.Parallel()
+		got := filterLiveTCXLinks(links, func(id kernel.ProgramID) bool { return id != 200 })
+		if len(got) != 1 || got[0].KernelProgramID != 100 {
+			t.Fatalf("got %+v, want only program 100", got)
+		}
+	})
+
+	t.Run("all dead yields empty, which orders at head not ENOENT", func(t *testing.T) {
+		t.Parallel()
+		got := filterLiveTCXLinks(links, func(kernel.ProgramID) bool { return false })
+		if len(got) != 0 {
+			t.Fatalf("kept %d links, want 0", len(got))
+		}
+		// The whole point: a dead anchor must degrade to Head rather
+		// than emit AttachAfter(<dead id>) and fail with ENOENT.
+		if order := computeTCXAttachOrder(got, 100); !order.First {
+			t.Fatalf("empty chain did not order at head: %+v", order)
+		}
+	})
+
+	t.Run("liveness is queried once per distinct program", func(t *testing.T) {
+		t.Parallel()
+		calls := map[kernel.ProgramID]int{}
+		filterLiveTCXLinks(links, func(id kernel.ProgramID) bool {
+			calls[id]++
+			return true
+		})
+		if calls[100] != 1 || calls[200] != 1 {
+			t.Fatalf("expected one liveness query per distinct program, got %v", calls)
+		}
+	})
+}

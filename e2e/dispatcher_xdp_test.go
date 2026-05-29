@@ -39,7 +39,7 @@ func TestXDP_DispatcherConfigAfterDetach(t *testing.T) {
 	t.Cleanup(func() { env.Unload(context.Background(), prog.Status.Kernel.ID) })
 
 	// Fill all 10 slots
-	xdpSpec, err := bpfman.NewXDPAttachSpec(prog.Status.Kernel.ID, iface.Name, iface.Ifindex)
+	xdpSpec, err := bpfman.NewXDPAttachSpec(prog.Status.Kernel.ID, iface.Name)
 	require.NoError(t, err)
 
 	var linkIDs []bpfman.LinkRecord
@@ -160,7 +160,7 @@ func TestXDP_DispatcherChainExecution(t *testing.T) {
 			var linkIDs []bpfman.LinkRecord
 			for i := range progs {
 				xdpSpec, err := bpfman.NewXDPAttachSpec(
-					progs[i].kernelID, veth.A.Name, veth.A.Ifindex,
+					progs[i].kernelID, veth.A.Name,
 				)
 				require.NoError(t, err)
 				link, err := env.Attach(ctx, xdpSpec)

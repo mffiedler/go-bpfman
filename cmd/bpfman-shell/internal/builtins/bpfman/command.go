@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"net"
 	"strconv"
 	"strings"
 
@@ -663,11 +662,6 @@ func parseLinkAttachXDP(args []runtime.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach xdp: %w", err)
 	}
 
-	ifObj, err := net.InterfaceByName(iface)
-	if err != nil {
-		return nil, fmt.Errorf("link attach xdp: failed to find interface %q: %w", iface, err)
-	}
-
 	if defaults {
 		proceedOn = []string{"pass", "dispatcher_return"}
 	}
@@ -676,7 +670,7 @@ func parseLinkAttachXDP(args []runtime.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach xdp: invalid proceed-on value: %w", err)
 	}
 
-	spec, err := bpfman.NewXDPAttachSpec(progID, iface, ifObj.Index)
+	spec, err := bpfman.NewXDPAttachSpec(progID, iface)
 	if err != nil {
 		return nil, fmt.Errorf("link attach xdp: %w", err)
 	}
@@ -787,11 +781,6 @@ func parseLinkAttachTC(args []runtime.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach tc: %w", err)
 	}
 
-	ifObj, err := net.InterfaceByName(iface)
-	if err != nil {
-		return nil, fmt.Errorf("link attach tc: failed to find interface %q: %w", iface, err)
-	}
-
 	if defaults {
 		proceedOn = []string{"pipe", "dispatcher_return"}
 	}
@@ -800,7 +789,7 @@ func parseLinkAttachTC(args []runtime.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach tc: invalid proceed-on value: %w", err)
 	}
 
-	spec, err := bpfman.NewTCAttachSpec(progID, iface, ifObj.Index, dir)
+	spec, err := bpfman.NewTCAttachSpec(progID, iface, dir)
 	if err != nil {
 		return nil, fmt.Errorf("link attach tc: %w", err)
 	}
@@ -902,12 +891,7 @@ func parseLinkAttachTCX(args []runtime.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach tcx: %w", err)
 	}
 
-	ifObj, err := net.InterfaceByName(iface)
-	if err != nil {
-		return nil, fmt.Errorf("link attach tcx: failed to find interface %q: %w", iface, err)
-	}
-
-	spec, err := bpfman.NewTCXAttachSpec(progID, iface, ifObj.Index, dir)
+	spec, err := bpfman.NewTCXAttachSpec(progID, iface, dir)
 	if err != nil {
 		return nil, fmt.Errorf("link attach tcx: %w", err)
 	}

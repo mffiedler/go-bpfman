@@ -140,6 +140,10 @@ func (k *stubKernel) GetProgramByID(ctx context.Context, id kernel.ProgramID) (k
 	panic("stubKernel.GetProgramByID not implemented")
 }
 
+func (k *stubKernel) InterfaceByName(ctx context.Context, name, netnsPath string) (int, error) {
+	panic("stubKernel.InterfaceByName not implemented")
+}
+
 func (k *stubKernel) GetProgramStatsByID(ctx context.Context, id kernel.ProgramID) (*kernel.ProgramStats, error) {
 	panic("stubKernel.GetProgramStatsByID not implemented")
 }

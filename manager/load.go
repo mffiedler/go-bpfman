@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/frobware/go-bpfman"
@@ -121,6 +122,17 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 		return nil, fmt.Errorf("build load specs: %w", err)
 	}
 
+	// Reap store records for programs whose kernel object is gone
+	// before loading the new generation. Such rows are left behind by
+	// a prior generation that died without an Unload (daemon restart,
+	// external unload, or a ClusterBpfApplication deleted and
+	// recreated) and they poison later TCX attaches with ENOENT (see
+	// reapDeadProgramRecords). Best-effort: a reap failure must not
+	// block the load.
+	if err := m.reapDeadProgramRecords(ctx); err != nil {
+		m.logger.WarnContext(ctx, "reaping dead program records before load failed (continuing)", "error", err)
+	}
+
 	// Decide whether the load needs the cross-process writer
 	// lock. Loads of objects without LIBBPF_PIN_BY_NAME maps touch
 	// no shared bpffs state and remain lockless. Loads of objects
@@ -157,6 +169,169 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 		return lerr
 	})
 	return loaded, runErr
+}
+
+// reapDeadProgramRecords removes store records for managed programs
+// whose kernel object no longer exists. Such rows are left behind when
+// a prior generation's programs die without an Unload -- a daemon
+// restart, an external unload, or a ClusterBpfApplication deleted and
+// recreated -- and they poison later attaches: the TCX attach order
+// anchors a new program against an existing one by kernel program ID,
+// and an anchor pointing at a dead program makes the kernel reject the
+// attach with ENOENT (see attachTCX). Nothing else prunes them --
+// PlanFromObservation deliberately leaves store-managed rows "for the
+// next bpfman invocation to reconcile", and that reconcile lived
+// nowhere until here.
+//
+// The load path stays thin: observe an immutable snapshot, produce a
+// pure plan from that snapshot, then interpret the plan against the
+// store/bpffs. Observation failure aborts the reap before any
+// destructive action, because a failed kernel enumeration cannot
+// distinguish "dead" from "could not inspect".
+func (m *Manager) reapDeadProgramRecords(ctx context.Context) error {
+	return lock.Run(ctx, m.rt.Layout().LockPath(), func(_ context.Context, _ lock.WriterScope) error {
+		snap, err := m.observeDeadProgramReapSnapshot(ctx)
+		if err != nil {
+			return err
+		}
+		return m.executeReapPlan(ctx, planReap(snap))
+	})
+}
+
+type reapSnapshot struct {
+	storePrograms     map[kernel.ProgramID]bpfman.ProgramRecord
+	liveKernelProgram map[kernel.ProgramID]bool
+}
+
+func (m *Manager) observeDeadProgramReapSnapshot(ctx context.Context) (reapSnapshot, error) {
+	progs, err := m.store.List(ctx)
+	if err != nil {
+		return reapSnapshot{}, fmt.Errorf("list store programs: %w", err)
+	}
+
+	live := make(map[kernel.ProgramID]bool)
+	for kp, err := range m.kernel.Programs(ctx) {
+		if err != nil {
+			return reapSnapshot{}, fmt.Errorf("enumerate kernel programs: %w", err)
+		}
+		live[kp.ID] = true
+	}
+
+	return reapSnapshot{
+		storePrograms:     progs,
+		liveKernelProgram: live,
+	}, nil
+}
+
+type reapActionKind int
+
+const (
+	reapDeadProgramRecord reapActionKind = iota
+)
+
+type reapAction struct {
+	Kind      reapActionKind
+	ProgramID kernel.ProgramID
+}
+
+func (m *Manager) executeReapPlan(ctx context.Context, plan []reapAction) error {
+	for _, action := range plan {
+		switch action.Kind {
+		case reapDeadProgramRecord:
+			m.executeReapDeadProgramRecord(ctx, action.ProgramID)
+		}
+	}
+	return nil
+}
+
+func (m *Manager) executeReapDeadProgramRecord(ctx context.Context, id kernel.ProgramID) {
+	// Mirror unload's post-detach cleanup -- the kernel objects are
+	// already gone, so there is no detach to do -- releasing the
+	// shared-map pin references and the bpffs/bytecode residue before
+	// the row (and the shared_map_pins reference data it carries) is
+	// dropped. Each step is best-effort.
+	if err := m.removeProgramLinksDir(m.rt.BPFFS().LinkPinDir(id)); err != nil {
+		m.logger.WarnContext(ctx, "reap: remove links dir", "program_id", id, "error", err)
+	}
+	if err := m.removeProgramMapsPins(ctx, m.rt.BPFFS().MapPinDir(id)); err != nil {
+		m.logger.WarnContext(ctx, "reap: remove map pins", "program_id", id, "error", err)
+	}
+	if err := m.cleanupSharedMapPins(ctx, id); err != nil {
+		m.logger.WarnContext(ctx, "reap: cleanup shared map pins", "program_id", id, "error", err)
+	}
+	if err := m.store.Delete(ctx, id); err != nil {
+		m.logger.WarnContext(ctx, "reap: delete dead program record failed",
+			"program_id", id, "error", err)
+		return
+	}
+	if err := m.removeProgramBytecodeDir(id); err != nil {
+		m.logger.WarnContext(ctx, "reap: remove bytecode dir", "program_id", id, "error", err)
+	}
+	m.logger.InfoContext(ctx, "reaped dead program record absent from kernel",
+		"program_id", id)
+}
+
+// planReap decides which dead program records to delete and in what
+// order. It is pure: the observed store/kernel snapshot goes in, an
+// ordered slice of actions comes out, with no IO. The map-sharing
+// dependency is read from each record's MapOwnerID rather than queried,
+// so the dependents-first ordering can be decided -- and tested -- on
+// plain data.
+//
+// A program may be deleted only once nothing still records it as map
+// owner: managed_programs.map_owner_id is ON DELETE RESTRICT, and a
+// live dependent's shared maps must not be pulled out from under it.
+// deps counts every program (live or dead) that names each program as
+// its owner; a dead program is emitted only when its count reaches
+// zero, and emitting it decrements its own owner's count, which can
+// unblock that owner on a later pass. A dead owner whose dependent is
+// still live therefore stays put -- correctly. Iteration is over
+// sorted IDs so the plan is deterministic.
+func planReap(snap reapSnapshot) []reapAction {
+	progs := snap.storePrograms
+	dead := make(map[kernel.ProgramID]bool)
+	for id := range progs {
+		if !snap.liveKernelProgram[id] {
+			dead[id] = true
+		}
+	}
+
+	deps := make(map[kernel.ProgramID]int, len(progs))
+	for _, rec := range progs {
+		if owner := rec.Handles.MapOwnerID; owner != nil {
+			deps[*owner]++
+		}
+	}
+
+	deadIDs := make([]kernel.ProgramID, 0, len(dead))
+	for id := range dead {
+		deadIDs = append(deadIDs, id)
+	}
+	slices.Sort(deadIDs)
+
+	removed := make(map[kernel.ProgramID]bool, len(dead))
+	plan := make([]reapAction, 0, len(dead))
+	for {
+		progress := false
+		for _, id := range deadIDs {
+			if removed[id] || deps[id] > 0 {
+				continue
+			}
+			plan = append(plan, reapAction{
+				Kind:      reapDeadProgramRecord,
+				ProgramID: id,
+			})
+			removed[id] = true
+			if owner := progs[id].Handles.MapOwnerID; owner != nil {
+				deps[*owner]--
+			}
+			progress = true
+		}
+		if !progress {
+			break
+		}
+	}
+	return plan
 }
 
 // loadBody runs the per-program load loop and the batched Phase B

@@ -2,7 +2,9 @@ package manager
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
@@ -58,11 +60,14 @@ func tcProceedOnBitmask(actions []int32) uint32 {
 //   - Extension links: /sys/fs/bpf/bpfman/tc-{direction}/dispatcher_{nsid}_{ifindex}_{revision}/link_{position}
 func (m *Manager) attachTC(ctx context.Context, spec bpfman.TCAttachSpec) (bpfman.Link, error) {
 	ifname := spec.Ifname()
-	ifindex := spec.Ifindex()
 	direction := spec.Direction()
 	priority := spec.Priority()
 	proceedOn := spec.ProceedOn()
 	netnsPath := spec.Netns()
+	ifindex, err := m.kernel.InterfaceByName(ctx, ifname, netnsPath)
+	if err != nil {
+		return bpfman.Link{}, err
+	}
 
 	var dispType dispatcher.DispatcherType
 	if direction == bpfman.TCDirectionIngress {
@@ -107,12 +112,16 @@ func (m *Manager) attachTC(ctx context.Context, spec bpfman.TCAttachSpec) (bpfma
 func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpfman.Link, error) {
 	// --- Preflight (outside plan, plain errors) ---
 	programID := spec.ProgramID()
-	ifindex := spec.Ifindex()
 	ifname := spec.Ifname()
 	direction := spec.Direction()
 	priority := spec.Priority()
 	netnsPath := spec.Netns()
 	target := ifname + ":" + direction.String()
+
+	ifindex, err := m.kernel.InterfaceByName(ctx, ifname, netnsPath)
+	if err != nil {
+		return bpfman.Link{}, err
+	}
 
 	prog, err := m.getProgram(ctx, programID)
 	if err != nil {
@@ -143,12 +152,47 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 	if err != nil {
 		return bpfman.Link{}, fmt.Errorf("list existing TCX links: %w", err)
 	}
-	order := computeTCXAttachOrder(existingLinks, int32(priority))
+
+	// The attach order anchors the new program relative to an existing
+	// one by kernel program ID. The store can outlive the kernel objects
+	// it records -- a daemon restart, an external unload, or a
+	// ClusterBpfApplication deleted and recreated all leave link rows
+	// whose programs are gone. Anchoring against such a dead program ID
+	// makes the kernel reject the attach with ENOENT, and every reconcile
+	// recomputes the same dead anchor, so the interface never recovers.
+	// Treat the kernel as the source of truth and the store as a hint:
+	// drop links whose program is no longer live before computing the
+	// order. computeTCXAttachOrder falls back to Head when none remain.
+	liveLinks := filterLiveTCXLinks(existingLinks, func(id kernel.ProgramID) bool {
+		_, kerr := m.kernel.GetProgramByID(ctx, id)
+		switch {
+		case kerr == nil:
+			return true // live anchor; keep
+		case errors.Is(kerr, os.ErrNotExist):
+			m.logger.WarnContext(ctx, "ignoring stale TCX link whose anchor program is not in the kernel",
+				"interface", ifname,
+				"direction", direction.String(),
+				"dead_program_id", id)
+			return false // confirmed dead; drop
+		default:
+			// Inconclusive lookup (transient, EPERM, fd exhaustion).
+			// Do not drop a possibly-live anchor on a kernel hiccup;
+			// keep it and let the attach surface any real failure.
+			m.logger.WarnContext(ctx, "inconclusive kernel lookup for TCX anchor; keeping link",
+				"interface", ifname,
+				"direction", direction.String(),
+				"program_id", id,
+				"error", kerr)
+			return true
+		}
+	})
+	order := computeTCXAttachOrder(liveLinks, int32(priority))
 
 	m.logger.DebugContext(ctx, "computed TCX attach order",
 		"program_id", programID,
 		"priority", priority,
 		"existing_links", len(existingLinks),
+		"live_links", len(liveLinks),
 		"order", order)
 
 	// --- Build and execute plan ---
@@ -225,6 +269,28 @@ func (m *Manager) attachTCXPlan(
 // 3. If all existing links have priority <= newPriority, attach after the last one
 //
 // This ensures programs are ordered by priority, with ties broken by insertion order.
+// filterLiveTCXLinks returns the subset of links whose program is still
+// live in the kernel, as reported by isLive. isLive is queried at most
+// once per distinct kernel program ID. It exists because the link store
+// can outlive the kernel objects it records: anchoring a new TCX attach
+// against a program that has since been unloaded makes the kernel reject
+// the attach with ENOENT. See attachTCX for the full rationale.
+func filterLiveTCXLinks(links []bpfman.TCXLinkInfo, isLive func(kernel.ProgramID) bool) []bpfman.TCXLinkInfo {
+	live := make([]bpfman.TCXLinkInfo, 0, len(links))
+	checked := make(map[kernel.ProgramID]bool, len(links))
+	for _, l := range links {
+		ok, seen := checked[l.KernelProgramID]
+		if !seen {
+			ok = isLive(l.KernelProgramID)
+			checked[l.KernelProgramID] = ok
+		}
+		if ok {
+			live = append(live, l)
+		}
+	}
+	return live
+}
+
 func computeTCXAttachOrder(existingLinks []bpfman.TCXLinkInfo, newPriority int32) bpfman.TCXAttachOrder {
 	if len(existingLinks) == 0 {
 		// No existing links, attach at head

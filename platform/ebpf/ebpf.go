@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"iter"
 	"log/slog"
+	"net"
 	"sync"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 
 	"github.com/frobware/go-bpfman/kernel"
+	"github.com/frobware/go-bpfman/ns/netns"
 	"github.com/frobware/go-bpfman/platform"
 )
 
@@ -77,6 +79,28 @@ func New(opts ...Option) platform.KernelOperations {
 		opt(k)
 	}
 	return k
+}
+
+// InterfaceByName resolves an interface name to its kernel ifindex,
+// entering netnsPath first when non-empty so a namespaced interface
+// (such as a pod's "eth0") is looked up in the namespace that owns it
+// rather than in the daemon's own namespace. An empty path resolves
+// in the current namespace.
+func (k *kernelAdapter) InterfaceByName(_ context.Context, name, netnsPath string) (int, error) {
+	var ifindex int
+	err := netns.Run(netnsPath, func() error {
+		iface, err := net.InterfaceByName(name)
+		if err != nil {
+			return err
+		}
+		ifindex = iface.Index
+		return nil
+	})
+	if err != nil {
+		return 0, fmt.Errorf("resolve interface %q in netns %q: %w: %w",
+			name, netnsPath, err, platform.ErrInterfaceNotFound)
+	}
+	return ifindex, nil
 }
 
 // GetProgramByID retrieves a kernel program by its ID.

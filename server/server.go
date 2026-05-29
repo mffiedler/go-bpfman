@@ -38,35 +38,6 @@ const (
 	DefaultCSIVersion = "0.1.0"
 )
 
-// NetIfaceResolver resolves a network interface by name within a
-// network namespace. netnsPath is the path to the target namespace
-// (for example /proc/<pid>/ns/net); an empty path resolves in the
-// caller's current namespace. Taking the namespace at the resolution
-// boundary stops a namespaced interface -- such as a pod's "eth0",
-// which does not exist in the host namespace -- from being looked up
-// in the wrong namespace. The interface also enables testing without
-// real network interfaces.
-type NetIfaceResolver interface {
-	InterfaceByName(name, netnsPath string) (*net.Interface, error)
-}
-
-// DefaultNetIfaceResolver uses the standard library net package,
-// entering the target namespace for the lookup when netnsPath is set.
-type DefaultNetIfaceResolver struct{}
-
-func (DefaultNetIfaceResolver) InterfaceByName(name, netnsPath string) (*net.Interface, error) {
-	var iface *net.Interface
-	err := netns.Run(netnsPath, func() error {
-		var err error
-		iface, err = net.InterfaceByName(name)
-		return err
-	})
-	if err != nil {
-		return nil, err
-	}
-	return iface, nil
-}
-
 // RunConfig configures the server daemon.
 type RunConfig struct {
 	Layout       fs.Layout
@@ -229,10 +200,9 @@ func Run(ctx context.Context, cfg RunConfig) error {
 
 	// Start bpfman gRPC server
 	srv := &Server{
-		layout:   layout,
-		netIface: DefaultNetIfaceResolver{},
-		mgr:      mgr,
-		logger:   logger.With("component", "server"),
+		layout: layout,
+		mgr:    mgr,
+		logger: logger.With("component", "server"),
 	}
 
 	// Use override socket path if provided, otherwise use default from layout
@@ -262,7 +232,6 @@ type Server struct {
 	pb.UnimplementedBpfmanServer
 
 	layout    fs.Layout
-	netIface  NetIfaceResolver
 	mgr       *manager.Manager
 	logger    *slog.Logger
 	opCounter atomic.Uint64
@@ -272,14 +241,13 @@ type Server struct {
 // The manager must be created by the caller - use manager.New() with
 // appropriate mounter (RealMounter for production, NoOpMounter for tests).
 // The manager should include an ImagePuller if OCI image loading is needed.
-func New(layout fs.Layout, netIface NetIfaceResolver, mgr *manager.Manager, logger *slog.Logger) *Server {
+func New(layout fs.Layout, mgr *manager.Manager, logger *slog.Logger) *Server {
 	// Wrap with context-aware handler to extract op_id from context.
 	logger = manager.WithOpIDHandler(logger)
 	return &Server{
-		layout:   layout,
-		netIface: netIface,
-		mgr:      mgr,
-		logger:   logger.With("component", "server"),
+		layout: layout,
+		mgr:    mgr,
+		logger: logger.With("component", "server"),
 	}
 }
 

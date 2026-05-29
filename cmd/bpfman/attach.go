@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"net"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
@@ -65,17 +64,12 @@ type AttachXDPCmd struct {
 
 func (c *AttachXDPCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
-		iface, err := net.InterfaceByName(c.Iface)
-		if err != nil {
-			return attachResult{}, fmt.Errorf("failed to find interface %q: %w", c.Iface, err)
-		}
-
 		proceedOn, err := bpfman.ParseXDPActions(c.ProceedOn)
 		if err != nil {
 			return attachResult{}, fmt.Errorf("invalid proceed-on value: %w", err)
 		}
 
-		spec, err := bpfman.NewXDPAttachSpec(c.ProgramID.Value, c.Iface, iface.Index)
+		spec, err := bpfman.NewXDPAttachSpec(c.ProgramID.Value, c.Iface)
 		if err != nil {
 			return attachResult{}, fmt.Errorf("invalid XDP spec: %w", err)
 		}
@@ -116,17 +110,12 @@ func (c *AttachTCCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 			return attachResult{}, err
 		}
 
-		iface, err := net.InterfaceByName(c.Iface)
-		if err != nil {
-			return attachResult{}, fmt.Errorf("failed to find interface %q: %w", c.Iface, err)
-		}
-
 		proceedOn, err := bpfman.ParseTCActions(c.ProceedOn)
 		if err != nil {
 			return attachResult{}, fmt.Errorf("invalid proceed-on value: %w", err)
 		}
 
-		spec, err := bpfman.NewTCAttachSpec(c.ProgramID.Value, c.Iface, iface.Index, direction)
+		spec, err := bpfman.NewTCAttachSpec(c.ProgramID.Value, c.Iface, direction)
 		if err != nil {
 			return attachResult{}, fmt.Errorf("invalid TC spec: %w", err)
 		}
@@ -166,12 +155,7 @@ func (c *AttachTCXCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 			return attachResult{}, err
 		}
 
-		iface, err := net.InterfaceByName(c.Iface)
-		if err != nil {
-			return attachResult{}, fmt.Errorf("failed to find interface %q: %w", c.Iface, err)
-		}
-
-		spec, err := bpfman.NewTCXAttachSpec(c.ProgramID.Value, c.Iface, iface.Index, direction)
+		spec, err := bpfman.NewTCXAttachSpec(c.ProgramID.Value, c.Iface, direction)
 		if err != nil {
 			return attachResult{}, fmt.Errorf("invalid TCX spec: %w", err)
 		}

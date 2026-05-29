@@ -32,6 +32,12 @@ func testLogger() *slog.Logger {
 }
 
 // testFixture provides access to all components for verification.
+//
+// Keep the store real. Manager tests deliberately use the SQLite
+// implementation, even when the kernel is fake, because the schema's
+// foreign keys, ON DELETE CASCADE, and ON DELETE RESTRICT behaviour are
+// part of the manager contract. A mock store would miss exactly the
+// dependency and cascading-delete paths these tests need to exercise.
 type testFixture struct {
 	Manager       *manager.Manager
 	Kernel        *fakeKernel
@@ -54,6 +60,8 @@ func newTestFixtureWithDiscoverer(t *testing.T, discoverer *fakeDiscoverer) *tes
 }
 
 // newTestFixtureWithOptions creates a test fixture with optional overrides.
+// The store is intentionally not overridable; tests should exercise the
+// real SQLite schema so cascade and restriction behaviour stays covered.
 func newTestFixtureWithOptions(t *testing.T, discoverer *fakeDiscoverer, puller platform.ImagePuller) *testFixture {
 	t.Helper()
 	store, err := sqlite.NewInMemory(context.Background(), testLogger())
