@@ -38,17 +38,33 @@ const (
 	DefaultCSIVersion = "0.1.0"
 )
 
-// NetIfaceResolver resolves network interfaces by name.
-// This interface enables testing without real network interfaces.
+// NetIfaceResolver resolves a network interface by name within a
+// network namespace. netnsPath is the path to the target namespace
+// (for example /proc/<pid>/ns/net); an empty path resolves in the
+// caller's current namespace. Taking the namespace at the resolution
+// boundary stops a namespaced interface -- such as a pod's "eth0",
+// which does not exist in the host namespace -- from being looked up
+// in the wrong namespace. The interface also enables testing without
+// real network interfaces.
 type NetIfaceResolver interface {
-	InterfaceByName(name string) (*net.Interface, error)
+	InterfaceByName(name, netnsPath string) (*net.Interface, error)
 }
 
-// DefaultNetIfaceResolver uses the standard library net package.
+// DefaultNetIfaceResolver uses the standard library net package,
+// entering the target namespace for the lookup when netnsPath is set.
 type DefaultNetIfaceResolver struct{}
 
-func (DefaultNetIfaceResolver) InterfaceByName(name string) (*net.Interface, error) {
-	return net.InterfaceByName(name)
+func (DefaultNetIfaceResolver) InterfaceByName(name, netnsPath string) (*net.Interface, error) {
+	var iface *net.Interface
+	err := netns.Run(netnsPath, func() error {
+		var err error
+		iface, err = net.InterfaceByName(name)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return iface, nil
 }
 
 // RunConfig configures the server daemon.

@@ -103,7 +103,7 @@ func (s *Server) attachTracepoint(ctx context.Context, writeLock lock.WriterScop
 // attachXDP handles XDP attachment via the manager.
 func (s *Server) attachXDP(ctx context.Context, writeLock lock.WriterScope, programID kernel.ProgramID, info *pb.XDPAttachInfo) (*pb.AttachResponse, error) {
 	// Get interface index from name
-	iface, err := s.netIface.InterfaceByName(info.Iface)
+	iface, err := s.netIface.InterfaceByName(info.Iface, info.GetNetns())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "interface %q: %v", info.Iface, err)
 	}
@@ -150,7 +150,7 @@ func (s *Server) attachTC(ctx context.Context, writeLock lock.WriterScope, progr
 	}
 
 	// Get interface index from name
-	iface, err := s.netIface.InterfaceByName(info.Iface)
+	iface, err := s.netIface.InterfaceByName(info.Iface, info.GetNetns())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "interface %q: %v", info.Iface, err)
 	}
@@ -198,7 +198,7 @@ func (s *Server) attachTCX(ctx context.Context, writeLock lock.WriterScope, prog
 	}
 
 	// Get interface index from name
-	iface, err := s.netIface.InterfaceByName(info.Iface)
+	iface, err := s.netIface.InterfaceByName(info.Iface, info.GetNetns())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "interface %q: %v", info.Iface, err)
 	}
