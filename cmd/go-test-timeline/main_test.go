@@ -10,6 +10,7 @@ import (
 )
 
 func TestParseTimelineBuildsRunningAndPausedIntervals(t *testing.T) {
+	t.Parallel()
 	input := strings.NewReader(strings.Join([]string{
 		`{"Time":"2026-05-28T12:00:00Z","Action":"run","Package":"example.test","Test":"TestRoot"}`,
 		`{"Time":"2026-05-28T12:00:00.100Z","Action":"run","Package":"example.test","Test":"TestRoot/TestParallel"}`,
@@ -54,6 +55,7 @@ func TestParseTimelineBuildsRunningAndPausedIntervals(t *testing.T) {
 }
 
 func TestRenderTraceIncludesRowsAndStates(t *testing.T) {
+	t.Parallel()
 	input := strings.NewReader(strings.Join([]string{
 		`{"Time":"2026-05-28T12:00:00Z","Action":"run","Package":"example.test","Test":"TestFast"}`,
 		`{"Time":"2026-05-28T12:00:00.010Z","Action":"pass","Package":"example.test","Test":"TestFast","Elapsed":0.01}`,
@@ -88,6 +90,7 @@ func TestRenderTraceIncludesRowsAndStates(t *testing.T) {
 }
 
 func TestAssignLanesReusesNonOverlappingLane(t *testing.T) {
+	t.Parallel()
 	input := strings.NewReader(strings.Join([]string{
 		`{"Time":"2026-05-28T12:00:00Z","Action":"run","Package":"example.test","Test":"TestA"}`,
 		`{"Time":"2026-05-28T12:00:00.500Z","Action":"run","Package":"example.test","Test":"TestB"}`,
@@ -123,6 +126,7 @@ func TestAssignLanesReusesNonOverlappingLane(t *testing.T) {
 }
 
 func TestAssignLanesIgnoresPausedIntervals(t *testing.T) {
+	t.Parallel()
 	input := strings.NewReader(strings.Join([]string{
 		`{"Time":"2026-05-28T12:00:00Z","Action":"run","Package":"example.test","Test":"TestA"}`,
 		`{"Time":"2026-05-28T12:00:00.010Z","Action":"pause","Package":"example.test","Test":"TestA"}`,
@@ -152,6 +156,7 @@ func TestAssignLanesIgnoresPausedIntervals(t *testing.T) {
 }
 
 func TestAssignLanesDropsParallelRegistrationInterval(t *testing.T) {
+	t.Parallel()
 	input := strings.NewReader(strings.Join([]string{
 		`{"Time":"2026-05-28T12:00:00Z","Action":"run","Package":"example.test","Test":"TestParallel"}`,
 		`{"Time":"2026-05-28T12:00:00.001Z","Action":"pause","Package":"example.test","Test":"TestParallel"}`,
@@ -177,6 +182,7 @@ func TestAssignLanesDropsParallelRegistrationInterval(t *testing.T) {
 }
 
 func TestTerminalEventUsesElapsedWhenSummaryIsDelayed(t *testing.T) {
+	t.Parallel()
 	input := strings.NewReader(strings.Join([]string{
 		`{"Time":"2026-05-28T12:00:00Z","Action":"run","Package":"example.test","Test":"TestRoot/TestParallel"}`,
 		`{"Time":"2026-05-28T12:00:00.001Z","Action":"pause","Package":"example.test","Test":"TestRoot/TestParallel"}`,
@@ -202,6 +208,7 @@ func TestTerminalEventUsesElapsedWhenSummaryIsDelayed(t *testing.T) {
 }
 
 func TestApplyMarkersOverridesRoundedElapsedIntervals(t *testing.T) {
+	t.Parallel()
 	input := strings.NewReader(strings.Join([]string{
 		`{"Time":"2026-05-28T12:00:00Z","Action":"run","Package":"example.test","Test":"TestRoot/scripts/TestA.bpfman"}`,
 		`{"Time":"2026-05-28T12:00:00.001Z","Action":"pause","Package":"example.test","Test":"TestRoot/scripts/TestA.bpfman"}`,
@@ -236,6 +243,7 @@ func TestApplyMarkersOverridesRoundedElapsedIntervals(t *testing.T) {
 }
 
 func TestRenderTraceNamesSyntheticLanes(t *testing.T) {
+	t.Parallel()
 	input := strings.NewReader(strings.Join([]string{
 		`{"Time":"2026-05-28T12:00:00Z","Action":"run","Package":"example.test","Test":"TestA"}`,
 		`{"Time":"2026-05-28T12:00:00.100Z","Action":"run","Package":"example.test","Test":"TestB"}`,
@@ -270,6 +278,7 @@ func TestRenderTraceNamesSyntheticLanes(t *testing.T) {
 }
 
 func TestRenderTraceAddsDerivedRunnerBusyTrack(t *testing.T) {
+	t.Parallel()
 	input := strings.NewReader(strings.Join([]string{
 		`{"Time":"2026-05-28T12:00:00Z","Action":"run","Package":"example.test","Test":"TestA"}`,
 		`{"Time":"2026-05-28T12:00:00.100Z","Action":"run","Package":"example.test","Test":"TestB"}`,
@@ -312,6 +321,7 @@ func TestRenderTraceAddsDerivedRunnerBusyTrack(t *testing.T) {
 }
 
 func TestParseTimelineRejectsUntimedEvents(t *testing.T) {
+	t.Parallel()
 	_, err := parseTimeline(strings.NewReader(`{"Action":"run","Package":"example.test","Test":"TestNoTime"}`), "bad")
 	if err == nil {
 		t.Fatal("expected error")
