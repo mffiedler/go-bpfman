@@ -28,6 +28,21 @@ var ErrMultipleProgramsFound = errors.New("multiple programs found")
 // the map owner (MapOwnerID == 0). This indicates a data inconsistency.
 var ErrMultipleMapOwners = errors.New("multiple map owners found")
 
+// ErrProgramRequiresReconciliation is returned when a program has a
+// store record but the corresponding kernel object is absent.
+type ErrProgramRequiresReconciliation struct {
+	ProgramID kernel.ProgramID
+	Cause     error
+}
+
+func (e ErrProgramRequiresReconciliation) Error() string {
+	return fmt.Sprintf("program %d exists in store but not in kernel (requires reconciliation)", e.ProgramID)
+}
+
+func (e ErrProgramRequiresReconciliation) Unwrap() error {
+	return e.Cause
+}
+
 // GetHostInfo returns system information from uname.
 func GetHostInfo() bpfman.HostInfo {
 	var utsname unix.Utsname
@@ -57,7 +72,10 @@ func (m *Manager) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.P
 	// Fetch program from kernel
 	kp, err := m.kernel.GetProgramByID(ctx, programID)
 	if err != nil {
-		return bpfman.Program{}, fmt.Errorf("program %d exists in store but not in kernel (requires reconciliation): %w", programID, err)
+		return bpfman.Program{}, ErrProgramRequiresReconciliation{
+			ProgramID: programID,
+			Cause:     err,
+		}
 	}
 
 	// Fetch links from store (records with details)

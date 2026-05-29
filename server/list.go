@@ -11,6 +11,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/inspect"
 	"github.com/frobware/go-bpfman/kernel"
+	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/platform"
 	pb "github.com/frobware/go-bpfman/server/pb"
 )
@@ -85,14 +86,15 @@ func (s *Server) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, 
 	if errors.Is(err, platform.ErrRecordNotFound) {
 		return nil, status.Errorf(codes.NotFound, "program with ID %d not found", req.Id)
 	}
+	var reconcileErr manager.ErrProgramRequiresReconciliation
+	if errors.As(err, &reconcileErr) {
+		return nil, status.Error(codes.Internal, reconcileErr.Error())
+	}
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get program: %v", err)
 	}
 
 	kp := prog.Status.Kernel
-	if kp == nil {
-		return nil, status.Errorf(codes.Internal, "program %d exists in store but not in kernel (requires reconciliation)", req.Id)
-	}
 
 	// Link IDs from the program's status
 	linkIDs := make([]uint32, 0, len(prog.Status.Links))

@@ -96,6 +96,26 @@ func TestGetProgram_ReturnsAllFields(t *testing.T) {
 	assert.Equal(t, "1.0.0", retrieved.Record.Meta.Metadata["version"], "UserMetadata[version]")
 }
 
+func TestGetProgram_StoreRecordWithoutKernelProgramRequiresReconciliation(t *testing.T) {
+	t.Parallel()
+
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("prog.o"), "stale_prog", bpfman.ProgramTypeKprobe)
+	require.NoError(t, err, "failed to create load spec")
+
+	loaded, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err, "Load failed")
+	fix.Kernel.RemoveKernelProgram(loaded.Record.ProgramID)
+
+	_, err = fix.Manager.Get(ctx, loaded.Record.ProgramID)
+	var reconcileErr manager.ErrProgramRequiresReconciliation
+	require.ErrorAs(t, err, &reconcileErr)
+	assert.Equal(t, loaded.Record.ProgramID, reconcileErr.ProgramID)
+	assert.ErrorContains(t, err, "requires reconciliation")
+}
+
 // TestLoadProgram_WithGlobalData verifies that:
 //
 //	Given a program loaded with global data,
