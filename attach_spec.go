@@ -21,18 +21,26 @@ type TracepointAttachSpec struct {
 	name      string
 }
 
-// NewTracepointAttachSpec creates a TracepointAttachSpec with validated fields.
-func NewTracepointAttachSpec(programID kernel.ProgramID, group, name string) (TracepointAttachSpec, error) {
+// NewTracepointAttachSpec creates a TracepointAttachSpec from an
+// already parsed tracepoint.
+func NewTracepointAttachSpec(programID kernel.ProgramID, tracepoint Tracepoint) (TracepointAttachSpec, error) {
 	if programID == 0 {
 		return TracepointAttachSpec{}, errors.New("programID is required")
 	}
-	if group == "" {
-		return TracepointAttachSpec{}, errors.New("group is required")
+	if tracepoint == (Tracepoint{}) {
+		return TracepointAttachSpec{}, errors.New("tracepoint is required")
 	}
-	if name == "" {
-		return TracepointAttachSpec{}, errors.New("name is required")
+	return TracepointAttachSpec{programID: programID, group: tracepoint.Group(), name: tracepoint.Name()}, nil
+}
+
+// NewTracepointAttachSpecFromString parses a tracepoint identifier and
+// creates a TracepointAttachSpec.
+func NewTracepointAttachSpecFromString(programID kernel.ProgramID, tracepoint string) (TracepointAttachSpec, error) {
+	tp, err := ParseTracepoint(tracepoint)
+	if err != nil {
+		return TracepointAttachSpec{}, err
 	}
-	return TracepointAttachSpec{programID: programID, group: group, name: name}, nil
+	return NewTracepointAttachSpec(programID, tp)
 }
 
 func (TracepointAttachSpec) attachSpec()                   {}

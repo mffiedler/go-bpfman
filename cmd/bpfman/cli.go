@@ -11,6 +11,7 @@ import (
 
 	"github.com/alecthomas/kong"
 
+	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/internal/cliformat"
@@ -132,7 +133,7 @@ func KongOptions() []kong.Option {
 		kong.TypeMapper(reflect.TypeOf(bpfmancli.GlobalData{}), globalDataMapper()),
 		kong.TypeMapper(reflect.TypeOf(bpfmancli.ObjectPath{}), objectPathMapper()),
 		kong.TypeMapper(reflect.TypeOf(bpfmancli.ProgramSpec{}), programSpecMapper()),
-		kong.TypeMapper(reflect.TypeOf(bpfmancli.TracepointName{}), tracepointNameMapper()),
+		kong.TypeMapper(reflect.TypeOf(bpfman.Tracepoint{}), tracepointMapper()),
 		kong.TypeMapper(reflect.TypeOf(bpfmancli.ImagePullPolicy{}), imagePullPolicyMapper()),
 		kong.TypeMapper(reflect.TypeOf(cliformat.OutputValue{}), outputValueMapper()),
 		kong.Vars{

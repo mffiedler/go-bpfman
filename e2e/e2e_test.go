@@ -94,7 +94,7 @@ func TestTracepoint_LoadAttachDetachUnload(t *testing.T) {
 	require.NotEmpty(t, listedProgs[0].Record.Handles.PinPath)
 
 	// When: attach via client
-	tpSpec, err := bpfman.NewTracepointAttachSpec(prog.Status.Kernel.ID, "syscalls", "sys_enter_kill")
+	tpSpec, err := bpfman.NewTracepointAttachSpecFromString(prog.Status.Kernel.ID, "syscalls/sys_enter_kill")
 	require.NoError(t, err)
 	link, err := env.Attach(ctx, tpSpec)
 	require.NoError(t, err)
@@ -250,7 +250,7 @@ func TestMultiProgTracepoint_LoadAttachDetachUnload(t *testing.T) {
 
 	links := make([]bpfman.LinkRecord, len(plans))
 	for i, prog := range programs {
-		spec, err := bpfman.NewTracepointAttachSpec(prog.Status.Kernel.ID, "syscalls", "sys_enter_kill")
+		spec, err := bpfman.NewTracepointAttachSpecFromString(prog.Status.Kernel.ID, "syscalls/sys_enter_kill")
 		require.NoError(t, err)
 		link, err := env.Attach(ctx, spec)
 		require.NoError(t, err)
@@ -344,7 +344,7 @@ func TestMultiProgMixed_LoadAttachDetachUnload(t *testing.T) {
 			name: "mixed_tp", progType: bpfman.ProgramTypeTracepoint, linkKind: bpfman.LinkKindTracepoint,
 			mapName: "mtp_count", weightGlobal: "weight_tp", weight: weights[0], expectEvents: 3 * eventsPerWave,
 			newAttach: func(id kernel.ProgramID) (bpfman.AttachSpec, error) {
-				return bpfman.NewTracepointAttachSpec(id, "syscalls", "sys_enter_unlinkat")
+				return bpfman.NewTracepointAttachSpecFromString(id, "syscalls/sys_enter_unlinkat")
 			},
 		},
 		{

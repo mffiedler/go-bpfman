@@ -175,15 +175,15 @@ func (c *AttachTCXCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 // AttachTracepointCmd attaches a program to a tracepoint.
 type AttachTracepointCmd struct {
 	cliformat.OutputFlags
-	Example    ExampleFlag              `name:"example" help:"Show working examples and exit."`
-	Metadata   []bpfmancli.KeyValue     `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
-	ProgramID  bpfmancli.ProgramID      `arg:"" name:"program-id" help:"Program ID to attach."`
-	Tracepoint bpfmancli.TracepointName `arg:"" name:"tracepoint" help:"Tracepoint in group/name form (e.g. sched/sched_switch)."`
+	Example    ExampleFlag          `name:"example" help:"Show working examples and exit."`
+	Metadata   []bpfmancli.KeyValue `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
+	ProgramID  bpfmancli.ProgramID  `arg:"" name:"program-id" help:"Program ID to attach."`
+	Tracepoint bpfman.Tracepoint    `arg:"" name:"tracepoint" help:"Tracepoint in group/name form (e.g. sched/sched_switch)."`
 }
 
 func (c *AttachTracepointCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
-		spec, err := bpfman.NewTracepointAttachSpec(c.ProgramID.Value, c.Tracepoint.Group, c.Tracepoint.Name)
+		spec, err := bpfman.NewTracepointAttachSpec(c.ProgramID.Value, c.Tracepoint)
 		if err != nil {
 			return attachResult{}, fmt.Errorf("invalid tracepoint spec: %w", err)
 		}

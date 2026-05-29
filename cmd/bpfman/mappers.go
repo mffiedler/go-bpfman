@@ -6,6 +6,7 @@ import (
 
 	"github.com/alecthomas/kong"
 
+	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/internal/cliformat"
 )
@@ -106,14 +107,14 @@ func programSpecMapper() kong.MapperFunc {
 	}
 }
 
-// tracepointNameMapper creates a Kong mapper for bpfmancli.TracepointName.
-func tracepointNameMapper() kong.MapperFunc {
+// tracepointMapper creates a Kong mapper for bpfman.Tracepoint.
+func tracepointMapper() kong.MapperFunc {
 	return func(ctx *kong.DecodeContext, target reflect.Value) error {
 		var s string
 		if err := ctx.Scan.PopValueInto("group/name", &s); err != nil {
 			return err
 		}
-		tp, err := bpfmancli.ParseTracepointName(s)
+		tp, err := bpfman.ParseTracepoint(s)
 		if err != nil {
 			return err
 		}

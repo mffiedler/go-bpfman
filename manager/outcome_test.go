@@ -104,7 +104,7 @@ func TestAttachTracepoint_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	// Attach it
-	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.ProgramID, "sched", "sched_switch")
+	attachSpec, err := bpfman.NewTracepointAttachSpecFromString(prog.Record.ProgramID, "sched/sched_switch")
 	require.NoError(t, err)
 
 	link, err := fix.Attach(ctx, attachSpec)
@@ -151,7 +151,7 @@ func TestOutcome_ExecutionFailure_HasTimeline(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.ProgramID, "syscalls", "sys_enter_close")
+	attachSpec, err := bpfman.NewTracepointAttachSpecFromString(prog.Record.ProgramID, "syscalls/sys_enter_close")
 	require.NoError(t, err)
 	link, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err)

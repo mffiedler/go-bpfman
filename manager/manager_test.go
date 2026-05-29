@@ -496,7 +496,7 @@ func TestAttachTracepoint_WhenAttachFails_ProgramRemainsLoaded(t *testing.T) {
 	fix.Kernel.FailOnAttach("tracepoint", fmt.Errorf("injected attach failure"))
 
 	// Attempt attach - should fail
-	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.ProgramID, "syscalls", "sys_enter_read")
+	attachSpec, err := bpfman.NewTracepointAttachSpecFromString(prog.Record.ProgramID, "syscalls/sys_enter_read")
 	require.NoError(t, err, "failed to create attach spec")
 	_, err = fix.Attach(ctx, attachSpec)
 	require.Error(t, err, "attach should fail")
@@ -527,7 +527,7 @@ func TestDetach_ExistingLink_Succeeds(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load failed")
 
-	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.ProgramID, "syscalls", "sys_enter_write")
+	attachSpec, err := bpfman.NewTracepointAttachSpecFromString(prog.Record.ProgramID, "syscalls/sys_enter_write")
 	require.NoError(t, err, "failed to create attach spec")
 	link, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err, "Attach failed")
@@ -573,7 +573,7 @@ func TestMultipleLinks_SameProgram_AllDetachable(t *testing.T) {
 
 	var linkIDs []kernel.LinkID
 	for _, tp := range tracepoints {
-		attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.ProgramID, tp.group, tp.name)
+		attachSpec, err := bpfman.NewTracepointAttachSpecFromString(prog.Record.ProgramID, tp.group+"/"+tp.name)
 		require.NoError(t, err, "failed to create attach spec")
 		link, err := fix.Attach(ctx, attachSpec)
 		require.NoError(t, err, "Attach failed for %s/%s", tp.group, tp.name)
@@ -620,7 +620,7 @@ func TestUnloadProgram_WithActiveLinks_DetachesLinksThenUnloads(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load failed")
 
-	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.ProgramID, "syscalls", "sys_enter_read")
+	attachSpec, err := bpfman.NewTracepointAttachSpecFromString(prog.Record.ProgramID, "syscalls/sys_enter_read")
 	require.NoError(t, err, "failed to create attach spec")
 	_, err = fix.Attach(ctx, attachSpec)
 	require.NoError(t, err, "Attach failed")
@@ -676,7 +676,7 @@ func TestDetach_KernelFailure_ReturnsError(t *testing.T) {
 	require.NoError(t, err, "Load failed")
 
 	// Attach to a tracepoint
-	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.ProgramID, "syscalls", "sys_enter_close")
+	attachSpec, err := bpfman.NewTracepointAttachSpecFromString(prog.Record.ProgramID, "syscalls/sys_enter_close")
 	require.NoError(t, err, "failed to create attach spec")
 	link, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err, "Attach failed")

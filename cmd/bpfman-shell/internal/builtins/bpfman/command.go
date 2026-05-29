@@ -954,12 +954,7 @@ func parseLinkAttachTracepoint(args []runtime.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach tracepoint: %w", err)
 	}
 
-	tp, err := bpfmancli.ParseTracepointName(tracepoint)
-	if err != nil {
-		return nil, fmt.Errorf("link attach tracepoint: %w", err)
-	}
-
-	spec, err := bpfman.NewTracepointAttachSpec(progID, tp.Group, tp.Name)
+	spec, err := bpfman.NewTracepointAttachSpecFromString(progID, tracepoint)
 	if err != nil {
 		return nil, fmt.Errorf("link attach tracepoint: %w", err)
 	}

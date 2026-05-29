@@ -789,7 +789,7 @@ func TestListLinks_ReturnsAllLinks(t *testing.T) {
 
 	var linkIDs []kernel.LinkID
 	for _, tp := range tracepoints {
-		attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.ProgramID, tp.group, tp.name)
+		attachSpec, err := bpfman.NewTracepointAttachSpecFromString(prog.Record.ProgramID, tp.group+"/"+tp.name)
 		require.NoError(t, err)
 		link, err := fix.Attach(ctx, attachSpec)
 		require.NoError(t, err, "Attach to %s/%s should succeed", tp.group, tp.name)
@@ -1620,7 +1620,7 @@ func TestGetLink_ReturnsLinkDetails(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.ProgramID, "syscalls", "sys_enter_open")
+	attachSpec, err := bpfman.NewTracepointAttachSpecFromString(prog.Record.ProgramID, "syscalls/sys_enter_open")
 	require.NoError(t, err)
 	link, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err)
@@ -1911,7 +1911,7 @@ func TestAttach_ToNonExistentProgram_ReturnsNotFound(t *testing.T) {
 	ctx := context.Background()
 
 	// Try to attach a program that doesn't exist
-	attachSpec, err := bpfman.NewTracepointAttachSpec(99999, "syscalls", "sys_enter_open")
+	attachSpec, err := bpfman.NewTracepointAttachSpecFromString(99999, "syscalls/sys_enter_open")
 	require.NoError(t, err, "spec creation should succeed")
 	_, err = fix.Attach(ctx, attachSpec)
 	require.Error(t, err, "Attach to non-existent program should fail")
@@ -1934,7 +1934,7 @@ func TestAttach_ToNonExistentProgram_WinsOverTracepointPreflight(t *testing.T) {
 
 	fix.Kernel.tracepoints = []string{"sched/sched_switch"}
 
-	attachSpec, err := bpfman.NewTracepointAttachSpec(99999, "syscalls", "sched_switch")
+	attachSpec, err := bpfman.NewTracepointAttachSpecFromString(99999, "syscalls/sched_switch")
 	require.NoError(t, err, "spec creation should succeed")
 	_, err = fix.Attach(ctx, attachSpec)
 	require.Error(t, err, "Attach to non-existent program should fail")
@@ -2037,7 +2037,7 @@ func TestTracepointAttach_PreflightRejectsUnknown(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.ProgramID, "syscalls", "sched_switch")
+	attachSpec, err := bpfman.NewTracepointAttachSpecFromString(prog.Record.ProgramID, "syscalls/sched_switch")
 	require.NoError(t, err)
 	_, err = fix.Attach(ctx, attachSpec)
 	require.Error(t, err)
@@ -2066,7 +2066,7 @@ func TestTracepointAttach_PreflightAllowsKnown(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.ProgramID, "syscalls", "sys_enter_kill")
+	attachSpec, err := bpfman.NewTracepointAttachSpecFromString(prog.Record.ProgramID, "syscalls/sys_enter_kill")
 	require.NoError(t, err)
 	link, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err, "attach to known tracepoint should succeed")
@@ -2090,7 +2090,7 @@ func TestTracepointAttach_PreflightSkippedWhenListEmpty(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.ProgramID, "made_up", "tracepoint")
+	attachSpec, err := bpfman.NewTracepointAttachSpecFromString(prog.Record.ProgramID, "made_up/tracepoint")
 	require.NoError(t, err)
 	link, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err, "attach should succeed when tracepoint list is empty")

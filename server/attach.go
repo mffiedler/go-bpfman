@@ -68,15 +68,7 @@ func (s *Server) Attach(ctx context.Context, req *pb.AttachRequest) (*pb.AttachR
 
 // attachTracepoint handles tracepoint attachment via the manager.
 func (s *Server) attachTracepoint(ctx context.Context, writeLock lock.WriterScope, programID kernel.ProgramID, info *pb.TracepointAttachInfo) (*pb.AttachResponse, error) {
-	// Parse "group/name" format from tracepoint field
-	parts := strings.SplitN(info.Tracepoint, "/", 2)
-	if len(parts) != 2 {
-		return nil, status.Errorf(codes.InvalidArgument, "tracepoint must be in 'group/name' format, got %q", info.Tracepoint)
-	}
-	group, name := parts[0], parts[1]
-
-	// Construct AttachSpec with validation
-	spec, err := bpfman.NewTracepointAttachSpec(programID, group, name)
+	spec, err := bpfman.NewTracepointAttachSpecFromString(programID, info.Tracepoint)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid tracepoint attach spec: %v", err)
 	}
