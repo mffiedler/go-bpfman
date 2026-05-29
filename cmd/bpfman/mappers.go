@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/alecthomas/kong"
 
@@ -115,7 +116,7 @@ func programTypeMapper() kong.MapperFunc {
 		if err := ctx.Scan.PopValueInto("program-type", &s); err != nil {
 			return err
 		}
-		pt, err := bpfman.ParseProgramType(s)
+		pt, err := bpfman.ParseProgramType(strings.ToLower(strings.TrimSpace(s)))
 		if err != nil {
 			return err
 		}
@@ -131,7 +132,7 @@ func linkKindMapper() kong.MapperFunc {
 		if err := ctx.Scan.PopValueInto("link-kind", &s); err != nil {
 			return err
 		}
-		kind, err := bpfman.ParseLinkKind(s)
+		kind, err := bpfman.ParseLinkKind(strings.ToLower(strings.TrimSpace(s)))
 		if err != nil {
 			return err
 		}
@@ -147,7 +148,7 @@ func dispatcherTypeMapper() kong.MapperFunc {
 		if err := ctx.Scan.PopValueInto("dispatcher-type", &s); err != nil {
 			return err
 		}
-		typ, err := dispatcher.ParseDispatcherType(s)
+		typ, err := dispatcher.ParseDispatcherType(strings.ToLower(strings.TrimSpace(s)))
 		if err != nil {
 			return err
 		}

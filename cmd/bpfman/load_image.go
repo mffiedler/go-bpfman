@@ -70,45 +70,24 @@ func (c *LoadImageCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 		}
 	}
 
-	// Convert global data.
 	var globalData map[string][]byte
 	if len(c.GlobalData) > 0 {
 		globalData = bpfmancli.GlobalDataMap(c.GlobalData)
 	}
 
-	// Build metadata map, adding application if specified.
-	metadata := bpfmancli.MetadataMap(c.Metadata)
-	if c.Application != "" {
-		if metadata == nil {
-			metadata = make(map[string]string)
-		}
-		metadata["bpfman.io/application"] = c.Application
-	}
-
-	// Build image ref.
 	ref := platform.ImageRef{
 		URL:        c.ImageURL,
 		PullPolicy: c.PullPolicy,
 		Auth:       auth,
 	}
 
-	// Convert CLI bpfmancli.ProgramSpec to manager.ProgramSpec.
-	var programs []manager.ProgramSpec
-	for _, prog := range c.Programs {
-		programs = append(programs, manager.ProgramSpec{
-			Name:       prog.Name,
-			Type:       prog.Type,
-			AttachFunc: prog.AttachFunc,
-			MapOwnerID: c.MapOwnerID,
-		})
-	}
-
-	loaded, err := mgr.Load(ctx, manager.LoadSource{
-		Image: &ref,
-	}, programs, manager.LoadOpts{
-		UserMetadata: metadata,
+	req := manager.NewLoadRequest(manager.LoadSource{Image: &ref}, loadProgramSpecs(c.Programs), manager.LoadRequestOpts{
+		UserMetadata: bpfmancli.MetadataMap(c.Metadata),
 		GlobalData:   globalData,
+		Application:  c.Application,
+		MapOwnerID:   c.MapOwnerID,
 	})
+	loaded, err := mgr.LoadRequest(ctx, req)
 	if err != nil {
 		return fmt.Errorf("failed to load from image: %w", err)
 	}

@@ -20,6 +20,10 @@ import (
 // loadedKey is the binding key for the per-program load plan.
 var loadedKey = operation.NewKey[bpfman.LoadOutput]("loaded")
 
+// ApplicationMetadataKey is the metadata key used to group loaded
+// programs by application name.
+const ApplicationMetadataKey = "bpfman.io/application"
+
 // ErrImagePullerNotConfigured is returned when an image LoadSource is
 // requested but the manager was created without an OCI image puller.
 var ErrImagePullerNotConfigured = errors.New("OCI image loading not configured")
@@ -105,6 +109,73 @@ type LoadOpts struct {
 	GlobalData   map[string][]byte // batch-level, overridden per-program
 	Owner        string
 	ShareMaps    bool // first program owns maps, subsequent auto-share
+}
+
+// LoadRequest carries an already parsed load request across a
+// front-end boundary.
+type LoadRequest struct {
+	Source   LoadSource
+	Programs []ProgramSpec
+	Opts     LoadOpts
+}
+
+// LoadRequestOpts configures construction of a LoadRequest from
+// front-end inputs.
+type LoadRequestOpts struct {
+	UserMetadata map[string]string
+	GlobalData   map[string][]byte
+	Application  string
+	MapOwnerID   kernel.ProgramID
+	Owner        string
+	ShareMaps    bool
+}
+
+// NewLoadRequest applies manager-owned load defaults and returns the
+// request value consumed by LoadRequest.
+func NewLoadRequest(source LoadSource, programs []ProgramSpec, opts LoadRequestOpts) LoadRequest {
+	return LoadRequest{
+		Source:   source,
+		Programs: applyLoadRequestMapOwner(programs, opts.MapOwnerID),
+		Opts: LoadOpts{
+			UserMetadata: loadRequestMetadata(opts.UserMetadata, opts.Application),
+			GlobalData:   opts.GlobalData,
+			Owner:        opts.Owner,
+			ShareMaps:    opts.ShareMaps,
+		},
+	}
+}
+
+func loadRequestMetadata(metadata map[string]string, application string) map[string]string {
+	if len(metadata) == 0 && application == "" {
+		return nil
+	}
+
+	out := make(map[string]string, len(metadata)+1)
+	for k, v := range metadata {
+		out[k] = v
+	}
+	if application != "" {
+		out[ApplicationMetadataKey] = application
+	}
+	return out
+}
+
+func applyLoadRequestMapOwner(programs []ProgramSpec, mapOwnerID kernel.ProgramID) []ProgramSpec {
+	out := append([]ProgramSpec(nil), programs...)
+	if mapOwnerID == 0 {
+		return out
+	}
+	for i := range out {
+		if out[i].MapOwnerID == 0 {
+			out[i].MapOwnerID = mapOwnerID
+		}
+	}
+	return out
+}
+
+// LoadRequest loads the programs described by req.
+func (m *Manager) LoadRequest(ctx context.Context, req LoadRequest) ([]bpfman.Program, error) {
+	return m.Load(ctx, req.Source, req.Programs, req.Opts)
 }
 
 // Load loads one or more BPF programs from a file or OCI image.

@@ -489,30 +489,13 @@ func execLoadFile(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 		globalData = bpfmancli.GlobalDataMap(cmd.GlobalData)
 	}
 
-	metadata := bpfmancli.MetadataMap(cmd.Metadata)
-	if cmd.Application != "" {
-		if metadata == nil {
-			metadata = make(map[string]string)
-		}
-		metadata["bpfman.io/application"] = cmd.Application
-	}
-
-	var programs []manager.ProgramSpec
-	for _, prog := range cmd.Programs {
-		programs = append(programs, manager.ProgramSpec{
-			Name:       prog.Name,
-			Type:       prog.Type,
-			AttachFunc: prog.AttachFunc,
-			MapOwnerID: cmd.MapOwnerID,
-		})
-	}
-
-	loaded, err := mgr.Load(ctx, manager.LoadSource{
-		FilePath: objPath.Path,
-	}, programs, manager.LoadOpts{
-		UserMetadata: metadata,
+	req := manager.NewLoadRequest(manager.LoadSource{FilePath: objPath.Path}, loadProgramSpecs(cmd.Programs), manager.LoadRequestOpts{
+		UserMetadata: bpfmancli.MetadataMap(cmd.Metadata),
 		GlobalData:   globalData,
+		Application:  cmd.Application,
+		MapOwnerID:   cmd.MapOwnerID,
 	})
+	loaded, err := mgr.LoadRequest(ctx, req)
 	if err != nil {
 		return runtime.Value{}, fmt.Errorf("failed to load programs: %w", err)
 	}
@@ -1447,14 +1430,6 @@ func execLoadImage(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager
 		globalData = bpfmancli.GlobalDataMap(cmd.GlobalData)
 	}
 
-	metadata := bpfmancli.MetadataMap(cmd.Metadata)
-	if cmd.Application != "" {
-		if metadata == nil {
-			metadata = make(map[string]string)
-		}
-		metadata["bpfman.io/application"] = cmd.Application
-	}
-
 	ref := platform.ImageRef{
 		URL:        cmd.ImageURL,
 		PullPolicy: pullPolicy,
@@ -1475,22 +1450,13 @@ func execLoadImage(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager
 		}
 	}
 
-	var programs []manager.ProgramSpec
-	for _, prog := range cmd.Programs {
-		programs = append(programs, manager.ProgramSpec{
-			Name:       prog.Name,
-			Type:       prog.Type,
-			AttachFunc: prog.AttachFunc,
-			MapOwnerID: cmd.MapOwnerID,
-		})
-	}
-
-	loaded, err := mgr.Load(ctx, manager.LoadSource{
-		Image: &ref,
-	}, programs, manager.LoadOpts{
-		UserMetadata: metadata,
+	req := manager.NewLoadRequest(manager.LoadSource{Image: &ref}, loadProgramSpecs(cmd.Programs), manager.LoadRequestOpts{
+		UserMetadata: bpfmancli.MetadataMap(cmd.Metadata),
 		GlobalData:   globalData,
+		Application:  cmd.Application,
+		MapOwnerID:   cmd.MapOwnerID,
 	})
+	loaded, err := mgr.LoadRequest(ctx, req)
 	if err != nil {
 		return runtime.Value{}, fmt.Errorf("failed to load from image: %w", err)
 	}
@@ -1863,7 +1829,7 @@ type ListProgramsCommand struct {
 	Quiet      bool
 	Attached   bool
 	Unattached bool
-	Types      []string
+	Types      []bpfman.ProgramType
 	Selector   string
 	Output     cliformat.OutputFlags
 }
@@ -1894,7 +1860,13 @@ func parseListPrograms(args []runtime.Arg) (*ListProgramsCommand, error) {
 			if i >= len(args) {
 				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i-1]), "program list: --type requires a value")
 			}
-			cmd.Types = append(cmd.Types, splitComma(driver.ArgText(args[i]))...)
+			for _, part := range splitComma(driver.ArgText(args[i])) {
+				progType, err := bpfman.ParseProgramType(strings.ToLower(strings.TrimSpace(part)))
+				if err != nil {
+					return nil, fmt.Errorf("program list: %w", err)
+				}
+				cmd.Types = append(cmd.Types, progType)
+			}
 		case "-l", "--selector":
 			i++
 			if i >= len(args) {
@@ -1939,11 +1911,7 @@ func execListPrograms(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Mana
 	}
 
 	if len(cmd.Types) > 0 {
-		types, err := bpfmancli.ParseProgramTypesSlice(cmd.Types)
-		if err != nil {
-			return runtime.Value{}, err
-		}
-		opts = append(opts, bpfman.WithTypes(types...))
+		opts = append(opts, bpfman.WithTypes(cmd.Types...))
 	}
 
 	if s := strings.TrimSpace(cmd.Selector); s != "" {
@@ -1991,7 +1959,7 @@ func execListPrograms(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Mana
 type ListLinksCommand struct {
 	Quiet     bool
 	ProgramID *kernel.ProgramID
-	Kinds     []string
+	Kinds     []bpfman.LinkKind
 	Output    cliformat.OutputFlags
 }
 
@@ -2026,7 +1994,13 @@ func parseListLinks(args []runtime.Arg) (*ListLinksCommand, error) {
 			if i >= len(args) {
 				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i-1]), "link list: --kind requires a value")
 			}
-			cmd.Kinds = append(cmd.Kinds, splitComma(driver.ArgText(args[i]))...)
+			for _, part := range splitComma(driver.ArgText(args[i])) {
+				kind, err := bpfman.ParseLinkKind(strings.ToLower(strings.TrimSpace(part)))
+				if err != nil {
+					return nil, fmt.Errorf("link list: %w", err)
+				}
+				cmd.Kinds = append(cmd.Kinds, kind)
+			}
 		case "-o":
 			if cmd.Output.Output.IsSet {
 				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i]), "link list: duplicate -o flag")
@@ -2057,11 +2031,7 @@ func execListLinks(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager
 	}
 
 	if len(cmd.Kinds) > 0 {
-		kinds, err := bpfmancli.ParseLinkKindsSlice(cmd.Kinds)
-		if err != nil {
-			return runtime.Value{}, err
-		}
-		opts = append(opts, bpfman.WithKinds(kinds...))
+		opts = append(opts, bpfman.WithKinds(cmd.Kinds...))
 	}
 
 	links, err := mgr.ListLinks(ctx, opts...)
@@ -2099,7 +2069,7 @@ func execListLinks(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager
 // DispatcherListCommand represents a fully parsed "dispatcher list"
 // command with optional type filter and output format.
 type DispatcherListCommand struct {
-	Type   string
+	Type   dispatcher.DispatcherType
 	Output cliformat.OutputFlags
 }
 
@@ -2122,7 +2092,11 @@ func parseDispatcherList(args []runtime.Arg) (*DispatcherListCommand, error) {
 			if i >= len(args) {
 				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i-1]), "dispatcher list: --type requires a value")
 			}
-			cmd.Type = driver.ArgText(args[i])
+			typ, err := dispatcher.ParseDispatcherType(strings.ToLower(strings.TrimSpace(driver.ArgText(args[i]))))
+			if err != nil {
+				return nil, fmt.Errorf("dispatcher list: %w", err)
+			}
+			cmd.Type = typ
 		case "-o":
 			if cmd.Output.Output.IsSet {
 				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i]), "dispatcher list: duplicate -o flag")
@@ -2151,14 +2125,10 @@ func execDispatcherList(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Ma
 		return err
 	}
 
-	if cmd.Type != "" {
-		filterType, err := dispatcher.ParseDispatcherType(cmd.Type)
-		if err != nil {
-			return err
-		}
+	if cmd.Type != (dispatcher.DispatcherType{}) {
 		filtered := summaries[:0]
 		for _, s := range summaries {
-			if s.Key.Type == filterType {
+			if s.Key.Type == cmd.Type {
 				filtered = append(filtered, s)
 			}
 		}
@@ -2194,7 +2164,7 @@ func parseDispatcherGet(args []runtime.Arg) (*DispatcherGetCommand, error) {
 		return nil, fmt.Errorf("dispatcher get: requires <type> <nsid> <ifindex>")
 	}
 
-	dispType, err := dispatcher.ParseDispatcherType(driver.ArgText(args[0]))
+	dispType, err := dispatcher.ParseDispatcherType(strings.ToLower(strings.TrimSpace(driver.ArgText(args[0]))))
 	if err != nil {
 		return nil, fmt.Errorf("dispatcher get: %w", err)
 	}
@@ -2210,11 +2180,7 @@ func parseDispatcherGet(args []runtime.Arg) (*DispatcherGetCommand, error) {
 	}
 
 	cmd := &DispatcherGetCommand{
-		Key: dispatcher.Key{
-			Type:    dispType,
-			Nsid:    nsid,
-			Ifindex: uint32(ifindex),
-		},
+		Key:    dispatcher.NewKey(dispType, nsid, uint32(ifindex)),
 		Output: cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}},
 	}
 
@@ -2282,7 +2248,7 @@ func parseDispatcherDelete(args []runtime.Arg) (*DispatcherDeleteCommand, error)
 		return nil, fmt.Errorf("dispatcher delete: requires <type> <nsid> <ifindex>")
 	}
 
-	dispType, err := dispatcher.ParseDispatcherType(driver.ArgText(args[0]))
+	dispType, err := dispatcher.ParseDispatcherType(strings.ToLower(strings.TrimSpace(driver.ArgText(args[0]))))
 	if err != nil {
 		return nil, fmt.Errorf("dispatcher delete: %w", err)
 	}
@@ -2302,11 +2268,7 @@ func parseDispatcherDelete(args []runtime.Arg) (*DispatcherDeleteCommand, error)
 	}
 
 	return &DispatcherDeleteCommand{
-		Key: dispatcher.Key{
-			Type:    dispType,
-			Nsid:    nsid,
-			Ifindex: uint32(ifindex),
-		},
+		Key: dispatcher.NewKey(dispType, nsid, uint32(ifindex)),
 	}, nil
 }
 

@@ -58,42 +58,22 @@ func executeLoadFileResult(ctx context.Context, cli *bpfmancli.CLI, mgr *manager
 		return loadFileResult{}, err
 	}
 
-	// Convert global data.
 	var globalData map[string][]byte
 	if len(c.GlobalData) > 0 {
 		globalData = bpfmancli.GlobalDataMap(c.GlobalData)
-	}
-
-	// Build metadata map, adding application if specified.
-	metadata := bpfmancli.MetadataMap(c.Metadata)
-	if c.Application != "" {
-		if metadata == nil {
-			metadata = make(map[string]string)
-		}
-		metadata["bpfman.io/application"] = c.Application
-	}
-
-	// Convert CLI bpfmancli.ProgramSpec to manager.ProgramSpec.
-	var programs []manager.ProgramSpec
-	for _, prog := range c.Programs {
-		programs = append(programs, manager.ProgramSpec{
-			Name:       prog.Name,
-			Type:       prog.Type,
-			AttachFunc: prog.AttachFunc,
-			MapOwnerID: c.MapOwnerID,
-		})
 	}
 
 	// load is lockless by construction (docs/PLAN-load-lockless.md):
 	// the kernel allocates unique program ids, the bytecode directory
 	// is namespaced by that id, and the sqlite commit is one
 	// transaction at the end. No flock acquisition is needed.
-	loaded, loadErr := mgr.Load(ctx, manager.LoadSource{
-		FilePath: objPath.Path,
-	}, programs, manager.LoadOpts{
-		UserMetadata: metadata,
+	req := manager.NewLoadRequest(manager.LoadSource{FilePath: objPath.Path}, loadProgramSpecs(c.Programs), manager.LoadRequestOpts{
+		UserMetadata: bpfmancli.MetadataMap(c.Metadata),
 		GlobalData:   globalData,
+		Application:  c.Application,
+		MapOwnerID:   c.MapOwnerID,
 	})
+	loaded, loadErr := mgr.LoadRequest(ctx, req)
 	if loadErr != nil {
 		return loadFileResult{}, fmt.Errorf("failed to load programs: %w", loadErr)
 	}

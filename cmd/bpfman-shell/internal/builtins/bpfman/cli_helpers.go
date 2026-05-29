@@ -21,6 +21,18 @@ type loadFileResult struct {
 	Programs []bpfman.Program
 }
 
+func loadProgramSpecs(programs []bpfmancli.ProgramSpec) []manager.ProgramSpec {
+	out := make([]manager.ProgramSpec, len(programs))
+	for i, prog := range programs {
+		out[i] = manager.ProgramSpec{
+			Name:       prog.Name,
+			Type:       prog.Type,
+			AttachFunc: prog.AttachFunc,
+		}
+	}
+	return out
+}
+
 func collectDeleteIDs(ctx context.Context, mgr *manager.Manager, all bool, explicit []kernel.ProgramID) ([]kernel.ProgramID, error) {
 	return mgr.ResolveDeleteProgramIDs(ctx, all, explicit)
 }

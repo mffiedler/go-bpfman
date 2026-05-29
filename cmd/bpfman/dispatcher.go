@@ -68,11 +68,7 @@ type GetDispatcherCmd struct {
 
 // Run executes the get dispatcher command.
 func (c *GetDispatcherCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
-	key := dispatcher.Key{
-		Type:    c.Type,
-		Nsid:    c.Nsid,
-		Ifindex: c.Ifindex,
-	}
+	key := dispatcher.NewKey(c.Type, c.Nsid, c.Ifindex)
 
 	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {
@@ -101,11 +97,7 @@ type DeleteDispatcherCmd struct {
 
 // Run executes the delete dispatcher command.
 func (c *DeleteDispatcherCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
-	key := dispatcher.Key{
-		Type:    c.Type,
-		Nsid:    c.Nsid,
-		Ifindex: c.Ifindex,
-	}
+	key := dispatcher.NewKey(c.Type, c.Nsid, c.Ifindex)
 
 	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {

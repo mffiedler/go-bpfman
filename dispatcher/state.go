@@ -10,6 +10,16 @@ type Key struct {
 	Ifindex uint32         `json:"ifindex"`
 }
 
+// NewKey constructs a dispatcher key from already parsed domain
+// values.
+func NewKey(typ DispatcherType, nsid uint64, ifindex uint32) Key {
+	return Key{
+		Type:    typ,
+		Nsid:    nsid,
+		Ifindex: ifindex,
+	}
+}
+
 // State represents the persistent state of a dispatcher.
 // A dispatcher manages multi-program chaining for XDP or TC attachments.
 type State struct {
