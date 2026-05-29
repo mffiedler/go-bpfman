@@ -91,7 +91,7 @@ type AttachTCCmd struct {
 	cliformat.OutputFlags
 	Example   ExampleFlag          `name:"example" help:"Show working examples and exit."`
 	Iface     string               `short:"i" name:"iface" required:"" help:"Network interface."`
-	Direction string               `short:"d" name:"direction" required:"" help:"Direction (ingress or egress)."`
+	Direction bpfman.TCDirection   `short:"d" name:"direction" required:"" help:"Direction (ingress or egress)."`
 	Priority  int                  `short:"p" name:"priority" help:"Priority in chain (lower runs first; non-negative; 0 = default). Slot exhaustion (more than 10 attachments) is reported by the dispatcher, not by this flag."`
 	ProceedOn []string             `name:"proceed-on" sep:"," help:"TC actions to proceed on (comma-separated or repeated). Values: unspec, ok, reclassify, shot, pipe, stolen, queued, repeat, redirect, trap, dispatcher_return." default:"pipe,dispatcher_return"`
 	Netns     string               `short:"n" name:"netns" help:"Network namespace path."`
@@ -105,17 +105,12 @@ func (c *AttachTCCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 			return attachResult{}, fmt.Errorf("--priority must be non-negative, got %d", c.Priority)
 		}
 
-		direction, err := bpfman.ParseTCDirection(c.Direction)
-		if err != nil {
-			return attachResult{}, err
-		}
-
 		proceedOn, err := bpfman.ParseTCActions(c.ProceedOn)
 		if err != nil {
 			return attachResult{}, fmt.Errorf("invalid proceed-on value: %w", err)
 		}
 
-		spec, err := bpfman.NewTCAttachSpec(c.ProgramID.Value, c.Iface, direction)
+		spec, err := bpfman.NewTCAttachSpec(c.ProgramID.Value, c.Iface, c.Direction)
 		if err != nil {
 			return attachResult{}, fmt.Errorf("invalid TC spec: %w", err)
 		}
@@ -137,7 +132,7 @@ type AttachTCXCmd struct {
 	cliformat.OutputFlags
 	Example   ExampleFlag          `name:"example" help:"Show working examples and exit."`
 	Iface     string               `short:"i" name:"iface" required:"" help:"Network interface."`
-	Direction string               `short:"d" name:"direction" required:"" help:"Direction (ingress or egress)."`
+	Direction bpfman.TCDirection   `short:"d" name:"direction" required:"" help:"Direction (ingress or egress)."`
 	Priority  int                  `short:"p" name:"priority" help:"Priority in chain (lower runs first; non-negative; 0 = default). Slot exhaustion (more than 10 attachments) is reported by the dispatcher, not by this flag."`
 	Netns     string               `short:"n" name:"netns" help:"Network namespace path."`
 	Metadata  []bpfmancli.KeyValue `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
@@ -150,12 +145,7 @@ func (c *AttachTCXCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 			return attachResult{}, fmt.Errorf("--priority must be non-negative, got %d", c.Priority)
 		}
 
-		direction, err := bpfman.ParseTCDirection(c.Direction)
-		if err != nil {
-			return attachResult{}, err
-		}
-
-		spec, err := bpfman.NewTCXAttachSpec(c.ProgramID.Value, c.Iface, direction)
+		spec, err := bpfman.NewTCXAttachSpec(c.ProgramID.Value, c.Iface, c.Direction)
 		if err != nil {
 			return attachResult{}, fmt.Errorf("invalid TCX spec: %w", err)
 		}

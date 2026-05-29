@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/frobware/go-bpfman/kernel"
@@ -225,6 +226,7 @@ var (
 // ParseTCDirection parses a string into a TCDirection.
 // Returns an error if the string is not "ingress" or "egress".
 func ParseTCDirection(s string) (TCDirection, error) {
+	s = strings.ToLower(strings.TrimSpace(s))
 	switch s {
 	case "ingress":
 		return TCDirectionIngress, nil

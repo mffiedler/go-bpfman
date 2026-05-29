@@ -134,6 +134,7 @@ func KongOptions() []kong.Option {
 		kong.TypeMapper(reflect.TypeOf(bpfmancli.ObjectPath{}), objectPathMapper()),
 		kong.TypeMapper(reflect.TypeOf(bpfmancli.ProgramSpec{}), programSpecMapper()),
 		kong.TypeMapper(reflect.TypeOf(bpfman.Tracepoint{}), tracepointMapper()),
+		kong.TypeMapper(reflect.TypeOf(bpfman.TCDirection{}), tcDirectionMapper()),
 		kong.TypeMapper(reflect.TypeOf(bpfmancli.ImagePullPolicy{}), imagePullPolicyMapper()),
 		kong.TypeMapper(reflect.TypeOf(cliformat.OutputValue{}), outputValueMapper()),
 		kong.Vars{

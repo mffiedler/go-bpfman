@@ -219,7 +219,6 @@ type TCAttachSpec struct {
 }
 
 // NewTCAttachSpec creates a TCAttachSpec with validated fields.
-// direction must be a valid TCDirection (use ParseTCDirection to parse from strings).
 func NewTCAttachSpec(programID kernel.ProgramID, ifname string, direction TCDirection) (TCAttachSpec, error) {
 	if programID == 0 {
 		return TCAttachSpec{}, errors.New("programID is required")
@@ -231,6 +230,15 @@ func NewTCAttachSpec(programID kernel.ProgramID, ifname string, direction TCDire
 		return TCAttachSpec{}, errors.New("direction is required")
 	}
 	return TCAttachSpec{programID: programID, ifname: ifname, direction: direction}, nil
+}
+
+// NewTCAttachSpecFromString parses a TC direction and creates a TCAttachSpec.
+func NewTCAttachSpecFromString(programID kernel.ProgramID, ifname, direction string) (TCAttachSpec, error) {
+	dir, err := ParseTCDirection(direction)
+	if err != nil {
+		return TCAttachSpec{}, err
+	}
+	return NewTCAttachSpec(programID, ifname, dir)
 }
 
 func (TCAttachSpec) attachSpec()                   {}
@@ -270,7 +278,6 @@ type TCXAttachSpec struct {
 }
 
 // NewTCXAttachSpec creates a TCXAttachSpec with validated fields.
-// direction must be a valid TCDirection (use ParseTCDirection to parse from strings).
 func NewTCXAttachSpec(programID kernel.ProgramID, ifname string, direction TCDirection) (TCXAttachSpec, error) {
 	if programID == 0 {
 		return TCXAttachSpec{}, errors.New("programID is required")
@@ -282,6 +289,15 @@ func NewTCXAttachSpec(programID kernel.ProgramID, ifname string, direction TCDir
 		return TCXAttachSpec{}, errors.New("direction is required")
 	}
 	return TCXAttachSpec{programID: programID, ifname: ifname, direction: direction}, nil
+}
+
+// NewTCXAttachSpecFromString parses a TC direction and creates a TCXAttachSpec.
+func NewTCXAttachSpecFromString(programID kernel.ProgramID, ifname, direction string) (TCXAttachSpec, error) {
+	dir, err := ParseTCDirection(direction)
+	if err != nil {
+		return TCXAttachSpec{}, err
+	}
+	return NewTCXAttachSpec(programID, ifname, dir)
 }
 
 func (TCXAttachSpec) attachSpec()                   {}

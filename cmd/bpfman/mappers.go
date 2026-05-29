@@ -123,6 +123,22 @@ func tracepointMapper() kong.MapperFunc {
 	}
 }
 
+// tcDirectionMapper creates a Kong mapper for bpfman.TCDirection.
+func tcDirectionMapper() kong.MapperFunc {
+	return func(ctx *kong.DecodeContext, target reflect.Value) error {
+		var s string
+		if err := ctx.Scan.PopValueInto("direction", &s); err != nil {
+			return err
+		}
+		dir, err := bpfman.ParseTCDirection(s)
+		if err != nil {
+			return err
+		}
+		target.Set(reflect.ValueOf(dir))
+		return nil
+	}
+}
+
 // imagePullPolicyMapper creates a Kong mapper for bpfmancli.ImagePullPolicy.
 func imagePullPolicyMapper() kong.MapperFunc {
 	return func(ctx *kong.DecodeContext, target reflect.Value) error {

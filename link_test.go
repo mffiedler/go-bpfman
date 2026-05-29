@@ -118,6 +118,29 @@ func TestLinkRecord_UnmarshalJSON_AcceptsNilDetails(t *testing.T) {
 	assert.Equal(t, bpfman.LinkKindKprobe, got.Kind)
 }
 
+func TestParseTCDirection(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input string
+		want  bpfman.TCDirection
+	}{
+		{"ingress", bpfman.TCDirectionIngress},
+		{"egress", bpfman.TCDirectionEgress},
+		{"Ingress", bpfman.TCDirectionIngress},
+		{"  egress  ", bpfman.TCDirectionEgress},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
+			got, err := bpfman.ParseTCDirection(tt.input)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 // TestLinkAttachKindDetailsType_CoversEveryAttachKind asserts
 // that every attach subcommand keyword in LinkAttachKinds()
 // resolves to a concrete reflect.Type and that an unknown

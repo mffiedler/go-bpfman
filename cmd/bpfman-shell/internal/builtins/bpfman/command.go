@@ -771,11 +771,6 @@ func parseLinkAttachTC(args []runtime.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach tc: --priority must be non-negative, got %d", priority)
 	}
 
-	dir, err := bpfman.ParseTCDirection(direction)
-	if err != nil {
-		return nil, fmt.Errorf("link attach tc: %w", err)
-	}
-
 	progID, err := parseProgramIDArg(progArg)
 	if err != nil {
 		return nil, fmt.Errorf("link attach tc: %w", err)
@@ -789,7 +784,7 @@ func parseLinkAttachTC(args []runtime.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach tc: invalid proceed-on value: %w", err)
 	}
 
-	spec, err := bpfman.NewTCAttachSpec(progID, iface, dir)
+	spec, err := bpfman.NewTCAttachSpecFromString(progID, iface, direction)
 	if err != nil {
 		return nil, fmt.Errorf("link attach tc: %w", err)
 	}
@@ -881,17 +876,12 @@ func parseLinkAttachTCX(args []runtime.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach tcx: --priority must be non-negative, got %d", priority)
 	}
 
-	dir, err := bpfman.ParseTCDirection(direction)
-	if err != nil {
-		return nil, fmt.Errorf("link attach tcx: %w", err)
-	}
-
 	progID, err := parseProgramIDArg(progArg)
 	if err != nil {
 		return nil, fmt.Errorf("link attach tcx: %w", err)
 	}
 
-	spec, err := bpfman.NewTCXAttachSpec(progID, iface, dir)
+	spec, err := bpfman.NewTCXAttachSpecFromString(progID, iface, direction)
 	if err != nil {
 		return nil, fmt.Errorf("link attach tcx: %w", err)
 	}

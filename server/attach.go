@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"errors"
-	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -133,15 +132,9 @@ func (s *Server) attachXDP(ctx context.Context, writeLock lock.WriterScope, prog
 
 // attachTC handles TC attachment via the manager.
 func (s *Server) attachTC(ctx context.Context, writeLock lock.WriterScope, programID kernel.ProgramID, info *pb.TCAttachInfo) (*pb.AttachResponse, error) {
-	// Parse direction at the boundary
-	direction, err := bpfman.ParseTCDirection(strings.ToLower(info.Direction))
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid direction %q: must be 'ingress' or 'egress'", info.Direction)
-	}
-
 	// Build the spec from the request; the manager resolves the
 	// interface name inside the target netns.
-	spec, err := bpfman.NewTCAttachSpec(programID, info.Iface, direction)
+	spec, err := bpfman.NewTCAttachSpecFromString(programID, info.Iface, info.Direction)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid TC attach spec: %v", err)
 	}
@@ -179,15 +172,9 @@ func (s *Server) attachTC(ctx context.Context, writeLock lock.WriterScope, progr
 
 // attachTCX handles TCX attachment via the manager.
 func (s *Server) attachTCX(ctx context.Context, writeLock lock.WriterScope, programID kernel.ProgramID, info *pb.TCXAttachInfo) (*pb.AttachResponse, error) {
-	// Parse direction at the boundary
-	direction, err := bpfman.ParseTCDirection(strings.ToLower(info.Direction))
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid direction %q: must be 'ingress' or 'egress'", info.Direction)
-	}
-
 	// Build the spec from the request; the manager resolves the
 	// interface name inside the target netns.
-	spec, err := bpfman.NewTCXAttachSpec(programID, info.Iface, direction)
+	spec, err := bpfman.NewTCXAttachSpecFromString(programID, info.Iface, info.Direction)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid TCX attach spec: %v", err)
 	}
