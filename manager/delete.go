@@ -54,8 +54,16 @@ func (m *Manager) ResolveDeleteProgramIDs(ctx context.Context, all bool, explici
 // deleted before the target.
 func (m *Manager) DeletePrograms(ctx context.Context, writeLock lock.WriterScope, ids []kernel.ProgramID, opts DeleteProgramsOpts) []DeleteProgramResult {
 	results := make([]DeleteProgramResult, 0, len(ids))
+	removed := make(map[kernel.ProgramID]bool, len(ids))
 	for _, id := range ids {
-		err := m.deleteProgram(ctx, writeLock, id, opts.Recursive)
+		if removed[id] {
+			results = append(results, DeleteProgramResult{ProgramID: id})
+			continue
+		}
+		deleted, err := m.deleteProgram(ctx, writeLock, id, opts.Recursive)
+		for _, deletedID := range deleted {
+			removed[deletedID] = true
+		}
 		results = append(results, DeleteProgramResult{ProgramID: id, Err: err})
 	}
 	return results
@@ -91,7 +99,7 @@ func (m *Manager) deleteLink(ctx context.Context, writeLock lock.WriterScope, li
 	}
 
 	if len(links) == 0 {
-		if err := m.deleteProgram(ctx, writeLock, programID, recursive); err != nil {
+		if _, err := m.deleteProgram(ctx, writeLock, programID, recursive); err != nil {
 			return fmt.Errorf("delete orphaned program %d: %w", programID, err)
 		}
 	}
@@ -99,44 +107,50 @@ func (m *Manager) deleteLink(ctx context.Context, writeLock lock.WriterScope, li
 	return nil
 }
 
-func (m *Manager) deleteProgram(ctx context.Context, writeLock lock.WriterScope, programID kernel.ProgramID, recursive bool) error {
+func (m *Manager) deleteProgram(ctx context.Context, writeLock lock.WriterScope, programID kernel.ProgramID, recursive bool) ([]kernel.ProgramID, error) {
+	var deleted []kernel.ProgramID
 	if recursive {
-		if err := m.deleteDependents(ctx, writeLock, programID); err != nil {
-			return err
+		dependents, err := m.deleteDependents(ctx, writeLock, programID)
+		deleted = append(deleted, dependents...)
+		if err != nil {
+			return deleted, err
 		}
 	}
 
 	links, err := m.ListLinksByProgram(ctx, programID)
 	if err != nil {
-		return fmt.Errorf("list links: %w", err)
+		return deleted, fmt.Errorf("list links: %w", err)
 	}
 
 	for _, link := range links {
 		if err := m.Detach(ctx, writeLock, link.ID); err != nil {
-			return fmt.Errorf("detach link %d: %w", link.ID, err)
+			return deleted, fmt.Errorf("detach link %d: %w", link.ID, err)
 		}
 	}
 
 	if err := m.Unload(ctx, writeLock, programID); err != nil {
-		return fmt.Errorf("unload: %w", err)
+		return deleted, fmt.Errorf("unload: %w", err)
 	}
 
-	return nil
+	return append(deleted, programID), nil
 }
 
-func (m *Manager) deleteDependents(ctx context.Context, writeLock lock.WriterScope, ownerID kernel.ProgramID) error {
+func (m *Manager) deleteDependents(ctx context.Context, writeLock lock.WriterScope, ownerID kernel.ProgramID) ([]kernel.ProgramID, error) {
 	result, err := m.ListPrograms(ctx)
 	if err != nil {
-		return fmt.Errorf("list programs: %w", err)
+		return nil, fmt.Errorf("list programs: %w", err)
 	}
 
+	var deleted []kernel.ProgramID
 	for _, prog := range result.Programs {
 		if prog.Record.Handles.MapOwnerID != nil && *prog.Record.Handles.MapOwnerID == ownerID {
-			if err := m.deleteProgram(ctx, writeLock, prog.Record.ProgramID, true); err != nil {
-				return fmt.Errorf("delete dependent program %d: %w", prog.Record.ProgramID, err)
+			dependents, err := m.deleteProgram(ctx, writeLock, prog.Record.ProgramID, true)
+			deleted = append(deleted, dependents...)
+			if err != nil {
+				return deleted, fmt.Errorf("delete dependent program %d: %w", prog.Record.ProgramID, err)
 			}
 		}
 	}
 
-	return nil
+	return deleted, nil
 }
