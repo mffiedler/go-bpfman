@@ -1,4 +1,6 @@
 # -*- mode: bpfman -*-
+# EXCLUSIVE: exercises `bpfman program delete --all`, which mutates
+# global bpfman state and cannot run beside other scripts.
 # End-to-end proof that program delete handles a one-owner /
 # many-dependant fan-out: several programs share a single owner's maps,
 # and the delete path must order all dependants before the owner for
@@ -95,7 +97,9 @@ assert fail bpfman program get $dB3
 print "B: recursive delete of ${oB} removed unnamed dependants ${dB1}, ${dB2}, ${dB3}"
 
 # ----------------------------------------------------------------------
-# --all orders the whole fan-out dependants-first and clears the store.
+# Recursive owner plus named dependants: the owner recursive pass removes
+# all siblings, and later top-level arguments are skipped rather than
+# re-deleted.
 # ----------------------------------------------------------------------
 
 guard ownerC <- bpfman program load file \
@@ -103,15 +107,42 @@ guard ownerC <- bpfman program load file \
 let oC = $ownerC.programs[0].record.program_id
 guard depC1 <- bpfman program load file \
     --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oC
+let dC1 = $depC1.programs[0].record.program_id
 guard depC2 <- bpfman program load file \
     --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oC
+let dC2 = $depC2.programs[0].record.program_id
 guard depC3 <- bpfman program load file \
     --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oC
+let dC3 = $depC3.programs[0].record.program_id
 assert $depC1.programs[0].record.handles.map_owner_id == $oC
+assert $depC2.programs[0].record.handles.map_owner_id == $oC
+assert $depC3.programs[0].record.handles.map_owner_id == $oC
+
+bpfman program delete $oC $dC2 $dC1 -r
+assert fail bpfman program get $oC
+assert fail bpfman program get $dC1
+assert fail bpfman program get $dC2
+assert fail bpfman program get $dC3
+print "C: recursive owner-plus-named batch (${oC} ${dC2} ${dC1}) deduped all dependants"
+
+# ----------------------------------------------------------------------
+# --all orders the whole fan-out dependants-first and clears the store.
+# ----------------------------------------------------------------------
+
+guard ownerD <- bpfman program load file \
+    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
+let oD = $ownerD.programs[0].record.program_id
+guard depD1 <- bpfman program load file \
+    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oD
+guard depD2 <- bpfman program load file \
+    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oD
+guard depD3 <- bpfman program load file \
+    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oD
+assert $depD1.programs[0].record.handles.map_owner_id == $oD
 
 bpfman program delete --all
-guard listedC <- bpfman program list -o json
-let remainingC = $listedC |> jq "[.programs[]] | length"
-assert $remainingC == 0
-print "C: --all cleared the fan-out; remaining=${remainingC}"
-print "PROOF complete: fan-out ordering holds for scrambled batch, recursive, and --all"
+guard listedD <- bpfman program list -o json
+let remainingD = $listedD |> jq "[.programs[]] | length"
+assert $remainingD == 0
+print "D: --all cleared the fan-out; remaining=${remainingD}"
+print "PROOF complete: fan-out ordering holds for scrambled batch, recursive, dedup, and --all"

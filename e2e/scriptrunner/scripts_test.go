@@ -39,14 +39,20 @@ import (
 //
 // Per-script serial lane: a `.bpfman` script can declare
 // itself serial by putting `# SERIAL` on a line within the
-// first scriptHeaderLines lines of the file (the
-// scriptOptsIntoSerial helper pre-scans for it). Such a
-// script still enters the Go parallel queue so registration
-// can complete and the parallel-eligible scripts can start,
-// but it takes a package-local serial mutex before executing.
-// That means SERIAL scripts run one-at-a-time with other
-// SERIAL scripts while parallel-eligible scripts continue to
-// run beside them.
+// first scriptHeaderLines lines of the file. Such a script
+// still enters the Go parallel queue so registration can
+// complete and the parallel-eligible scripts can start, but
+// it takes a package-local serial mutex before executing. That
+// means SERIAL scripts run one-at-a-time with other SERIAL
+// scripts while parallel-eligible scripts continue to run
+// beside them.
+//
+// Per-script exclusive lane: a `.bpfman` script can declare
+// itself exclusive by putting `# EXCLUSIVE` in the same header
+// window. Exclusive scripts do not call t.Parallel, so they run
+// during registration while parallel subtests are still queued.
+// Use this only for scripts that mutate global bpfman state,
+// such as `bpfman program delete --all`.
 //
 // Subtest names are the script's path relative to e2e/, so
 // `go test -run 'TestBPFManScripts/scripts/Foo\.bpfman$'`
@@ -98,9 +104,14 @@ func TestBPFManScripts(t *testing.T) {
 	// propagate the open error rather than silently treating
 	// the file as opt-in to parallel.
 	serial := make(map[string]bool, len(matches))
+	exclusive := make(map[string]bool, len(matches))
 	for _, abs := range matches {
-		if scriptOptsIntoSerial(t, abs) {
+		mode := scriptExecutionMode(t, abs)
+		if mode.serial {
 			serial[abs] = true
+		}
+		if mode.exclusive {
+			exclusive[abs] = true
 		}
 	}
 	// Outer loop: repeat. Inner loop: scripts. Pass r=0 of
@@ -113,7 +124,7 @@ func TestBPFManScripts(t *testing.T) {
 	// burn wall-clock time without tickling new race windows.
 	for r := 0; r < repeats; r++ {
 		for _, abs := range matches {
-			if serial[abs] && r > 0 {
+			if (serial[abs] || exclusive[abs]) && r > 0 {
 				continue
 			}
 			rel := filepath.Join(sub, filepath.Base(abs))
@@ -125,12 +136,15 @@ func TestBPFManScripts(t *testing.T) {
 			// SERIAL script would silently match no
 			// subtests.
 			name := filepath.ToSlash(rel)
-			if repeats > 1 && !serial[abs] {
+			if repeats > 1 && !serial[abs] && !exclusive[abs] {
 				name = fmt.Sprintf("%s#%d", name, r)
 			}
 			runSerial := serial[abs]
+			runExclusive := exclusive[abs]
 			t.Run(name, func(t *testing.T) {
-				t.Parallel()
+				if !runExclusive {
+					t.Parallel()
+				}
 				if runSerial {
 					scriptSerialMu.Lock()
 					defer scriptSerialMu.Unlock()
@@ -272,33 +286,43 @@ func scriptRepeats() int {
 const (
 	scriptHeaderLines = 20
 	scriptSerial      = "# SERIAL"
+	scriptExclusive   = "# EXCLUSIVE"
 )
 
-// scriptOptsIntoSerial reports whether the script at path
-// declares itself serial via a `# SERIAL` line in its header.
-// Match is a prefix on the trimmed line so trailing rationale
-// is allowed (e.g. "# SERIAL: shares pinned-map state"). Any
-// read error is fatal -- a script the runner cannot even open
-// is not a script the runner can run; better to surface the
-// read error here than to silently default the
+type scriptMode struct {
+	serial    bool
+	exclusive bool
+}
+
+// scriptExecutionMode reports whether the script at path declares a
+// special execution mode in its header. Matches are prefixes on the
+// trimmed line so trailing rationale is allowed (e.g. "# SERIAL:
+// shares pinned-map state"). Any read error is fatal -- a script the
+// runner cannot even open is not a script the runner can run; better
+// to surface the read error here than to silently default the
 // missing-or-unreadable script into the parallel pool.
-func scriptOptsIntoSerial(t *testing.T, path string) bool {
+func scriptExecutionMode(t *testing.T, path string) scriptMode {
 	t.Helper()
 	f, err := os.Open(path)
 	if err != nil {
-		t.Fatalf("open script %s for serial-marker prescan: %v", path, err)
+		t.Fatalf("open script %s for mode-marker prescan: %v", path, err)
 	}
 	defer f.Close()
+	var mode scriptMode
 	scanner := bufio.NewScanner(f)
 	for i := 0; i < scriptHeaderLines && scanner.Scan(); i++ {
-		if strings.HasPrefix(strings.TrimSpace(scanner.Text()), scriptSerial) {
-			return true
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, scriptSerial) {
+			mode.serial = true
+		}
+		if strings.HasPrefix(line, scriptExclusive) {
+			mode.exclusive = true
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		t.Fatalf("read script %s for serial-marker prescan: %v", path, err)
 	}
-	return false
+	return mode
 }
 
 // runBPFManScript executes one .bpfman script under a per-script
