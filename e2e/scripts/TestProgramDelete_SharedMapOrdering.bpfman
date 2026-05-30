@@ -1,0 +1,127 @@
+# -*- mode: bpfman -*-
+# End-to-end proof that program delete orders a shared-map
+# owner/dependant set dependants-first, regardless of selection order,
+# of --recursive, and of --all.
+#
+# This is the real-kernel counterpart to manager/delete_test.go. Those
+# tests run against a fake kernel and a real SQLite store: they prove
+# the ordering logic. This script runs the real CLI -> daemon -> kernel
+# with a genuinely shared map, so it exercises the map_owner_id
+# RESTRICT the deletes must respect, through the same thin CLI path a
+# user drives.
+#
+# Setup in each block: load a counter program (the owner), then load
+# the same program again with --map-owner-id pointing at the owner (the
+# dependant). The dependant reuses the owner's pinned maps, so
+# record.handles.map_owner_id == owner. The store's map_owner_id
+# foreign key is ON DELETE RESTRICT, so an owner cannot be unloaded
+# while a dependant survives; the delete path must therefore delete the
+# dependant first for any selection containing both.
+#
+# Invoke from e2e/:
+#
+#   cd e2e
+#   sudo bpfman-shell scripts/TestProgramDelete_SharedMapOrdering.bpfman
+#
+# Requires root. Does not require bpftool.
+
+import ../lib.bpfman
+
+print "PROOF: shared-map program delete ordering (owner-first / dependant-first / recursive / --all)"
+
+# ----------------------------------------------------------------------
+# Block A -- the RESTRICT relationship is real; a non-recursive
+# single-target delete of an owner with a surviving dependant fails and
+# changes nothing; then an explicit owner-first batch deletes both.
+# ----------------------------------------------------------------------
+
+guard ownerA <- bpfman program load file \
+    --path testdata/bpf/tcx_counter.bpf.o \
+    --programs tcx:tcx_stats \
+    -m role=owner
+let progOwnerA = $ownerA.programs[0]
+let oA = $progOwnerA.record.program_id
+expect_program_load $progOwnerA tcx schedcls tcx_stats
+
+guard depA <- bpfman program load file \
+    --path testdata/bpf/tcx_counter.bpf.o \
+    --programs tcx:tcx_stats \
+    --map-owner-id $oA \
+    -m role=dependent
+let dA = $depA.programs[0].record.program_id
+
+# If the dependant does not actually share the owner's maps the rest of
+# this script proves nothing, so assert the relationship up front.
+assert $depA.programs[0].record.handles.map_owner_id == $oA
+print "A: loaded owner=${oA}, dependant=${dA} sharing its maps"
+
+# Safety rail: deleting only the owner, non-recursively, must fail
+# while the dependant survives -- and must leave both in place.
+assert fail bpfman program delete $oA
+guard survivedOwnerA <- bpfman program get $oA
+guard survivedDepA <- bpfman program get $dA
+print "A: non-recursive delete of owner ${oA} alone refused; both survive"
+
+# Explicit owner-first batch, non-recursive: the set must be ordered so
+# the dependant is unloaded before the owner. Proof the delete worked:
+# a following get must fail for both.
+bpfman program delete $oA $dA
+assert fail bpfman program get $oA
+assert fail bpfman program get $dA
+print "A: owner-first batch deleted ${oA} and ${dA}"
+
+# ----------------------------------------------------------------------
+# Block B -- explicit dependant-first batch, non-recursive: same result
+# as owner-first (order independence).
+# ----------------------------------------------------------------------
+
+guard ownerB <- bpfman program load file \
+    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
+let oB = $ownerB.programs[0].record.program_id
+guard depB <- bpfman program load file \
+    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oB
+let dB = $depB.programs[0].record.program_id
+assert $depB.programs[0].record.handles.map_owner_id == $oB
+
+bpfman program delete $dB $oB
+assert fail bpfman program get $oB
+assert fail bpfman program get $dB
+print "B: dependant-first batch deleted ${oB} and ${dB}"
+
+# ----------------------------------------------------------------------
+# Block C -- recursive delete from the owner expands to the unnamed
+# dependant and removes both.
+# ----------------------------------------------------------------------
+
+guard ownerC <- bpfman program load file \
+    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
+let oC = $ownerC.programs[0].record.program_id
+guard depC <- bpfman program load file \
+    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oC
+let dC = $depC.programs[0].record.program_id
+assert $depC.programs[0].record.handles.map_owner_id == $oC
+
+bpfman program delete $oC -r
+assert fail bpfman program get $oC
+assert fail bpfman program get $dC
+print "C: recursive delete of ${oC} removed unnamed dependant ${dC}"
+
+# ----------------------------------------------------------------------
+# Block D -- --all (non-recursive) orders the whole set dependants-first
+# and clears the store.
+# ----------------------------------------------------------------------
+
+guard ownerD <- bpfman program load file \
+    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
+let oD = $ownerD.programs[0].record.program_id
+guard depD <- bpfman program load file \
+    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oD
+let dD = $depD.programs[0].record.program_id
+assert $depD.programs[0].record.handles.map_owner_id == $oD
+
+bpfman program delete --all
+guard listedD <- bpfman program list -o json
+let remaining = $listedD |> jq "[.programs[]] | length"
+assert $remaining == 0
+print "D: --all cleared the store; remaining=${remaining}"
+print "PROOF complete: ordering holds for owner-first, dependant-first, recursive, and --all"
