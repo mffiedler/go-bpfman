@@ -1,0 +1,143 @@
+body entry=bb0
+
+bb0:
+  EnterDeferScope kind=program
+  BuildArgs t0 = [import ../lib.bpfman]
+  DispatchCommand argv=t0 policy=def-then-exec-command lane=builtin(import)
+  BuildArgs t1 = [print "PROOF: shared-map program delete ordering (owner-first / dependant-first / recursive / --all)"]
+  DispatchCommand argv=t1 policy=def-then-exec-command lane=builtin(print)
+  BuildArgs t2 = [bpfman program load file --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats -m role=owner]
+  DispatchBind t3 = t2 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t3 argv=t2 primary=ownerA rc=_ guard=true fail=bb1
+  Eval t4 = $ownerA.programs[0]
+  BindName progOwnerA = t4
+  Eval t5 = $progOwnerA.record.program_id
+  BindName oA = t5
+  BuildArgs t6 = [expect_program_load $progOwnerA tcx schedcls tcx_stats]
+  DispatchCommand argv=t6 policy=def-then-exec-command lane=exec
+  BuildArgs t7 = [bpfman program load file --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oA -m role=dependent]
+  DispatchBind t8 = t7 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t8 argv=t7 primary=depA rc=_ guard=true fail=bb2
+  Eval t9 = $depA.programs[0].record.program_id
+  BindName dA = t9
+  Assert $depA.programs[0].record.handles.map_owner_id == $oA
+  BuildArgs t10 = [print "A: loaded owner=${oA}, dependant=${dA} sharing its maps"]
+  DispatchCommand argv=t10 policy=def-then-exec-command lane=builtin(print)
+  Assert fail bpfman program delete $oA
+  BuildArgs t11 = [bpfman program get $oA]
+  DispatchBind t12 = t11 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t12 argv=t11 primary=survivedOwnerA rc=_ guard=true fail=bb3
+  BuildArgs t13 = [bpfman program get $dA]
+  DispatchBind t14 = t13 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t14 argv=t13 primary=survivedDepA rc=_ guard=true fail=bb4
+  BuildArgs t15 = [print "A: non-recursive delete of owner ${oA} alone refused; both survive"]
+  DispatchCommand argv=t15 policy=def-then-exec-command lane=builtin(print)
+  BuildArgs t16 = [bpfman program delete $oA $dA]
+  DispatchCommand argv=t16 policy=def-then-exec-command lane=builtin(bpfman)
+  Assert fail bpfman program get $oA
+  Assert fail bpfman program get $dA
+  BuildArgs t17 = [print "A: owner-first batch deleted ${oA} and ${dA}"]
+  DispatchCommand argv=t17 policy=def-then-exec-command lane=builtin(print)
+  BuildArgs t18 = [bpfman program load file --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats]
+  DispatchBind t19 = t18 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t19 argv=t18 primary=ownerB rc=_ guard=true fail=bb5
+  Eval t20 = $ownerB.programs[0].record.program_id
+  BindName oB = t20
+  BuildArgs t21 = [bpfman program load file --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oB]
+  DispatchBind t22 = t21 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t22 argv=t21 primary=depB rc=_ guard=true fail=bb6
+  Eval t23 = $depB.programs[0].record.program_id
+  BindName dB = t23
+  Assert $depB.programs[0].record.handles.map_owner_id == $oB
+  BuildArgs t24 = [bpfman program delete $dB $oB]
+  DispatchCommand argv=t24 policy=def-then-exec-command lane=builtin(bpfman)
+  Assert fail bpfman program get $oB
+  Assert fail bpfman program get $dB
+  BuildArgs t25 = [print "B: dependant-first batch deleted ${oB} and ${dB}"]
+  DispatchCommand argv=t25 policy=def-then-exec-command lane=builtin(print)
+  BuildArgs t26 = [bpfman program load file --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats]
+  DispatchBind t27 = t26 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t27 argv=t26 primary=ownerC rc=_ guard=true fail=bb7
+  Eval t28 = $ownerC.programs[0].record.program_id
+  BindName oC = t28
+  BuildArgs t29 = [bpfman program load file --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oC]
+  DispatchBind t30 = t29 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t30 argv=t29 primary=depC rc=_ guard=true fail=bb8
+  Eval t31 = $depC.programs[0].record.program_id
+  BindName dC = t31
+  Assert $depC.programs[0].record.handles.map_owner_id == $oC
+  BuildArgs t32 = [bpfman program delete $oC -r]
+  DispatchCommand argv=t32 policy=def-then-exec-command lane=builtin(bpfman)
+  Assert fail bpfman program get $oC
+  Assert fail bpfman program get $dC
+  BuildArgs t33 = [print "C: recursive delete of ${oC} removed unnamed dependant ${dC}"]
+  DispatchCommand argv=t33 policy=def-then-exec-command lane=builtin(print)
+  BuildArgs t34 = [bpfman program load file --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats]
+  DispatchBind t35 = t34 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t35 argv=t34 primary=ownerD rc=_ guard=true fail=bb9
+  Eval t36 = $ownerD.programs[0].record.program_id
+  BindName oD = t36
+  BuildArgs t37 = [bpfman program load file --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oD]
+  DispatchBind t38 = t37 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t38 argv=t37 primary=depD rc=_ guard=true fail=bb10
+  Eval t39 = $depD.programs[0].record.program_id
+  BindName dD = t39
+  Assert $depD.programs[0].record.handles.map_owner_id == $oD
+  BuildArgs t40 = [bpfman program delete --all]
+  DispatchCommand argv=t40 policy=def-then-exec-command lane=builtin(bpfman)
+  BuildArgs t41 = [bpfman program list -o json]
+  DispatchBind t42 = t41 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t42 argv=t41 primary=listedD rc=_ guard=true fail=bb11
+  Eval t43 = $listedD |> jq "[.programs[]] | length"
+  BindName remaining = t43
+  Assert $remaining == 0
+  BuildArgs t44 = [print "D: --all cleared the store; remaining=${remaining}"]
+  DispatchCommand argv=t44 policy=def-then-exec-command lane=builtin(print)
+  BuildArgs t45 = [print "PROOF complete: ordering holds for owner-first, dependant-first, recursive, and --all"]
+  DispatchCommand argv=t45 policy=def-then-exec-command lane=builtin(print)
+  RunDefers policy=program
+  Stop
+
+bb1:
+  RunDefers policy=program
+  PropagateError
+
+bb2:
+  RunDefers policy=program
+  PropagateError
+
+bb3:
+  RunDefers policy=program
+  PropagateError
+
+bb4:
+  RunDefers policy=program
+  PropagateError
+
+bb5:
+  RunDefers policy=program
+  PropagateError
+
+bb6:
+  RunDefers policy=program
+  PropagateError
+
+bb7:
+  RunDefers policy=program
+  PropagateError
+
+bb8:
+  RunDefers policy=program
+  PropagateError
+
+bb9:
+  RunDefers policy=program
+  PropagateError
+
+bb10:
+  RunDefers policy=program
+  PropagateError
+
+bb11:
+  RunDefers policy=program
+  PropagateError
