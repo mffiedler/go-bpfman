@@ -11,8 +11,8 @@
 #                  kernel-headers kernel[-<flavour>]-devel (derived
 #                  from the running kernel, so Asahi's kernel-16k,
 #                  -rt, -debug, etc. all resolve correctly) bpftool
-#                  dwarves kmod pkgconf-pkg-config iproute jq
-#                  sqlite-devel file
+#                  dwarves kmod pkgconf-pkg-config iproute
+#                  iproute-tc (provides `tc`) jq sqlite-devel file
 #   static link:   glibc-static  (required for `make STATIC=1`)
 #   protobuf:      protobuf-compiler  (provides `protoc`)
 #   linters:       golangci-lint ShellCheck hadolint checkmake
@@ -85,6 +85,7 @@ rpms=(
     golangci-lint
     hadolint
     iproute
+    iproute-tc
     jq
     "$kernel_devel"
     kernel-headers
