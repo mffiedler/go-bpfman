@@ -8,8 +8,11 @@
 # Coverage:
 #
 #   build/runtime: golang git make gcc clang llvm libbpf-devel
-#                  kernel-headers kernel-devel bpftool dwarves kmod
-#                  pkgconf-pkg-config iproute jq sqlite-devel file
+#                  kernel-headers kernel[-<flavour>]-devel (derived
+#                  from the running kernel, so Asahi's kernel-16k,
+#                  -rt, -debug, etc. all resolve correctly) bpftool
+#                  dwarves kmod pkgconf-pkg-config iproute jq
+#                  sqlite-devel file
 #   static link:   glibc-static  (required for `make STATIC=1`)
 #   protobuf:      protobuf-compiler  (provides `protoc`)
 #   linters:       golangci-lint ShellCheck hadolint checkmake
@@ -39,6 +42,36 @@ if ! command -v dnf >/dev/null; then
     exit 1
 fi
 
+# Pick the kernel-devel package that matches the running kernel.
+#
+# The e2e kmod target (Makefile: e2e-kmod-build) needs kbuild to
+# find /lib/modules/$(uname -r)/build, which only resolves when
+# the exact -devel NVR is installed. The flavour varies by
+# hardware: stock Fedora x86_64/aarch64 ships `kernel-devel`,
+# Fedora Asahi ships `kernel-16k-devel`, `-rt` / `-debug` variants
+# follow the same `kernel[-<flavour>]-devel-<NVR>` shape. Rather
+# than hardcoding one name, we resolve the RPM that owns the
+# running vmlinuz and substitute `-core-` -> `-devel-`. That works
+# for every flavour Fedora ships.
+#
+# Container builds (Dockerfile.ci, Dockerfile.bpfman) run this
+# script inside fedora:NN, where /boot is empty and `uname -r`
+# reports the host's kernel. The file probe fails and we fall back
+# to the plain `kernel-devel` Fedora ships, matching the previous
+# container behaviour.
+kernel_release=$(uname -r)
+kernel_devel=kernel-devel
+if kernel_core=$(rpm -qf "/boot/vmlinuz-${kernel_release}" 2>/dev/null); then
+    case "$kernel_core" in
+        kernel-core-*|kernel-*-core-*)
+            kernel_devel=${kernel_core/-core-/-devel-}
+            ;;
+        *)
+            echo "warning: unexpected kernel package '${kernel_core}'; falling back to kernel-devel" >&2
+            ;;
+    esac
+fi
+
 rpms=(
     bpftool
     checkmake
@@ -53,7 +86,7 @@ rpms=(
     hadolint
     iproute
     jq
-    kernel-devel
+    "$kernel_devel"
     kernel-headers
     kmod
     libbpf-devel
@@ -73,7 +106,7 @@ if [ "$(id -u)" -ne 0 ]; then
     sudo_cmd=sudo
 fi
 
-$sudo_cmd dnf install -y "${rpms[@]}"
+$sudo_cmd dnf install -y "${rpms[@]}" "$@"
 
 cat <<'EOF'
 
