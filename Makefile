@@ -1066,7 +1066,12 @@ e2e-kmod-build:
 	    KERNEL_MOD_DIR_VERSION="$(KERNEL_MOD_DIR_VERSION)" \
 	    E2E_KMOD_KBUILD="$(E2E_KMOD_KBUILD)" \
 	    bash $(E2E_KMOD_PREPARE_KDIR)); \
-	    MAKEFLAGS= $(MAKE) -C $(E2E_KMOD_DIR) KDIR="$$kdir"
+	    if [ -f "$$kdir/.kernel-source" ]; then \
+	        ksrc=$$(cat "$$kdir/.kernel-source"); \
+	        MAKEFLAGS= $(MAKE) -C $(E2E_KMOD_DIR) KDIR="$$ksrc" KBUILD_OUTPUT="$$kdir"; \
+	    else \
+	        MAKEFLAGS= $(MAKE) -C $(E2E_KMOD_DIR) KDIR="$$kdir"; \
+	    fi
 	$(Q)test -f $(E2E_KMOD)
 
 clean-e2e-kmod:

@@ -55,6 +55,21 @@ prepare_kernel_dev() {
 	mkdir -p "$kbuild"
 	cp -rs "$kernel_build"/. "$kbuild"/
 	find "$kbuild" -type d -exec chmod u+w {} +
+	for generated in Makefile Module.symvers; do
+		if [[ -L "$kbuild/$generated" ]]; then
+			cp --remove-destination "$kernel_build/$generated" "$kbuild/$generated"
+			chmod u+w "$kbuild/$generated"
+		fi
+	done
+	local kernel_source=""
+	if [[ -e "$kernel_build/source" ]]; then
+		kernel_source=$(readlink -f "$kernel_build/source")
+		local kernel_build_real
+		kernel_build_real=$(readlink -f "$kernel_build")
+		if [[ -d "$kernel_source" && "$kernel_source" != "$kernel_build_real" ]]; then
+			printf '%s\n' "$kernel_source" >"$kbuild/.kernel-source"
+		fi
+	fi
 
 	# Seed vmlinux for the kbuild BTF [M] step. Without it kbuild
 	# silently prints "Skipping BTF generation ... due to

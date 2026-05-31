@@ -15,7 +15,7 @@ PWD  := $(shell pwd)
 .PHONY: all clean
 
 all:
-	$(MAKE) -C $(KDIR) M=$(PWD) modules
+	$(MAKE) -C $(KDIR) $(if $(KBUILD_OUTPUT),O=$(KBUILD_OUTPUT)) M=$(PWD) modules
 
 clean:
-	$(MAKE) -C $(KDIR) M=$(PWD) clean
+	$(MAKE) -C $(KDIR) $(if $(KBUILD_OUTPUT),O=$(KBUILD_OUTPUT)) M=$(PWD) clean
