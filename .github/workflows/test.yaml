@@ -53,6 +53,22 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v3
+      - name: Install kmod runtime deps
+        run: |
+          retry() {
+            for delay in 10 20 30; do
+              "$@" && return 0
+              echo "::warning::$* failed, retrying in ${delay}s"
+              sleep "$delay"
+            done
+            "$@"
+          }
+          retry sudo apt-get update
+          retry sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            dwarves \
+            kmod \
+            "linux-headers-$(uname -r)"
       # STRESS_COUNT shrinks to 1 under RACE=1: the race detector
       # roughly doubles per-test wall time, so a 5x stress on a
       # RACE=1 lane compounds to ~10x the baseline cost. The
@@ -88,6 +104,22 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v3
+      - name: Install kmod runtime deps
+        run: |
+          retry() {
+            for delay in 10 20 30; do
+              "$@" && return 0
+              echo "::warning::$* failed, retrying in ${delay}s"
+              sleep "$delay"
+            done
+            "$@"
+          }
+          retry sudo apt-get update
+          retry sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            dwarves \
+            kmod \
+            "linux-headers-$(uname -r)"
       - run: make ci-test-e2e STRESS_COUNT=5 RACE=0 BPFMAN_E2E_ISOLATED_RUNTIME=0
 
   # Targeted cgo_sqlite lanes: exercise the mattn/go-sqlite3 driver
@@ -117,6 +149,22 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v3
+      - name: Install kmod runtime deps
+        run: |
+          retry() {
+            for delay in 10 20 30; do
+              "$@" && return 0
+              echo "::warning::$* failed, retrying in ${delay}s"
+              sleep "$delay"
+            done
+            "$@"
+          }
+          retry sudo apt-get update
+          retry sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            dwarves \
+            kmod \
+            "linux-headers-$(uname -r)"
       # STRESS_COUNT shrinks to 1 under RACE=1; see test-e2e
       # above for the rationale (race detector doubles per-test
       # cost, 5x stress compounds to ~10x baseline).
@@ -147,6 +195,22 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v3
+      - name: Install kmod runtime deps
+        run: |
+          retry() {
+            for delay in 10 20 30; do
+              "$@" && return 0
+              echo "::warning::$* failed, retrying in ${delay}s"
+              sleep "$delay"
+            done
+            "$@"
+          }
+          retry sudo apt-get update
+          retry sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            dwarves \
+            kmod \
+            "linux-headers-$(uname -r)"
       # SQLite tuning and the global writer-lock timeout are
       # widened only on the RACE=1 lane because the race
       # detector roughly doubles per-transaction wall time. With

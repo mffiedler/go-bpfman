@@ -852,6 +852,7 @@ $(BIN_DIR)/e2e.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) | $(BIN_DIR)
 # stress run when bumped (CI pins it to 5 so every PR gets a small
 # count loop on top of the deterministic gate).
 test-e2e: $(BIN_DIR)/e2e.test
+	$(Q)$(MAKE) e2e-kmod-reload
 	sudo $(call forward-env,BPFMAN_E2E_ISOLATED_RUNTIME BPFMAN_LOG) $(BIN_DIR)/e2e.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(PARALLEL),-test.parallel $(PARALLEL)) $(if $(TEST),-test.run $(TEST))
 
 # Parallel gRPC e2e: stands up a real `bpfman serve` subprocess and
@@ -908,7 +909,9 @@ run-e2e-grpc:
 	    $(E2E_GRPC_TEST_BIN) -test.v -test.failfast \
 	    -test.count=$(STRESS_COUNT) $(if $(TEST),-test.run $(TEST))
 
-test-e2e-grpc: build-e2e-grpc run-e2e-grpc
+test-e2e-grpc: build-e2e-grpc
+	$(Q)$(MAKE) e2e-kmod-reload
+	$(Q)$(MAKE) run-e2e-grpc
 
 # Run every .bpfman script under e2e/scripts/ against the built
 # bpfman binary. Each script executes from e2e/ so
@@ -1601,6 +1604,7 @@ ci-test: ci-image
 ci-test-e2e:
 	$(RM) -r $(CI_E2E_BUNDLE)
 	$(OCI_BIN) buildx build --target=e2e-export --output type=local,dest=$(CI_E2E_BUNDLE) -f $(CI_DOCKERFILE) --build-arg RACE=$(RACE) --build-arg EXTRA_TAGS=$(EXTRA_TAGS) $(CI_BUILDX_CACHE) .
+	$(MAKE) e2e-kmod-reload
 	sudo $(call forward-env,BPFMAN_E2E_ISOLATED_RUNTIME) $(CI_E2E_BUNDLE)/bin/e2e.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(PARALLEL),-test.parallel $(PARALLEL))
 
 # Reproduce the workflow's e2e-scripts job locally. The .bpfman
@@ -1639,6 +1643,7 @@ ci-test-e2e-scripts:
 ci-test-e2e-grpc:
 	$(RM) -r $(CI_E2E_BUNDLE)
 	$(OCI_BIN) buildx build --target=e2e-export --output type=local,dest=$(CI_E2E_BUNDLE) -f $(CI_DOCKERFILE) --build-arg RACE=$(RACE) --build-arg EXTRA_TAGS=$(EXTRA_TAGS) $(CI_BUILDX_CACHE) .
+	$(MAKE) e2e-kmod-reload
 	$(MAKE) run-e2e-grpc E2E_GRPC_TEST_BIN=$(CI_E2E_BUNDLE)/bin/e2e-grpc.test E2E_GRPC_BPFMAN_BIN=$(CI_E2E_BUNDLE)/bin/bpfman
 
 # Umbrella: run every CI pipeline locally. Cheap checks first
