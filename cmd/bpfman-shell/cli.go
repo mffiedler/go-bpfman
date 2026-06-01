@@ -197,16 +197,15 @@ func (c *CLI) Run(ctx context.Context) error {
 	defer lr.Close()
 
 	return driver.Run(ctx, driver.Config{
-		CLI:            &c.CLI,
-		Mgr:            mgr,
-		LineReader:     lr,
-		Session:        session,
-		File:           c.inputFileLabel(),
-		NoCheck:        c.NoCheck,
-		Fallback:       commandFallback,
-		BindFallback:   bindCommandFallback,
-		MakeAssertStmt: makeExecAssertStmt,
-		MakeAssertIR:   makeExecAssertIR,
+		CLI:          &c.CLI,
+		Mgr:          mgr,
+		LineReader:   lr,
+		Session:      session,
+		File:         c.inputFileLabel(),
+		NoCheck:      c.NoCheck,
+		Fallback:     commandFallback,
+		BindFallback: bindCommandFallback,
+		MakeAssertIR: makeExecAssertIR,
 	})
 }
 
@@ -275,16 +274,15 @@ func runScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr
 		file = "<stdin>"
 	}
 	return driver.Loop(ctx, driver.Config{
-		CLI:            cli,
-		Mgr:            mgr,
-		LineReader:     lr,
-		Session:        session,
-		File:           file,
-		NoCheck:        noCheck,
-		Fallback:       commandFallback,
-		BindFallback:   bindCommandFallback,
-		MakeAssertStmt: makeExecAssertStmt,
-		MakeAssertIR:   makeExecAssertIR,
+		CLI:          cli,
+		Mgr:          mgr,
+		LineReader:   lr,
+		Session:      session,
+		File:         file,
+		NoCheck:      noCheck,
+		Fallback:     commandFallback,
+		BindFallback: bindCommandFallback,
+		MakeAssertIR: makeExecAssertIR,
 	})
 }
 

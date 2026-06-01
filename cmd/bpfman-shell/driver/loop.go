@@ -28,15 +28,13 @@ import (
 // RunHooks bundles the Env callbacks the runner installs when
 // it evaluates a parsed program.
 // Callers pass the same triple the outer Loop wires through
-// Config.Fallback / BindFallback / MakeAssertStmt /
-// MakeAssertIR; the framework has no use for the hooks
+// Config.Fallback / BindFallback / MakeAssertIR; the framework has no use for the hooks
 // outside the program-execution path, so they are not stored
 // on the context.
 type RunHooks struct {
-	Fallback       FallbackFunc
-	BindFallback   BindFallbackFunc
-	MakeAssertStmt MakeAssertStmtFunc
-	MakeAssertIR   MakeAssertIRFunc
+	Fallback     FallbackFunc
+	BindFallback BindFallbackFunc
+	MakeAssertIR MakeAssertIRFunc
 }
 
 // Config bundles the call-site options Run needs. The embedding
@@ -85,13 +83,6 @@ type Config struct {
 	// through to external-command execution.
 	BindFallback BindFallbackFunc
 
-	// MakeAssertStmt builds the assert-statement evaluator the
-	// runtime.Env wires into Env.ExecAssertStmt. The embedding
-	// binary owns the app-layer assertion policy and diagnostics,
-	// so this stays a callback rather than a builtin.
-	// nil disables assert evaluation at runtime.
-	MakeAssertStmt MakeAssertStmtFunc
-
 	// MakeAssertIR builds the lowered-assert evaluator the
 	// runtime.Env wires into Env.ExecAssertIR. The embedding
 	// binary owns the actual verb dispatch and reporting policy.
@@ -108,12 +99,6 @@ type FallbackFunc func(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Man
 // of `<-`. Returning handled == false means "fall through to
 // external command".
 type BindFallbackFunc func(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *runtime.Session, env *runtime.Env, args []runtime.Arg, loc SourceLoc, span source.Span) (handled bool, br runtime.BindResult, err error)
-
-// MakeAssertStmtFunc builds the Env.ExecAssertStmt callback for
-// one program execution. Returning nil disables assert
-// evaluation in that run (assert statements then return a "no evaluator" error
-// at parse-evaluate time).
-type MakeAssertStmtFunc func(cli *bpfmancli.CLI, session *runtime.Session) func(*syntax.AssertStmt, *runtime.Env) error
 
 // MakeAssertIRFunc builds the Env.ExecAssertIR callback for one
 // program execution. Returning nil disables lowered assert
@@ -172,14 +157,11 @@ func Loop(ctx context.Context, cfg Config) error {
 }
 
 // wireEnvForRun installs the per-run Env callbacks the
-// evaluator needs: command dispatch, bind dispatch, the
-// assert-statement evaluator, and the trace hook.
+// evaluator needs: command dispatch, bind dispatch, lowered assert
+// dispatch, and the trace hook.
 func wireEnvForRun(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *runtime.Session, env *runtime.Env, loc SourceLoc, hooks RunHooks) {
 	env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, env, loc, hooks.Fallback)
 	env.ExecBind = makeExecBind(ctx, cli, mgr, session, env, loc, hooks.BindFallback)
-	if hooks.MakeAssertStmt != nil {
-		env.ExecAssertStmt = hooks.MakeAssertStmt(cli, session)
-	}
 	if hooks.MakeAssertIR != nil {
 		env.ExecAssertIR = hooks.MakeAssertIR(cli, session)
 	}
@@ -207,10 +189,9 @@ func makeRenderPollFailure(cli *bpfmancli.CLI) func(source.Span, time.Duration, 
 // the test seams.
 func configHooks(cfg Config) RunHooks {
 	return RunHooks{
-		Fallback:       cfg.Fallback,
-		BindFallback:   cfg.BindFallback,
-		MakeAssertStmt: cfg.MakeAssertStmt,
-		MakeAssertIR:   cfg.MakeAssertIR,
+		Fallback:     cfg.Fallback,
+		BindFallback: cfg.BindFallback,
+		MakeAssertIR: cfg.MakeAssertIR,
 	}
 }
 

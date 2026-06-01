@@ -170,8 +170,8 @@ func (v Value) WithKind(k semantics.OriginKind) Value {
 }
 
 // withOrigin returns a copy of v with origin set to o and kind set
-// to k. Used internally by list-building paths (evalListExpr,
-// evalBindCollect) to attach a parallel origin slice so foreach
+// to k. Used internally by list-building paths (lowered list
+// expressions, bind-collect) to attach a parallel origin slice so foreach
 // iteration and path indexing can reconstruct each element's
 // typed Value. The function is unexported because callers outside
 // the shell package should reach for ValueFromStruct + WithKind

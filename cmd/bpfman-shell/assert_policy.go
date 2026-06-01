@@ -41,52 +41,11 @@ func completeAssertResult(cli *bpfmancli.CLI, session *runtime.Session, isRequir
 	return nil
 }
 
-// makeExecAssertStmt returns the Env.ExecAssertStmt callback used
-// by syntax-owned assertion sites.
-func makeExecAssertStmt(cli *bpfmancli.CLI, session *runtime.Session) func(*syntax.AssertStmt, *runtime.Env) error {
-	return func(s *syntax.AssertStmt, env *runtime.Env) error {
-		return runAssertStmtClause(cli, session, s.IsRequire, s.Span, s.Clause, env)
-	}
-}
-
 // makeExecAssertIR returns the Env.ExecAssertIR callback used by
 // the lowered runtime.
 func makeExecAssertIR(cli *bpfmancli.CLI, session *runtime.Session) func(*ir.Assert, *runtime.Env) error {
 	return func(a *ir.Assert, env *runtime.Env) error {
 		return runAssertIRClause(cli, session, a.IsRequire, a.Span, a.Clause, env)
-	}
-}
-
-func runAssertStmtClause(cli *bpfmancli.CLI, session *runtime.Session, isRequire bool, span source.Span, clause syntax.AssertClause, env *runtime.Env) error {
-	// A helper called from poll still carries the original assert
-	// statement span here, so reject at the helper's own source line
-	// rather than re-framing at the caller's poll site.
-	if !isRequire && env.InPoll() {
-		return syntax.SpanErrorf(span, "assert is not valid inside poll; use retry unless ... or require ...")
-	}
-	switch v := clause.(type) {
-	case *syntax.AssertExprClause:
-		if isBareNullExpr(v.Expr) {
-			return assertNullUsageError(assertLabel(isRequire), span)
-		}
-		return runAssertExprCallback(
-			cli,
-			session,
-			isRequire,
-			span,
-			env,
-			syntax.FormatAssertClauseSource(clause),
-			func(env *runtime.Env) (runtime.Value, error) {
-				return runtime.EvalExpr(v.Expr, env)
-			},
-			func(env *runtime.Env, loc driver.SourceLoc) (string, error) {
-				return formatAssertExprFailure(v.Expr, env, session, loc)
-			},
-		)
-	case *syntax.AssertCommandClause:
-		return runAssertCommandClause(cli, session, isRequire, span, v, env)
-	default:
-		return fmt.Errorf("assert: unsupported clause %T", clause)
 	}
 }
 
@@ -122,14 +81,6 @@ func runAssertIRClause(cli *bpfmancli.CLI, session *runtime.Session, isRequire b
 	}
 }
 
-func runAssertCommandClause(cli *bpfmancli.CLI, session *runtime.Session, isRequire bool, span source.Span, clause *syntax.AssertCommandClause, env *runtime.Env) error {
-	args, err := runtime.EvalArgs(clause.Args, env)
-	if err != nil {
-		return err
-	}
-	return finishAssertVerbClause(cli, session, isRequire, span, clause.Head, clause.HeadSpan, clause.Negate, args, env)
-}
-
 func runAssertIRCommandClause(cli *bpfmancli.CLI, session *runtime.Session, isRequire bool, span source.Span, clause *ir.AssertCommandClause, env *runtime.Env) error {
 	args, err := runtime.EvalIRArgs(clause.Args, env)
 	if err != nil {
@@ -147,11 +98,6 @@ func assertLabel(isRequire bool) string {
 
 func assertNullUsageError(label string, span source.Span) error {
 	return syntax.SpanErrorf(span, "%s null requires a target; did you mean %s null $x or %s $x == null?", label, label, label)
-}
-
-func isBareNullExpr(e syntax.Expr) bool {
-	lit, ok := e.(*syntax.LiteralExpr)
-	return ok && !lit.Quoted && lit.Text == "null"
 }
 
 func isBareNullIRExpr(e ir.Expr) bool {
@@ -212,15 +158,6 @@ func runAssertExprCallback(
 	})
 }
 
-func formatAssertExprFailure(expr syntax.Expr, env *runtime.Env, session *runtime.Session, loc driver.SourceLoc) (string, error) {
-	if result, ok, err := runtime.FindFailedMatchesExpr(expr, env); err != nil {
-		return "", err
-	} else if ok {
-		return formatMatchesFailureMessage(result, matchesLocator(loc)), nil
-	}
-	return formatExprFailure(expr, session), nil
-}
-
 func formatAssertIRExprFailure(expr ir.Expr, env *runtime.Env, session *runtime.Session, loc driver.SourceLoc) (string, error) {
 	if result, ok, err := runtime.FindFailedMatchesIRExpr(expr, env); err != nil {
 		return "", err
@@ -247,43 +184,6 @@ func formatMatchesFailureMessage(result runtime.MatchesResult, locate func(sourc
 		noun = "mismatches"
 	}
 	return fmt.Sprintf("matches: %d %s\n  %s", len(lines), noun, strings.Join(lines, "\n  "))
-}
-
-// formatExprFailure produces an assertion failure message describing
-// the expression and its operand values. Evaluation errors in the
-// operands surface as-is; they should not occur here because Eval
-// already succeeded on the top-level expression.
-func formatExprFailure(e syntax.Expr, session *runtime.Session) string {
-	switch x := e.(type) {
-	case *syntax.BinaryExpr:
-		left := exprScalar(x.Left, session)
-		right := exprScalar(x.Right, session)
-		switch x.Op {
-		case "==":
-			return fmt.Sprintf("expected %q to equal %q", left, right)
-		case "!=":
-			return fmt.Sprintf("expected %q to not equal %q", left, right)
-		default:
-			return fmt.Sprintf("expected %s %s %s", left, x.Op, right)
-		}
-	case *syntax.UnaryExpr:
-		operand := exprScalar(x.Operand, session)
-		switch x.Pred {
-		case "not-empty":
-			return fmt.Sprintf("expected non-empty string, got %q", operand)
-		default:
-			return fmt.Sprintf("expected predicate %s to hold on %s", x.Pred, operand)
-		}
-	case *syntax.NotExpr:
-		if msg, ok := formatPurePredicateExprFailure(x.Operand, session); ok {
-			return negateMessage(msg)
-		}
-	case *syntax.PureCallExpr:
-		if msg, ok := formatPurePredicateExprFailure(x, session); ok {
-			return msg
-		}
-	}
-	return fmt.Sprintf("expected %s to be true", exprScalar(e, session))
 }
 
 func formatIRExprFailure(e ir.Expr, session *runtime.Session) string {
@@ -319,40 +219,6 @@ func formatIRExprFailure(e ir.Expr, session *runtime.Session) string {
 	return fmt.Sprintf("expected %s to be true", irExprScalar(e, session))
 }
 
-func formatPurePredicateExprFailure(e syntax.Expr, session *runtime.Session) (string, bool) {
-	call, ok := e.(*syntax.PureCallExpr)
-	if !ok {
-		return "", false
-	}
-	switch call.Name {
-	case "path-exists":
-		if len(call.Args) == 1 {
-			return fmt.Sprintf("expected path %q to exist", exprScalar(call.Args[0], session)), true
-		}
-	case "contains":
-		if len(call.Args) == 2 {
-			return fmt.Sprintf("expected %q to contain %q", exprScalar(call.Args[0], session), exprScalar(call.Args[1], session)), true
-		}
-	case "null":
-		if len(call.Args) == 1 {
-			return fmt.Sprintf("expected %s to be null", syntax.FormatExprSource(call.Args[0])), true
-		}
-	case "present":
-		if len(call.Args) == 1 {
-			return fmt.Sprintf("expected %s to be present", syntax.FormatExprSource(call.Args[0])), true
-		}
-	case "missing":
-		if len(call.Args) == 1 {
-			return fmt.Sprintf("expected %s to be missing from the shape", syntax.FormatExprSource(call.Args[0])), true
-		}
-	case "empty":
-		if len(call.Args) == 1 {
-			return fmt.Sprintf("expected %s to be empty (\"\" / [] / {})", syntax.FormatExprSource(call.Args[0])), true
-		}
-	}
-	return "", false
-}
-
 func formatIRPurePredicateExprFailure(e ir.Expr, session *runtime.Session) (string, bool) {
 	call, ok := e.(*ir.PureCallExpr)
 	if !ok {
@@ -385,24 +251,6 @@ func formatIRPurePredicateExprFailure(e ir.Expr, session *runtime.Session) (stri
 		}
 	}
 	return "", false
-}
-
-// exprScalar is a best-effort scalar stringification of an expression
-// for inclusion in error messages. Non-scalar values render as their
-// kind; evaluation errors render as "<err>". The Env has no
-// substitution runner, so any CmdSubExpr reached here would error —
-// this helper is only called on operand sub-expressions that have
-// already been evaluated once via EvalExpr at the top level.
-func exprScalar(e syntax.Expr, session *runtime.Session) string {
-	v, err := runtime.EvalExpr(e, &runtime.Env{Session: session})
-	if err != nil {
-		return "<err>"
-	}
-	s, err := v.Scalar()
-	if err != nil {
-		return "<" + v.Kind().String() + ">"
-	}
-	return s
 }
 
 func irExprScalar(e ir.Expr, session *runtime.Session) string {

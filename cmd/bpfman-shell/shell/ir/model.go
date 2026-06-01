@@ -16,11 +16,9 @@
 // dump and the interpreter can point back at source coordinates
 // without an out-of-band table.
 //
-// Some instruction operands carry lowered expressions rather than
-// AST trees. Eval, BuildArgs, and Assert now own the full parsed
-// expression surface directly; the remaining AST bridges live at
-// helper boundaries such as assertion rendering, not in the IR
-// operand model itself.
+// Eval, BuildArgs, and Assert carry lowered expression operands,
+// so the runtime never reconstructs syntax.Expr trees to execute
+// program behaviour.
 
 package ir
 
@@ -169,10 +167,9 @@ type RunDefers struct {
 }
 
 // Eval evaluates a lowered expression and stores the result in
-// Dst. The instruction is named Eval rather than EvalExpr to
-// avoid colliding with the existing top-level EvalExpr function
-// in expr.go; the design doc's illustrative spelling
-// (eval_expr) is what the dumper emits.
+// Dst. The instruction is named Eval because the IR context already
+// makes expression lowering explicit; the dumper emits the design
+// doc's illustrative spelling, eval_expr.
 type Eval struct {
 	Dst  Temp
 	Expr Expr

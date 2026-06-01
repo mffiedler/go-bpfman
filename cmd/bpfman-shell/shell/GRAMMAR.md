@@ -456,7 +456,7 @@ top-level statements. An empty block `{ }` is allowed.
 
 `matches { ... }` uses braces too, but its body is not a
 statement block; it is parsed by the matcher-entry grammar in
-`matches.go`.
+`syntax/matches.go`.
 
 ### LetStmt
 
@@ -1284,7 +1284,7 @@ expression operator:
                          [ 'exhaustive' ] MatchesBlockBody .
     MatchesBlockBody   = '{' MatcherBody '}' .
 
-`MatcherBody`'s detailed grammar is defined in `matches.go`; it
+`MatcherBody`'s detailed grammar is defined in `syntax/matches.go`; it
 is parsed as a sequence of matcher entries against the LHS
 value. In the AST the overall expression is `MatchesExpr`, which
 owns a `MatchesBlockExpr` payload for the structural matcher

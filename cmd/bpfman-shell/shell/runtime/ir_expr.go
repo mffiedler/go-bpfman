@@ -218,9 +218,7 @@ func evalIRExpr(expr ir.Expr, env *Env) (Value, error) {
 	}
 }
 
-// EvalIRExpr evaluates one lowered expression against env. This is
-// the public lowered-expression counterpart to EvalExpr and is used
-// by the remaining non-runtime bridges such as assertion handling.
+// EvalIRExpr evaluates one lowered expression against env.
 func EvalIRExpr(expr ir.Expr, env *Env) (Value, error) {
 	return evalIRExpr(expr, env)
 }

@@ -8,7 +8,6 @@ import (
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/ir"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
 )
 
 // MatchesResult is the shell-owned outcome of evaluating a
@@ -47,22 +46,8 @@ type resolvedMatchEntry struct {
 	source.Span
 }
 
-// evalMatchesExprDetails evaluates one expression-shaped matches
-// operator and returns its full mismatch set.
-func evalMatchesExprDetails(expr *syntax.MatchesExpr, env *Env) (MatchesResult, error) {
-	target, err := EvalExpr(expr.Target, env)
-	if err != nil {
-		return MatchesResult{}, err
-	}
-	block, err := evalMatchesBlock(expr.Block, env)
-	if err != nil {
-		return MatchesResult{}, err
-	}
-	return evalMatchesTarget(target, matchesTargetNameExpr(expr.Target), block)
-}
-
-// evalIRMatchesExprDetails is the lowered-runtime counterpart to
-// evalMatchesExprDetails.
+// evalIRMatchesExprDetails evaluates one lowered matches expression
+// and returns its full mismatch set.
 func evalIRMatchesExprDetails(expr *ir.MatchesExpr, env *Env) (MatchesResult, error) {
 	target, err := EvalIRExpr(expr.Target, env)
 	if err != nil {
@@ -75,81 +60,11 @@ func evalIRMatchesExprDetails(expr *ir.MatchesExpr, env *Env) (MatchesResult, er
 	return evalMatchesTarget(target, matchesTargetNameIR(expr.Target), block)
 }
 
-// FindFailedMatchesExpr returns the first failed `matches`
+// FindFailedMatchesIRExpr returns the first failed `matches`
 // expression that contributed to expr evaluating false under the
 // language's boolean semantics. It follows logical short-circuit
 // behaviour so it does not report failures from branches the
 // original expression would not have evaluated.
-func FindFailedMatchesExpr(expr syntax.Expr, env *Env) (MatchesResult, bool, error) {
-	switch e := expr.(type) {
-	case *syntax.MatchesExpr:
-		result, err := evalMatchesExprDetails(e, env)
-		if err != nil {
-			return MatchesResult{}, false, err
-		}
-		return result, !result.Matched, nil
-	case *syntax.LogicalExpr:
-		leftV, err := EvalExpr(e.Left, env)
-		if err != nil {
-			return MatchesResult{}, false, err
-		}
-		leftB, err := AsBool(leftV)
-		if err != nil {
-			return MatchesResult{}, false, err
-		}
-		switch e.Op {
-		case "and":
-			if !leftB {
-				return FindFailedMatchesExpr(e.Left, env)
-			}
-			rightV, err := EvalExpr(e.Right, env)
-			if err != nil {
-				return MatchesResult{}, false, err
-			}
-			rightB, err := AsBool(rightV)
-			if err != nil {
-				return MatchesResult{}, false, err
-			}
-			if !rightB {
-				return FindFailedMatchesExpr(e.Right, env)
-			}
-			return MatchesResult{}, false, nil
-		case "or":
-			if leftB {
-				return MatchesResult{}, false, nil
-			}
-			rightV, err := EvalExpr(e.Right, env)
-			if err != nil {
-				return MatchesResult{}, false, err
-			}
-			rightB, err := AsBool(rightV)
-			if err != nil {
-				return MatchesResult{}, false, err
-			}
-			if !rightB {
-				if result, ok, err := FindFailedMatchesExpr(e.Left, env); err != nil || ok {
-					return result, ok, err
-				}
-				return FindFailedMatchesExpr(e.Right, env)
-			}
-			return MatchesResult{}, false, nil
-		default:
-			return MatchesResult{}, false, nil
-		}
-	case *syntax.NotExpr:
-		return MatchesResult{}, false, nil
-	default:
-		for _, child := range childExprsForFailedMatches(expr) {
-			if result, ok, err := FindFailedMatchesExpr(child, env); err != nil || ok {
-				return result, ok, err
-			}
-		}
-		return MatchesResult{}, false, nil
-	}
-}
-
-// FindFailedMatchesIRExpr is the lowered-runtime counterpart to
-// FindFailedMatchesExpr.
 func FindFailedMatchesIRExpr(expr ir.Expr, env *Env) (MatchesResult, bool, error) {
 	switch e := expr.(type) {
 	case *ir.MatchesExpr:
@@ -218,36 +133,6 @@ func FindFailedMatchesIRExpr(expr ir.Expr, env *Env) (MatchesResult, bool, error
 	}
 }
 
-func childExprsForFailedMatches(expr syntax.Expr) []syntax.Expr {
-	switch e := expr.(type) {
-	case *syntax.BinaryExpr:
-		return []syntax.Expr{e.Left, e.Right}
-	case *syntax.UnaryExpr:
-		return []syntax.Expr{e.Operand}
-	case *syntax.NegateExpr:
-		return []syntax.Expr{e.Operand}
-	case *syntax.PureCallExpr:
-		return e.Args
-	case *syntax.ThreadExpr:
-		children := make([]syntax.Expr, 0, len(e.Args)+1)
-		children = append(children, e.LHS)
-		children = append(children, e.Args...)
-		return children
-	case *syntax.ListExpr:
-		return e.Elems
-	case *syntax.InterpStringExpr:
-		children := make([]syntax.Expr, 0, len(e.Segments))
-		for _, seg := range e.Segments {
-			if seg.Expr != nil {
-				children = append(children, seg.Expr)
-			}
-		}
-		return children
-	default:
-		return nil
-	}
-}
-
 func childIRExprsForFailedMatches(expr ir.Expr) []ir.Expr {
 	switch e := expr.(type) {
 	case *ir.BinaryExpr:
@@ -275,18 +160,6 @@ func childIRExprsForFailedMatches(expr ir.Expr) []ir.Expr {
 		return children
 	default:
 		return nil
-	}
-}
-
-func matchesTargetNameExpr(expr syntax.Expr) string {
-	switch e := expr.(type) {
-	case *syntax.VarRefExpr:
-		if e.Path != "" {
-			return e.Name + "." + e.Path
-		}
-		return e.Name
-	default:
-		return strings.TrimPrefix(syntax.FormatExprSource(expr), "$")
 	}
 }
 

@@ -24,16 +24,15 @@ func runWholeProgramStdin(t *testing.T, script string) (string, string, error) {
 	lr := driver.NewScannerReader(strings.NewReader(script), nil)
 
 	err := driver.Run(context.Background(), driver.Config{
-		CLI:            cli,
-		Mgr:            nil,
-		LineReader:     lr,
-		Session:        runtime.NewSession(),
-		File:           "<stdin>",
-		NoCheck:        false,
-		Fallback:       commandFallback,
-		BindFallback:   bindCommandFallback,
-		MakeAssertStmt: makeExecAssertStmt,
-		MakeAssertIR:   makeExecAssertIR,
+		CLI:          cli,
+		Mgr:          nil,
+		LineReader:   lr,
+		Session:      runtime.NewSession(),
+		File:         "<stdin>",
+		NoCheck:      false,
+		Fallback:     commandFallback,
+		BindFallback: bindCommandFallback,
+		MakeAssertIR: makeExecAssertIR,
 	})
 	return outBuf.String(), errBuf.String(), err
 }

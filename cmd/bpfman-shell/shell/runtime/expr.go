@@ -46,13 +46,6 @@ type Env struct {
 	// runtime error.
 	ExecBind func(args []Arg, span source.Span) (BindResult, error)
 
-	// ExecAssertStmt runs an syntax.AssertStmt clause and applies the
-	// embedding's failure-handling policy (printing, the
-	// session's assertion-failure counter, halt-on-require). Set
-	// by the shell runner; nil makes any syntax.AssertStmt a runtime
-	// error.
-	ExecAssertStmt func(*syntax.AssertStmt, *Env) error
-
 	// ExecAssertIR runs a lowered Assert instruction. Set by the
 	// shell runner; nil makes any lowered Assert a runtime error.
 	ExecAssertIR func(*ir.Assert, *Env) error
@@ -195,29 +188,6 @@ func (e *Env) InPoll() bool {
 // while still catching the textbook "forgot the base case"
 // mistake within a fraction of a second.
 const MaxDefCallDepth = 256
-
-// isBinaryOp reports whether s is a recognised binary operator.
-// The DSL provides one comparison family in symbol form; semantics
-// is selected by operand type, not by operator spelling. See
-// evalCompare for the strict-dispatch rules.
-func isBinaryOp(s string) bool {
-	switch s {
-	case "==", "!=", "<", "<=", ">", ">=":
-		return true
-	}
-	return false
-}
-
-// isUnaryPred reports whether s is a recognised unary predicate in
-// the expression grammar. The nil check is handled as a prefix
-// verb in the assertion layer, not as a unary expression. Truthy
-// boolean checks live in the strict comparison family: bare "true"
-// and "false" literals evaluate to BoolValue, "assert $flag"
-// reads truthiness directly via AsBool, and "$flag == true" stays
-// available for the explicit form.
-func isUnaryPred(s string) bool {
-	return s == "not-empty"
-}
 
 // withDeferScope runs fn inside a fresh defer scope, restoring the outer
 // scope on return and executing every registered deferred statement in LIFO
@@ -792,188 +762,6 @@ func commandHeadName(a Arg) (string, bool) {
 	return w.Text, true
 }
 
-// evalExprStmt evaluates a top-level expression statement and, when
-// a PrintResult callback is wired, forwards the result to it. This
-// is how "$x" and "$x == 5" get their
-// auto-printed values: the parser wraps expression-led statements
-// in syntax.ExprStmt, and the shell's PrintResult handler renders the
-// value through the same path print uses.  When PrintResult is nil
-// (embedded use, tests) the value is evaluated for side effects
-// and discarded, matching Python's script-mode semantics.
-// EvalExpr evaluates expr as a value-producing expression and
-// returns its Value. Primary expressions (literals, variable
-// references, command substitutions) produce a Value directly;
-// binary and unary expressions combine their operands per their op
-// or predicate. Adapter references are rejected — they only make
-// sense as command arguments.
-// EvalExpr is the public expression entry point. Each leaf
-// evaluator is responsible for wrapping its own errors with a
-// source.Span; callers above the evaluator (e.g. the program runner) add
-// a final safety net that frames anything that escaped here
-// without a source.Span.
-func EvalExpr(expr syntax.Expr, env *Env) (Value, error) {
-	switch e := expr.(type) {
-	case *syntax.LiteralExpr:
-		return literalValue(e), nil
-	case *syntax.VarRefExpr:
-		return resolveVarRefValue(e, env)
-	case *syntax.AdapterExpr:
-		return Value{}, syntax.SpanErrorf(e.Span, "adapter %s:$%s cannot be used as an expression operand", e.Adapter, e.Name)
-	case *syntax.InterpStringExpr:
-		return evalInterpString(e, env)
-	case *syntax.ThreadExpr:
-		return dispatchThread(e, env)
-	case *syntax.BinaryExpr:
-		return evalBinary(e, env)
-	case *syntax.UnaryExpr:
-		return evalUnary(e, env)
-	case *syntax.LogicalExpr:
-		return evalLogical(e, env)
-	case *syntax.NotExpr:
-		return evalNot(e, env)
-	case *syntax.NegateExpr:
-		return evalNegate(e, env)
-	case *syntax.PureCallExpr:
-		return dispatchPureCall(e, env)
-	case *syntax.MatchesExpr:
-		result, err := evalMatchesExprDetails(e, env)
-		if err != nil {
-			return Value{}, err
-		}
-		return BoolValue(result.Matched), nil
-	case *syntax.ListExpr:
-		return evalListExpr(e, env)
-	default:
-		return Value{}, fmt.Errorf("unhandled expression type %T", expr)
-	}
-}
-
-// evalListExpr evaluates each element of a list literal and
-// packs the resulting raw values into a []any, the same
-// underlying representation foreach iterates and the range
-// builtin produces. When any element carries an origin (typically
-// from a $var that itself came from a structured bind), a
-// parallel origin slice is attached to the result so foreach
-// iteration and path indexing recover each element's typed Value
-// via IndexValue / LookupValue.
-func evalListExpr(e *syntax.ListExpr, env *Env) (Value, error) {
-	out := make([]any, 0, len(e.Elems))
-	origins := make([]any, 0, len(e.Elems))
-	hasOrigin := false
-	for _, elem := range e.Elems {
-		v, err := EvalExpr(elem, env)
-		if err != nil {
-			return Value{}, err
-		}
-		out = append(out, v.Raw())
-		o := v.Origin()
-		origins = append(origins, o)
-		if o != nil {
-			hasOrigin = true
-		}
-	}
-	list := ValueFromAny(out)
-	if hasOrigin {
-		list = list.withOrigin(origins, semantics.OriginUnknown)
-	}
-	return list, nil
-}
-
-// dispatchPureCall evaluates the pure-builtin call's arguments,
-// hands them to ExecBind (the same dispatch path the '<-' form
-// uses) with the builtin name prepended, then returns the
-// primary Value. The result envelope is discarded because pure
-// builtins are by contract side-effect-free and have no failure
-// state worth capturing; a handler error halts the expression.
-func dispatchPureCall(e *syntax.PureCallExpr, env *Env) (Value, error) {
-	if env.ExecBind == nil {
-		return Value{}, syntax.SpanErrorf(e.Span, "%s: pure-builtin calls require an active command dispatcher", e.Name)
-	}
-	args := make([]Arg, 0, len(e.Args)+1)
-	args = append(args, WordArg{Text: e.Name, Span: e.Span})
-	// Route through evalArg rather than EvalExpr+valueToArg so the
-	// literal-vs-resolved distinction reaches the handler. Literal
-	// quoted/word args stay as QuotedArg/WordArg (jq treats them
-	// as user-typed JSON-shaped input), variable references become
-	// ScalarValueArg with HasValue=true carrying the source Value
-	// (jq passes the typed value through), and structured args
-	// remain structured. Going through EvalExpr+valueToArg would
-	// flatten literals into untyped scalars and break the boundary
-	// invariant the jq adapter relies on.
-	for _, a := range e.Args {
-		arg, err := evalArg(a, env)
-		if err != nil {
-			return Value{}, syntax.SpanErrorf(syntax.NodeSpan(a), "%s: %v", e.Name, err)
-		}
-		args = append(args, arg)
-	}
-	result, err := env.ExecBind(args, e.Span)
-	if err != nil {
-		return Value{}, syntax.FrameAt(e.Span, err)
-	}
-	if !result.Rc.OK {
-		if result.Rc.Stderr != "" {
-			return Value{}, syntax.SpanErrorf(e.Span, "%s: %s", e.Name, result.Rc.Stderr)
-		}
-		return Value{}, syntax.SpanErrorf(e.Span, "%s: call failed (exit %d)", e.Name, result.Rc.Code)
-	}
-	return result.Primary, nil
-}
-
-// evalLogical evaluates 'and' / 'or' with short-circuit
-// semantics.  Both operands must yield BoolValue; anything else
-// is a type error cited at the operator's location.  For 'and',
-// a false LHS returns false without evaluating RHS; for 'or', a
-// true LHS returns true without evaluating RHS.  This matches
-// every mainstream language's expectation for logical
-// combinators.
-func evalLogical(e *syntax.LogicalExpr, env *Env) (Value, error) {
-	leftV, err := EvalExpr(e.Left, env)
-	if err != nil {
-		return Value{}, err
-	}
-	leftB, err := AsBool(leftV)
-	if err != nil {
-		return Value{}, syntax.SpanErrorf(e.Span, "%s: left: %v", e.Op, err)
-	}
-	switch e.Op {
-	case "and":
-		if !leftB {
-			return BoolValue(false), nil
-		}
-	case "or":
-		if leftB {
-			return BoolValue(true), nil
-		}
-	default:
-		return Value{}, syntax.SpanErrorf(e.Span, "unknown logical operator %q", e.Op)
-	}
-	rightV, err := EvalExpr(e.Right, env)
-	if err != nil {
-		return Value{}, err
-	}
-	rightB, err := AsBool(rightV)
-	if err != nil {
-		return Value{}, syntax.SpanErrorf(e.Span, "%s: right: %v", e.Op, err)
-	}
-	return BoolValue(rightB), nil
-}
-
-// evalNot evaluates a boolean negation.  The operand must yield
-// a BoolValue or the evaluator reports a type error at the
-// 'not' location.
-func evalNot(e *syntax.NotExpr, env *Env) (Value, error) {
-	v, err := EvalExpr(e.Operand, env)
-	if err != nil {
-		return Value{}, err
-	}
-	b, err := AsBool(v)
-	if err != nil {
-		return Value{}, syntax.SpanErrorf(e.Span, "not: %v", err)
-	}
-	return BoolValue(!b), nil
-}
-
 // structuredShape returns a short description of a structured
 // Value suitable for error messages.  The declared semantics.OriginKind is
 // used when it is anything other than semantics.OriginUnknown (so "program"
@@ -993,39 +781,6 @@ func structuredShape(v Value) string {
 	default:
 		return "structured"
 	}
-}
-
-// evalInterpString walks an syntax.InterpStringExpr's segments,
-// evaluates each expression segment, renders it to a string, and
-// concatenates the pieces with the literal runs into a single
-// StringValue.  Scalars render via Value.Scalar (plain text);
-// structured values render as compact one-line JSON — "{"a":1}"
-// or "[1,2,3]" — matching the "str(obj)"/"to_s" convention that
-// Python, Ruby, and JavaScript use for interpolated containers.
-// Nil renders as "null" so the output is always well-formed.
-// Multi-line JSON is deliberately avoided: interpolation is a
-// line-shaped output context (log lines, path construction,
-// flag values) and an indented block in the middle of a line is
-// actively harmful.  Users who want pretty formatting reach for
-// "${[jq "." $r]}" or pipe through jq explicitly.
-func evalInterpString(e *syntax.InterpStringExpr, env *Env) (Value, error) {
-	var b strings.Builder
-	for _, seg := range e.Segments {
-		if seg.Expr == nil {
-			b.WriteString(seg.Literal)
-			continue
-		}
-		v, err := EvalExpr(seg.Expr, env)
-		if err != nil {
-			return Value{}, err
-		}
-		s, err := RenderCompact(v)
-		if err != nil {
-			return Value{}, syntax.SpanErrorf(syntax.NodeSpan(seg.Expr), "interpolation: %v", err)
-		}
-		b.WriteString(s)
-	}
-	return StringValue(b.String()), nil
 }
 
 // RenderCompact renders a Value to a single-line string form.
@@ -1095,78 +850,6 @@ func renderArgvTrace(args []Arg) string {
 	return strings.Join(parts, " ")
 }
 
-// bindTraceHeader formats the left-hand side of a syntax.BindStmt for the
-// trace output: `let r`, `let (rc v)`, `guard r`, `guard (rc v)`,
-// or `let _` when neither slot was named. The user typed this
-// verbatim in source; reproducing it in the trace makes it easy to
-// match an entry to the binding line.
-// EvalArgs evaluates each syntax.Expr in exprs as a command argument and
-// returns the resulting []Arg, suitable for dispatch.
-func EvalArgs(exprs []syntax.Expr, env *Env) ([]Arg, error) {
-	out := make([]Arg, 0, len(exprs))
-	for _, e := range exprs {
-		a, err := evalArg(e, env)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, a)
-	}
-	return out, nil
-}
-
-func evalArg(expr syntax.Expr, env *Env) (Arg, error) {
-	switch e := expr.(type) {
-	case *syntax.LiteralExpr:
-		if e.Quoted {
-			return QuotedArg{Text: e.Text, Span: e.Span}, nil
-		}
-		return WordArg{Text: e.Text, Span: e.Span}, nil
-	case *syntax.VarRefExpr:
-		return resolveVarRefArg(e, env)
-	case *syntax.AdapterExpr:
-		return resolveAdapterArg(e, env)
-	case *syntax.InterpStringExpr:
-		val, err := evalInterpString(e, env)
-		if err != nil {
-			return nil, err
-		}
-		s, err := val.Scalar()
-		if err != nil {
-			return nil, syntax.SpanErrorf(e.Span, "interpolated string: %v", err)
-		}
-		return ScalarValueArg{Text: s, Value: val, HasValue: true, Span: e.Span}, nil
-	case *syntax.ThreadExpr:
-		val, err := dispatchThread(e, env)
-		if err != nil {
-			return nil, err
-		}
-		if val.IsNil() {
-			return nil, syntax.SpanErrorf(threadDiagSpan(e), "thread produced no value")
-		}
-		return valueToArg(val, e.Span)
-	default:
-		// Any other syntax.Expr type reaches argument position only via
-		// the '(EXPR)' parenthesised arg form. Evaluate it and
-		// wrap the resulting Value via valueToArg so a thread, a
-		// pure-builtin call, a list literal, or an arithmetic /
-		// comparison expression all flow through as Scalar or
-		// StructuredValueArg, matching the wart entry's
-		// "(EXPR) in argument position" resolution.
-		v, err := EvalExpr(expr, env)
-		if err != nil {
-			return nil, err
-		}
-		if v.IsNil() {
-			return nil, syntax.SpanErrorf(syntax.NodeSpan(expr), "parenthesised expression produced no value")
-		}
-		return valueToArg(v, syntax.NodeSpan(expr))
-	}
-}
-
-func resolveVarRefValue(e *syntax.VarRefExpr, env *Env) (Value, error) {
-	return resolveVarRefValueParts(e.Name, e.Path, e.Span, env)
-}
-
 func resolveVarRefValueParts(name, path string, span source.Span, env *Env) (Value, error) {
 	v, ok := env.Session.Get(name)
 	if !ok {
@@ -1184,10 +867,6 @@ func resolveVarRefValueParts(name, path string, span source.Span, env *Env) (Val
 		return Value{}, syntax.SpanErrorf(span, "%v", err)
 	}
 	return lv, nil
-}
-
-func resolveVarRefArg(e *syntax.VarRefExpr, env *Env) (Arg, error) {
-	return resolveVarRefArgParts(e.Name, e.Path, e.Span, env)
 }
 
 func resolveVarRefArgParts(name, path string, span source.Span, env *Env) (Arg, error) {
@@ -1241,10 +920,6 @@ func qualify(name, path string) string {
 		return name
 	}
 	return name + "." + path
-}
-
-func resolveAdapterArg(e *syntax.AdapterExpr, env *Env) (Arg, error) {
-	return resolveAdapterArgParts(e.Adapter, e.Name, e.Path, e.Span, env)
 }
 
 func resolveAdapterArgParts(adapter, name, path string, span source.Span, env *Env) (Arg, error) {
@@ -1367,64 +1042,6 @@ func valueToIndex(v Value) (int, error) {
 	}
 }
 
-// dispatchThread evaluates a threading expression by threading the
-// LHS's Value into the command described by Args. The LHS Value
-// becomes the last element of the evaluated argument list so it
-// matches the convention used by jq, file temp, and most
-// shell-style "CMD ARGS VALUE" invocations. The thread errors
-// loudly when the underlying command's result is not ok; in
-// expression position there is no envelope slot to inspect, so
-// failure must propagate.
-func dispatchThread(e *syntax.ThreadExpr, env *Env) (Value, error) {
-	threadSpan := threadDiagSpan(e)
-	if env.ExecBind == nil {
-		return Value{}, syntax.SpanErrorf(threadSpan, "'|>' is only valid where commands can run; not available in this context")
-	}
-	args, err := EvalArgs(e.Args, env)
-	if err != nil {
-		return Value{}, err
-	}
-	// Route the LHS through evalArg rather than EvalExpr+valueToArg
-	// so the literal-vs-resolved distinction reaches the receiving
-	// command (same rationale as dispatchPureCall). A nil LHS
-	// passes through as NilArg; jq treats it as JSON null and
-	// filters like `length` work as expected.
-	lhsArg, err := evalArg(e.LHS, env)
-	if err != nil {
-		return Value{}, syntax.SpanErrorf(threadSpan, "thread: %v", err)
-	}
-	// '|>' is expression-position bind-dispatch with the rc
-	// envelope discarded, so head resolution follows the same
-	// def-first policy as every other command-shaped construct
-	// that runs in value-producing position (bind RHS, defer,
-	// bind-collect). Bypassing the policy here let a `$value |>
-	// my_def` fall through to the external lane and silently
-	// bind the empty primary; routing through dispatchBindByPolicy
-	// keeps the rule centralised.
-	callLoc := e.PipePos
-	if callLoc.Line == 0 {
-		callLoc = e.Span.Pos
-	}
-	result, err := dispatchBindByPolicy(ir.DispatchPolicyDefThenExecBind, append(args, lhsArg), callLoc, e.Span, env)
-	if err != nil {
-		return Value{}, syntax.FrameAt(threadSpan, err)
-	}
-	if !result.Rc.OK {
-		if result.Rc.Stderr != "" {
-			return Value{}, syntax.SpanErrorf(threadSpan, "thread: command failed (exit %d): %s", result.Rc.Code, result.Rc.Stderr)
-		}
-		return Value{}, syntax.SpanErrorf(threadSpan, "thread: command failed (exit %d)", result.Rc.Code)
-	}
-	return result.Primary, nil
-}
-
-func threadDiagSpan(e *syntax.ThreadExpr) source.Span {
-	if e.PipePos != (source.Pos{}) {
-		return source.Span{Pos: e.PipePos, End: e.PipePos}
-	}
-	return e.Span
-}
-
 // valueToArg wraps a Value in the most specific Arg variant for
 // the dispatch boundary: structured values stay structured,
 // scalars become ScalarValueArg, nil becomes NilArg so the
@@ -1446,33 +1063,6 @@ func valueToArg(v Value, span source.Span) (Arg, error) {
 		return nil, err
 	}
 	return ScalarValueArg{Text: s, Value: v, HasValue: true, Span: span}, nil
-}
-
-func evalBinary(e *syntax.BinaryExpr, env *Env) (Value, error) {
-	leftV, err := EvalExpr(e.Left, env)
-	if err != nil {
-		return Value{}, err
-	}
-	rightV, err := EvalExpr(e.Right, env)
-	if err != nil {
-		return Value{}, err
-	}
-	if isArithmeticOpText(e.Op) {
-		left, err := leftV.Scalar()
-		if err != nil {
-			return Value{}, syntax.SpanErrorf(e.Span, "binary %s: left: %v", e.Op, err)
-		}
-		right, err := rightV.Scalar()
-		if err != nil {
-			return Value{}, syntax.SpanErrorf(e.Span, "binary %s: right: %v", e.Op, err)
-		}
-		v, err := evalArithmetic(e.Op, left, right)
-		if err != nil {
-			return Value{}, syntax.SpanErrorf(e.Span, "%v", err)
-		}
-		return v, nil
-	}
-	return evalCompare(e.Op, leftV, rightV, e.Span)
 }
 
 // compareKind classifies a Value for the purpose of strict
@@ -1630,20 +1220,6 @@ func numericValue(x float64) Value {
 	return Value{v: json.Number(text), kind: semantics.OriginScalar}
 }
 
-// literalValue classifies the text of a syntax.LiteralExpr into a typed
-// Value. Quoted literals are always strings: the user opted into
-// stringy interpretation by quoting. Unquoted literals are
-// classified by shape: "true"/"false" become BoolValue, anything
-// strconv.ParseFloat accepts becomes a numeric Value carrying the
-// original text as a json.Number, and everything else stays a
-// string. This is jq's literal model: bare 5 is the number 5, "5"
-// is the string "5", and the comparison operator picks numeric or
-// textual semantics from the operand types rather than from the
-// operator's spelling.
-func literalValue(e *syntax.LiteralExpr) Value {
-	return literalValueParts(e.Text, e.Quoted)
-}
-
 func literalValueParts(text string, quoted bool) Value {
 	if quoted {
 		return StringValue(text)
@@ -1662,49 +1238,12 @@ func literalValueParts(text string, quoted bool) Value {
 	return StringValue(text)
 }
 
-// evalNegate evaluates a unary '-' prefix.  The operand must
-// reduce to a numeric scalar; anything else is a type error
-// cited at the '-' token.
-func evalNegate(e *syntax.NegateExpr, env *Env) (Value, error) {
-	v, err := EvalExpr(e.Operand, env)
-	if err != nil {
-		return Value{}, err
-	}
-	s, err := v.Scalar()
-	if err != nil {
-		return Value{}, syntax.SpanErrorf(e.Span, "negate: %v", err)
-	}
-	x, err := strconv.ParseFloat(s, 64)
-	if err != nil {
-		return Value{}, syntax.SpanErrorf(e.Span, "negate: operand %q is not numeric", s)
-	}
-	return numericValue(-x), nil
-}
-
-func evalUnary(e *syntax.UnaryExpr, env *Env) (Value, error) {
-	operand, err := EvalExpr(e.Operand, env)
-	if err != nil {
-		return Value{}, err
-	}
-	switch e.Pred {
-	case "not-empty":
-		return evalNotEmpty(operand, e.Span)
-	default:
-		return Value{}, syntax.SpanErrorf(e.Span, "unknown unary predicate %q", e.Pred)
-	}
-}
-
-// evalNotEmpty implements the not-empty unary predicate shared by
-// the AST evalUnary path and the IR *ir.UnaryExpr case in
-// evalIRExpr. Keeping the body in one place is the load-bearing
-// part: a divergent default branch in either evaluator silently
-// disagrees on off-spec carrier types and that drift is exactly
-// the kind the IR migration is meant to eliminate. "Empty" is
-// applied uniformly under the Go zero-value convention -- null
-// is empty, "" is empty, [] / nil-slice is empty, {} / nil-map
-// is empty, numeric 0 is empty, false is empty -- so the
-// predicate reads the same inline (`assert not-empty $xs`) and
-// inside a matches block (`field: not-empty`).
+// evalNotEmpty implements the not-empty unary predicate. "Empty"
+// is applied uniformly under the Go zero-value convention -- null
+// is empty, "" is empty, [] / nil-slice is empty, {} / nil-map is
+// empty, numeric 0 is empty, false is empty -- so the predicate
+// reads the same inline (`assert not-empty $xs`) and inside a
+// matches block (`field: not-empty`).
 func evalNotEmpty(operand Value, span source.Span) (Value, error) {
 	if operand.IsNil() || operand.IsNull() {
 		return BoolValue(false), nil
@@ -1796,106 +1335,6 @@ func evalNumericComparison(op, left, right string) (Value, error) {
 		return Value{}, fmt.Errorf("unknown numeric operator %q", op)
 	}
 	return BoolValue(pass), nil
-}
-
-// exprFromArgs rebuilds a primary/unary/binary expression from a
-// list of already-evaluated arguments. The assertion layer calls
-// this to re-interpret a command's evaluated args as a comparison
-// or predicate expression and then evaluate the whole thing via
-// EvalExpr. The returned expression has zero source.Pos on every node
-// because the original token positions are not available at this
-// point in the pipeline.
-func exprFromArgs(args []Arg) (syntax.Expr, error) {
-	switch len(args) {
-	case 0:
-		return nil, fmt.Errorf("empty expression")
-	case 1:
-		return argToPrimary(args[0])
-	case 2:
-		pred, ok := argAsUnaryPred(args[0])
-		if !ok {
-			return nil, fmt.Errorf("expected a check like 'not-empty' as the first word, got %q", argDisplay(args[0]))
-		}
-		operand, err := argToPrimary(args[1])
-		if err != nil {
-			return nil, err
-		}
-		return &syntax.UnaryExpr{Pred: pred, Operand: operand}, nil
-	case 3:
-		op, ok := argAsBinaryOp(args[1])
-		if !ok {
-			return nil, fmt.Errorf("expected an operator (==, !=, <, <=, >, >=) between the two values, got %q", argDisplay(args[1]))
-		}
-		left, err := argToPrimary(args[0])
-		if err != nil {
-			return nil, err
-		}
-		right, err := argToPrimary(args[2])
-		if err != nil {
-			return nil, err
-		}
-		return &syntax.BinaryExpr{Left: left, Op: op, Right: right}, nil
-	default:
-		return nil, fmt.Errorf("got %d argument(s); expected one value, a unary check like 'not-empty $x', or a comparison like '$x == 5'", len(args))
-	}
-}
-
-func argToPrimary(a Arg) (syntax.Expr, error) {
-	switch v := a.(type) {
-	case WordArg:
-		return &syntax.LiteralExpr{Text: v.Text}, nil
-	case QuotedArg:
-		return &syntax.LiteralExpr{Text: v.Text, Quoted: true}, nil
-	case ScalarValueArg:
-		return &syntax.LiteralExpr{Text: v.Text}, nil
-	case StructuredValueArg:
-		return &syntax.VarRefExpr{Name: v.Name}, nil
-	default:
-		return nil, fmt.Errorf("cannot use %T as expression operand", a)
-	}
-}
-
-func argAsUnaryPred(a Arg) (string, bool) {
-	w, ok := a.(WordArg)
-	if !ok || !isUnaryPredWord(w.Text) {
-		return "", false
-	}
-	return w.Text, true
-}
-
-func argAsBinaryOp(a Arg) (string, bool) {
-	w, ok := a.(WordArg)
-	if !ok || !isBinaryOpWord(w.Text) {
-		return "", false
-	}
-	return w.Text, true
-}
-
-func argDisplay(a Arg) string {
-	switch v := a.(type) {
-	case WordArg:
-		return v.Text
-	case QuotedArg:
-		return v.Text
-	case ScalarValueArg:
-		return v.Text
-	case StructuredValueArg:
-		return "$" + v.Name
-	default:
-		return fmt.Sprintf("%T", a)
-	}
-}
-
-func isUnaryPredWord(s string) bool {
-	return s == "not-empty"
-}
-
-func isBinaryOpWord(s string) bool {
-	switch s {
-	case "==", "!=", "<", "<=", ">", ">=":
-		return true
-	}
-	return false
 }
 
 func isIdentStartByte(b byte) bool {

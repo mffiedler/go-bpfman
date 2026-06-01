@@ -254,11 +254,7 @@ func TestEvalIRExpr_AdapterArg_DynamicIndex(t *testing.T) {
 	s.Set("paths", ValueFromAny([]any{"/a", "/b", "/c"}))
 	s.Set("i", ValueFromAny(json.Number("1")))
 
-	arg, err := resolveAdapterArg(&syntax.AdapterExpr{
-		Adapter: "file",
-		Name:    "paths",
-		Path:    "[$i]",
-	}, evalEnv(s))
+	arg, err := resolveAdapterArgParts("file", "paths", "[$i]", source.Span{}, evalEnv(s))
 	require.NoError(t, err)
 	aa, ok := arg.(AdapterArg)
 	require.True(t, ok)
@@ -479,120 +475,6 @@ func TestEvalIRExpr_Unary_NotEmpty(t *testing.T) {
 	assert.False(t, b)
 }
 
-func TestExprFromArgs_Primary(t *testing.T) {
-	t.Parallel()
-
-	t.Run("word literal", func(t *testing.T) {
-		t.Parallel()
-		e, err := exprFromArgs([]Arg{WordArg{Text: "foo"}})
-		require.NoError(t, err)
-		lit, ok := e.(*syntax.LiteralExpr)
-		require.True(t, ok)
-		assert.Equal(t, "foo", lit.Text)
-		assert.False(t, lit.Quoted)
-	})
-	t.Run("quoted literal", func(t *testing.T) {
-		t.Parallel()
-		e, err := exprFromArgs([]Arg{QuotedArg{Text: "hello world"}})
-		require.NoError(t, err)
-		lit, ok := e.(*syntax.LiteralExpr)
-		require.True(t, ok)
-		assert.Equal(t, "hello world", lit.Text)
-		assert.True(t, lit.Quoted)
-	})
-	t.Run("scalar var reference", func(t *testing.T) {
-		t.Parallel()
-		e, err := exprFromArgs([]Arg{ScalarValueArg{Text: "42"}})
-		require.NoError(t, err)
-		lit, ok := e.(*syntax.LiteralExpr)
-		require.True(t, ok)
-		assert.Equal(t, "42", lit.Text)
-	})
-	t.Run("bare structured reference", func(t *testing.T) {
-		t.Parallel()
-		e, err := exprFromArgs([]Arg{StructuredValueArg{Name: "prog", Value: ValueFromMap(map[string]any{"x": 1})}})
-		require.NoError(t, err)
-		ref, ok := e.(*syntax.VarRefExpr)
-		require.True(t, ok)
-		assert.Equal(t, "prog", ref.Name)
-		assert.Empty(t, ref.Path)
-	})
-}
-
-func TestExprFromArgs_Unary(t *testing.T) {
-	t.Parallel()
-
-	e, err := exprFromArgs([]Arg{
-		WordArg{Text: "not-empty"},
-		ScalarValueArg{Text: "foo"},
-	})
-	require.NoError(t, err)
-	unary, ok := e.(*syntax.UnaryExpr)
-	require.True(t, ok)
-	assert.Equal(t, "not-empty", unary.Pred)
-}
-
-func TestExprFromArgs_UnaryRejectsNonPred(t *testing.T) {
-	t.Parallel()
-
-	_, err := exprFromArgs([]Arg{
-		WordArg{Text: "notapred"},
-		WordArg{Text: "operand"},
-	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "expected a check like")
-}
-
-func TestExprFromArgs_Binary(t *testing.T) {
-	t.Parallel()
-
-	ops := []string{"==", "!=", "<", "<=", ">", ">="}
-	for _, op := range ops {
-		t.Run(op, func(t *testing.T) {
-			t.Parallel()
-			e, err := exprFromArgs([]Arg{
-				ScalarValueArg{Text: "1"},
-				WordArg{Text: op},
-				ScalarValueArg{Text: "2"},
-			})
-			require.NoError(t, err)
-			bin, ok := e.(*syntax.BinaryExpr)
-			require.True(t, ok)
-			assert.Equal(t, op, bin.Op)
-		})
-	}
-}
-
-func TestExprFromArgs_BinaryRejectsNonOp(t *testing.T) {
-	t.Parallel()
-
-	_, err := exprFromArgs([]Arg{
-		WordArg{Text: "a"},
-		WordArg{Text: "bogus"},
-		WordArg{Text: "b"},
-	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "expected an operator")
-}
-
-func TestExprFromArgs_TooManyArgs(t *testing.T) {
-	t.Parallel()
-
-	_, err := exprFromArgs([]Arg{
-		WordArg{Text: "a"}, WordArg{Text: "b"}, WordArg{Text: "c"}, WordArg{Text: "d"},
-	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "got 4 argument")
-}
-
-func TestExprFromArgs_Empty(t *testing.T) {
-	t.Parallel()
-
-	_, err := exprFromArgs(nil)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "empty expression")
-}
-
 func TestAsBool_RejectsNonBool(t *testing.T) {
 	t.Parallel()
 
@@ -605,32 +487,6 @@ func TestAsBool_RejectsNonBool(t *testing.T) {
 		_, err := AsBool(v)
 		require.Error(t, err, "kind=%s", v.Kind())
 		assert.Contains(t, err.Error(), "use a comparison")
-	}
-}
-
-func TestIsBinaryOp(t *testing.T) {
-	t.Parallel()
-
-	true_ := []string{"==", "!=", "<", "<=", ">", ">="}
-	false_ := []string{"", "foo", "=", "<=>", "eq", "ne", "lt", "le", "gt", "ge"}
-	for _, s := range true_ {
-		assert.True(t, isBinaryOp(s), s)
-	}
-	for _, s := range false_ {
-		assert.False(t, isBinaryOp(s), s)
-	}
-}
-
-func TestIsUnaryPred(t *testing.T) {
-	t.Parallel()
-
-	true_ := []string{"not-empty"}
-	false_ := []string{"", "ok", "fail", "eq", "nil", "true", "false"}
-	for _, s := range true_ {
-		assert.True(t, isUnaryPred(s), s)
-	}
-	for _, s := range false_ {
-		assert.False(t, isUnaryPred(s), s)
 	}
 }
 

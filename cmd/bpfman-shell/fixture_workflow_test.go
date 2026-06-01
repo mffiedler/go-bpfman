@@ -107,16 +107,15 @@ func runFixtureWorkflow(t *testing.T, fixture string) fixtureWorkflowRun {
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := runtime.NewSession()
 	runErr := driver.Run(context.Background(), driver.Config{
-		CLI:            cli,
-		Mgr:            nil,
-		LineReader:     lr,
-		Session:        session,
-		File:           mainPath,
-		NoCheck:        false,
-		Fallback:       commandFallback,
-		BindFallback:   bindCommandFallback,
-		MakeAssertStmt: makeExecAssertStmt,
-		MakeAssertIR:   makeExecAssertIR,
+		CLI:          cli,
+		Mgr:          nil,
+		LineReader:   lr,
+		Session:      session,
+		File:         mainPath,
+		NoCheck:      false,
+		Fallback:     commandFallback,
+		BindFallback: bindCommandFallback,
+		MakeAssertIR: makeExecAssertIR,
 	})
 	return fixtureWorkflowRun{
 		session: session,
