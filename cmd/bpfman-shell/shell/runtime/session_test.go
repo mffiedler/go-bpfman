@@ -329,7 +329,7 @@ func evalArgsForTest(s *Session, tokens []syntax.Token) ([]Arg, error) {
 		}
 	}
 	env := &Env{Session: s}
-	return EvalArgs(exprs, env)
+	return evalLoweredArgs(exprs, env)
 }
 
 func TestSessionAssertFailures(t *testing.T) {

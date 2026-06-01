@@ -16,6 +16,22 @@ func lowerToIR(prog *syntax.Program) (*ir.Program, error) {
 	return lower.Lower(prog)
 }
 
+func lowerExpr(expr syntax.Expr) ir.Expr {
+	return lower.Expr(expr)
+}
+
+func lowerExprs(exprs []syntax.Expr) []ir.Expr {
+	return lower.Exprs(exprs)
+}
+
+func evalLoweredExpr(expr syntax.Expr, env *Env) (Value, error) {
+	return EvalIRExpr(lowerExpr(expr), env)
+}
+
+func evalLoweredArgs(exprs []syntax.Expr, env *Env) ([]Arg, error) {
+	return EvalIRArgs(lowerExprs(exprs), env)
+}
+
 func execParsedProgram(t *testing.T, prog *syntax.Program, env *Env) error {
 	t.Helper()
 	lp, err := lowerToIR(prog)
@@ -52,48 +68,6 @@ func checkSource(t *testing.T, src string) []check.Issue {
 	prog, err := syntax.Parse(tokens)
 	require.NoError(t, err)
 	return check.Check(prog)
-}
-
-// testExecAssertIR adapts an AssertStmt-oriented test callback to
-// the lowered ir.Assert seam so tests can keep a compact statement-
-// shaped assertion policy.
-func testExecAssertIR(fn func(*syntax.AssertStmt, *Env) error) func(*ir.Assert, *Env) error {
-	return func(a *ir.Assert, env *Env) error {
-		return fn(&syntax.AssertStmt{IsRequire: a.IsRequire, Clause: astAssertClauseFromIR(a.Clause), Span: a.Span}, env)
-	}
-}
-
-func requireAssertExprClause(tb testing.TB, stmt *syntax.AssertStmt) syntax.Expr {
-	tb.Helper()
-	return mustAssertExprClause(stmt)
-}
-
-func mustAssertExprClause(stmt *syntax.AssertStmt) syntax.Expr {
-	clause, ok := stmt.Clause.(*syntax.AssertExprClause)
-	if !ok {
-		panic("assert clause is not AssertExprClause")
-	}
-	return clause.Expr
-}
-
-func astAssertClauseFromIR(clause ir.AssertClause) syntax.AssertClause {
-	switch v := clause.(type) {
-	case *ir.AssertExprClause:
-		return &syntax.AssertExprClause{Expr: astExprFromIR(v.Expr)}
-	case *ir.AssertCommandClause:
-		args := make([]syntax.Expr, len(v.Args))
-		for i, a := range v.Args {
-			args[i] = astExprFromIR(a)
-		}
-		return &syntax.AssertCommandClause{
-			Head:     v.Head,
-			HeadSpan: v.HeadSpan,
-			Args:     args,
-			Negate:   v.Negate,
-		}
-	default:
-		panic("astAssertClauseFromIR: unsupported clause")
-	}
 }
 
 // astExprFromIR is the test-only inverse of the syntax->IR

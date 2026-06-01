@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/ir"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/semantics"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
@@ -35,18 +34,18 @@ func bindFromValue(f func([]Arg, source.Span) (Value, error)) func([]Arg, source
 	}
 }
 
-func TestEvalExpr_Literal(t *testing.T) {
+func TestEvalIRExpr_Literal(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
-	v, err := EvalExpr(&syntax.LiteralExpr{Text: "hello"}, evalEnv(s))
+	v, err := evalLoweredExpr(&syntax.LiteralExpr{Text: "hello"}, evalEnv(s))
 	require.NoError(t, err)
 	got, err := v.Scalar()
 	require.NoError(t, err)
 	assert.Equal(t, "hello", got)
 }
 
-func TestEvalExpr_Literal_Classification(t *testing.T) {
+func TestEvalIRExpr_Literal_Classification(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -71,19 +70,19 @@ func TestEvalExpr_Literal_Classification(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			s := NewSession()
-			v, err := EvalExpr(tt.expr, evalEnv(s))
+			v, err := evalLoweredExpr(tt.expr, evalEnv(s))
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantRaw, v.Raw())
 		})
 	}
 }
 
-func TestEvalExpr_VarRef_Bare(t *testing.T) {
+func TestEvalIRExpr_VarRef_Bare(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
 	s.Set("x", StringValue("bound"))
-	v, err := EvalExpr(&syntax.VarRefExpr{Name: "x"}, evalEnv(s))
+	v, err := evalLoweredExpr(&syntax.VarRefExpr{Name: "x"}, evalEnv(s))
 	require.NoError(t, err)
 	got, err := v.Scalar()
 	require.NoError(t, err)
@@ -109,56 +108,56 @@ func TestRegisterLoweredDefs_PreservesAbsoluteDefSpan(t *testing.T) {
 	assert.True(t, got.HasReturn)
 }
 
-func TestEvalExpr_VarRef_Path(t *testing.T) {
+func TestEvalIRExpr_VarRef_Path(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
 	s.Set("prog", ValueFromMap(map[string]any{
 		"record": map[string]any{"program_id": "42"},
 	}))
-	v, err := EvalExpr(&syntax.VarRefExpr{Name: "prog", Path: "record.program_id"}, evalEnv(s))
+	v, err := evalLoweredExpr(&syntax.VarRefExpr{Name: "prog", Path: "record.program_id"}, evalEnv(s))
 	require.NoError(t, err)
 	got, err := v.Scalar()
 	require.NoError(t, err)
 	assert.Equal(t, "42", got)
 }
 
-func TestEvalExpr_VarRef_Undefined(t *testing.T) {
+func TestEvalIRExpr_VarRef_Undefined(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
-	_, err := EvalExpr(&syntax.VarRefExpr{Name: "missing"}, evalEnv(s))
+	_, err := evalLoweredExpr(&syntax.VarRefExpr{Name: "missing"}, evalEnv(s))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `undefined variable "missing"`)
 }
 
-func TestEvalExpr_VarRef_DynamicIndex(t *testing.T) {
+func TestEvalIRExpr_VarRef_DynamicIndex(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
 	s.Set("xs", ValueFromAny([]any{json.Number("100"), json.Number("200"), json.Number("300")}))
 	s.Set("i", ValueFromAny(json.Number("1")))
-	v, err := EvalExpr(&syntax.VarRefExpr{Name: "xs", Path: "[$i]"}, evalEnv(s))
+	v, err := evalLoweredExpr(&syntax.VarRefExpr{Name: "xs", Path: "[$i]"}, evalEnv(s))
 	require.NoError(t, err)
 	got, err := v.Scalar()
 	require.NoError(t, err)
 	assert.Equal(t, "200", got)
 }
 
-func TestEvalExpr_VarRef_DynamicIndex_StringInteger(t *testing.T) {
+func TestEvalIRExpr_VarRef_DynamicIndex_StringInteger(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
 	s.Set("xs", ValueFromAny([]any{"a", "b", "c"}))
 	s.Set("i", StringValue("2"))
-	v, err := EvalExpr(&syntax.VarRefExpr{Name: "xs", Path: "[$i]"}, evalEnv(s))
+	v, err := evalLoweredExpr(&syntax.VarRefExpr{Name: "xs", Path: "[$i]"}, evalEnv(s))
 	require.NoError(t, err)
 	got, err := v.Scalar()
 	require.NoError(t, err)
 	assert.Equal(t, "c", got)
 }
 
-func TestEvalExpr_VarRef_DynamicIndex_NestedPath(t *testing.T) {
+func TestEvalIRExpr_VarRef_DynamicIndex_NestedPath(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -167,62 +166,62 @@ func TestEvalExpr_VarRef_DynamicIndex_NestedPath(t *testing.T) {
 		map[string]any{"name": "beta"},
 	}))
 	s.Set("i", ValueFromAny(json.Number("0")))
-	v, err := EvalExpr(&syntax.VarRefExpr{Name: "xs", Path: "[$i].name"}, evalEnv(s))
+	v, err := evalLoweredExpr(&syntax.VarRefExpr{Name: "xs", Path: "[$i].name"}, evalEnv(s))
 	require.NoError(t, err)
 	got, err := v.Scalar()
 	require.NoError(t, err)
 	assert.Equal(t, "alpha", got)
 }
 
-func TestEvalExpr_VarRef_DynamicIndex_UndefinedIndex(t *testing.T) {
+func TestEvalIRExpr_VarRef_DynamicIndex_UndefinedIndex(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
 	s.Set("xs", ValueFromAny([]any{"a", "b"}))
-	_, err := EvalExpr(&syntax.VarRefExpr{Name: "xs", Path: "[$i]"}, evalEnv(s))
+	_, err := evalLoweredExpr(&syntax.VarRefExpr{Name: "xs", Path: "[$i]"}, evalEnv(s))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "index variable $i is not defined")
 }
 
-func TestEvalExpr_VarRef_DynamicIndex_NonInteger(t *testing.T) {
+func TestEvalIRExpr_VarRef_DynamicIndex_NonInteger(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
 	s.Set("xs", ValueFromAny([]any{"a", "b"}))
 	s.Set("i", StringValue("not-a-number"))
-	_, err := EvalExpr(&syntax.VarRefExpr{Name: "xs", Path: "[$i]"}, evalEnv(s))
+	_, err := evalLoweredExpr(&syntax.VarRefExpr{Name: "xs", Path: "[$i]"}, evalEnv(s))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "index variable $i:")
 	assert.Contains(t, err.Error(), "must be an integer")
 }
 
-func TestEvalExpr_VarRef_DynamicIndex_OutOfRange(t *testing.T) {
+func TestEvalIRExpr_VarRef_DynamicIndex_OutOfRange(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
 	s.Set("xs", ValueFromAny([]any{"a", "b"}))
 	s.Set("i", ValueFromAny(json.Number("5")))
-	_, err := EvalExpr(&syntax.VarRefExpr{Name: "xs", Path: "[$i]"}, evalEnv(s))
+	_, err := evalLoweredExpr(&syntax.VarRefExpr{Name: "xs", Path: "[$i]"}, evalEnv(s))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "out of range")
 }
 
-func TestEvalExpr_VarRef_DynamicIndex_Negative(t *testing.T) {
+func TestEvalIRExpr_VarRef_DynamicIndex_Negative(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
 	s.Set("xs", ValueFromAny([]any{"a", "b"}))
 	s.Set("i", ValueFromAny(json.Number("-1")))
-	_, err := EvalExpr(&syntax.VarRefExpr{Name: "xs", Path: "[$i]"}, evalEnv(s))
+	_, err := evalLoweredExpr(&syntax.VarRefExpr{Name: "xs", Path: "[$i]"}, evalEnv(s))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "out of range")
 }
 
-// TestEvalExpr_VarRef_DynamicIndex_BracedForm confirms the
+// TestEvalIRExpr_VarRef_DynamicIndex_BracedForm confirms the
 // "${xs[$i]}" form resolves identically to the bare "$xs[$i]"
 // form. Both tokeniser shapes store the path text the same way,
 // so a single eval-side check is sufficient.
-func TestEvalExpr_VarRef_DynamicIndex_BracedForm(t *testing.T) {
+func TestEvalIRExpr_VarRef_DynamicIndex_BracedForm(t *testing.T) {
 	t.Parallel()
 
 	const src = "${xs[$i]}"
@@ -236,19 +235,19 @@ func TestEvalExpr_VarRef_DynamicIndex_BracedForm(t *testing.T) {
 	s := NewSession()
 	s.Set("xs", ValueFromAny([]any{"a", "b", "c"}))
 	s.Set("i", ValueFromAny(json.Number("2")))
-	v, err := EvalExpr(&syntax.VarRefExpr{Name: tokens[0].VarName, Path: tokens[0].VarPath}, evalEnv(s))
+	v, err := evalLoweredExpr(&syntax.VarRefExpr{Name: tokens[0].VarName, Path: tokens[0].VarPath}, evalEnv(s))
 	require.NoError(t, err)
 	got, err := v.Scalar()
 	require.NoError(t, err)
 	assert.Equal(t, "c", got)
 }
 
-// TestEvalExpr_AdapterArg_DynamicIndex covers the adapter
+// TestEvalIRExpr_AdapterArg_DynamicIndex covers the adapter
 // reference path through resolveAdapterArg. The tokeniser
 // recognises file:$x with the same path grammar as $x, so the
 // dynamic-index resolution must travel through the adapter
 // arg builder identically.
-func TestEvalExpr_AdapterArg_DynamicIndex(t *testing.T) {
+func TestEvalIRExpr_AdapterArg_DynamicIndex(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -315,17 +314,17 @@ foreach i in [0 1 2] {
 	}, captured)
 }
 
-func TestEvalExpr_Adapter_RejectedAsExpression(t *testing.T) {
+func TestEvalIRExpr_Adapter_RejectedAsExpression(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
 	s.Set("x", StringValue("hi"))
-	_, err := EvalExpr(&syntax.AdapterExpr{Adapter: "file", Name: "x"}, evalEnv(s))
+	_, err := evalLoweredExpr(&syntax.AdapterExpr{Adapter: "file", Name: "x"}, evalEnv(s))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "adapter")
 }
 
-func TestEvalExpr_Binary_Textual(t *testing.T) {
+func TestEvalIRExpr_Binary_Textual(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -353,7 +352,7 @@ func TestEvalExpr_Binary_Textual(t *testing.T) {
 				Op:    tc.op,
 				Right: &syntax.LiteralExpr{Text: tc.right},
 			}
-			v, err := EvalExpr(e, evalEnv(s))
+			v, err := evalLoweredExpr(e, evalEnv(s))
 			require.NoError(t, err)
 			assert.Equal(t, semantics.OriginBool, v.Kind())
 			b, err := AsBool(v)
@@ -363,7 +362,7 @@ func TestEvalExpr_Binary_Textual(t *testing.T) {
 	}
 }
 
-func TestEvalExpr_Binary_Numeric(t *testing.T) {
+func TestEvalIRExpr_Binary_Numeric(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -391,7 +390,7 @@ func TestEvalExpr_Binary_Numeric(t *testing.T) {
 				Op:    tc.op,
 				Right: &syntax.LiteralExpr{Text: tc.right},
 			}
-			v, err := EvalExpr(e, evalEnv(s))
+			v, err := evalLoweredExpr(e, evalEnv(s))
 			require.NoError(t, err)
 			b, err := AsBool(v)
 			require.NoError(t, err)
@@ -400,7 +399,7 @@ func TestEvalExpr_Binary_Numeric(t *testing.T) {
 	}
 }
 
-func TestEvalExpr_Binary_NumericNonNumericError(t *testing.T) {
+func TestEvalIRExpr_Binary_NumericNonNumericError(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -409,12 +408,12 @@ func TestEvalExpr_Binary_NumericNonNumericError(t *testing.T) {
 		Op:    "<",
 		Right: &syntax.LiteralExpr{Text: "5"},
 	}
-	_, err := EvalExpr(e, evalEnv(s))
+	_, err := evalLoweredExpr(e, evalEnv(s))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot compare string to number")
 }
 
-func TestEvalExpr_Binary_StrictDispatch(t *testing.T) {
+func TestEvalIRExpr_Binary_StrictDispatch(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -444,7 +443,7 @@ func TestEvalExpr_Binary_StrictDispatch(t *testing.T) {
 			t.Parallel()
 			s := NewSession()
 			e := &syntax.BinaryExpr{Left: tt.left, Op: tt.op, Right: tt.right}
-			v, err := EvalExpr(e, evalEnv(s))
+			v, err := evalLoweredExpr(e, evalEnv(s))
 			if tt.wantError != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantError)
@@ -458,7 +457,7 @@ func TestEvalExpr_Binary_StrictDispatch(t *testing.T) {
 	}
 }
 
-func TestEvalExpr_Unary_NotEmpty(t *testing.T) {
+func TestEvalIRExpr_Unary_NotEmpty(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -466,14 +465,14 @@ func TestEvalExpr_Unary_NotEmpty(t *testing.T) {
 	s.Set("y", StringValue(""))
 
 	e := &syntax.UnaryExpr{Pred: "not-empty", Operand: &syntax.VarRefExpr{Name: "x"}}
-	v, err := EvalExpr(e, evalEnv(s))
+	v, err := evalLoweredExpr(e, evalEnv(s))
 	require.NoError(t, err)
 	b, err := AsBool(v)
 	require.NoError(t, err)
 	assert.True(t, b)
 
 	e = &syntax.UnaryExpr{Pred: "not-empty", Operand: &syntax.VarRefExpr{Name: "y"}}
-	v, err = EvalExpr(e, evalEnv(s))
+	v, err = evalLoweredExpr(e, evalEnv(s))
 	require.NoError(t, err)
 	b, err = AsBool(v)
 	require.NoError(t, err)
@@ -638,7 +637,7 @@ func TestIsUnaryPred(t *testing.T) {
 // ThreadExpr evaluation: LHS's Value is appended as the last arg to
 // the pipe's command, which then dispatches via ExecBind.
 
-func TestEvalExpr_Thread_AppendsScalarValueAsLastArg(t *testing.T) {
+func TestEvalIRExpr_Thread_AppendsScalarValueAsLastArg(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -655,7 +654,7 @@ func TestEvalExpr_Thread_AppendsScalarValueAsLastArg(t *testing.T) {
 		LHS:  &syntax.VarRefExpr{Name: "x"},
 		Args: []syntax.Expr{&syntax.LiteralExpr{Text: "jq"}, &syntax.LiteralExpr{Text: ".", Quoted: true}},
 	}
-	v, err := EvalExpr(pipe, env)
+	v, err := evalLoweredExpr(pipe, env)
 	require.NoError(t, err)
 	s2, err := v.Scalar()
 	require.NoError(t, err)
@@ -669,7 +668,7 @@ func TestEvalExpr_Thread_AppendsScalarValueAsLastArg(t *testing.T) {
 	assert.Equal(t, "42", scalar.Text)
 }
 
-func TestEvalExpr_Thread_AppendsStructuredValueAsLastArg(t *testing.T) {
+func TestEvalIRExpr_Thread_AppendsStructuredValueAsLastArg(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -686,7 +685,7 @@ func TestEvalExpr_Thread_AppendsStructuredValueAsLastArg(t *testing.T) {
 		LHS:  &syntax.VarRefExpr{Name: "p"},
 		Args: []syntax.Expr{&syntax.LiteralExpr{Text: "jq"}, &syntax.LiteralExpr{Text: ".id", Quoted: true}},
 	}
-	_, err := EvalExpr(pipe, env)
+	_, err := evalLoweredExpr(pipe, env)
 	require.NoError(t, err)
 	require.Len(t, captured, 3)
 	sva, ok := captured[2].(StructuredValueArg)
@@ -694,7 +693,7 @@ func TestEvalExpr_Thread_AppendsStructuredValueAsLastArg(t *testing.T) {
 	assert.Equal(t, semantics.OriginProgram, sva.Value.Kind())
 }
 
-func TestEvalExpr_Thread_NilLHSPassesAsNilArg(t *testing.T) {
+func TestEvalIRExpr_Thread_NilLHSPassesAsNilArg(t *testing.T) {
 	t.Parallel()
 
 	// Threading a null value into a command no longer errors at
@@ -717,7 +716,7 @@ func TestEvalExpr_Thread_NilLHSPassesAsNilArg(t *testing.T) {
 		LHS:  &syntax.VarRefExpr{Name: "x"},
 		Args: []syntax.Expr{&syntax.LiteralExpr{Text: "jq"}},
 	}
-	got, err := EvalExpr(pipe, env)
+	got, err := evalLoweredExpr(pipe, env)
 	require.NoError(t, err)
 	s2, _ := got.Scalar()
 	assert.Equal(t, "ran", s2)
@@ -726,7 +725,7 @@ func TestEvalExpr_Thread_NilLHSPassesAsNilArg(t *testing.T) {
 	assert.True(t, isNil, "thread LHS null surfaces as NilArg")
 }
 
-func TestEvalExpr_Thread_NoSubstitutionRunnerIsError(t *testing.T) {
+func TestEvalIRExpr_Thread_NoSubstitutionRunnerIsError(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -736,12 +735,12 @@ func TestEvalExpr_Thread_NoSubstitutionRunnerIsError(t *testing.T) {
 		LHS:  &syntax.VarRefExpr{Name: "x"},
 		Args: []syntax.Expr{&syntax.LiteralExpr{Text: "jq"}},
 	}
-	_, err := EvalExpr(e, env)
+	_, err := evalLoweredExpr(e, env)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "'|>'")
 }
 
-func TestEvalExpr_Thread_Chain_FeedsSuccessively(t *testing.T) {
+func TestEvalIRExpr_Thread_Chain_FeedsSuccessively(t *testing.T) {
 	t.Parallel()
 
 	// Build ((x | stage1) | stage2) manually; each stage's runner
@@ -766,14 +765,14 @@ func TestEvalExpr_Thread_Chain_FeedsSuccessively(t *testing.T) {
 		LHS:  inner,
 		Args: []syntax.Expr{&syntax.LiteralExpr{Text: "stage2"}},
 	}
-	v, err := EvalExpr(outer, env)
+	v, err := evalLoweredExpr(outer, env)
 	require.NoError(t, err)
 	got, err := v.Scalar()
 	require.NoError(t, err)
 	assert.Equal(t, "<<start>>", got)
 }
 
-func TestEvalArgs_Thread_WrapsThreadResultAsArg(t *testing.T) {
+func TestEvalIRArgs_Thread_WrapsThreadResultAsArg(t *testing.T) {
 	t.Parallel()
 
 	// A ThreadExpr used as a command argument: the evaluator should
@@ -792,7 +791,7 @@ func TestEvalArgs_Thread_WrapsThreadResultAsArg(t *testing.T) {
 		Args: []syntax.Expr{&syntax.LiteralExpr{Text: "stage"}},
 	}
 	exprs := []syntax.Expr{&syntax.LiteralExpr{Text: "outer"}, pipe}
-	out, err := EvalArgs(exprs, env)
+	out, err := evalLoweredArgs(exprs, env)
 	require.NoError(t, err)
 	require.Len(t, out, 2)
 	scalar, ok := out[1].(ScalarValueArg)
@@ -1450,36 +1449,20 @@ func TestExecSource_LetDestructure_NonListIsError(t *testing.T) {
 	assert.Contains(t, evErr.Error(), "not a list")
 }
 
-func TestNotEmpty_ASTAndIRAgreeOnOffSpecCarrier(t *testing.T) {
+func TestEvalIRExpr_NotEmpty_OffSpecCarrierIsError(t *testing.T) {
 	t.Parallel()
 
-	// The not-empty predicate has two definitions: evalUnary
-	// in expr.go (AST path) and the *ir.UnaryExpr case in
-	// evalIRExpr (IR path). The string / list / map /
-	// json.Number / float64 / bool branches are identical
-	// across both, but the fallback `default` diverges:
-	// the AST path delegates to Scalar() so an off-spec
-	// carrier surfaces as a clear "not-empty: value is not a
-	// scalar" error, while the IR path silently returns true.
 	// An int Value reaches the default branch because int is
-	// outside the documented carrier vocabulary; using it as
-	// the discriminator pins the agreement contract.
+	// outside the documented carrier vocabulary. The IR evaluator
+	// must surface that as a misuse rather than silently treating
+	// the value as non-empty.
 	s := NewSession()
 	s.Set("x", ValueFromAny(42))
-	env := evalEnv(s)
 	unary := &syntax.UnaryExpr{Pred: "not-empty", Operand: &syntax.VarRefExpr{Name: "x"}}
-	astVal, astErr := EvalExpr(unary, env)
 
-	irUnary := &ir.UnaryExpr{Pred: "not-empty", Operand: &ir.VarRefExpr{Name: "x"}}
-	irVal, irErr := EvalIRExpr(irUnary, env)
-
-	if astErr == nil && irErr == nil {
-		assert.Equal(t, astVal.Raw(), irVal.Raw(), "AST and IR must return the same value for not-empty on an off-spec carrier")
-		return
-	}
-	// Both must agree on the error case too: same outcome from both paths.
-	require.True(t, astErr != nil && irErr != nil,
-		"AST and IR must agree on not-empty for an off-spec carrier; got astErr=%v, irErr=%v", astErr, irErr)
+	_, err := evalLoweredExpr(unary, evalEnv(s))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not-empty")
 }
 
 func TestRuntime_HexLiteralArithmeticRejected(t *testing.T) {
@@ -1571,10 +1554,10 @@ func TestExecSource_Continue_OutsideLoopIsError(t *testing.T) {
 
 // --- logical operators ---------------------------------------------
 
-func TestEvalExpr_And_BothTrue(t *testing.T) {
+func TestEvalIRExpr_And_BothTrue(t *testing.T) {
 	t.Parallel()
 
-	v, err := EvalExpr(&syntax.LogicalExpr{
+	v, err := evalLoweredExpr(&syntax.LogicalExpr{
 		Op:    "and",
 		Left:  &syntax.BinaryExpr{Left: &syntax.LiteralExpr{Text: "1"}, Op: "==", Right: &syntax.LiteralExpr{Text: "1"}},
 		Right: &syntax.BinaryExpr{Left: &syntax.LiteralExpr{Text: "2"}, Op: "==", Right: &syntax.LiteralExpr{Text: "2"}},
@@ -1585,14 +1568,14 @@ func TestEvalExpr_And_BothTrue(t *testing.T) {
 	assert.True(t, b)
 }
 
-func TestEvalExpr_And_ShortCircuitsOnFalseLeft(t *testing.T) {
+func TestEvalIRExpr_And_ShortCircuitsOnFalseLeft(t *testing.T) {
 	t.Parallel()
 
 	// Right operand would error on Scalar() — if the short-circuit
 	// fires correctly, it's never evaluated.
 	s := NewSession()
 	s.Set("m", ValueFromMap(map[string]any{"x": 1}))
-	v, err := EvalExpr(&syntax.LogicalExpr{
+	v, err := evalLoweredExpr(&syntax.LogicalExpr{
 		Op:    "and",
 		Left:  &syntax.BinaryExpr{Left: &syntax.LiteralExpr{Text: "1"}, Op: "==", Right: &syntax.LiteralExpr{Text: "2"}},
 		Right: &syntax.VarRefExpr{Name: "m"},
@@ -1603,12 +1586,12 @@ func TestEvalExpr_And_ShortCircuitsOnFalseLeft(t *testing.T) {
 	assert.False(t, b)
 }
 
-func TestEvalExpr_Or_ShortCircuitsOnTrueLeft(t *testing.T) {
+func TestEvalIRExpr_Or_ShortCircuitsOnTrueLeft(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
 	s.Set("m", ValueFromMap(map[string]any{"x": 1}))
-	v, err := EvalExpr(&syntax.LogicalExpr{
+	v, err := evalLoweredExpr(&syntax.LogicalExpr{
 		Op:    "or",
 		Left:  &syntax.BinaryExpr{Left: &syntax.LiteralExpr{Text: "1"}, Op: "==", Right: &syntax.LiteralExpr{Text: "1"}},
 		Right: &syntax.VarRefExpr{Name: "m"},
@@ -1619,10 +1602,10 @@ func TestEvalExpr_Or_ShortCircuitsOnTrueLeft(t *testing.T) {
 	assert.True(t, b)
 }
 
-func TestEvalExpr_Or_BothFalse(t *testing.T) {
+func TestEvalIRExpr_Or_BothFalse(t *testing.T) {
 	t.Parallel()
 
-	v, err := EvalExpr(&syntax.LogicalExpr{
+	v, err := evalLoweredExpr(&syntax.LogicalExpr{
 		Op:    "or",
 		Left:  &syntax.BinaryExpr{Left: &syntax.LiteralExpr{Text: "1"}, Op: "==", Right: &syntax.LiteralExpr{Text: "2"}},
 		Right: &syntax.BinaryExpr{Left: &syntax.LiteralExpr{Text: "3"}, Op: "==", Right: &syntax.LiteralExpr{Text: "4"}},
@@ -1633,10 +1616,10 @@ func TestEvalExpr_Or_BothFalse(t *testing.T) {
 	assert.False(t, b)
 }
 
-func TestEvalExpr_Not_Negates(t *testing.T) {
+func TestEvalIRExpr_Not_Negates(t *testing.T) {
 	t.Parallel()
 
-	v, err := EvalExpr(&syntax.NotExpr{
+	v, err := evalLoweredExpr(&syntax.NotExpr{
 		Operand: &syntax.BinaryExpr{Left: &syntax.LiteralExpr{Text: "1"}, Op: "==", Right: &syntax.LiteralExpr{Text: "1"}},
 	}, evalEnv(NewSession()))
 	require.NoError(t, err)
@@ -1645,22 +1628,22 @@ func TestEvalExpr_Not_Negates(t *testing.T) {
 	assert.False(t, b)
 }
 
-func TestEvalExpr_Not_RejectsNonBool(t *testing.T) {
+func TestEvalIRExpr_Not_RejectsNonBool(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
 	s.Set("x", StringValue("hello"))
-	_, err := EvalExpr(&syntax.NotExpr{Operand: &syntax.VarRefExpr{Name: "x"}}, evalEnv(s))
+	_, err := evalLoweredExpr(&syntax.NotExpr{Operand: &syntax.VarRefExpr{Name: "x"}}, evalEnv(s))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not")
 }
 
-func TestEvalExpr_And_RejectsNonBoolLeft(t *testing.T) {
+func TestEvalIRExpr_And_RejectsNonBoolLeft(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
 	s.Set("x", StringValue("hello"))
-	_, err := EvalExpr(&syntax.LogicalExpr{
+	_, err := evalLoweredExpr(&syntax.LogicalExpr{
 		Op:    "and",
 		Left:  &syntax.VarRefExpr{Name: "x"},
 		Right: &syntax.BinaryExpr{Left: &syntax.LiteralExpr{Text: "1"}, Op: "==", Right: &syntax.LiteralExpr{Text: "1"}},
@@ -1680,14 +1663,14 @@ func TestEvalExpr_And_RejectsNonBoolLeft(t *testing.T) {
 // helper keeps the call sites short.
 func scalarTextEval(t *testing.T, e syntax.Expr) string {
 	t.Helper()
-	v, err := EvalExpr(e, evalEnv(NewSession()))
+	v, err := evalLoweredExpr(e, evalEnv(NewSession()))
 	require.NoError(t, err)
 	s, err := v.Scalar()
 	require.NoError(t, err)
 	return s
 }
 
-func TestEvalExpr_Arithmetic_AllOps(t *testing.T) {
+func TestEvalIRExpr_Arithmetic_AllOps(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
@@ -1722,7 +1705,7 @@ func TestEvalExpr_Arithmetic_AllOps(t *testing.T) {
 	}
 }
 
-func TestEvalExpr_Arithmetic_DivideByZero(t *testing.T) {
+func TestEvalIRExpr_Arithmetic_DivideByZero(t *testing.T) {
 	t.Parallel()
 
 	for _, op := range []string{"/", "%"} {
@@ -1733,14 +1716,14 @@ func TestEvalExpr_Arithmetic_DivideByZero(t *testing.T) {
 				Op:    op,
 				Right: &syntax.LiteralExpr{Text: "0"},
 			}
-			_, err := EvalExpr(e, evalEnv(NewSession()))
+			_, err := evalLoweredExpr(e, evalEnv(NewSession()))
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "division by zero")
 		})
 	}
 }
 
-func TestEvalExpr_Arithmetic_NonNumericOperand(t *testing.T) {
+func TestEvalIRExpr_Arithmetic_NonNumericOperand(t *testing.T) {
 	t.Parallel()
 
 	// "abc" + 1: Python-style string concat is deliberately out
@@ -1751,19 +1734,19 @@ func TestEvalExpr_Arithmetic_NonNumericOperand(t *testing.T) {
 		Op:    "+",
 		Right: &syntax.LiteralExpr{Text: "1"},
 	}
-	_, err := EvalExpr(e, evalEnv(NewSession()))
+	_, err := evalLoweredExpr(e, evalEnv(NewSession()))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not numeric")
 }
 
-func TestEvalExpr_Negate_Literal(t *testing.T) {
+func TestEvalIRExpr_Negate_Literal(t *testing.T) {
 	t.Parallel()
 
 	e := &syntax.NegateExpr{Operand: &syntax.LiteralExpr{Text: "5"}}
 	assert.Equal(t, "-5", scalarTextEval(t, e))
 }
 
-func TestEvalExpr_Negate_DoubleNegate(t *testing.T) {
+func TestEvalIRExpr_Negate_DoubleNegate(t *testing.T) {
 	t.Parallel()
 
 	// -(-5) → 5: stacks resolve inside-out.
@@ -1771,28 +1754,28 @@ func TestEvalExpr_Negate_DoubleNegate(t *testing.T) {
 	assert.Equal(t, "5", scalarTextEval(t, e))
 }
 
-func TestEvalExpr_Negate_StructuredIsError(t *testing.T) {
+func TestEvalIRExpr_Negate_StructuredIsError(t *testing.T) {
 	t.Parallel()
 
 	// Negating a map is nonsense — must error rather than panic.
 	s := NewSession()
 	s.Set("m", ValueFromMap(map[string]any{"x": 1}))
-	_, err := EvalExpr(&syntax.NegateExpr{Operand: &syntax.VarRefExpr{Name: "m"}}, evalEnv(s))
+	_, err := evalLoweredExpr(&syntax.NegateExpr{Operand: &syntax.VarRefExpr{Name: "m"}}, evalEnv(s))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "negate")
 }
 
-func TestEvalExpr_Negate_NonNumericScalarIsError(t *testing.T) {
+func TestEvalIRExpr_Negate_NonNumericScalarIsError(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
 	s.Set("x", StringValue("hello"))
-	_, err := EvalExpr(&syntax.NegateExpr{Operand: &syntax.VarRefExpr{Name: "x"}}, evalEnv(s))
+	_, err := evalLoweredExpr(&syntax.NegateExpr{Operand: &syntax.VarRefExpr{Name: "x"}}, evalEnv(s))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not numeric")
 }
 
-func TestEvalExpr_Arithmetic_InComparisonPosition(t *testing.T) {
+func TestEvalIRExpr_Arithmetic_InComparisonPosition(t *testing.T) {
 	t.Parallel()
 
 	// 3 + 4 > 5 → true.  Exercises the full chain:
@@ -1807,14 +1790,14 @@ func TestEvalExpr_Arithmetic_InComparisonPosition(t *testing.T) {
 		Op:    ">",
 		Right: &syntax.LiteralExpr{Text: "5"},
 	}
-	v, err := EvalExpr(e, evalEnv(NewSession()))
+	v, err := evalLoweredExpr(e, evalEnv(NewSession()))
 	require.NoError(t, err)
 	b, err := AsBool(v)
 	require.NoError(t, err)
 	assert.True(t, b)
 }
 
-func TestEvalExpr_Arithmetic_LetRHS(t *testing.T) {
+func TestEvalIRExpr_Arithmetic_LetRHS(t *testing.T) {
 	t.Parallel()
 
 	// let n = $count + 1: parse, evaluate, confirm the session
@@ -1830,7 +1813,7 @@ func TestEvalExpr_Arithmetic_LetRHS(t *testing.T) {
 	assert.Equal(t, "11", got)
 }
 
-func TestEvalExpr_InterpString_LiteralOnly(t *testing.T) {
+func TestEvalIRExpr_InterpString_LiteralOnly(t *testing.T) {
 	t.Parallel()
 
 	// An InterpStringExpr with only literal segments (rare in
@@ -1844,14 +1827,14 @@ func TestEvalExpr_InterpString_LiteralOnly(t *testing.T) {
 			{Literal: "world"},
 		},
 	}
-	v, err := EvalExpr(e, evalEnv(s))
+	v, err := evalLoweredExpr(e, evalEnv(s))
 	require.NoError(t, err)
 	got, err := v.Scalar()
 	require.NoError(t, err)
 	assert.Equal(t, "hello world", got)
 }
 
-func TestEvalExpr_InterpString_VarRef(t *testing.T) {
+func TestEvalIRExpr_InterpString_VarRef(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -1862,14 +1845,14 @@ func TestEvalExpr_InterpString_VarRef(t *testing.T) {
 			{Literal: "s"},
 		},
 	}
-	v, err := EvalExpr(e, evalEnv(s))
+	v, err := evalLoweredExpr(e, evalEnv(s))
 	require.NoError(t, err)
 	got, err := v.Scalar()
 	require.NoError(t, err)
 	assert.Equal(t, "60s", got)
 }
 
-func TestEvalExpr_InterpString_MixedSegments(t *testing.T) {
+func TestEvalIRExpr_InterpString_MixedSegments(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -1881,14 +1864,14 @@ func TestEvalExpr_InterpString_MixedSegments(t *testing.T) {
 			{Literal: "/map"},
 		},
 	}
-	v, err := EvalExpr(e, evalEnv(s))
+	v, err := evalLoweredExpr(e, evalEnv(s))
 	require.NoError(t, err)
 	got, err := v.Scalar()
 	require.NoError(t, err)
 	assert.Equal(t, "/sys/fs/bpf/prog-42/map", got)
 }
 
-func TestEvalExpr_InterpString_StructuredValueCompactJSON(t *testing.T) {
+func TestEvalIRExpr_InterpString_StructuredValueCompactJSON(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -1898,7 +1881,7 @@ func TestEvalExpr_InterpString_StructuredValueCompactJSON(t *testing.T) {
 			{Expr: &syntax.VarRefExpr{Name: "r"}},
 		},
 	}
-	v, err := EvalExpr(e, evalEnv(s))
+	v, err := evalLoweredExpr(e, evalEnv(s))
 	require.NoError(t, err)
 	got, err := v.Scalar()
 	require.NoError(t, err)
@@ -1908,7 +1891,7 @@ func TestEvalExpr_InterpString_StructuredValueCompactJSON(t *testing.T) {
 	assert.Equal(t, `{"exit_code":0,"stdout":"hi"}`, got)
 }
 
-func TestEvalExpr_InterpString_ArrayCompactJSON(t *testing.T) {
+func TestEvalIRExpr_InterpString_ArrayCompactJSON(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -1919,14 +1902,14 @@ func TestEvalExpr_InterpString_ArrayCompactJSON(t *testing.T) {
 			{Expr: &syntax.VarRefExpr{Name: "xs"}},
 		},
 	}
-	v, err := EvalExpr(e, evalEnv(s))
+	v, err := evalLoweredExpr(e, evalEnv(s))
 	require.NoError(t, err)
 	got, err := v.Scalar()
 	require.NoError(t, err)
 	assert.Equal(t, "items=[1,2,3]", got)
 }
 
-func TestEvalExpr_InterpString_NilRendersAsNull(t *testing.T) {
+func TestEvalIRExpr_InterpString_NilRendersAsNull(t *testing.T) {
 	t.Parallel()
 
 	// A nil Value in the interpolation slot renders as "null" so
@@ -1940,7 +1923,7 @@ func TestEvalExpr_InterpString_NilRendersAsNull(t *testing.T) {
 	assert.Equal(t, "null", got)
 }
 
-func TestEvalExpr_InterpString_EndToEnd(t *testing.T) {
+func TestEvalIRExpr_InterpString_EndToEnd(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
@@ -2001,7 +1984,7 @@ func TestEvalExpr_InterpString_EndToEnd(t *testing.T) {
 	}
 }
 
-func TestEvalExpr_InterpString_UndefinedVar(t *testing.T) {
+func TestEvalIRExpr_InterpString_UndefinedVar(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -2010,7 +1993,7 @@ func TestEvalExpr_InterpString_UndefinedVar(t *testing.T) {
 			{Expr: &syntax.VarRefExpr{Name: "missing"}},
 		},
 	}
-	_, err := EvalExpr(e, evalEnv(s))
+	_, err := evalLoweredExpr(e, evalEnv(s))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "undefined variable")
 }

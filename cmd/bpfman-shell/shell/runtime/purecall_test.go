@@ -92,7 +92,7 @@ func TestParse_PureCall_VarRefArg(t *testing.T) {
 	assert.Equal(t, "n", vr.Name)
 }
 
-func TestEvalExpr_PureCall_DispatchesThroughExecBind(t *testing.T) {
+func TestEvalIRExpr_PureCall_DispatchesThroughExecBind(t *testing.T) {
 	t.Parallel()
 
 	name := "u32le"
@@ -108,7 +108,7 @@ func TestEvalExpr_PureCall_DispatchesThroughExecBind(t *testing.T) {
 		Name: name,
 		Args: []syntax.Expr{&syntax.LiteralExpr{Text: "42"}},
 	}
-	v, err := EvalExpr(call, env)
+	v, err := evalLoweredExpr(call, env)
 	require.NoError(t, err)
 	s, err := v.Scalar()
 	require.NoError(t, err)
@@ -127,18 +127,18 @@ func TestEvalExpr_PureCall_DispatchesThroughExecBind(t *testing.T) {
 	assert.Equal(t, "42", word.Text)
 }
 
-func TestEvalExpr_PureCall_NoExecBindIsError(t *testing.T) {
+func TestEvalIRExpr_PureCall_NoExecBindIsError(t *testing.T) {
 	t.Parallel()
 
 	name := "u32le"
 	env := &Env{Session: NewSession()}
 	call := &syntax.PureCallExpr{Name: name, Args: []syntax.Expr{&syntax.LiteralExpr{Text: "1"}}}
-	_, err := EvalExpr(call, env)
+	_, err := evalLoweredExpr(call, env)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), name)
 }
 
-func TestEvalExpr_PureCall_FailingHandlerIsExpressionError(t *testing.T) {
+func TestEvalIRExpr_PureCall_FailingHandlerIsExpressionError(t *testing.T) {
 	t.Parallel()
 
 	name := "u32le"
@@ -149,12 +149,12 @@ func TestEvalExpr_PureCall_FailingHandlerIsExpressionError(t *testing.T) {
 		},
 	}
 	call := &syntax.PureCallExpr{Name: name, Args: []syntax.Expr{&syntax.LiteralExpr{Text: "1"}}}
-	_, err := EvalExpr(call, env)
+	_, err := evalLoweredExpr(call, env)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "bad")
 }
 
-func TestEvalExpr_PureCall_InsideInterpString(t *testing.T) {
+func TestEvalIRExpr_PureCall_InsideInterpString(t *testing.T) {
 	t.Parallel()
 
 	name := "u32le"
@@ -178,7 +178,7 @@ func TestEvalExpr_PureCall_InsideInterpString(t *testing.T) {
 			return StringValue("ff"), nil
 		}),
 	}
-	v, err := EvalExpr(let.RHS, env)
+	v, err := evalLoweredExpr(let.RHS, env)
 	require.NoError(t, err)
 	s, err := v.Scalar()
 	require.NoError(t, err)

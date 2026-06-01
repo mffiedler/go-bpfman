@@ -70,6 +70,19 @@ func lowerIRExpr(expr syntax.Expr) ir.Expr {
 	}
 }
 
+// Expr lowers one parsed expression into the expression node used by
+// the IR runtime. It is the public expression-only counterpart to
+// Lower for callers that need to evaluate or inspect a standalone
+// expression without manufacturing a whole statement.
+func Expr(expr syntax.Expr) ir.Expr {
+	return lowerIRExpr(expr)
+}
+
+// Exprs lowers an ordered expression list into IR expression nodes.
+func Exprs(exprs []syntax.Expr) []ir.Expr {
+	return lowerIRExprs(exprs)
+}
+
 func lowerIRMatchesBlock(e *syntax.MatchesBlockExpr) *ir.MatchesBlockExpr {
 	out := &ir.MatchesBlockExpr{
 		Entries:    make([]ir.MatchEntry, len(e.Entries)),

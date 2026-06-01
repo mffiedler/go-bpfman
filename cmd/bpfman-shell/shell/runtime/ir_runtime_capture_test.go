@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/ir"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
 )
 
 // runtimeCapture summarises everything observable from running
@@ -57,18 +57,20 @@ func captureLoweredRuntime(t *testing.T, src string, opts runtimeCaptureOpts) ru
 	}
 
 	var calls []execCall
-	assertFn := func(s *syntax.AssertStmt, env *Env) error {
-		v, err := EvalExpr(requireAssertExprClause(t, s), env)
+	assertFn := func(a *ir.Assert, env *Env) error {
+		clause, ok := a.Clause.(*ir.AssertExprClause)
+		require.True(t, ok, "assert clause = %T, want *ir.AssertExprClause", a.Clause)
+		v, err := EvalIRExpr(clause.Expr, env)
 		if err != nil {
 			return err
 		}
-		ok, err := AsBool(v)
+		pass, err := AsBool(v)
 		if err != nil {
 			return err
 		}
-		if !ok {
-			if s.IsRequire {
-				return &RequireFailure{Span: s.Span, Expr: fmt.Sprintf("%v", v.Raw())}
+		if !pass {
+			if a.IsRequire {
+				return &RequireFailure{Span: a.Span, Expr: fmt.Sprintf("%v", v.Raw())}
 			}
 			env.Session.RecordAssertFailure()
 		}
@@ -89,8 +91,7 @@ func captureLoweredRuntime(t *testing.T, src string, opts runtimeCaptureOpts) ru
 			}
 			return BindResult{Rc: OkEnvelope()}, nil
 		},
-		ExecAssertStmt: assertFn,
-		ExecAssertIR:   testExecAssertIR(assertFn),
+		ExecAssertIR: assertFn,
 	}
 
 	lp, err := lowerToIR(prog)

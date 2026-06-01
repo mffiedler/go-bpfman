@@ -6,8 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/ir"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
 )
@@ -497,22 +498,24 @@ assert 1 == 1
 // runForBindings runs src through one engine and returns the
 // Env so tests can probe final Session bindings. The Env's
 // ExecCommand and ExecBind are no-op recorders that always
-// return ok; ExecAssertStmt records a Session counter so
-// asserts in the script do not fall over for lack of an
-// assertion executor.
+// return ok; ExecAssertIR records a Session counter so asserts
+// in the script do not fall over for lack of an assertion
+// executor.
 func runForBindings(t *testing.T, src string) *Env {
 	t.Helper()
 	prog := parseProgram(t, src)
-	assertFn := func(s *syntax.AssertStmt, env *Env) error {
-		v, err := EvalExpr(requireAssertExprClause(t, s), env)
+	assertFn := func(a *ir.Assert, env *Env) error {
+		clause, ok := a.Clause.(*ir.AssertExprClause)
+		require.True(t, ok, "assert clause = %T, want *ir.AssertExprClause", a.Clause)
+		v, err := EvalIRExpr(clause.Expr, env)
 		if err != nil {
 			return err
 		}
-		ok, err := AsBool(v)
+		pass, err := AsBool(v)
 		if err != nil {
 			return err
 		}
-		if !ok {
+		if !pass {
 			env.Session.RecordAssertFailure()
 		}
 		return nil
@@ -525,8 +528,7 @@ func runForBindings(t *testing.T, src string) *Env {
 		ExecBind: func(args []Arg, span source.Span) (BindResult, error) {
 			return BindResult{Rc: OkEnvelope()}, nil
 		},
-		ExecAssertStmt: assertFn,
-		ExecAssertIR:   testExecAssertIR(assertFn),
+		ExecAssertIR: assertFn,
 	}
 	lp, err := lowerToIR(prog)
 	if err != nil {
@@ -643,14 +645,13 @@ func commandHead(args []Arg) string {
 }
 
 // runAssertCounted runs src through the lowered engine with an Env that
-// counts ExecAssertStmt invocations and records ExecCommand /
-// ExecBind.
+// counts ExecAssertIR invocations and records ExecCommand / ExecBind.
 func runAssertCounted(t *testing.T, src string) (int, []execCall) {
 	t.Helper()
 	prog := parseProgram(t, src)
 	var calls []execCall
 	asserts := 0
-	assertFn := func(s *syntax.AssertStmt, env *Env) error {
+	assertFn := func(*ir.Assert, *Env) error {
 		asserts++
 		return nil
 	}
@@ -664,8 +665,7 @@ func runAssertCounted(t *testing.T, src string) (int, []execCall) {
 			calls = append(calls, execCall{Lane: "bind", Argv: renderArgv(args)})
 			return BindResult{Rc: OkEnvelope()}, nil
 		},
-		ExecAssertStmt: assertFn,
-		ExecAssertIR:   testExecAssertIR(assertFn),
+		ExecAssertIR: assertFn,
 	}
 	lp, err := lowerToIR(prog)
 	if err != nil {
