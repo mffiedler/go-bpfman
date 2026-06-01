@@ -71,6 +71,10 @@ func TestParallel_GRPC(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("requires root (bpfman load)")
 	}
+	if _, err := os.Stat(kmodTargetsRoot); err != nil {
+		t.Skipf("bpfman_e2e_targets kmod not available at %s: %v (load the module first)",
+			kmodTargetsRoot, err)
+	}
 
 	specs := []typeSpec{
 		kprobeSpec(),
@@ -155,6 +159,13 @@ func TestParallel_GRPC(t *testing.T) {
 const (
 	defaultGoroutines = 32
 	defaultIterations = 4
+)
+
+const (
+	kmodTargetsRoot       = "/sys/kernel/debug/bpfman_e2e"
+	grpcKmodTargetFunc    = "bpfman_e2e_target_0"
+	grpcKmodTracepoint    = "bpfman_e2e/bpfman_e2e_ping"
+	grpcKmodTracepointObj = "tracepoint_kmod_counter.bpf.o"
 )
 
 // runParallelLifecycles fans BPFMAN_GRPC_GOROUTINES goroutines,
@@ -323,12 +334,12 @@ func constantAttachBuilder(info *pb.AttachInfo) func(*testing.T, int) func() *pb
 func kprobeSpec() typeSpec {
 	return typeSpec{
 		name:     "kprobe",
-		object:   "kprobe_counter.bpf.o",
-		progName: "kprobe_counter",
+		object:   "multi_prog_kprobe_kmod_counter.bpf.o",
+		progName: "mkp_a",
 		enumType: pb.BpfmanProgramType_KPROBE,
 		attachBuilder: constantAttachBuilder(&pb.AttachInfo{
 			Info: &pb.AttachInfo_KprobeAttachInfo{
-				KprobeAttachInfo: &pb.KprobeAttachInfo{FnName: "do_unlinkat"},
+				KprobeAttachInfo: &pb.KprobeAttachInfo{FnName: grpcKmodTargetFunc},
 			},
 		}),
 	}
@@ -337,13 +348,13 @@ func kprobeSpec() typeSpec {
 func tracepointSpec() typeSpec {
 	return typeSpec{
 		name:     "tracepoint",
-		object:   "tracepoint_counter.bpf.o",
-		progName: "tracepoint_kill_recorder",
+		object:   grpcKmodTracepointObj,
+		progName: "tracepoint_kmod_recorder",
 		enumType: pb.BpfmanProgramType_TRACEPOINT,
 		attachBuilder: constantAttachBuilder(&pb.AttachInfo{
 			Info: &pb.AttachInfo_TracepointAttachInfo{
 				TracepointAttachInfo: &pb.TracepointAttachInfo{
-					Tracepoint: "syscalls/sys_enter_kill",
+					Tracepoint: grpcKmodTracepoint,
 				},
 			},
 		}),
@@ -353,12 +364,12 @@ func tracepointSpec() typeSpec {
 func fentrySpec() typeSpec {
 	return typeSpec{
 		name:     "fentry",
-		object:   "fentry_counter.bpf.o",
+		object:   "fentry_kmod_exact.bpf.o",
 		progName: "test_fentry",
 		enumType: pb.BpfmanProgramType_FENTRY,
 		loadInfo: &pb.ProgSpecificInfo{
 			Info: &pb.ProgSpecificInfo_FentryLoadInfo{
-				FentryLoadInfo: &pb.FentryLoadInfo{FnName: "do_unlinkat"},
+				FentryLoadInfo: &pb.FentryLoadInfo{FnName: grpcKmodTargetFunc},
 			},
 		},
 		attachBuilder: constantAttachBuilder(&pb.AttachInfo{
@@ -372,12 +383,12 @@ func fentrySpec() typeSpec {
 func fexitSpec() typeSpec {
 	return typeSpec{
 		name:     "fexit",
-		object:   "fentry_counter.bpf.o",
+		object:   "fexit_kmod_exact.bpf.o",
 		progName: "test_fexit",
 		enumType: pb.BpfmanProgramType_FEXIT,
 		loadInfo: &pb.ProgSpecificInfo{
 			Info: &pb.ProgSpecificInfo_FexitLoadInfo{
-				FexitLoadInfo: &pb.FexitLoadInfo{FnName: "do_unlinkat"},
+				FexitLoadInfo: &pb.FexitLoadInfo{FnName: grpcKmodTargetFunc},
 			},
 		},
 		attachBuilder: constantAttachBuilder(&pb.AttachInfo{

@@ -15,10 +15,11 @@ import (
 )
 
 // Workload is a handle to a workload-driver subprocess (re-execed
-// e2e.test under BPFMAN_E2E_MODE=workload-driver). It exposes
-// ergonomic methods for firing fixed bursts of syscalls in its own
-// PID context, so BPF programs that filter on the driver's PID can
-// assert exact counts even when many parallel tests share a binary.
+// e2e.test under BPFMAN_E2E_MODE=workload-driver). It exposes an
+// ergonomic method for firing fixed bursts of userspace calls in its
+// own PID context, so BPF programs that filter on the driver's PID
+// can assert exact counts even when many parallel tests share a
+// binary.
 type Workload struct {
 	t       *testing.T
 	cmd     *exec.Cmd
@@ -39,23 +40,6 @@ func (w *Workload) PidBytes() []byte {
 	var b [4]byte
 	binary.LittleEndian.PutUint32(b[:], uint32(w.pid))
 	return b[:]
-}
-
-// Kill sends N SIGUSR1 signals to the driver's own PID, waiting for
-// the driver's NDJSON ack before returning. Each signal fires
-// sys_enter_kill in the driver's PID context.
-func (w *Workload) Kill(n int) {
-	w.t.Helper()
-	w.do(workloadCommand{Op: "kill", N: n})
-}
-
-// Unlink creates and os.Remove()s N temp files inside the driver's
-// own temp dir, waiting for the ack before returning. Each remove
-// fires sys_enter_unlinkat and do_unlinkat in the driver's PID
-// context.
-func (w *Workload) Unlink(n int) {
-	w.t.Helper()
-	w.do(workloadCommand{Op: "unlink", N: n})
 }
 
 // Uprobe calls e2e_uprobe_call_malloc N times in the driver's own
@@ -92,7 +76,7 @@ func (w *Workload) Close() {
 
 // startWorkload spawns the workload-driver subprocess and registers
 // a t.Cleanup that closes it. The returned Workload is ready for
-// Kill / Unlink calls.
+// Uprobe calls.
 func startWorkload(t *testing.T) *Workload {
 	t.Helper()
 	require.NotEmpty(t, selfExe, "selfExe not initialised; TestMain must have run")

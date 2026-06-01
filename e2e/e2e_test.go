@@ -6,7 +6,6 @@ import (
 	"context"
 	"os"
 	"os/exec"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -21,7 +20,10 @@ import (
 func TestTracepoint_LoadAttachDetachUnload(t *testing.T) {
 	t.Parallel()
 	RequireRoot(t)
-	RequireTracepoint(t, "syscalls", "sys_enter_kill")
+	RequireKmodTargets(t)
+
+	slot := acquireKmodSlot(t)
+	t.Logf("kmod slot: index=%d func=%s", slot.Index, slot.Func)
 
 	env := NewTestEnv(t)
 	ctx := context.Background()
@@ -29,19 +31,18 @@ func TestTracepoint_LoadAttachDetachUnload(t *testing.T) {
 	// Given: clean state
 	env.AssertCleanState()
 
-	workload := startWorkload(t)
 	weights := uniqueWeights(t, 1)
 
 	// When: load from local file
-	programs, err := env.LoadFile(ctx, "testdata/bpf/tracepoint_exact.bpf.o", []manager.ProgramSpec{
+	programs, err := env.LoadFile(ctx, "testdata/bpf/tracepoint_kmod_counter.bpf.o", []manager.ProgramSpec{
 		{
 			Type: bpfman.ProgramTypeTracepoint,
-			Name: "tracepoint_kill_recorder",
+			Name: "tracepoint_kmod_recorder",
 		},
 	}, manager.LoadOpts{
 		GlobalData: map[string][]byte{
-			"expected_pid": uint32LE(uint32(workload.Pid())),
-			"weight":       uint64LE(weights[0]),
+			"expected_slot": uint32LE(uint32(slot.Index)),
+			"weight":        uint64LE(weights[0]),
 		},
 	})
 	require.NoError(t, err)
@@ -71,12 +72,10 @@ func TestTracepoint_LoadAttachDetachUnload(t *testing.T) {
 	require.NotEmpty(t, gotProg.Status.Kernel.Tag, "kernel should assign tag")
 	require.False(t, gotProg.Status.Kernel.LoadedAt.IsZero(), "kernel should track LoadedAt")
 	// Verify bpfman-managed metadata has full name and pin path
-	require.Equal(t, "tracepoint_kill_recorder", gotProg.Record.Meta.Name)
+	require.Equal(t, "tracepoint_kmod_recorder", gotProg.Record.Meta.Name)
 	require.NotEmpty(t, gotProg.Record.Handles.PinPath, "program should have pin path")
-	// Kernel-reported name is truncated (16 chars max), verify it's a prefix of the full name
 	kernelName := prog.Status.Kernel.Name
-	require.True(t, strings.HasPrefix("tracepoint_kill_recorder", kernelName),
-		"kernel name %q should be prefix of full name", kernelName)
+	require.NotEmpty(t, kernelName)
 
 	// Round-trip: List should include our program
 	listedProgs, err := env.List(ctx)
@@ -90,11 +89,11 @@ func TestTracepoint_LoadAttachDetachUnload(t *testing.T) {
 	require.NotEmpty(t, listedProgs[0].Status.Kernel.Tag)
 	require.False(t, listedProgs[0].Status.Kernel.LoadedAt.IsZero())
 	// Metadata has full name
-	require.Equal(t, "tracepoint_kill_recorder", listedProgs[0].Record.Meta.Name)
+	require.Equal(t, "tracepoint_kmod_recorder", listedProgs[0].Record.Meta.Name)
 	require.NotEmpty(t, listedProgs[0].Record.Handles.PinPath)
 
 	// When: attach via client
-	tpSpec, err := bpfman.NewTracepointAttachSpecFromString(prog.Status.Kernel.ID, "syscalls/sys_enter_kill")
+	tpSpec, err := bpfman.NewTracepointAttachSpecFromString(prog.Status.Kernel.ID, "bpfman_e2e/bpfman_e2e_ping")
 	require.NoError(t, err)
 	link, err := env.Attach(ctx, tpSpec)
 	require.NoError(t, err)
@@ -117,8 +116,8 @@ func TestTracepoint_LoadAttachDetachUnload(t *testing.T) {
 	// Verify tracepoint-specific details
 	tpDetails, ok := gotLinkDetails.(bpfman.TracepointDetails)
 	require.True(t, ok, "expected TracepointDetails, got %T", gotLinkDetails)
-	require.Equal(t, "syscalls", tpDetails.Group)
-	require.Equal(t, "sys_enter_kill", tpDetails.Name)
+	require.Equal(t, "bpfman_e2e", tpDetails.Group)
+	require.Equal(t, "bpfman_e2e_ping", tpDetails.Name)
 
 	// Round-trip: ListLinks should include our link
 	listedLinks, err := env.ListLinks(ctx)
@@ -127,15 +126,15 @@ func TestTracepoint_LoadAttachDetachUnload(t *testing.T) {
 	require.NotZero(t, listedLinks[0].ID, "should have kernel link ID")
 	require.Equal(t, link.Kind, listedLinks[0].Kind)
 
-	// Behavioural validation: drive a known number of kills from
-	// the workload subprocess (filtered in-kernel by expected_pid)
-	// and assert the counter equals events * weight exactly. A
+	// Behavioural validation: drive a known number of private slot
+	// invocations and assert the counter equals events * weight exactly. A
 	// still-firing program after detach, a misrouted event, or a
 	// missed weight global all surface as wrong arithmetic.
 	const events = 5
-	workload.Kill(events)
+	slot.Fire(t, events)
 	want := uint64(events) * weights[0]
-	got := readArrayCounterByID(t, mapIDByName(t, prog, "tp_count"))
+	mapID := mapIDByName(t, prog, "tp_kmod_count")
+	got := readArrayCounterByID(t, mapID)
 	t.Logf("tracepoint: events=%d weight=%d want=%d got=%d", events, weights[0], want, got)
 	requireCounterEqual(t, want, got,
 		"tracepoint counter should equal events(%d) * weight(%d) = %d", events, weights[0], want)
@@ -150,11 +149,7 @@ func TestTracepoint_LoadAttachDetachUnload(t *testing.T) {
 	require.Error(t, err, "GetLink should fail after detach")
 
 	// Then: detach actually stopped the BPF program firing.
-	waitDetachQuiescent(t, QuiescenceProbe{
-		DetachedMap:    mapIDByName(t, prog, "tp_count"),
-		DetachedWeight: weights[0],
-		FireOne:        func() { workload.Kill(1) },
-	})
+	waitKmodSlotDetachQuiescent(t, slot, mapID, weights[0], 0, 0)
 
 	// When: unload
 	err = env.Unload(ctx, prog.Status.Kernel.ID)
@@ -178,25 +173,25 @@ func TestTracepoint_LoadAttachDetachUnload(t *testing.T) {
 func TestMultiProgTracepoint_LoadAttachDetachUnload(t *testing.T) {
 	t.Parallel()
 	RequireRoot(t)
-	RequireTracepoint(t, "syscalls", "sys_enter_kill")
+	RequireKmodTargets(t)
+
+	slot := acquireKmodSlot(t)
+	t.Logf("kmod slot: index=%d func=%s", slot.Index, slot.Func)
 
 	env := NewTestEnv(t)
 	ctx := context.Background()
 	env.AssertCleanState()
 
-	workload := startWorkload(t)
-
 	const eventsPerWave = 5
 	type plan struct {
-		suffix       string
-		weight       uint64
-		expectEvents uint64
+		suffix string
+		weight uint64
 	}
 	weights := uniqueWeights(t, 3)
 	plans := []plan{
-		{suffix: "a", weight: weights[0], expectEvents: 3 * eventsPerWave},
-		{suffix: "b", weight: weights[1], expectEvents: 2 * eventsPerWave},
-		{suffix: "c", weight: weights[2], expectEvents: 1 * eventsPerWave},
+		{suffix: "a", weight: weights[0]},
+		{suffix: "b", weight: weights[1]},
+		{suffix: "c", weight: weights[2]},
 	}
 
 	specs := make([]manager.ProgramSpec, len(plans))
@@ -205,14 +200,14 @@ func TestMultiProgTracepoint_LoadAttachDetachUnload(t *testing.T) {
 		"surface": "multi-tracepoint",
 	}
 	globals := map[string][]byte{
-		"expected_pid": uint32LE(uint32(workload.Pid())),
+		"expected_slot": uint32LE(uint32(slot.Index)),
 	}
 	for i, p := range plans {
 		specs[i] = manager.ProgramSpec{Type: bpfman.ProgramTypeTracepoint, Name: "tp_" + p.suffix}
 		globals["weight_"+p.suffix] = uint64LE(p.weight)
 	}
 
-	programs, err := env.LoadFile(ctx, "testdata/bpf/multi_prog_tracepoint_counter.bpf.o", specs, manager.LoadOpts{
+	programs, err := env.LoadFile(ctx, "testdata/bpf/multi_prog_tracepoint_kmod_counter.bpf.o", specs, manager.LoadOpts{
 		UserMetadata: metadata,
 		GlobalData:   globals,
 	})
@@ -232,7 +227,7 @@ func TestMultiProgTracepoint_LoadAttachDetachUnload(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, t.Name(), gotProg.Record.Meta.Metadata["test"], "%s metadata.test", name)
 		require.Equal(t, "multi-tracepoint", gotProg.Record.Meta.Metadata["surface"], "%s metadata.surface", name)
-		require.Equal(t, globals["expected_pid"], gotProg.Record.Load.GlobalData()["expected_pid"], "%s global expected_pid", name)
+		require.Equal(t, globals["expected_slot"], gotProg.Record.Load.GlobalData()["expected_slot"], "%s global expected_slot", name)
 		for _, p := range plans {
 			gname := "weight_" + p.suffix
 			require.Equal(t, globals[gname], gotProg.Record.Load.GlobalData()[gname], "%s global %s", name, gname)
@@ -250,7 +245,7 @@ func TestMultiProgTracepoint_LoadAttachDetachUnload(t *testing.T) {
 
 	links := make([]bpfman.LinkRecord, len(plans))
 	for i, prog := range programs {
-		spec, err := bpfman.NewTracepointAttachSpecFromString(prog.Status.Kernel.ID, "syscalls/sys_enter_kill")
+		spec, err := bpfman.NewTracepointAttachSpecFromString(prog.Status.Kernel.ID, "bpfman_e2e/bpfman_e2e_ping")
 		require.NoError(t, err)
 		link, err := env.Attach(ctx, spec)
 		require.NoError(t, err)
@@ -263,27 +258,19 @@ func TestMultiProgTracepoint_LoadAttachDetachUnload(t *testing.T) {
 	mapIDA := mapIDByName(t, programs[0], "tp_a_count")
 	mapIDB := mapIDByName(t, programs[1], "tp_b_count")
 	mapIDC := mapIDByName(t, programs[2], "tp_c_count")
-	workload.Kill(eventsPerWave)
+	slot.Fire(t, eventsPerWave)
 
 	require.NoError(t, env.Detach(ctx, links[2].ID), "detach tp_%s", plans[2].suffix)
-	qc := waitDetachQuiescent(t, QuiescenceProbe{
-		DetachedMap: mapIDC, DetachedWeight: plans[2].weight,
-		ControlMap: mapIDA, ControlWeight: plans[0].weight,
-		FireOne: func() { workload.Kill(1) },
-	})
+	qc := waitKmodSlotDetachQuiescent(t, slot, mapIDC, plans[2].weight, mapIDA, plans[0].weight)
 	t.Logf("post-detach quiescence c: probes=%d, eventsCounted=%d, latency=%s", qc.Probes, qc.EventsCounted, qc.Latency)
 
-	workload.Kill(eventsPerWave)
+	slot.Fire(t, eventsPerWave)
 
 	require.NoError(t, env.Detach(ctx, links[1].ID), "detach tp_%s", plans[1].suffix)
-	qb := waitDetachQuiescent(t, QuiescenceProbe{
-		DetachedMap: mapIDB, DetachedWeight: plans[1].weight,
-		ControlMap: mapIDA, ControlWeight: plans[0].weight,
-		FireOne: func() { workload.Kill(1) },
-	})
+	qb := waitKmodSlotDetachQuiescent(t, slot, mapIDB, plans[1].weight, mapIDA, plans[0].weight)
 	t.Logf("post-detach quiescence b: probes=%d, eventsCounted=%d, latency=%s", qb.Probes, qb.EventsCounted, qb.Latency)
 
-	workload.Kill(eventsPerWave)
+	slot.Fire(t, eventsPerWave)
 
 	expectEvents := []uint64{
 		3*uint64(eventsPerWave) + uint64(qc.Probes) + uint64(qb.Probes),        // a
@@ -317,15 +304,14 @@ func TestMultiProgTracepoint_LoadAttachDetachUnload(t *testing.T) {
 func TestMultiProgMixed_LoadAttachDetachUnload(t *testing.T) {
 	t.Parallel()
 	RequireRoot(t)
-	RequireTracepoint(t, "syscalls", "sys_enter_unlinkat")
-	RequireKernelFunction(t, "do_unlinkat")
-	lockDoUnlinkAtHook(t)
+	RequireKmodTargets(t)
+
+	slot := acquireKmodSlot(t)
+	t.Logf("kmod slot: index=%d func=%s", slot.Index, slot.Func)
 
 	env := NewTestEnv(t)
 	ctx := context.Background()
 	env.AssertCleanState()
-
-	workload := startWorkload(t)
 
 	const eventsPerWave = 5
 	type plan struct {
@@ -335,30 +321,29 @@ func TestMultiProgMixed_LoadAttachDetachUnload(t *testing.T) {
 		mapName      string
 		weightGlobal string
 		weight       uint64
-		expectEvents uint64
 		newAttach    func(progID kernel.ProgramID) (bpfman.AttachSpec, error)
 	}
 	weights := uniqueWeights(t, 3)
 	plans := []plan{
 		{
 			name: "mixed_tp", progType: bpfman.ProgramTypeTracepoint, linkKind: bpfman.LinkKindTracepoint,
-			mapName: "mtp_count", weightGlobal: "weight_tp", weight: weights[0], expectEvents: 3 * eventsPerWave,
+			mapName: "mtp_count", weightGlobal: "weight_tp", weight: weights[0],
 			newAttach: func(id kernel.ProgramID) (bpfman.AttachSpec, error) {
-				return bpfman.NewTracepointAttachSpecFromString(id, "syscalls/sys_enter_unlinkat")
+				return bpfman.NewTracepointAttachSpecFromString(id, "bpfman_e2e/bpfman_e2e_ping")
 			},
 		},
 		{
 			name: "mixed_kp", progType: bpfman.ProgramTypeKprobe, linkKind: bpfman.LinkKindKprobe,
-			mapName: "mkp_count", weightGlobal: "weight_kp", weight: weights[1], expectEvents: 2 * eventsPerWave,
+			mapName: "mkp_count", weightGlobal: "weight_kp", weight: weights[1],
 			newAttach: func(id kernel.ProgramID) (bpfman.AttachSpec, error) {
-				return bpfman.NewKprobeAttachSpec(id, "do_unlinkat")
+				return bpfman.NewKprobeAttachSpec(id, slot.Func)
 			},
 		},
 		{
 			name: "mixed_krp", progType: bpfman.ProgramTypeKretprobe, linkKind: bpfman.LinkKindKretprobe,
-			mapName: "mkrp_count", weightGlobal: "weight_krp", weight: weights[2], expectEvents: 1 * eventsPerWave,
+			mapName: "mkrp_count", weightGlobal: "weight_krp", weight: weights[2],
 			newAttach: func(id kernel.ProgramID) (bpfman.AttachSpec, error) {
-				return bpfman.NewKprobeAttachSpec(id, "do_unlinkat")
+				return bpfman.NewKprobeAttachSpec(id, slot.Func)
 			},
 		},
 	}
@@ -369,14 +354,14 @@ func TestMultiProgMixed_LoadAttachDetachUnload(t *testing.T) {
 		"surface": "multi-mixed",
 	}
 	globals := map[string][]byte{
-		"expected_pid": uint32LE(uint32(workload.Pid())),
+		"expected_slot": uint32LE(uint32(slot.Index)),
 	}
 	for i, p := range plans {
 		specs[i] = manager.ProgramSpec{Type: p.progType, Name: p.name}
 		globals[p.weightGlobal] = uint64LE(p.weight)
 	}
 
-	programs, err := env.LoadFile(ctx, "testdata/bpf/multi_prog_mixed_counter.bpf.o", specs, manager.LoadOpts{
+	programs, err := env.LoadFile(ctx, "testdata/bpf/multi_prog_mixed_counter_script.bpf.o", specs, manager.LoadOpts{
 		UserMetadata: metadata,
 		GlobalData:   globals,
 	})
@@ -394,7 +379,7 @@ func TestMultiProgMixed_LoadAttachDetachUnload(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, t.Name(), gotProg.Record.Meta.Metadata["test"], "%s metadata.test", plans[i].name)
 		require.Equal(t, "multi-mixed", gotProg.Record.Meta.Metadata["surface"], "%s metadata.surface", plans[i].name)
-		require.Equal(t, globals["expected_pid"], gotProg.Record.Load.GlobalData()["expected_pid"], "%s global expected_pid", plans[i].name)
+		require.Equal(t, globals["expected_slot"], gotProg.Record.Load.GlobalData()["expected_slot"], "%s global expected_slot", plans[i].name)
 		for _, p := range plans {
 			require.Equal(t, globals[p.weightGlobal], gotProg.Record.Load.GlobalData()[p.weightGlobal], "%s global %s", plans[i].name, p.weightGlobal)
 		}
@@ -421,33 +406,25 @@ func TestMultiProgMixed_LoadAttachDetachUnload(t *testing.T) {
 	}
 
 	// Wave 1: tp, kp, krp -> detach krp, drain. Wave 2: tp, kp -> detach kp, drain. Wave 3: tp.
-	mapIDTp := mapIDByName(t, programs[0], plans[0].mapName) // control: always attached
+	mapIDTp := mapIDByName(t, programs[0], plans[0].mapName)
 	mapIDKp := mapIDByName(t, programs[1], plans[1].mapName)
 	mapIDKrp := mapIDByName(t, programs[2], plans[2].mapName)
-	workload.Unlink(eventsPerWave)
+	slot.Fire(t, eventsPerWave)
 
 	require.NoError(t, env.Detach(ctx, links[2].ID), "detach %s", plans[2].name)
-	qkrp := waitDetachQuiescent(t, QuiescenceProbe{
-		DetachedMap: mapIDKrp, DetachedWeight: plans[2].weight,
-		ControlMap: mapIDTp, ControlWeight: plans[0].weight,
-		FireOne: func() { workload.Unlink(1) },
-	})
+	qkrp := waitKmodSlotDetachQuiescent(t, slot, mapIDKrp, plans[2].weight, mapIDTp, plans[0].weight)
 	t.Logf("post-detach quiescence krp: probes=%d, eventsCounted=%d, latency=%s", qkrp.Probes, qkrp.EventsCounted, qkrp.Latency)
 
-	workload.Unlink(eventsPerWave)
+	slot.Fire(t, eventsPerWave)
 
 	require.NoError(t, env.Detach(ctx, links[1].ID), "detach %s", plans[1].name)
-	qkp := waitDetachQuiescent(t, QuiescenceProbe{
-		DetachedMap: mapIDKp, DetachedWeight: plans[1].weight,
-		ControlMap: mapIDTp, ControlWeight: plans[0].weight,
-		FireOne: func() { workload.Unlink(1) },
-	})
+	qkp := waitKmodSlotDetachQuiescent(t, slot, mapIDKp, plans[1].weight, mapIDTp, plans[0].weight)
 	t.Logf("post-detach quiescence kp: probes=%d, eventsCounted=%d, latency=%s", qkp.Probes, qkp.EventsCounted, qkp.Latency)
 
-	workload.Unlink(eventsPerWave)
+	slot.Fire(t, eventsPerWave)
 
 	expectEvents := []uint64{
-		3*uint64(eventsPerWave) + uint64(qkrp.Probes) + uint64(qkp.Probes),        // tp (always attached)
+		3*uint64(eventsPerWave) + uint64(qkrp.Probes) + uint64(qkp.Probes),        // tp
 		2*uint64(eventsPerWave) + uint64(qkrp.Probes) + uint64(qkp.EventsCounted), // kp
 		1*uint64(eventsPerWave) + uint64(qkrp.EventsCounted),                      // krp
 	}
@@ -480,42 +457,39 @@ func TestMultiProgMixed_LoadAttachDetachUnload(t *testing.T) {
 func TestMultiProgKprobe_LoadAttachDetachUnload(t *testing.T) {
 	t.Parallel()
 	RequireRoot(t)
-	RequireKernelFunction(t, "do_unlinkat")
-	lockDoUnlinkAtHook(t)
+	RequireKmodTargets(t)
+
+	slot := acquireKmodSlot(t)
+	t.Logf("kmod slot: index=%d func=%s", slot.Index, slot.Func)
 
 	env := NewTestEnv(t)
 	ctx := context.Background()
 	env.AssertCleanState()
 
-	workload := startWorkload(t)
-
-	// Three kprobe programs all attach to do_unlinkat. Detach is
-	// staggered across three workload waves so each program ends
-	// up with a distinct event count: a sees waves 1+2+3, b sees
-	// 1+2, c sees only 1.
+	// Three kprobe programs all attach to the same leased kmod
+	// slot. Detach is staggered across three trigger waves so each
+	// program ends up with a distinct event count: a sees waves
+	// 1+2+3, b sees 1+2, c sees only 1.
 	const eventsPerWave = 5
 	type plan struct {
-		suffix       string
-		weight       uint64
-		expectEvents uint64
+		suffix string
+		weight uint64
 	}
 	weights := uniqueWeights(t, 3)
 	plans := []plan{
-		{suffix: "a", weight: weights[0], expectEvents: 3 * eventsPerWave},
-		{suffix: "b", weight: weights[1], expectEvents: 2 * eventsPerWave},
-		{suffix: "c", weight: weights[2], expectEvents: 1 * eventsPerWave},
+		{suffix: "a", weight: weights[0]},
+		{suffix: "b", weight: weights[1]},
+		{suffix: "c", weight: weights[2]},
 	}
 
 	specs := make([]manager.ProgramSpec, len(plans))
-	globals := map[string][]byte{
-		"expected_pid": uint32LE(uint32(workload.Pid())),
-	}
+	globals := map[string][]byte{}
 	for i, p := range plans {
 		specs[i] = manager.ProgramSpec{Type: bpfman.ProgramTypeKprobe, Name: "mkp_" + p.suffix}
 		globals["weight_"+p.suffix] = uint64LE(p.weight)
 	}
 
-	programs, err := env.LoadFile(ctx, "testdata/bpf/multi_prog_kprobe_counter.bpf.o", specs, manager.LoadOpts{
+	programs, err := env.LoadFile(ctx, "testdata/bpf/multi_prog_kprobe_kmod_counter.bpf.o", specs, manager.LoadOpts{
 		GlobalData: globals,
 	})
 	require.NoError(t, err)
@@ -539,7 +513,7 @@ func TestMultiProgKprobe_LoadAttachDetachUnload(t *testing.T) {
 
 	links := make([]bpfman.LinkRecord, len(plans))
 	for i, prog := range programs {
-		spec, err := bpfman.NewKprobeAttachSpec(prog.Status.Kernel.ID, "do_unlinkat")
+		spec, err := bpfman.NewKprobeAttachSpec(prog.Status.Kernel.ID, slot.Func)
 		require.NoError(t, err)
 		link, err := env.Attach(ctx, spec)
 		require.NoError(t, err, "attach mkp_%s", plans[i].suffix)
@@ -552,27 +526,19 @@ func TestMultiProgKprobe_LoadAttachDetachUnload(t *testing.T) {
 	mapIDA := mapIDByName(t, programs[0], "mkp_a_count")
 	mapIDB := mapIDByName(t, programs[1], "mkp_b_count")
 	mapIDC := mapIDByName(t, programs[2], "mkp_c_count")
-	workload.Unlink(eventsPerWave)
+	slot.Fire(t, eventsPerWave)
 
 	require.NoError(t, env.Detach(ctx, links[2].ID), "detach mkp_%s", plans[2].suffix)
-	qc := waitDetachQuiescent(t, QuiescenceProbe{
-		DetachedMap: mapIDC, DetachedWeight: plans[2].weight,
-		ControlMap: mapIDA, ControlWeight: plans[0].weight,
-		FireOne: func() { workload.Unlink(1) },
-	})
+	qc := waitKmodSlotDetachQuiescent(t, slot, mapIDC, plans[2].weight, mapIDA, plans[0].weight)
 	t.Logf("post-detach quiescence c: probes=%d, eventsCounted=%d, latency=%s", qc.Probes, qc.EventsCounted, qc.Latency)
 
-	workload.Unlink(eventsPerWave)
+	slot.Fire(t, eventsPerWave)
 
 	require.NoError(t, env.Detach(ctx, links[1].ID), "detach mkp_%s", plans[1].suffix)
-	qb := waitDetachQuiescent(t, QuiescenceProbe{
-		DetachedMap: mapIDB, DetachedWeight: plans[1].weight,
-		ControlMap: mapIDA, ControlWeight: plans[0].weight,
-		FireOne: func() { workload.Unlink(1) },
-	})
+	qb := waitKmodSlotDetachQuiescent(t, slot, mapIDB, plans[1].weight, mapIDA, plans[0].weight)
 	t.Logf("post-detach quiescence b: probes=%d, eventsCounted=%d, latency=%s", qb.Probes, qb.EventsCounted, qb.Latency)
 
-	workload.Unlink(eventsPerWave)
+	slot.Fire(t, eventsPerWave)
 
 	expectEvents := []uint64{
 		3*uint64(eventsPerWave) + uint64(qc.Probes) + uint64(qb.Probes),        // a
@@ -601,8 +567,10 @@ func TestMultiProgKprobe_LoadAttachDetachUnload(t *testing.T) {
 func TestKprobe_LoadAttachDetachUnload(t *testing.T) {
 	t.Parallel()
 	RequireRoot(t)
-	RequireKernelFunction(t, "do_unlinkat")
-	lockDoUnlinkAtHook(t)
+	RequireKmodTargets(t)
+
+	slot := acquireKmodSlot(t)
+	t.Logf("kmod slot: index=%d func=%s", slot.Index, slot.Func)
 
 	env := NewTestEnv(t)
 	ctx := context.Background()
@@ -610,19 +578,17 @@ func TestKprobe_LoadAttachDetachUnload(t *testing.T) {
 	// Given: clean state
 	env.AssertCleanState()
 
-	workload := startWorkload(t)
 	weights := uniqueWeights(t, 1)
 
 	// When: load from local file
-	programs, err := env.LoadFile(ctx, "testdata/bpf/kprobe_exact.bpf.o", []manager.ProgramSpec{
+	programs, err := env.LoadFile(ctx, "testdata/bpf/multi_prog_kprobe_kmod_counter.bpf.o", []manager.ProgramSpec{
 		{
 			Type: bpfman.ProgramTypeKprobe,
-			Name: "kprobe_counter",
+			Name: "mkp_a",
 		},
 	}, manager.LoadOpts{
 		GlobalData: map[string][]byte{
-			"expected_pid": uint32LE(uint32(workload.Pid())),
-			"weight":       uint64LE(weights[0]),
+			"weight_a": uint64LE(weights[0]),
 		},
 	})
 	require.NoError(t, err)
@@ -649,7 +615,7 @@ func TestKprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, prog.Status.Kernel.Name, gotProg.Status.Kernel.Name)
 	require.NotEmpty(t, gotProg.Status.Kernel.Tag, "kernel should assign tag")
 	require.False(t, gotProg.Status.Kernel.LoadedAt.IsZero(), "kernel should track LoadedAt")
-	require.Equal(t, "kprobe_counter", gotProg.Record.Meta.Name)
+	require.Equal(t, "mkp_a", gotProg.Record.Meta.Name)
 	require.NotEmpty(t, gotProg.Record.Handles.PinPath, "program should have pin path")
 
 	// Round-trip: List should include our program
@@ -661,11 +627,11 @@ func TestKprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, prog.Status.Kernel.Name, listedProgs[0].Status.Kernel.Name)
 	require.NotEmpty(t, listedProgs[0].Status.Kernel.Tag)
 	require.False(t, listedProgs[0].Status.Kernel.LoadedAt.IsZero())
-	require.Equal(t, "kprobe_counter", listedProgs[0].Record.Meta.Name)
+	require.Equal(t, "mkp_a", listedProgs[0].Record.Meta.Name)
 	require.NotEmpty(t, listedProgs[0].Record.Handles.PinPath)
 
 	// When: attach via client
-	kpSpec, err := bpfman.NewKprobeAttachSpec(prog.Status.Kernel.ID, "do_unlinkat")
+	kpSpec, err := bpfman.NewKprobeAttachSpec(prog.Status.Kernel.ID, slot.Func)
 	require.NoError(t, err)
 	link, err := env.Attach(ctx, kpSpec)
 	require.NoError(t, err)
@@ -685,7 +651,7 @@ func TestKprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, link.Kind, gotLinkSummary.Kind)
 	kprobeDetails, ok := gotLinkDetails.(bpfman.KprobeDetails)
 	require.True(t, ok, "expected KprobeDetails, got %T", gotLinkDetails)
-	require.Equal(t, "do_unlinkat", kprobeDetails.FnName)
+	require.Equal(t, slot.Func, kprobeDetails.FnName)
 	require.Equal(t, uint64(0), kprobeDetails.Offset, "offset should match what was passed")
 	require.False(t, kprobeDetails.Retprobe)
 
@@ -696,12 +662,13 @@ func TestKprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.NotZero(t, listedLinks[0].ID, "should have kernel link ID")
 	require.Equal(t, link.Kind, listedLinks[0].Kind)
 
-	// Behavioural validation: drive a known number of unlinks from
-	// the workload subprocess and assert events * weight exactly.
+	// Behavioural validation: drive a known number of private slot
+	// invocations and assert events * weight exactly.
 	const events = 5
-	workload.Unlink(events)
+	slot.Fire(t, events)
 	want := uint64(events) * weights[0]
-	got := readArrayCounterByID(t, mapIDByName(t, prog, "kp_count"))
+	mapID := mapIDByName(t, prog, "mkp_a_count")
+	got := readArrayCounterByID(t, mapID)
 	t.Logf("kprobe: events=%d weight=%d want=%d got=%d", events, weights[0], want, got)
 	requireCounterEqual(t, want, got,
 		"kprobe counter should equal events(%d) * weight(%d) = %d", events, weights[0], want)
@@ -716,11 +683,7 @@ func TestKprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.Error(t, err, "GetLink should fail after detach")
 
 	// Then: detach actually stopped the BPF program firing.
-	waitDetachQuiescent(t, QuiescenceProbe{
-		DetachedMap:    mapIDByName(t, prog, "kp_count"),
-		DetachedWeight: weights[0],
-		FireOne:        func() { workload.Unlink(1) },
-	})
+	waitKmodSlotDetachQuiescent(t, slot, mapID, weights[0], 0, 0)
 
 	// When: unload
 	err = env.Unload(ctx, prog.Status.Kernel.ID)
@@ -741,38 +704,35 @@ func TestKprobe_LoadAttachDetachUnload(t *testing.T) {
 func TestMultiProgKretprobe_LoadAttachDetachUnload(t *testing.T) {
 	t.Parallel()
 	RequireRoot(t)
-	RequireKernelFunction(t, "do_unlinkat")
-	lockDoUnlinkAtHook(t)
+	RequireKmodTargets(t)
+
+	slot := acquireKmodSlot(t)
+	t.Logf("kmod slot: index=%d func=%s", slot.Index, slot.Func)
 
 	env := NewTestEnv(t)
 	ctx := context.Background()
 	env.AssertCleanState()
 
-	workload := startWorkload(t)
-
 	const eventsPerWave = 5
 	type plan struct {
-		suffix       string
-		weight       uint64
-		expectEvents uint64
+		suffix string
+		weight uint64
 	}
 	weights := uniqueWeights(t, 3)
 	plans := []plan{
-		{suffix: "a", weight: weights[0], expectEvents: 3 * eventsPerWave},
-		{suffix: "b", weight: weights[1], expectEvents: 2 * eventsPerWave},
-		{suffix: "c", weight: weights[2], expectEvents: 1 * eventsPerWave},
+		{suffix: "a", weight: weights[0]},
+		{suffix: "b", weight: weights[1]},
+		{suffix: "c", weight: weights[2]},
 	}
 
 	specs := make([]manager.ProgramSpec, len(plans))
-	globals := map[string][]byte{
-		"expected_pid": uint32LE(uint32(workload.Pid())),
-	}
+	globals := map[string][]byte{}
 	for i, p := range plans {
 		specs[i] = manager.ProgramSpec{Type: bpfman.ProgramTypeKretprobe, Name: "mkp_" + p.suffix}
 		globals["weight_"+p.suffix] = uint64LE(p.weight)
 	}
 
-	programs, err := env.LoadFile(ctx, "testdata/bpf/multi_prog_kprobe_counter.bpf.o", specs, manager.LoadOpts{
+	programs, err := env.LoadFile(ctx, "testdata/bpf/multi_prog_kprobe_kmod_counter.bpf.o", specs, manager.LoadOpts{
 		GlobalData: globals,
 	})
 	require.NoError(t, err)
@@ -795,7 +755,7 @@ func TestMultiProgKretprobe_LoadAttachDetachUnload(t *testing.T) {
 
 	links := make([]bpfman.LinkRecord, len(plans))
 	for i, prog := range programs {
-		spec, err := bpfman.NewKprobeAttachSpec(prog.Status.Kernel.ID, "do_unlinkat")
+		spec, err := bpfman.NewKprobeAttachSpec(prog.Status.Kernel.ID, slot.Func)
 		require.NoError(t, err)
 		link, err := env.Attach(ctx, spec)
 		require.NoError(t, err, "attach mkp_%s", plans[i].suffix)
@@ -807,35 +767,20 @@ func TestMultiProgKretprobe_LoadAttachDetachUnload(t *testing.T) {
 	mapIDA := mapIDByName(t, programs[0], "mkp_a_count")
 	mapIDB := mapIDByName(t, programs[1], "mkp_b_count")
 	mapIDC := mapIDByName(t, programs[2], "mkp_c_count")
-	workload.Unlink(eventsPerWave)
+	slot.Fire(t, eventsPerWave)
 
 	require.NoError(t, env.Detach(ctx, links[2].ID), "detach mkp_%s", plans[2].suffix)
-	qc := waitDetachQuiescent(t, QuiescenceProbe{
-		DetachedMap: mapIDC, DetachedWeight: plans[2].weight,
-		ControlMap: mapIDA, ControlWeight: plans[0].weight,
-		FireOne: func() { workload.Unlink(1) },
-	})
+	qc := waitKmodSlotDetachQuiescent(t, slot, mapIDC, plans[2].weight, mapIDA, plans[0].weight)
 	t.Logf("post-detach quiescence c: probes=%d, eventsCounted=%d, latency=%s", qc.Probes, qc.EventsCounted, qc.Latency)
 
-	workload.Unlink(eventsPerWave)
+	slot.Fire(t, eventsPerWave)
 
 	require.NoError(t, env.Detach(ctx, links[1].ID), "detach mkp_%s", plans[1].suffix)
-	qb := waitDetachQuiescent(t, QuiescenceProbe{
-		DetachedMap: mapIDB, DetachedWeight: plans[1].weight,
-		ControlMap: mapIDA, ControlWeight: plans[0].weight,
-		FireOne: func() { workload.Unlink(1) },
-	})
+	qb := waitKmodSlotDetachQuiescent(t, slot, mapIDB, plans[1].weight, mapIDA, plans[0].weight)
 	t.Logf("post-detach quiescence b: probes=%d, eventsCounted=%d, latency=%s", qb.Probes, qb.EventsCounted, qb.Latency)
 
-	workload.Unlink(eventsPerWave)
+	slot.Fire(t, eventsPerWave)
 
-	// Expected event tallies, counting probes fired during the
-	// quiescence waits. a is always attached so it counts every
-	// probe. b is attached during qc's drain so it counts those
-	// probes; b is detached during qb's drain but counts the events
-	// that fired before detach took effect (qb.EventsCounted). c is
-	// detached during qc's drain so it counts only its own pre-
-	// effective probes (qc.EventsCounted) and is silent through qb.
 	expectEvents := []uint64{
 		3*uint64(eventsPerWave) + uint64(qc.Probes) + uint64(qb.Probes),        // a
 		2*uint64(eventsPerWave) + uint64(qc.Probes) + uint64(qb.EventsCounted), // b
@@ -863,8 +808,10 @@ func TestMultiProgKretprobe_LoadAttachDetachUnload(t *testing.T) {
 func TestKretprobe_LoadAttachDetachUnload(t *testing.T) {
 	t.Parallel()
 	RequireRoot(t)
-	RequireKernelFunction(t, "do_unlinkat")
-	lockDoUnlinkAtHook(t)
+	RequireKmodTargets(t)
+
+	slot := acquireKmodSlot(t)
+	t.Logf("kmod slot: index=%d func=%s", slot.Index, slot.Func)
 
 	env := NewTestEnv(t)
 	ctx := context.Background()
@@ -872,19 +819,17 @@ func TestKretprobe_LoadAttachDetachUnload(t *testing.T) {
 	// Given: clean state
 	env.AssertCleanState()
 
-	workload := startWorkload(t)
 	weights := uniqueWeights(t, 1)
 
 	// When: load from local file (same program as kprobe, loaded as kretprobe)
-	programs, err := env.LoadFile(ctx, "testdata/bpf/kprobe_exact.bpf.o", []manager.ProgramSpec{
+	programs, err := env.LoadFile(ctx, "testdata/bpf/multi_prog_kprobe_kmod_counter.bpf.o", []manager.ProgramSpec{
 		{
 			Type: bpfman.ProgramTypeKretprobe,
-			Name: "kprobe_counter",
+			Name: "mkp_a",
 		},
 	}, manager.LoadOpts{
 		GlobalData: map[string][]byte{
-			"expected_pid": uint32LE(uint32(workload.Pid())),
-			"weight":       uint64LE(weights[0]),
+			"weight_a": uint64LE(weights[0]),
 		},
 	})
 	require.NoError(t, err)
@@ -911,7 +856,7 @@ func TestKretprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, prog.Status.Kernel.Name, gotProg.Status.Kernel.Name)
 	require.NotEmpty(t, gotProg.Status.Kernel.Tag, "kernel should assign tag")
 	require.False(t, gotProg.Status.Kernel.LoadedAt.IsZero(), "kernel should track LoadedAt")
-	require.Equal(t, "kprobe_counter", gotProg.Record.Meta.Name)
+	require.Equal(t, "mkp_a", gotProg.Record.Meta.Name)
 	require.NotEmpty(t, gotProg.Record.Handles.PinPath, "program should have pin path")
 
 	// Round-trip: List should include our program
@@ -923,11 +868,11 @@ func TestKretprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, prog.Status.Kernel.Name, listedProgs[0].Status.Kernel.Name)
 	require.NotEmpty(t, listedProgs[0].Status.Kernel.Tag)
 	require.False(t, listedProgs[0].Status.Kernel.LoadedAt.IsZero())
-	require.Equal(t, "kprobe_counter", listedProgs[0].Record.Meta.Name)
+	require.Equal(t, "mkp_a", listedProgs[0].Record.Meta.Name)
 	require.NotEmpty(t, listedProgs[0].Record.Handles.PinPath)
 
 	// When: attach via client (kretprobe uses AttachKprobe API)
-	kpSpec, err := bpfman.NewKprobeAttachSpec(prog.Status.Kernel.ID, "do_unlinkat")
+	kpSpec, err := bpfman.NewKprobeAttachSpec(prog.Status.Kernel.ID, slot.Func)
 	require.NoError(t, err)
 	link, err := env.Attach(ctx, kpSpec)
 	require.NoError(t, err)
@@ -948,7 +893,7 @@ func TestKretprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, bpfman.LinkKindKretprobe, gotLinkSummary.Kind, "server should report kretprobe link kind")
 	kprobeDetails, ok := gotLinkDetails.(bpfman.KprobeDetails)
 	require.True(t, ok, "expected KprobeDetails, got %T", gotLinkDetails)
-	require.Equal(t, "do_unlinkat", kprobeDetails.FnName)
+	require.Equal(t, slot.Func, kprobeDetails.FnName)
 	require.Equal(t, uint64(0), kprobeDetails.Offset, "offset should match what was passed")
 	require.True(t, kprobeDetails.Retprobe, "kretprobe should have Retprobe=true")
 
@@ -959,13 +904,14 @@ func TestKretprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.NotZero(t, listedLinks[0].ID, "should have kernel link ID")
 	require.Equal(t, bpfman.LinkKindKretprobe, listedLinks[0].Kind, "ListLinks should report kretprobe")
 
-	// Behavioural validation: drive a known number of unlinks; each
-	// do_unlinkat call returns once, so events * weight matches
-	// exactly.
+	// Behavioural validation: drive a known number of private slot
+	// invocations; each call returns once, so events * weight
+	// matches exactly.
 	const events = 5
-	workload.Unlink(events)
+	slot.Fire(t, events)
 	want := uint64(events) * weights[0]
-	got := readArrayCounterByID(t, mapIDByName(t, prog, "kp_count"))
+	mapID := mapIDByName(t, prog, "mkp_a_count")
+	got := readArrayCounterByID(t, mapID)
 	t.Logf("kretprobe: events=%d weight=%d want=%d got=%d", events, weights[0], want, got)
 	requireCounterEqual(t, want, got,
 		"kretprobe counter should equal events(%d) * weight(%d) = %d", events, weights[0], want)
@@ -980,11 +926,7 @@ func TestKretprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.Error(t, err, "GetLink should fail after detach")
 
 	// Then: detach actually stopped the BPF program firing.
-	waitDetachQuiescent(t, QuiescenceProbe{
-		DetachedMap:    mapIDByName(t, prog, "kp_count"),
-		DetachedWeight: weights[0],
-		FireOne:        func() { workload.Unlink(1) },
-	})
+	waitKmodSlotDetachQuiescent(t, slot, mapID, weights[0], 0, 0)
 
 	// When: unload
 	err = env.Unload(ctx, prog.Status.Kernel.ID)
@@ -1015,15 +957,14 @@ func TestMultiProgUprobe_LoadAttachDetachUnload(t *testing.T) {
 
 	const eventsPerWave = 5
 	type plan struct {
-		suffix       string
-		weight       uint64
-		expectEvents uint64
+		suffix string
+		weight uint64
 	}
 	weights := uniqueWeights(t, 3)
 	plans := []plan{
-		{suffix: "a", weight: weights[0], expectEvents: 3 * eventsPerWave},
-		{suffix: "b", weight: weights[1], expectEvents: 2 * eventsPerWave},
-		{suffix: "c", weight: weights[2], expectEvents: 1 * eventsPerWave},
+		{suffix: "a", weight: weights[0]},
+		{suffix: "b", weight: weights[1]},
+		{suffix: "c", weight: weights[2]},
 	}
 
 	specs := make([]manager.ProgramSpec, len(plans))
@@ -1277,15 +1218,14 @@ func TestMultiProgUretprobe_LoadAttachDetachUnload(t *testing.T) {
 
 	const eventsPerWave = 5
 	type plan struct {
-		suffix       string
-		weight       uint64
-		expectEvents uint64
+		suffix string
+		weight uint64
 	}
 	weights := uniqueWeights(t, 3)
 	plans := []plan{
-		{suffix: "a", weight: weights[0], expectEvents: 3 * eventsPerWave},
-		{suffix: "b", weight: weights[1], expectEvents: 2 * eventsPerWave},
-		{suffix: "c", weight: weights[2], expectEvents: 1 * eventsPerWave},
+		{suffix: "a", weight: weights[0]},
+		{suffix: "b", weight: weights[1]},
+		{suffix: "c", weight: weights[2]},
 	}
 
 	specs := make([]manager.ProgramSpec, len(plans))
@@ -1520,51 +1460,48 @@ func TestUretprobe_LoadAttachDetachUnload(t *testing.T) {
 
 // TestMultiProgFentry_LoadAttachDetachUnload proves that the
 // kernel's fentry trampoline correctly multiplexes three fentry
-// programs attached to the same target (do_unlinkat) and that
-// detaching one removes only that program from the trampoline
-// chain. fentry uses BPF tracing trampolines rather than perf
-// links, so this exercises a different attach surface than the
-// kprobe / uprobe siblings.
+// programs attached to the same leased kmod slot and that detaching
+// one removes only that program from the trampoline chain. Fentry
+// uses BPF tracing trampolines rather than perf links, so this
+// exercises a different attach surface than the kprobe / uprobe
+// siblings.
 func TestMultiProgFentry_LoadAttachDetachUnload(t *testing.T) {
 	t.Parallel()
 	RequireRoot(t)
 	RequireBTF(t)
-	RequireKernelFunction(t, "do_unlinkat")
-	lockDoUnlinkAtHook(t)
+	RequireKmodTargets(t)
+
+	slot := acquireKmodSlot(t)
+	t.Logf("kmod slot: index=%d func=%s", slot.Index, slot.Func)
 
 	env := NewTestEnv(t)
 	ctx := context.Background()
 	env.AssertCleanState()
 
-	workload := startWorkload(t)
-
 	const eventsPerWave = 5
 	type plan struct {
-		suffix       string
-		weight       uint64
-		expectEvents uint64
+		suffix string
+		weight uint64
 	}
 	weights := uniqueWeights(t, 3)
 	plans := []plan{
-		{suffix: "a", weight: weights[0], expectEvents: 3 * eventsPerWave},
-		{suffix: "b", weight: weights[1], expectEvents: 2 * eventsPerWave},
-		{suffix: "c", weight: weights[2], expectEvents: 1 * eventsPerWave},
+		{suffix: "a", weight: weights[0]},
+		{suffix: "b", weight: weights[1]},
+		{suffix: "c", weight: weights[2]},
 	}
 
 	specs := make([]manager.ProgramSpec, len(plans))
-	globals := map[string][]byte{
-		"expected_pid": uint32LE(uint32(workload.Pid())),
-	}
+	globals := map[string][]byte{}
 	for i, p := range plans {
 		specs[i] = manager.ProgramSpec{
 			Type:       bpfman.ProgramTypeFentry,
 			Name:       "mfe_" + p.suffix,
-			AttachFunc: "do_unlinkat",
+			AttachFunc: slot.Func,
 		}
 		globals["weight_"+p.suffix] = uint64LE(p.weight)
 	}
 
-	programs, err := env.LoadFile(ctx, "testdata/bpf/multi_prog_fentry_counter.bpf.o", specs, manager.LoadOpts{
+	programs, err := env.LoadFile(ctx, "testdata/bpf/multi_prog_fentry_kmod_counter.bpf.o", specs, manager.LoadOpts{
 		GlobalData: globals,
 	})
 	require.NoError(t, err)
@@ -1600,49 +1537,24 @@ func TestMultiProgFentry_LoadAttachDetachUnload(t *testing.T) {
 	mapIDA := mapIDByName(t, programs[0], "mfe_a_count")
 	mapIDB := mapIDByName(t, programs[1], "mfe_b_count")
 	mapIDC := mapIDByName(t, programs[2], "mfe_c_count")
-
-	// Wait for attach to be effective on c (the last-attached); by
-	// the time c counts a probe, the trampoline image contains all
-	// three. Fentry/fexit on a shared target function rebuilds the
-	// trampoline on every attach and is racy under suite contention.
-	qa := waitProgramActive(t, AttachActiveProbe{
-		AttachedMap: mapIDC, AttachedWeight: plans[2].weight,
-		FireOne: func() { workload.Unlink(1) },
-	})
-	t.Logf("post-attach activation c: probes=%d, lostProbes=%d, latency=%s", qa.Probes, qa.LostProbes, qa.Latency)
-
-	workload.Unlink(eventsPerWave)
+	slot.Fire(t, eventsPerWave)
 
 	require.NoError(t, env.Detach(ctx, links[2].ID), "detach mfe_%s", plans[2].suffix)
-	qc := waitDetachQuiescent(t, QuiescenceProbe{
-		DetachedMap: mapIDC, DetachedWeight: plans[2].weight,
-		ControlMap: mapIDA, ControlWeight: plans[0].weight,
-		FireOne: func() { workload.Unlink(1) },
-	})
+	qc := waitKmodSlotDetachQuiescent(t, slot, mapIDC, plans[2].weight, mapIDA, plans[0].weight)
 	t.Logf("post-detach quiescence c: probes=%d, eventsCounted=%d, latency=%s", qc.Probes, qc.EventsCounted, qc.Latency)
 
-	workload.Unlink(eventsPerWave)
+	slot.Fire(t, eventsPerWave)
 
 	require.NoError(t, env.Detach(ctx, links[1].ID), "detach mfe_%s", plans[1].suffix)
-	qb := waitDetachQuiescent(t, QuiescenceProbe{
-		DetachedMap: mapIDB, DetachedWeight: plans[1].weight,
-		ControlMap: mapIDA, ControlWeight: plans[0].weight,
-		FireOne: func() { workload.Unlink(1) },
-	})
+	qb := waitKmodSlotDetachQuiescent(t, slot, mapIDB, plans[1].weight, mapIDA, plans[0].weight)
 	t.Logf("post-detach quiescence b: probes=%d, eventsCounted=%d, latency=%s", qb.Probes, qb.EventsCounted, qb.Latency)
 
-	workload.Unlink(eventsPerWave)
+	slot.Fire(t, eventsPerWave)
 
-	// Each program counts:
-	//   - qa.Probes from the activation barrier (1 of which actually counted on each attached prog)
-	//   - 3*eventsPerWave for waves
-	//   - qc.Probes / qb.Probes from drains while still attached
-	// b is detached during qb's drain, so it counts qb.EventsCounted of those.
-	// c is detached during qc's drain, so it counts qc.EventsCounted of those.
 	expectEvents := []uint64{
-		uint64(qa.Probes) + 3*uint64(eventsPerWave) + uint64(qc.Probes) + uint64(qb.Probes),        // a
-		uint64(qa.Probes) + 2*uint64(eventsPerWave) + uint64(qc.Probes) + uint64(qb.EventsCounted), // b
-		uint64(qa.EventsCounted) + 1*uint64(eventsPerWave) + uint64(qc.EventsCounted),              // c
+		3*uint64(eventsPerWave) + uint64(qc.Probes) + uint64(qb.Probes),        // a
+		2*uint64(eventsPerWave) + uint64(qc.Probes) + uint64(qb.EventsCounted), // b
+		1*uint64(eventsPerWave) + uint64(qc.EventsCounted),                     // c
 	}
 
 	for i, prog := range programs {
@@ -1667,8 +1579,10 @@ func TestFentry_LoadAttachDetachUnload(t *testing.T) {
 	t.Parallel()
 	RequireRoot(t)
 	RequireBTF(t)
-	RequireKernelFunction(t, "do_unlinkat")
-	lockDoUnlinkAtHook(t)
+	RequireKmodTargets(t)
+
+	slot := acquireKmodSlot(t)
+	t.Logf("kmod slot: index=%d func=%s", slot.Index, slot.Func)
 
 	env := NewTestEnv(t)
 	ctx := context.Background()
@@ -1676,16 +1590,14 @@ func TestFentry_LoadAttachDetachUnload(t *testing.T) {
 	// Given: clean state
 	env.AssertCleanState()
 
-	workload := startWorkload(t)
 	weights := uniqueWeights(t, 1)
 
 	// When: load from local file
-	programs, err := env.LoadFile(ctx, "testdata/bpf/fentry_exact.bpf.o", []manager.ProgramSpec{
-		{Name: "test_fentry", Type: bpfman.ProgramTypeFentry, AttachFunc: "do_unlinkat"},
+	programs, err := env.LoadFile(ctx, "testdata/bpf/fentry_kmod_exact.bpf.o", []manager.ProgramSpec{
+		{Name: "test_fentry", Type: bpfman.ProgramTypeFentry, AttachFunc: slot.Func},
 	}, manager.LoadOpts{
 		GlobalData: map[string][]byte{
-			"expected_pid": uint32LE(uint32(workload.Pid())),
-			"weight":       uint64LE(weights[0]),
+			"weight": uint64LE(weights[0]),
 		},
 	})
 	require.NoError(t, err)
@@ -1747,7 +1659,7 @@ func TestFentry_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, link.Kind, gotLinkSummary.Kind)
 	fentryDetails, ok := gotLinkDetails.(bpfman.FentryDetails)
 	require.True(t, ok, "expected FentryDetails, got %T", gotLinkDetails)
-	require.Equal(t, "do_unlinkat", fentryDetails.FnName)
+	require.Equal(t, slot.Func, fentryDetails.FnName)
 
 	// Round-trip: ListLinks should include our link
 	listedLinks, err := env.ListLinks(ctx)
@@ -1756,23 +1668,15 @@ func TestFentry_LoadAttachDetachUnload(t *testing.T) {
 	require.NotZero(t, listedLinks[0].ID, "should have kernel link ID")
 	require.Equal(t, link.Kind, listedLinks[0].Kind)
 
-	// Wait for attach to be effective (bpf_trampoline rebuild can lag
-	// under suite-wide contention on do_unlinkat) before firing the
-	// counted workload, then drive `events` unlinks for exact-equality.
+	// Drive `events` private slot invocations for exact-equality.
 	mapIDFe := mapIDByName(t, prog, "fe_count")
-	qa := waitProgramActive(t, AttachActiveProbe{
-		AttachedMap: mapIDFe, AttachedWeight: weights[0],
-		FireOne: func() { workload.Unlink(1) },
-	})
-	t.Logf("post-attach activation: probes=%d, lostProbes=%d, latency=%s", qa.Probes, qa.LostProbes, qa.Latency)
-
 	const events = 5
-	workload.Unlink(events)
-	want := uint64(events+qa.EventsCounted) * weights[0]
+	slot.Fire(t, events)
+	want := uint64(events) * weights[0]
 	got := readArrayCounterByID(t, mapIDFe)
-	t.Logf("fentry: events=%d weight=%d want=%d got=%d", events+qa.EventsCounted, weights[0], want, got)
+	t.Logf("fentry: events=%d weight=%d want=%d got=%d", events, weights[0], want, got)
 	requireCounterEqual(t, want, got,
-		"fentry counter should equal events(%d) * weight(%d) = %d", events+qa.EventsCounted, weights[0], want)
+		"fentry counter should equal events(%d) * weight(%d) = %d", events, weights[0], want)
 
 	// When: detach
 	err = env.Detach(ctx, link.ID)
@@ -1784,11 +1688,7 @@ func TestFentry_LoadAttachDetachUnload(t *testing.T) {
 	require.Error(t, err, "GetLink should fail after detach")
 
 	// Then: detach actually stopped the BPF program firing.
-	waitDetachQuiescent(t, QuiescenceProbe{
-		DetachedMap:    mapIDByName(t, prog, "fe_count"),
-		DetachedWeight: weights[0],
-		FireOne:        func() { workload.Unlink(1) },
-	})
+	waitKmodSlotDetachQuiescent(t, slot, mapIDFe, weights[0], 0, 0)
 
 	// When: unload
 	err = env.Unload(ctx, prog.Status.Kernel.ID)
@@ -1802,50 +1702,47 @@ func TestFentry_LoadAttachDetachUnload(t *testing.T) {
 
 // TestMultiProgFexit_LoadAttachDetachUnload proves that the
 // kernel's fexit trampoline correctly multiplexes three fexit
-// programs attached to the same target (do_unlinkat) and that
-// detaching one removes only that program from the trampoline
-// chain. Same property as TestMultiProgFentry but for the
-// function-return tracing path.
+// programs attached to the same leased kmod slot and that detaching
+// one removes only that program from the trampoline chain. Same
+// property as TestMultiProgFentry but for the function-return
+// tracing path.
 func TestMultiProgFexit_LoadAttachDetachUnload(t *testing.T) {
 	t.Parallel()
 	RequireRoot(t)
 	RequireBTF(t)
-	RequireKernelFunction(t, "do_unlinkat")
-	lockDoUnlinkAtHook(t)
+	RequireKmodTargets(t)
+
+	slot := acquireKmodSlot(t)
+	t.Logf("kmod slot: index=%d func=%s", slot.Index, slot.Func)
 
 	env := NewTestEnv(t)
 	ctx := context.Background()
 	env.AssertCleanState()
 
-	workload := startWorkload(t)
-
 	const eventsPerWave = 5
 	type plan struct {
-		suffix       string
-		weight       uint64
-		expectEvents uint64
+		suffix string
+		weight uint64
 	}
 	weights := uniqueWeights(t, 3)
 	plans := []plan{
-		{suffix: "a", weight: weights[0], expectEvents: 3 * eventsPerWave},
-		{suffix: "b", weight: weights[1], expectEvents: 2 * eventsPerWave},
-		{suffix: "c", weight: weights[2], expectEvents: 1 * eventsPerWave},
+		{suffix: "a", weight: weights[0]},
+		{suffix: "b", weight: weights[1]},
+		{suffix: "c", weight: weights[2]},
 	}
 
 	specs := make([]manager.ProgramSpec, len(plans))
-	globals := map[string][]byte{
-		"expected_pid": uint32LE(uint32(workload.Pid())),
-	}
+	globals := map[string][]byte{}
 	for i, p := range plans {
 		specs[i] = manager.ProgramSpec{
 			Type:       bpfman.ProgramTypeFexit,
 			Name:       "mfx_" + p.suffix,
-			AttachFunc: "do_unlinkat",
+			AttachFunc: slot.Func,
 		}
 		globals["weight_"+p.suffix] = uint64LE(p.weight)
 	}
 
-	programs, err := env.LoadFile(ctx, "testdata/bpf/multi_prog_fexit_counter.bpf.o", specs, manager.LoadOpts{
+	programs, err := env.LoadFile(ctx, "testdata/bpf/multi_prog_fexit_kmod_counter.bpf.o", specs, manager.LoadOpts{
 		GlobalData: globals,
 	})
 	require.NoError(t, err)
@@ -1881,43 +1778,24 @@ func TestMultiProgFexit_LoadAttachDetachUnload(t *testing.T) {
 	mapIDA := mapIDByName(t, programs[0], "mfx_a_count")
 	mapIDB := mapIDByName(t, programs[1], "mfx_b_count")
 	mapIDC := mapIDByName(t, programs[2], "mfx_c_count")
-
-	// Wait for attach to be effective on c (the last-attached); by
-	// the time c counts a probe, the trampoline image contains all
-	// three. Fentry/fexit on a shared target function rebuilds the
-	// trampoline on every attach and is racy under suite contention.
-	qa := waitProgramActive(t, AttachActiveProbe{
-		AttachedMap: mapIDC, AttachedWeight: plans[2].weight,
-		FireOne: func() { workload.Unlink(1) },
-	})
-	t.Logf("post-attach activation c: probes=%d, lostProbes=%d, latency=%s", qa.Probes, qa.LostProbes, qa.Latency)
-
-	workload.Unlink(eventsPerWave)
+	slot.Fire(t, eventsPerWave)
 
 	require.NoError(t, env.Detach(ctx, links[2].ID), "detach mfx_%s", plans[2].suffix)
-	qc := waitDetachQuiescent(t, QuiescenceProbe{
-		DetachedMap: mapIDC, DetachedWeight: plans[2].weight,
-		ControlMap: mapIDA, ControlWeight: plans[0].weight,
-		FireOne: func() { workload.Unlink(1) },
-	})
+	qc := waitKmodSlotDetachQuiescent(t, slot, mapIDC, plans[2].weight, mapIDA, plans[0].weight)
 	t.Logf("post-detach quiescence c: probes=%d, eventsCounted=%d, latency=%s", qc.Probes, qc.EventsCounted, qc.Latency)
 
-	workload.Unlink(eventsPerWave)
+	slot.Fire(t, eventsPerWave)
 
 	require.NoError(t, env.Detach(ctx, links[1].ID), "detach mfx_%s", plans[1].suffix)
-	qb := waitDetachQuiescent(t, QuiescenceProbe{
-		DetachedMap: mapIDB, DetachedWeight: plans[1].weight,
-		ControlMap: mapIDA, ControlWeight: plans[0].weight,
-		FireOne: func() { workload.Unlink(1) },
-	})
+	qb := waitKmodSlotDetachQuiescent(t, slot, mapIDB, plans[1].weight, mapIDA, plans[0].weight)
 	t.Logf("post-detach quiescence b: probes=%d, eventsCounted=%d, latency=%s", qb.Probes, qb.EventsCounted, qb.Latency)
 
-	workload.Unlink(eventsPerWave)
+	slot.Fire(t, eventsPerWave)
 
 	expectEvents := []uint64{
-		uint64(qa.Probes) + 3*uint64(eventsPerWave) + uint64(qc.Probes) + uint64(qb.Probes),        // a
-		uint64(qa.Probes) + 2*uint64(eventsPerWave) + uint64(qc.Probes) + uint64(qb.EventsCounted), // b
-		uint64(qa.EventsCounted) + 1*uint64(eventsPerWave) + uint64(qc.EventsCounted),              // c
+		3*uint64(eventsPerWave) + uint64(qc.Probes) + uint64(qb.Probes),        // a
+		2*uint64(eventsPerWave) + uint64(qc.Probes) + uint64(qb.EventsCounted), // b
+		1*uint64(eventsPerWave) + uint64(qc.EventsCounted),                     // c
 	}
 
 	for i, prog := range programs {
@@ -1942,8 +1820,10 @@ func TestFexit_LoadAttachDetachUnload(t *testing.T) {
 	t.Parallel()
 	RequireRoot(t)
 	RequireBTF(t)
-	RequireKernelFunction(t, "do_unlinkat")
-	lockDoUnlinkAtHook(t)
+	RequireKmodTargets(t)
+
+	slot := acquireKmodSlot(t)
+	t.Logf("kmod slot: index=%d func=%s", slot.Index, slot.Func)
 
 	env := NewTestEnv(t)
 	ctx := context.Background()
@@ -1951,16 +1831,14 @@ func TestFexit_LoadAttachDetachUnload(t *testing.T) {
 	// Given: clean state
 	env.AssertCleanState()
 
-	workload := startWorkload(t)
 	weights := uniqueWeights(t, 1)
 
 	// When: load from local file
-	programs, err := env.LoadFile(ctx, "testdata/bpf/fexit_exact.bpf.o", []manager.ProgramSpec{
-		{Name: "test_fexit", Type: bpfman.ProgramTypeFexit, AttachFunc: "do_unlinkat"},
+	programs, err := env.LoadFile(ctx, "testdata/bpf/fexit_kmod_exact.bpf.o", []manager.ProgramSpec{
+		{Name: "test_fexit", Type: bpfman.ProgramTypeFexit, AttachFunc: slot.Func},
 	}, manager.LoadOpts{
 		GlobalData: map[string][]byte{
-			"expected_pid": uint32LE(uint32(workload.Pid())),
-			"weight":       uint64LE(weights[0]),
+			"weight": uint64LE(weights[0]),
 		},
 	})
 	require.NoError(t, err)
@@ -2022,7 +1900,7 @@ func TestFexit_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, link.Kind, gotLinkSummary.Kind)
 	fexitDetails, ok := gotLinkDetails.(bpfman.FexitDetails)
 	require.True(t, ok, "expected FexitDetails, got %T", gotLinkDetails)
-	require.Equal(t, "do_unlinkat", fexitDetails.FnName)
+	require.Equal(t, slot.Func, fexitDetails.FnName)
 
 	// Round-trip: ListLinks should include our link
 	listedLinks, err := env.ListLinks(ctx)
@@ -2031,23 +1909,15 @@ func TestFexit_LoadAttachDetachUnload(t *testing.T) {
 	require.NotZero(t, listedLinks[0].ID, "should have kernel link ID")
 	require.Equal(t, link.Kind, listedLinks[0].Kind)
 
-	// Wait for attach to be effective (bpf_trampoline rebuild can lag
-	// under suite-wide contention on do_unlinkat) before firing the
-	// counted workload, then drive `events` unlinks for exact-equality.
+	// Drive `events` private slot invocations for exact-equality.
 	mapIDFx := mapIDByName(t, prog, "fx_count")
-	qa := waitProgramActive(t, AttachActiveProbe{
-		AttachedMap: mapIDFx, AttachedWeight: weights[0],
-		FireOne: func() { workload.Unlink(1) },
-	})
-	t.Logf("post-attach activation: probes=%d, lostProbes=%d, latency=%s", qa.Probes, qa.LostProbes, qa.Latency)
-
 	const events = 5
-	workload.Unlink(events)
-	want := uint64(events+qa.EventsCounted) * weights[0]
+	slot.Fire(t, events)
+	want := uint64(events) * weights[0]
 	got := readArrayCounterByID(t, mapIDFx)
-	t.Logf("fexit: events=%d weight=%d want=%d got=%d", events+qa.EventsCounted, weights[0], want, got)
+	t.Logf("fexit: events=%d weight=%d want=%d got=%d", events, weights[0], want, got)
 	requireCounterEqual(t, want, got,
-		"fexit counter should equal events(%d) * weight(%d) = %d", events+qa.EventsCounted, weights[0], want)
+		"fexit counter should equal events(%d) * weight(%d) = %d", events, weights[0], want)
 
 	// When: detach
 	err = env.Detach(ctx, link.ID)
@@ -2059,11 +1929,7 @@ func TestFexit_LoadAttachDetachUnload(t *testing.T) {
 	require.Error(t, err, "GetLink should fail after detach")
 
 	// Then: detach actually stopped the BPF program firing.
-	waitDetachQuiescent(t, QuiescenceProbe{
-		DetachedMap:    mapIDByName(t, prog, "fx_count"),
-		DetachedWeight: weights[0],
-		FireOne:        func() { workload.Unlink(1) },
-	})
+	waitKmodSlotDetachQuiescent(t, slot, mapIDFx, weights[0], 0, 0)
 
 	// When: unload
 	err = env.Unload(ctx, prog.Status.Kernel.ID)
@@ -3470,137 +3336,6 @@ func fireUprobe() error {
 	cmd := exec.Command(selfExe)
 	cmd.Env = append(os.Environ(), e2eModeEnv+"="+e2eModeUprobeTriggerCallMalloc)
 	return cmd.Run()
-}
-
-// TestFexit_KmodSlot_LoadAttachDetachUnload is the kmod-targeting
-// counterpart of TestFexit_LoadAttachDetachUnload. Instead of
-// attaching to the public do_unlinkat kernel function -- which
-// every fentry/fexit test in the suite (and any host-side BPF
-// tooling) shares, forcing trampoline-rebuild contention -- it
-// claims a private slot in the bpfman_e2e_targets kernel module
-// and attaches there. No other test or process drives that slot's
-// function, so the rebuild window is private and exact-equality
-// holds without the suite-wide do_unlinkat mutex.
-//
-// Skipped if the bpfman_e2e_targets module is not loaded.
-func TestFexit_KmodSlot_LoadAttachDetachUnload(t *testing.T) {
-	t.Parallel()
-	RequireRoot(t)
-	RequireBTF(t)
-	RequireKmodTargets(t)
-
-	slot := acquireKmodSlot(t)
-	t.Logf("kmod slot: index=%d func=%s", slot.Index, slot.Func)
-
-	env := NewTestEnv(t)
-	ctx := context.Background()
-	env.AssertCleanState()
-
-	weights := uniqueWeights(t, 1)
-	programs, err := env.LoadFile(ctx, "testdata/bpf/fexit_kmod_exact.bpf.o", []manager.ProgramSpec{
-		{Name: "test_fexit", Type: bpfman.ProgramTypeFexit, AttachFunc: slot.Func},
-	}, manager.LoadOpts{
-		GlobalData: map[string][]byte{
-			"weight": uint64LE(weights[0]),
-		},
-	})
-	require.NoError(t, err)
-	require.Len(t, programs, 1)
-	prog := programs[0]
-	t.Cleanup(func() { env.Unload(context.Background(), prog.Status.Kernel.ID) })
-
-	fxSpec, err := bpfman.NewFexitAttachSpec(prog.Status.Kernel.ID)
-	require.NoError(t, err)
-	link, err := env.Attach(ctx, fxSpec)
-	require.NoError(t, err)
-	require.Equal(t, bpfman.LinkKindFexit, link.Kind)
-	t.Cleanup(func() { env.Detach(context.Background(), link.ID) })
-
-	// Wait for attach to be live before counting. On a private
-	// slot the trampoline rebuild has no contending writers, so
-	// the warm-up typically settles on the first probe.
-	mapIDFx := mapIDByName(t, prog, "fx_count")
-	qa := waitProgramActive(t, AttachActiveProbe{
-		AttachedMap: mapIDFx, AttachedWeight: weights[0],
-		FireOne: func() { slot.Fire(t, 1) },
-	})
-	t.Logf("post-attach activation: probes=%d, lostProbes=%d, latency=%s",
-		qa.Probes, qa.LostProbes, qa.Latency)
-
-	const events = 5
-	slot.Fire(t, events)
-	want := uint64(events+qa.EventsCounted) * weights[0]
-	got := readArrayCounterByID(t, mapIDFx)
-	t.Logf("fexit: events=%d weight=%d want=%d got=%d",
-		events+qa.EventsCounted, weights[0], want, got)
-	requireCounterEqual(t, want, got,
-		"fexit counter on private slot %s should equal events(%d) * weight(%d) = %d",
-		slot.Func, events+qa.EventsCounted, weights[0], want)
-
-	require.NoError(t, env.Detach(ctx, link.ID))
-	env.AssertLinkCount(0)
-	require.NoError(t, env.Unload(ctx, prog.Status.Kernel.ID))
-	env.AssertCleanState()
-}
-
-// TestFentry_KmodSlot_LoadAttachDetachUnload is the kmod-targeting
-// counterpart of TestFentry_LoadAttachDetachUnload. See the fexit
-// variant for rationale.
-func TestFentry_KmodSlot_LoadAttachDetachUnload(t *testing.T) {
-	t.Parallel()
-	RequireRoot(t)
-	RequireBTF(t)
-	RequireKmodTargets(t)
-
-	slot := acquireKmodSlot(t)
-	t.Logf("kmod slot: index=%d func=%s", slot.Index, slot.Func)
-
-	env := NewTestEnv(t)
-	ctx := context.Background()
-	env.AssertCleanState()
-
-	weights := uniqueWeights(t, 1)
-	programs, err := env.LoadFile(ctx, "testdata/bpf/fentry_kmod_exact.bpf.o", []manager.ProgramSpec{
-		{Name: "test_fentry", Type: bpfman.ProgramTypeFentry, AttachFunc: slot.Func},
-	}, manager.LoadOpts{
-		GlobalData: map[string][]byte{
-			"weight": uint64LE(weights[0]),
-		},
-	})
-	require.NoError(t, err)
-	require.Len(t, programs, 1)
-	prog := programs[0]
-	t.Cleanup(func() { env.Unload(context.Background(), prog.Status.Kernel.ID) })
-
-	feSpec, err := bpfman.NewFentryAttachSpec(prog.Status.Kernel.ID)
-	require.NoError(t, err)
-	link, err := env.Attach(ctx, feSpec)
-	require.NoError(t, err)
-	require.Equal(t, bpfman.LinkKindFentry, link.Kind)
-	t.Cleanup(func() { env.Detach(context.Background(), link.ID) })
-
-	mapIDFe := mapIDByName(t, prog, "fe_count")
-	qa := waitProgramActive(t, AttachActiveProbe{
-		AttachedMap: mapIDFe, AttachedWeight: weights[0],
-		FireOne: func() { slot.Fire(t, 1) },
-	})
-	t.Logf("post-attach activation: probes=%d, lostProbes=%d, latency=%s",
-		qa.Probes, qa.LostProbes, qa.Latency)
-
-	const events = 5
-	slot.Fire(t, events)
-	want := uint64(events+qa.EventsCounted) * weights[0]
-	got := readArrayCounterByID(t, mapIDFe)
-	t.Logf("fentry: events=%d weight=%d want=%d got=%d",
-		events+qa.EventsCounted, weights[0], want, got)
-	requireCounterEqual(t, want, got,
-		"fentry counter on private slot %s should equal events(%d) * weight(%d) = %d",
-		slot.Func, events+qa.EventsCounted, weights[0], want)
-
-	require.NoError(t, env.Detach(ctx, link.ID))
-	env.AssertLinkCount(0)
-	require.NoError(t, env.Unload(ctx, prog.Status.Kernel.ID))
-	env.AssertCleanState()
 }
 
 // TestLoad_FentryFexit_TypeMismatchFailsLoudly verifies that

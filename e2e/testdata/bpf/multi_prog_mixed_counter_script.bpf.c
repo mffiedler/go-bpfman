@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
 // Copyright Authors of bpfman
 
-// Mixed-type multi-program counter object for the .bpfman script
-// path of TestMultiProgMixed_LoadAttachDetachUnload. Variant of
-// multi_prog_mixed_counter.bpf.o specialised for the script's
-// kmod-backed concurrency-isolation shape:
+// Mixed-type multi-program counter object for the kmod-backed
+// TestMultiProgMixed_LoadAttachDetachUnload paths. Variant of
+// multi_prog_mixed_counter.bpf.o specialised for the private-slot
+// concurrency-isolation shape:
 //
 //   - the tracepoint program attaches to the bpfman_e2e_ping
 //     tracepoint emitted by the e2e kmod and filters on the leased
@@ -12,14 +12,6 @@
 //   - the kprobe/kretprobe programs attach to a leased e2e kfunc
 //     slot, so the slot symbol itself is the isolation boundary and
 //     no PID filter is needed.
-//
-// The Go-test path of TestMultiProgMixed_LoadAttachDetachUnload
-// still uses multi_prog_mixed_counter.bpf.o (PID-only filter, no
-// slot filter, no slot-symbol assumption) because its workload
-// uses arbitrary filenames and its kprobe/kretprobe attach to
-// do_unlinkat rather than a leased slot. Keeping the two .bpf.o
-// objects separate avoids each path having to know about the
-// other's filter assumptions.
 //
 // Each program increments its counter by its own per-program
 // `weight_X` global on every matching event. Tests pass test-unique

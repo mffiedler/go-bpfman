@@ -3,7 +3,6 @@
 package e2e
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	cryptorand "crypto/rand"
@@ -616,33 +615,6 @@ func RequireBTF(t *testing.T) {
 	}
 }
 
-// RequireKernelFunction fails the test if the specified kernel function
-// is not found in /proc/kallsyms.
-func RequireKernelFunction(t *testing.T, fnName string) {
-	t.Helper()
-
-	f, err := os.Open("/proc/kallsyms")
-	if err != nil {
-		t.Fatalf("cannot open /proc/kallsyms: %v", err)
-		return
-	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		fields := strings.Fields(scanner.Text())
-		if len(fields) >= 3 {
-			// Symbol name is the third field, may have module suffix
-			sym := fields[2]
-			if sym == fnName || strings.HasPrefix(sym, fnName+".") {
-				return // Found it
-			}
-		}
-	}
-
-	t.Fatalf("kernel function %s not found in /proc/kallsyms", fnName)
-}
-
 // RequireKernelVersion fails the test if the kernel version is below the specified version.
 // Useful for features like TCX which require kernel 6.6+.
 func RequireKernelVersion(t *testing.T, major, minor int) {
@@ -669,28 +641,6 @@ func RequireKernelVersion(t *testing.T, major, minor int) {
 	if kernelMajor < major || (kernelMajor == major && kernelMinor < minor) {
 		t.Fatalf("test requires kernel %d.%d+, have %d.%d", major, minor, kernelMajor, kernelMinor)
 	}
-}
-
-// RequireTracepoint fails the test if the specified tracepoint doesn't exist.
-// Checks both tracefs locations: /sys/kernel/tracing (modern) and
-// /sys/kernel/debug/tracing (legacy debugfs mount).
-func RequireTracepoint(t *testing.T, group, name string) {
-	t.Helper()
-
-	// Modern kernels mount tracefs at /sys/kernel/tracing
-	// Older systems use /sys/kernel/debug/tracing via debugfs
-	paths := []string{
-		filepath.Join("/sys/kernel/tracing/events", group, name),
-		filepath.Join("/sys/kernel/debug/tracing/events", group, name),
-	}
-
-	for _, path := range paths {
-		if _, err := os.Stat(path); err == nil {
-			return
-		}
-	}
-
-	t.Fatalf("tracepoint %s/%s not found (checked %v)", group, name, paths)
 }
 
 // RequireTC fails the test if the tc command is not available.
@@ -978,97 +928,6 @@ func requireCounterEqual(t *testing.T, want, got uint64, format string, args ...
 	t.Fatalf("%s: want=%d got=%d delta=%d", prefix, want, got, int64(got)-int64(want))
 }
 
-// ActiveResult is what waitProgramActive reports back. Mirror of
-// QuiescenceResult on the attach side.
-type ActiveResult struct {
-	// Probes is the total number of single-event firings driven
-	// before the just-attached program counted its first event.
-	// Each probe still flows through the kernel hook, so siblings
-	// of the just-attached program (which are already attached)
-	// count every probe; callers must add Probes to each sibling's
-	// expected counter to keep assertions exact.
-	Probes int
-	// EventsCounted is how many probes the just-attached program
-	// counted. Always 1 on success (the first observed increment is
-	// the exit condition); included for symmetry with
-	// QuiescenceResult and so callers add it uniformly to expected.
-	EventsCounted int
-	// LostProbes is Probes - EventsCounted, the number of probes
-	// fired before the program became active. Telemetry: 0 on
-	// synchronous attach, > 0 on racy/contended attach paths
-	// (notably bpf_trampoline rebuild for fentry/fexit when
-	// concurrent attaches contend on the same target function).
-	LostProbes int
-	// Latency is the wall-clock time from first probe to first
-	// observed increment.
-	Latency time.Duration
-}
-
-// AttachActiveProbe configures waitProgramActive.
-type AttachActiveProbe struct {
-	// AttachedMap is the counter map of the just-attached program.
-	AttachedMap    kernel.MapID
-	AttachedWeight uint64
-	// FireOne drives exactly one workload event that should hit the
-	// program's hook now that it's attached.
-	FireOne func()
-	// Deadline is the upper bound on the entire wait. Default 500ms.
-	Deadline time.Duration
-}
-
-// waitProgramActive fires single workload events one at a time after
-// env.Attach returns and waits for the just-attached program's counter
-// to register its first event -- proving the attach has taken effect
-// kernel-side. This is the symmetric attach-side counterpart of
-// waitDetachQuiescent.
-//
-// Why it's needed: for fentry/fexit (and to a lesser extent any
-// multi-program-on-one-hook attach), env.Attach can return before the
-// kernel-side machinery is fully active. For fentry/fexit specifically
-// the attach goes through bpf_trampoline_update -- a JITed image is
-// rebuilt and text_poke_bp swaps the function-entry patch. Under
-// concurrent attach/detach contention on the same target function (the
-// e2e suite has many tests sharing do_unlinkat) the rebuild can be
-// slow enough that a workload event fired immediately after Attach
-// lands on the OLD image, where our program isn't yet present, and the
-// event is lost from our counter. Same class of bug as the detach
-// deferral, symmetrically placed.
-//
-// kprobe/uprobe/tracepoint attach is essentially synchronous (a single
-// rcu_assign_pointer publish onto tp_event->prog_array), so this
-// helper typically returns on the first probe for those types -- but
-// using it uniformly costs ~one extra probe per attach and gains
-// uniform telemetry plus defence in depth.
-func waitProgramActive(t *testing.T, p AttachActiveProbe) ActiveResult {
-	t.Helper()
-	deadline := p.Deadline
-	if deadline <= 0 {
-		deadline = 500 * time.Millisecond
-	}
-
-	start := time.Now()
-	initial := readArrayCounterByID(t, p.AttachedMap)
-	probes := 0
-
-	for time.Since(start) < deadline {
-		p.FireOne()
-		probes++
-		now := readArrayCounterByID(t, p.AttachedMap)
-		if now != initial {
-			eventsCounted := int((now - initial) / p.AttachedWeight)
-			return ActiveResult{
-				Probes:        probes,
-				EventsCounted: eventsCounted,
-				LostProbes:    probes - eventsCounted,
-				Latency:       time.Since(start),
-			}
-		}
-	}
-	t.Fatalf("waitProgramActive: counter never incremented after %d probes in %s -- attach not effective",
-		probes, time.Since(start))
-	return ActiveResult{}
-}
-
 // QuiescenceResult is what waitDetachQuiescent reports back so callers
 // can both check that the barrier was reached and fold the probe events
 // into their expected counts.
@@ -1198,6 +1057,24 @@ func waitDetachQuiescent(t *testing.T, p QuiescenceProbe) QuiescenceResult {
 	t.Fatalf("waitDetachQuiescent: counter still moving after %s and %d probes (delta=%d, weight=%d)",
 		deadline, probes, last-initial, p.DetachedWeight)
 	return QuiescenceResult{}
+}
+
+func waitKmodSlotDetachQuiescent(
+	t *testing.T,
+	slot KmodSlot,
+	detachedMap kernel.MapID,
+	detachedWeight uint64,
+	controlMap kernel.MapID,
+	controlWeight uint64,
+) QuiescenceResult {
+	t.Helper()
+	return waitDetachQuiescent(t, QuiescenceProbe{
+		DetachedMap:    detachedMap,
+		DetachedWeight: detachedWeight,
+		ControlMap:     controlMap,
+		ControlWeight:  controlWeight,
+		FireOne:        func() { slot.Fire(t, 1) },
+	})
 }
 
 // uniqueWeights returns n distinct random uint64 weights derived
@@ -1357,49 +1234,15 @@ func (h *tLogHandler) WithGroup(name string) slog.Handler {
 	return &nh
 }
 
-// doUnlinkAtHookMu serialises every test that attaches anything --
-// fentry, fexit, kprobe, or kretprobe -- to do_unlinkat. All four
-// attach types ride on the kernel's __fentry__ patch site for the
-// target function: ftrace owns that site and re-merges its callback
-// list (kprobe handlers + the BPF trampoline + ...) on every
-// attach and detach. Under concurrent rebuilds there is a window
-// during which an in-flight call lands in the gap and the BPF
-// trampoline misses an event, dropping it from our exact-equality
-// counters.
-//
-// Empirically a narrower mutex covering only fentry/fexit was
-// insufficient: a parallel kprobe attach on do_unlinkat can still
-// kick the ftrace rebuild and drop one of our quiescence probes
-// (the off-by-one mfx_a control-sibling failure).
-//
-// Holding this mutex from before the first Attach until the test
-// ends keeps only one do_unlinkat-attaching test active at a time.
-// Tests that share the hook with non-suite attachers (system
-// observability tools, an interactive bpftrace) remain vulnerable;
-// the long-term fix is the private kmod design in
-// docs/HERMETIC-FENTRY-FEXIT-KMOD.md.
-var doUnlinkAtHookMu sync.Mutex
-
-// lockDoUnlinkAtHook blocks until the suite-wide do_unlinkat hook
-// mutex is acquired, then registers a t.Cleanup that releases it.
-// Call this at the top of any test that attaches a fentry, fexit,
-// kprobe, or kretprobe program to do_unlinkat, after the Require*
-// gates.
-func lockDoUnlinkAtHook(t *testing.T) {
-	t.Helper()
-	doUnlinkAtHookMu.Lock()
-	t.Cleanup(doUnlinkAtHookMu.Unlock)
-}
-
 // kmodTargetsRoot is the debugfs directory the bpfman_e2e_targets
 // kernel module exposes once loaded. Each entry trigger_NNN under
 // it, when written, invokes bpfman_e2e_target_N once.
 const kmodTargetsRoot = "/sys/kernel/debug/bpfman_e2e"
 
-// kmodSlotPoolSize is the number of slots the bpfman_e2e_targets
-// module exports. Must match BPFMAN_E2E_NUM_SLOTS in the module
+// kmodSlotPoolSize is the number of module slots the Go e2e suite
+// leases concurrently. Must match BPFMAN_E2E_NUM_SLOTS in the module
 // source.
-const kmodSlotPoolSize = 32
+const kmodSlotPoolSize = 128
 
 var (
 	kmodSlotPool     chan int

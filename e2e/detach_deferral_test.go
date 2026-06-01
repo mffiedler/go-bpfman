@@ -27,7 +27,7 @@ import (
 //   - quietPoll: counter reads at +0us, +250us, +500us, ... while
 //     firing nothing -- the counter must not move (sanity for the
 //     polling itself)
-//   - probe-N: fire one workload unlink at offset T from Detach
+//   - probe-N: fire one kmod slot event at offset T from Detach
 //     return; record whether the just-detached program counted it
 //
 // "did the just-detached program still count" is the only signal that
@@ -35,14 +35,14 @@ import (
 // still hooked at offset T.
 func TestDebug_DetachDeferral_Kretprobe(t *testing.T) {
 	RequireRoot(t)
-	RequireKernelFunction(t, "do_unlinkat")
-	lockDoUnlinkAtHook(t)
+	RequireKmodTargets(t)
+
+	slot := acquireKmodSlot(t)
+	t.Logf("kmod slot: index=%d func=%s", slot.Index, slot.Func)
 
 	env := NewTestEnv(t)
 	ctx := context.Background()
 	env.AssertCleanState()
-
-	workload := startWorkload(t)
 
 	weights := uniqueWeights(t, 2)
 	type plan struct {
@@ -55,15 +55,13 @@ func TestDebug_DetachDeferral_Kretprobe(t *testing.T) {
 	}
 
 	specs := make([]manager.ProgramSpec, len(plans))
-	globals := map[string][]byte{
-		"expected_pid": uint32LE(uint32(workload.Pid())),
-	}
+	globals := map[string][]byte{}
 	for i, p := range plans {
 		specs[i] = manager.ProgramSpec{Type: bpfman.ProgramTypeKretprobe, Name: "mkp_" + p.suffix}
 		globals["weight_"+p.suffix] = uint64LE(p.weight)
 	}
 
-	programs, err := env.LoadFile(ctx, "testdata/bpf/multi_prog_kprobe_counter.bpf.o", specs, manager.LoadOpts{
+	programs, err := env.LoadFile(ctx, "testdata/bpf/multi_prog_kprobe_kmod_counter.bpf.o", specs, manager.LoadOpts{
 		GlobalData: globals,
 	})
 	require.NoError(t, err)
@@ -77,7 +75,7 @@ func TestDebug_DetachDeferral_Kretprobe(t *testing.T) {
 
 	links := make([]bpfman.LinkRecord, len(plans))
 	for i, prog := range programs {
-		spec, err := bpfman.NewKprobeAttachSpec(prog.Status.Kernel.ID, "do_unlinkat")
+		spec, err := bpfman.NewKprobeAttachSpec(prog.Status.Kernel.ID, slot.Func)
 		require.NoError(t, err)
 		link, err := env.Attach(ctx, spec)
 		require.NoError(t, err, "attach mkp_%s", plans[i].suffix)
@@ -88,7 +86,7 @@ func TestDebug_DetachDeferral_Kretprobe(t *testing.T) {
 	// Sanity: fire one event; both should count.
 	bBefore := readArrayCounterByID(t, mapIDB)
 	aBefore := readArrayCounterByID(t, mapIDA)
-	workload.Unlink(1)
+	slot.Fire(t, 1)
 	require.Equal(t, bBefore+plans[1].weight, readArrayCounterByID(t, mapIDB), "sanity: b should count pre-detach")
 	require.Equal(t, aBefore+plans[0].weight, readArrayCounterByID(t, mapIDA), "sanity: a should count pre-detach")
 
@@ -111,7 +109,7 @@ func TestDebug_DetachDeferral_Kretprobe(t *testing.T) {
 	}
 	t.Logf("idle phase OK: counter stable at %d for ~10ms with no workload", bSnapshot)
 
-	// Phase 2: fire 10 individual unlinks, one at a time, recording
+	// Phase 2: fire 10 individual kmod slot events, one at a time, recording
 	// for each: offset from tDetachReturn, b's delta, a's delta.
 	// b's delta should be 0 if cleanly detached. a is the control --
 	// it should always count (it's still attached).
@@ -126,7 +124,7 @@ func TestDebug_DetachDeferral_Kretprobe(t *testing.T) {
 		bPre := readArrayCounterByID(t, mapIDB)
 		aPre := readArrayCounterByID(t, mapIDA)
 		fireT := time.Since(tDetachReturn)
-		workload.Unlink(1)
+		slot.Fire(t, 1)
 		bPost := readArrayCounterByID(t, mapIDB)
 		aPost := readArrayCounterByID(t, mapIDA)
 		samples = append(samples, sample{
@@ -153,17 +151,15 @@ func TestDebug_DetachDeferral_Kretprobe(t *testing.T) {
 	}
 
 	// Phase 3: replicate the actual failing pattern. Re-attach b,
-	// fire one wave so it counts, then immediately Detach and call
-	// workload.Unlink(5) -- the same batch shape the failing test
-	// uses. The 5 events happen back-to-back inside the workload
-	// driver, microseconds apart, so any sub-IPC-roundtrip deferral
-	// window is exposed.
-	spec, err := bpfman.NewKprobeAttachSpec(programs[1].Status.Kernel.ID, "do_unlinkat")
+	// fire one wave so it counts, then immediately Detach and fire a
+	// five-event batch. The events happen back-to-back inside the
+	// slot trigger loop, so any sub-roundtrip deferral window is exposed.
+	spec, err := bpfman.NewKprobeAttachSpec(programs[1].Status.Kernel.ID, slot.Func)
 	require.NoError(t, err)
 	bLink, err := env.Attach(ctx, spec)
 	require.NoError(t, err)
 
-	workload.Unlink(5) // warm-up while b is attached
+	slot.Fire(t, 5) // warm-up while b is attached
 	bSnapshot = readArrayCounterByID(t, mapIDB)
 	t.Logf("phase3 pre-detach: b counter = %d", bSnapshot)
 
@@ -173,12 +169,12 @@ func TestDebug_DetachDeferral_Kretprobe(t *testing.T) {
 	t.Logf("phase3 env.Detach returned in %s", tDetachReturn.Sub(tDetachStart))
 
 	tBatchStart := time.Now()
-	workload.Unlink(5) // the batch -- 5 events microseconds apart
+	slot.Fire(t, 5) // the batch -- 5 events close together
 	tBatchReturn := time.Now()
 
 	bAfter := readArrayCounterByID(t, mapIDB)
 	bDelta := bAfter - bSnapshot
-	t.Logf("phase3 batch Unlink(5): start +%s, ack +%s after Detach, b delta = %d (expected 0; one event = %d)",
+	t.Logf("phase3 batch Fire(5): start +%s, ack +%s after Detach, b delta = %d (expected 0; one event = %d)",
 		tBatchStart.Sub(tDetachReturn), tBatchReturn.Sub(tDetachReturn), bDelta, plans[1].weight)
 
 	if bDelta != 0 {

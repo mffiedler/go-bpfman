@@ -37,20 +37,23 @@
 //
 // [TestTracepoint_LoadAttachDetachUnload] tests the full lifecycle of
 // a tracepoint program. Loads go-tracepoint-counter from OCI, attaches
-// to syscalls/sys_enter_kill, verifies link properties including group
-// and name, then detaches and unloads. No traffic generation required.
+// to the private e2e kmod tracepoint, verifies link properties
+// including group and name, fires the tracepoint through debugfs, then
+// detaches and unloads.
 //
 // ## Kprobe Tests
 //
 // [TestKprobe_LoadAttachDetachUnload] tests the full lifecycle of a
 // kprobe program. Loads go-kprobe-counter from OCI, attaches to the
-// try_to_wake_up kernel function, verifies link properties including
-// function name and offset, then detaches and unloads.
+// private e2e kmod function slot, verifies link properties including
+// function name and offset, fires the slot through debugfs, then
+// detaches and unloads.
 //
 // [TestKretprobe_LoadAttachDetachUnload] tests the full lifecycle of
 // a kretprobe program. Uses the same image as kprobe but loads as
-// kretprobe type. Attaches to try_to_wake_up return, verifies the
-// Retprobe flag is set in link details.
+// kretprobe type. Attaches to the private e2e kmod function slot,
+// verifies the Retprobe flag is set in link details, and fires the
+// slot through debugfs.
 //
 // ## Uprobe Tests
 //
@@ -68,13 +71,13 @@
 //
 // [TestFentry_LoadAttachDetachUnload] tests the full lifecycle of a
 // fentry program. Requires BTF support. Loads fentry.bpf.o from local
-// bytecode, attaches to do_unlinkat kernel function entry, verifies
-// link properties. Skipped if BTF unavailable.
+// bytecode, attaches to a private e2e kmod function slot, verifies
+// link properties. Skipped if BTF or the e2e kmod is unavailable.
 //
 // [TestFexit_LoadAttachDetachUnload] tests the full lifecycle of a
-// fexit program. Requires BTF support. Loads fentry.bpf.o from local
-// bytecode, attaches to do_unlinkat kernel function exit, verifies
-// link properties. Skipped if BTF unavailable.
+// fexit program. Requires BTF support. Loads fexit.bpf.o from local
+// bytecode, attaches to a private e2e kmod function slot, verifies
+// link properties. Skipped if BTF or the e2e kmod is unavailable.
 //
 // ## Network Tests
 //
@@ -109,10 +112,10 @@
 //
 // The test suite covers all supported BPF program types:
 //
-//   - Tracepoint: kernel tracepoint hooks (syscalls/sys_enter_kill)
-//   - Kprobe/Kretprobe: kernel function entry and return probes (try_to_wake_up)
+//   - Tracepoint: private e2e kmod tracepoint hooks
+//   - Kprobe/Kretprobe: private e2e kmod function entry and return probes
 //   - Uprobe/Uretprobe: userspace function probes (malloc in libc)
-//   - Fentry/Fexit: fast kernel function tracing (do_unlinkat, requires BTF)
+//   - Fentry/Fexit: fast private e2e kmod function tracing (requires BTF)
 //   - XDP: network ingress via dispatcher programs
 //   - TC: traffic control via dispatcher programs
 //   - TCX: native kernel multi-program TC (requires kernel 6.6+)
@@ -128,9 +131,7 @@
 //
 //   - [RequireRoot]: fails if not running as root
 //   - [RequireBTF]: fails if /sys/kernel/btf/vmlinux is missing
-//   - [RequireKernelFunction]: fails if function not in /proc/kallsyms
 //   - [RequireKernelVersion]: fails if kernel is below a version
-//   - [RequireTracepoint]: fails if tracepoint does not exist
 //   - [RequireTC]: fails if tc command (iproute2) is not available
 //
 // # Bytecode Sources
