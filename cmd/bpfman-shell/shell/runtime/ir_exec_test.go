@@ -498,7 +498,7 @@ assert 1 == 1
 // runForBindings runs src through one engine and returns the
 // Env so tests can probe final Session bindings. The Env's
 // ExecCommand and ExecBind are no-op recorders that always
-// return ok; ExecAssertIR records a Session counter so asserts
+// return ok; ExecAssert records a Session counter so asserts
 // in the script do not fall over for lack of an assertion
 // executor.
 func runForBindings(t *testing.T, src string) *Env {
@@ -507,7 +507,7 @@ func runForBindings(t *testing.T, src string) *Env {
 	assertFn := func(a *ir.Assert, env *Env) error {
 		clause, ok := a.Clause.(*ir.AssertExprClause)
 		require.True(t, ok, "assert clause = %T, want *ir.AssertExprClause", a.Clause)
-		v, err := EvalIRExpr(clause.Expr, env)
+		v, err := EvalExpr(clause.Expr, env)
 		if err != nil {
 			return err
 		}
@@ -528,7 +528,7 @@ func runForBindings(t *testing.T, src string) *Env {
 		ExecBind: func(args []Arg, span source.Span) (BindResult, error) {
 			return BindResult{Rc: OkEnvelope()}, nil
 		},
-		ExecAssertIR: assertFn,
+		ExecAssert: assertFn,
 	}
 	lp, err := lowerToIR(prog)
 	if err != nil {
@@ -588,10 +588,10 @@ func runScriptError(t *testing.T, src string, schedule map[string]int) error {
 	}
 	env := &Env{
 		Session: NewSession(),
-		ExecAssertIR: func(a *ir.Assert, env *Env) error {
+		ExecAssert: func(a *ir.Assert, env *Env) error {
 			switch clause := a.Clause.(type) {
 			case *ir.AssertExprClause:
-				val, err := EvalIRExpr(clause.Expr, env)
+				val, err := EvalExpr(clause.Expr, env)
 				if err != nil {
 					return err
 				}
@@ -645,7 +645,7 @@ func commandHead(args []Arg) string {
 }
 
 // runAssertCounted runs src through the lowered engine with an Env that
-// counts ExecAssertIR invocations and records ExecCommand / ExecBind.
+// counts ExecAssert invocations and records ExecCommand / ExecBind.
 func runAssertCounted(t *testing.T, src string) (int, []execCall) {
 	t.Helper()
 	prog := parseProgram(t, src)
@@ -665,7 +665,7 @@ func runAssertCounted(t *testing.T, src string) (int, []execCall) {
 			calls = append(calls, execCall{Lane: "bind", Argv: renderArgv(args)})
 			return BindResult{Rc: OkEnvelope()}, nil
 		},
-		ExecAssertIR: assertFn,
+		ExecAssert: assertFn,
 	}
 	lp, err := lowerToIR(prog)
 	if err != nil {

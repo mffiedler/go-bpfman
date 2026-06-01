@@ -46,35 +46,35 @@ type resolvedMatchEntry struct {
 	source.Span
 }
 
-// evalIRMatchesExprDetails evaluates one lowered matches expression
+// evalMatchesExprDetails evaluates one lowered matches expression
 // and returns its full mismatch set.
-func evalIRMatchesExprDetails(expr *ir.MatchesExpr, env *Env) (MatchesResult, error) {
-	target, err := EvalIRExpr(expr.Target, env)
+func evalMatchesExprDetails(expr *ir.MatchesExpr, env *Env) (MatchesResult, error) {
+	target, err := EvalExpr(expr.Target, env)
 	if err != nil {
 		return MatchesResult{}, err
 	}
-	block, err := evalIRMatchesBlock(expr.Block, env)
+	block, err := evalMatchesBlock(expr.Block, env)
 	if err != nil {
 		return MatchesResult{}, err
 	}
-	return evalMatchesTarget(target, matchesTargetNameIR(expr.Target), block)
+	return evalMatchesTarget(target, matchesTargetName(expr.Target), block)
 }
 
-// FindFailedMatchesIRExpr returns the first failed `matches`
+// FindFailedMatchesExpr returns the first failed `matches`
 // expression that contributed to expr evaluating false under the
 // language's boolean semantics. It follows logical short-circuit
 // behaviour so it does not report failures from branches the
 // original expression would not have evaluated.
-func FindFailedMatchesIRExpr(expr ir.Expr, env *Env) (MatchesResult, bool, error) {
+func FindFailedMatchesExpr(expr ir.Expr, env *Env) (MatchesResult, bool, error) {
 	switch e := expr.(type) {
 	case *ir.MatchesExpr:
-		result, err := evalIRMatchesExprDetails(e, env)
+		result, err := evalMatchesExprDetails(e, env)
 		if err != nil {
 			return MatchesResult{}, false, err
 		}
 		return result, !result.Matched, nil
 	case *ir.LogicalExpr:
-		leftV, err := EvalIRExpr(e.Left, env)
+		leftV, err := EvalExpr(e.Left, env)
 		if err != nil {
 			return MatchesResult{}, false, err
 		}
@@ -85,9 +85,9 @@ func FindFailedMatchesIRExpr(expr ir.Expr, env *Env) (MatchesResult, bool, error
 		switch e.Op {
 		case "and":
 			if !leftB {
-				return FindFailedMatchesIRExpr(e.Left, env)
+				return FindFailedMatchesExpr(e.Left, env)
 			}
-			rightV, err := EvalIRExpr(e.Right, env)
+			rightV, err := EvalExpr(e.Right, env)
 			if err != nil {
 				return MatchesResult{}, false, err
 			}
@@ -96,14 +96,14 @@ func FindFailedMatchesIRExpr(expr ir.Expr, env *Env) (MatchesResult, bool, error
 				return MatchesResult{}, false, err
 			}
 			if !rightB {
-				return FindFailedMatchesIRExpr(e.Right, env)
+				return FindFailedMatchesExpr(e.Right, env)
 			}
 			return MatchesResult{}, false, nil
 		case "or":
 			if leftB {
 				return MatchesResult{}, false, nil
 			}
-			rightV, err := EvalIRExpr(e.Right, env)
+			rightV, err := EvalExpr(e.Right, env)
 			if err != nil {
 				return MatchesResult{}, false, err
 			}
@@ -112,10 +112,10 @@ func FindFailedMatchesIRExpr(expr ir.Expr, env *Env) (MatchesResult, bool, error
 				return MatchesResult{}, false, err
 			}
 			if !rightB {
-				if result, ok, err := FindFailedMatchesIRExpr(e.Left, env); err != nil || ok {
+				if result, ok, err := FindFailedMatchesExpr(e.Left, env); err != nil || ok {
 					return result, ok, err
 				}
-				return FindFailedMatchesIRExpr(e.Right, env)
+				return FindFailedMatchesExpr(e.Right, env)
 			}
 			return MatchesResult{}, false, nil
 		default:
@@ -124,8 +124,8 @@ func FindFailedMatchesIRExpr(expr ir.Expr, env *Env) (MatchesResult, bool, error
 	case *ir.NotExpr:
 		return MatchesResult{}, false, nil
 	default:
-		for _, child := range childIRExprsForFailedMatches(expr) {
-			if result, ok, err := FindFailedMatchesIRExpr(child, env); err != nil || ok {
+		for _, child := range childExprsForFailedMatches(expr) {
+			if result, ok, err := FindFailedMatchesExpr(child, env); err != nil || ok {
 				return result, ok, err
 			}
 		}
@@ -133,7 +133,7 @@ func FindFailedMatchesIRExpr(expr ir.Expr, env *Env) (MatchesResult, bool, error
 	}
 }
 
-func childIRExprsForFailedMatches(expr ir.Expr) []ir.Expr {
+func childExprsForFailedMatches(expr ir.Expr) []ir.Expr {
 	switch e := expr.(type) {
 	case *ir.BinaryExpr:
 		return []ir.Expr{e.Left, e.Right}
@@ -163,7 +163,7 @@ func childIRExprsForFailedMatches(expr ir.Expr) []ir.Expr {
 	}
 }
 
-func matchesTargetNameIR(expr ir.Expr) string {
+func matchesTargetName(expr ir.Expr) string {
 	switch e := expr.(type) {
 	case *ir.VarRefExpr:
 		if e.Path != "" {

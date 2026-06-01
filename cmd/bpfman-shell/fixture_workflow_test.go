@@ -115,7 +115,7 @@ func runFixtureWorkflow(t *testing.T, fixture string) fixtureWorkflowRun {
 		NoCheck:      false,
 		Fallback:     commandFallback,
 		BindFallback: bindCommandFallback,
-		MakeAssertIR: makeExecAssertIR,
+		MakeAssert:   makeExecAssert,
 	})
 	return fixtureWorkflowRun{
 		session: session,

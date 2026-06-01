@@ -309,9 +309,9 @@ func stripScalarValueProvenance(args []Arg) []Arg {
 
 // evalArgsForTest turns a token slice into evaluated []Arg by
 // building a primary expression per token, lowering it, and
-// evaluating through EvalIRArgs. Tests use this to keep their
+// evaluating through EvalArgs. Tests use this to keep their
 // table-driven shape; the production pipeline goes tokens -> Parse
-// -> Lower -> EvalIRArgs, which exercises the same helpers.
+// -> Lower -> EvalArgs, which exercises the same helpers.
 func evalArgsForTest(s *Session, tokens []syntax.Token) ([]Arg, error) {
 	exprs := make([]syntax.Expr, 0, len(tokens))
 	for _, tok := range tokens {

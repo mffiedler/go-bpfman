@@ -28,13 +28,13 @@ import (
 // RunHooks bundles the Env callbacks the runner installs when
 // it evaluates a parsed program.
 // Callers pass the same triple the outer Loop wires through
-// Config.Fallback / BindFallback / MakeAssertIR; the framework has no use for the hooks
+// Config.Fallback / BindFallback / MakeAssert; the framework has no use for the hooks
 // outside the program-execution path, so they are not stored
 // on the context.
 type RunHooks struct {
 	Fallback     FallbackFunc
 	BindFallback BindFallbackFunc
-	MakeAssertIR MakeAssertIRFunc
+	MakeAssert   MakeAssertFunc
 }
 
 // Config bundles the call-site options Run needs. The embedding
@@ -83,11 +83,11 @@ type Config struct {
 	// through to external-command execution.
 	BindFallback BindFallbackFunc
 
-	// MakeAssertIR builds the lowered-assert evaluator the
-	// runtime.Env wires into Env.ExecAssertIR. The embedding
+	// MakeAssert builds the lowered-assert evaluator the
+	// runtime.Env wires into Env.ExecAssert. The embedding
 	// binary owns the actual verb dispatch and reporting policy.
 	// nil disables lowered assert evaluation at runtime.
-	MakeAssertIR MakeAssertIRFunc
+	MakeAssert MakeAssertFunc
 }
 
 // FallbackFunc dispatches unhandled commands (statement
@@ -100,10 +100,10 @@ type FallbackFunc func(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Man
 // external command".
 type BindFallbackFunc func(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *runtime.Session, env *runtime.Env, args []runtime.Arg, loc SourceLoc, span source.Span) (handled bool, br runtime.BindResult, err error)
 
-// MakeAssertIRFunc builds the Env.ExecAssertIR callback for one
+// MakeAssertFunc builds the Env.ExecAssert callback for one
 // program execution. Returning nil disables lowered assert
 // evaluation in that run.
-type MakeAssertIRFunc func(cli *bpfmancli.CLI, session *runtime.Session) func(*ir.Assert, *runtime.Env) error
+type MakeAssertFunc func(cli *bpfmancli.CLI, session *runtime.Session) func(*ir.Assert, *runtime.Env) error
 
 // Run drives one whole-program execution end-to-end and returns
 // the session-aggregated outcome: ErrSilent for script-error / require-fail
@@ -162,8 +162,8 @@ func Loop(ctx context.Context, cfg Config) error {
 func wireEnvForRun(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *runtime.Session, env *runtime.Env, loc SourceLoc, hooks RunHooks) {
 	env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, env, loc, hooks.Fallback)
 	env.ExecBind = makeExecBind(ctx, cli, mgr, session, env, loc, hooks.BindFallback)
-	if hooks.MakeAssertIR != nil {
-		env.ExecAssertIR = hooks.MakeAssertIR(cli, session)
+	if hooks.MakeAssert != nil {
+		env.ExecAssert = hooks.MakeAssert(cli, session)
 	}
 	env.Trace = makeTraceHook(cli, session)
 	env.RenderPollFailure = makeRenderPollFailure(cli)
@@ -191,7 +191,7 @@ func configHooks(cfg Config) RunHooks {
 	return RunHooks{
 		Fallback:     cfg.Fallback,
 		BindFallback: cfg.BindFallback,
-		MakeAssertIR: cfg.MakeAssertIR,
+		MakeAssert:   cfg.MakeAssert,
 	}
 }
 

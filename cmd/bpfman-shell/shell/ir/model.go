@@ -404,7 +404,7 @@ type Fail struct {
 // the outcome to the session's assertion policy via the Env. The
 // IsRequire flag distinguishes 'require' (halt on failure) from
 // 'assert' (record and continue). Lowered execution dispatches
-// this directly through Env.ExecAssertIR.
+// this directly through Env.ExecAssert.
 type Assert struct {
 	IsRequire bool
 	Clause    AssertClause

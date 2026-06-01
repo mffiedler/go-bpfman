@@ -34,7 +34,7 @@ func bindFromValue(f func([]Arg, source.Span) (Value, error)) func([]Arg, source
 	}
 }
 
-func TestEvalIRExpr_Literal(t *testing.T) {
+func TestEvalExpr_Literal(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -45,7 +45,7 @@ func TestEvalIRExpr_Literal(t *testing.T) {
 	assert.Equal(t, "hello", got)
 }
 
-func TestEvalIRExpr_Literal_Classification(t *testing.T) {
+func TestEvalExpr_Literal_Classification(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -77,7 +77,7 @@ func TestEvalIRExpr_Literal_Classification(t *testing.T) {
 	}
 }
 
-func TestEvalIRExpr_VarRef_Bare(t *testing.T) {
+func TestEvalExpr_VarRef_Bare(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -108,7 +108,7 @@ func TestRegisterLoweredDefs_PreservesAbsoluteDefSpan(t *testing.T) {
 	assert.True(t, got.HasReturn)
 }
 
-func TestEvalIRExpr_VarRef_Path(t *testing.T) {
+func TestEvalExpr_VarRef_Path(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -122,7 +122,7 @@ func TestEvalIRExpr_VarRef_Path(t *testing.T) {
 	assert.Equal(t, "42", got)
 }
 
-func TestEvalIRExpr_VarRef_Undefined(t *testing.T) {
+func TestEvalExpr_VarRef_Undefined(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -131,7 +131,7 @@ func TestEvalIRExpr_VarRef_Undefined(t *testing.T) {
 	assert.Contains(t, err.Error(), `undefined variable "missing"`)
 }
 
-func TestEvalIRExpr_VarRef_DynamicIndex(t *testing.T) {
+func TestEvalExpr_VarRef_DynamicIndex(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -144,7 +144,7 @@ func TestEvalIRExpr_VarRef_DynamicIndex(t *testing.T) {
 	assert.Equal(t, "200", got)
 }
 
-func TestEvalIRExpr_VarRef_DynamicIndex_StringInteger(t *testing.T) {
+func TestEvalExpr_VarRef_DynamicIndex_StringInteger(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -157,7 +157,7 @@ func TestEvalIRExpr_VarRef_DynamicIndex_StringInteger(t *testing.T) {
 	assert.Equal(t, "c", got)
 }
 
-func TestEvalIRExpr_VarRef_DynamicIndex_NestedPath(t *testing.T) {
+func TestEvalExpr_VarRef_DynamicIndex_NestedPath(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -173,7 +173,7 @@ func TestEvalIRExpr_VarRef_DynamicIndex_NestedPath(t *testing.T) {
 	assert.Equal(t, "alpha", got)
 }
 
-func TestEvalIRExpr_VarRef_DynamicIndex_UndefinedIndex(t *testing.T) {
+func TestEvalExpr_VarRef_DynamicIndex_UndefinedIndex(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -183,7 +183,7 @@ func TestEvalIRExpr_VarRef_DynamicIndex_UndefinedIndex(t *testing.T) {
 	assert.Contains(t, err.Error(), "index variable $i is not defined")
 }
 
-func TestEvalIRExpr_VarRef_DynamicIndex_NonInteger(t *testing.T) {
+func TestEvalExpr_VarRef_DynamicIndex_NonInteger(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -195,7 +195,7 @@ func TestEvalIRExpr_VarRef_DynamicIndex_NonInteger(t *testing.T) {
 	assert.Contains(t, err.Error(), "must be an integer")
 }
 
-func TestEvalIRExpr_VarRef_DynamicIndex_OutOfRange(t *testing.T) {
+func TestEvalExpr_VarRef_DynamicIndex_OutOfRange(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -206,7 +206,7 @@ func TestEvalIRExpr_VarRef_DynamicIndex_OutOfRange(t *testing.T) {
 	assert.Contains(t, err.Error(), "out of range")
 }
 
-func TestEvalIRExpr_VarRef_DynamicIndex_Negative(t *testing.T) {
+func TestEvalExpr_VarRef_DynamicIndex_Negative(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -217,11 +217,11 @@ func TestEvalIRExpr_VarRef_DynamicIndex_Negative(t *testing.T) {
 	assert.Contains(t, err.Error(), "out of range")
 }
 
-// TestEvalIRExpr_VarRef_DynamicIndex_BracedForm confirms the
+// TestEvalExpr_VarRef_DynamicIndex_BracedForm confirms the
 // "${xs[$i]}" form resolves identically to the bare "$xs[$i]"
 // form. Both tokeniser shapes store the path text the same way,
 // so a single eval-side check is sufficient.
-func TestEvalIRExpr_VarRef_DynamicIndex_BracedForm(t *testing.T) {
+func TestEvalExpr_VarRef_DynamicIndex_BracedForm(t *testing.T) {
 	t.Parallel()
 
 	const src = "${xs[$i]}"
@@ -242,12 +242,12 @@ func TestEvalIRExpr_VarRef_DynamicIndex_BracedForm(t *testing.T) {
 	assert.Equal(t, "c", got)
 }
 
-// TestEvalIRExpr_AdapterArg_DynamicIndex covers the adapter
+// TestEvalExpr_AdapterArg_DynamicIndex covers the adapter
 // reference path through resolveAdapterArg. The tokeniser
 // recognises file:$x with the same path grammar as $x, so the
 // dynamic-index resolution must travel through the adapter
 // arg builder identically.
-func TestEvalIRExpr_AdapterArg_DynamicIndex(t *testing.T) {
+func TestEvalExpr_AdapterArg_DynamicIndex(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -310,7 +310,7 @@ foreach i in [0 1 2] {
 	}, captured)
 }
 
-func TestEvalIRExpr_Adapter_RejectedAsExpression(t *testing.T) {
+func TestEvalExpr_Adapter_RejectedAsExpression(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -320,7 +320,7 @@ func TestEvalIRExpr_Adapter_RejectedAsExpression(t *testing.T) {
 	assert.Contains(t, err.Error(), "adapter")
 }
 
-func TestEvalIRExpr_Binary_Textual(t *testing.T) {
+func TestEvalExpr_Binary_Textual(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -358,7 +358,7 @@ func TestEvalIRExpr_Binary_Textual(t *testing.T) {
 	}
 }
 
-func TestEvalIRExpr_Binary_Numeric(t *testing.T) {
+func TestEvalExpr_Binary_Numeric(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -395,7 +395,7 @@ func TestEvalIRExpr_Binary_Numeric(t *testing.T) {
 	}
 }
 
-func TestEvalIRExpr_Binary_NumericNonNumericError(t *testing.T) {
+func TestEvalExpr_Binary_NumericNonNumericError(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -409,7 +409,7 @@ func TestEvalIRExpr_Binary_NumericNonNumericError(t *testing.T) {
 	assert.Contains(t, err.Error(), "cannot compare string to number")
 }
 
-func TestEvalIRExpr_Binary_StrictDispatch(t *testing.T) {
+func TestEvalExpr_Binary_StrictDispatch(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -453,7 +453,7 @@ func TestEvalIRExpr_Binary_StrictDispatch(t *testing.T) {
 	}
 }
 
-func TestEvalIRExpr_Unary_NotEmpty(t *testing.T) {
+func TestEvalExpr_Unary_NotEmpty(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -493,7 +493,7 @@ func TestAsBool_RejectsNonBool(t *testing.T) {
 // ThreadExpr evaluation: LHS's Value is appended as the last arg to
 // the pipe's command, which then dispatches via ExecBind.
 
-func TestEvalIRExpr_Thread_AppendsScalarValueAsLastArg(t *testing.T) {
+func TestEvalExpr_Thread_AppendsScalarValueAsLastArg(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -524,7 +524,7 @@ func TestEvalIRExpr_Thread_AppendsScalarValueAsLastArg(t *testing.T) {
 	assert.Equal(t, "42", scalar.Text)
 }
 
-func TestEvalIRExpr_Thread_AppendsStructuredValueAsLastArg(t *testing.T) {
+func TestEvalExpr_Thread_AppendsStructuredValueAsLastArg(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -549,7 +549,7 @@ func TestEvalIRExpr_Thread_AppendsStructuredValueAsLastArg(t *testing.T) {
 	assert.Equal(t, semantics.OriginProgram, sva.Value.Kind())
 }
 
-func TestEvalIRExpr_Thread_NilLHSPassesAsNilArg(t *testing.T) {
+func TestEvalExpr_Thread_NilLHSPassesAsNilArg(t *testing.T) {
 	t.Parallel()
 
 	// Threading a null value into a command no longer errors at
@@ -581,7 +581,7 @@ func TestEvalIRExpr_Thread_NilLHSPassesAsNilArg(t *testing.T) {
 	assert.True(t, isNil, "thread LHS null surfaces as NilArg")
 }
 
-func TestEvalIRExpr_Thread_NoSubstitutionRunnerIsError(t *testing.T) {
+func TestEvalExpr_Thread_NoSubstitutionRunnerIsError(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -596,7 +596,7 @@ func TestEvalIRExpr_Thread_NoSubstitutionRunnerIsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "'|>'")
 }
 
-func TestEvalIRExpr_Thread_Chain_FeedsSuccessively(t *testing.T) {
+func TestEvalExpr_Thread_Chain_FeedsSuccessively(t *testing.T) {
 	t.Parallel()
 
 	// Build ((x | stage1) | stage2) manually; each stage's runner
@@ -628,7 +628,7 @@ func TestEvalIRExpr_Thread_Chain_FeedsSuccessively(t *testing.T) {
 	assert.Equal(t, "<<start>>", got)
 }
 
-func TestEvalIRArgs_Thread_WrapsThreadResultAsArg(t *testing.T) {
+func TestEvalArgs_Thread_WrapsThreadResultAsArg(t *testing.T) {
 	t.Parallel()
 
 	// A ThreadExpr used as a command argument: the evaluator should
@@ -1305,7 +1305,7 @@ func TestExecSource_LetDestructure_NonListIsError(t *testing.T) {
 	assert.Contains(t, evErr.Error(), "not a list")
 }
 
-func TestEvalIRExpr_NotEmpty_OffSpecCarrierIsError(t *testing.T) {
+func TestEvalExpr_NotEmpty_OffSpecCarrierIsError(t *testing.T) {
 	t.Parallel()
 
 	// An int Value reaches the default branch because int is
@@ -1410,7 +1410,7 @@ func TestExecSource_Continue_OutsideLoopIsError(t *testing.T) {
 
 // --- logical operators ---------------------------------------------
 
-func TestEvalIRExpr_And_BothTrue(t *testing.T) {
+func TestEvalExpr_And_BothTrue(t *testing.T) {
 	t.Parallel()
 
 	v, err := evalLoweredExpr(&syntax.LogicalExpr{
@@ -1424,7 +1424,7 @@ func TestEvalIRExpr_And_BothTrue(t *testing.T) {
 	assert.True(t, b)
 }
 
-func TestEvalIRExpr_And_ShortCircuitsOnFalseLeft(t *testing.T) {
+func TestEvalExpr_And_ShortCircuitsOnFalseLeft(t *testing.T) {
 	t.Parallel()
 
 	// Right operand would error on Scalar() — if the short-circuit
@@ -1442,7 +1442,7 @@ func TestEvalIRExpr_And_ShortCircuitsOnFalseLeft(t *testing.T) {
 	assert.False(t, b)
 }
 
-func TestEvalIRExpr_Or_ShortCircuitsOnTrueLeft(t *testing.T) {
+func TestEvalExpr_Or_ShortCircuitsOnTrueLeft(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -1458,7 +1458,7 @@ func TestEvalIRExpr_Or_ShortCircuitsOnTrueLeft(t *testing.T) {
 	assert.True(t, b)
 }
 
-func TestEvalIRExpr_Or_BothFalse(t *testing.T) {
+func TestEvalExpr_Or_BothFalse(t *testing.T) {
 	t.Parallel()
 
 	v, err := evalLoweredExpr(&syntax.LogicalExpr{
@@ -1472,7 +1472,7 @@ func TestEvalIRExpr_Or_BothFalse(t *testing.T) {
 	assert.False(t, b)
 }
 
-func TestEvalIRExpr_Not_Negates(t *testing.T) {
+func TestEvalExpr_Not_Negates(t *testing.T) {
 	t.Parallel()
 
 	v, err := evalLoweredExpr(&syntax.NotExpr{
@@ -1484,7 +1484,7 @@ func TestEvalIRExpr_Not_Negates(t *testing.T) {
 	assert.False(t, b)
 }
 
-func TestEvalIRExpr_Not_RejectsNonBool(t *testing.T) {
+func TestEvalExpr_Not_RejectsNonBool(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -1494,7 +1494,7 @@ func TestEvalIRExpr_Not_RejectsNonBool(t *testing.T) {
 	assert.Contains(t, err.Error(), "not")
 }
 
-func TestEvalIRExpr_And_RejectsNonBoolLeft(t *testing.T) {
+func TestEvalExpr_And_RejectsNonBoolLeft(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -1526,7 +1526,7 @@ func scalarTextEval(t *testing.T, e syntax.Expr) string {
 	return s
 }
 
-func TestEvalIRExpr_Arithmetic_AllOps(t *testing.T) {
+func TestEvalExpr_Arithmetic_AllOps(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
@@ -1561,7 +1561,7 @@ func TestEvalIRExpr_Arithmetic_AllOps(t *testing.T) {
 	}
 }
 
-func TestEvalIRExpr_Arithmetic_DivideByZero(t *testing.T) {
+func TestEvalExpr_Arithmetic_DivideByZero(t *testing.T) {
 	t.Parallel()
 
 	for _, op := range []string{"/", "%"} {
@@ -1579,7 +1579,7 @@ func TestEvalIRExpr_Arithmetic_DivideByZero(t *testing.T) {
 	}
 }
 
-func TestEvalIRExpr_Arithmetic_NonNumericOperand(t *testing.T) {
+func TestEvalExpr_Arithmetic_NonNumericOperand(t *testing.T) {
 	t.Parallel()
 
 	// "abc" + 1: Python-style string concat is deliberately out
@@ -1595,14 +1595,14 @@ func TestEvalIRExpr_Arithmetic_NonNumericOperand(t *testing.T) {
 	assert.Contains(t, err.Error(), "not numeric")
 }
 
-func TestEvalIRExpr_Negate_Literal(t *testing.T) {
+func TestEvalExpr_Negate_Literal(t *testing.T) {
 	t.Parallel()
 
 	e := &syntax.NegateExpr{Operand: &syntax.LiteralExpr{Text: "5"}}
 	assert.Equal(t, "-5", scalarTextEval(t, e))
 }
 
-func TestEvalIRExpr_Negate_DoubleNegate(t *testing.T) {
+func TestEvalExpr_Negate_DoubleNegate(t *testing.T) {
 	t.Parallel()
 
 	// -(-5) → 5: stacks resolve inside-out.
@@ -1610,7 +1610,7 @@ func TestEvalIRExpr_Negate_DoubleNegate(t *testing.T) {
 	assert.Equal(t, "5", scalarTextEval(t, e))
 }
 
-func TestEvalIRExpr_Negate_StructuredIsError(t *testing.T) {
+func TestEvalExpr_Negate_StructuredIsError(t *testing.T) {
 	t.Parallel()
 
 	// Negating a map is nonsense — must error rather than panic.
@@ -1621,7 +1621,7 @@ func TestEvalIRExpr_Negate_StructuredIsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "negate")
 }
 
-func TestEvalIRExpr_Negate_NonNumericScalarIsError(t *testing.T) {
+func TestEvalExpr_Negate_NonNumericScalarIsError(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -1631,7 +1631,7 @@ func TestEvalIRExpr_Negate_NonNumericScalarIsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "not numeric")
 }
 
-func TestEvalIRExpr_Arithmetic_InComparisonPosition(t *testing.T) {
+func TestEvalExpr_Arithmetic_InComparisonPosition(t *testing.T) {
 	t.Parallel()
 
 	// 3 + 4 > 5 → true.  Exercises the full chain:
@@ -1653,7 +1653,7 @@ func TestEvalIRExpr_Arithmetic_InComparisonPosition(t *testing.T) {
 	assert.True(t, b)
 }
 
-func TestEvalIRExpr_Arithmetic_LetRHS(t *testing.T) {
+func TestEvalExpr_Arithmetic_LetRHS(t *testing.T) {
 	t.Parallel()
 
 	// let n = $count + 1: parse, evaluate, confirm the session
@@ -1669,7 +1669,7 @@ func TestEvalIRExpr_Arithmetic_LetRHS(t *testing.T) {
 	assert.Equal(t, "11", got)
 }
 
-func TestEvalIRExpr_InterpString_LiteralOnly(t *testing.T) {
+func TestEvalExpr_InterpString_LiteralOnly(t *testing.T) {
 	t.Parallel()
 
 	// An InterpStringExpr with only literal segments (rare in
@@ -1690,7 +1690,7 @@ func TestEvalIRExpr_InterpString_LiteralOnly(t *testing.T) {
 	assert.Equal(t, "hello world", got)
 }
 
-func TestEvalIRExpr_InterpString_VarRef(t *testing.T) {
+func TestEvalExpr_InterpString_VarRef(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -1708,7 +1708,7 @@ func TestEvalIRExpr_InterpString_VarRef(t *testing.T) {
 	assert.Equal(t, "60s", got)
 }
 
-func TestEvalIRExpr_InterpString_MixedSegments(t *testing.T) {
+func TestEvalExpr_InterpString_MixedSegments(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -1727,7 +1727,7 @@ func TestEvalIRExpr_InterpString_MixedSegments(t *testing.T) {
 	assert.Equal(t, "/sys/fs/bpf/prog-42/map", got)
 }
 
-func TestEvalIRExpr_InterpString_StructuredValueCompactJSON(t *testing.T) {
+func TestEvalExpr_InterpString_StructuredValueCompactJSON(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -1747,7 +1747,7 @@ func TestEvalIRExpr_InterpString_StructuredValueCompactJSON(t *testing.T) {
 	assert.Equal(t, `{"exit_code":0,"stdout":"hi"}`, got)
 }
 
-func TestEvalIRExpr_InterpString_ArrayCompactJSON(t *testing.T) {
+func TestEvalExpr_InterpString_ArrayCompactJSON(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -1765,7 +1765,7 @@ func TestEvalIRExpr_InterpString_ArrayCompactJSON(t *testing.T) {
 	assert.Equal(t, "items=[1,2,3]", got)
 }
 
-func TestEvalIRExpr_InterpString_NilRendersAsNull(t *testing.T) {
+func TestEvalExpr_InterpString_NilRendersAsNull(t *testing.T) {
 	t.Parallel()
 
 	// A nil Value in the interpolation slot renders as "null" so
@@ -1779,7 +1779,7 @@ func TestEvalIRExpr_InterpString_NilRendersAsNull(t *testing.T) {
 	assert.Equal(t, "null", got)
 }
 
-func TestEvalIRExpr_InterpString_EndToEnd(t *testing.T) {
+func TestEvalExpr_InterpString_EndToEnd(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
@@ -1840,7 +1840,7 @@ func TestEvalIRExpr_InterpString_EndToEnd(t *testing.T) {
 	}
 }
 
-func TestEvalIRExpr_InterpString_UndefinedVar(t *testing.T) {
+func TestEvalExpr_InterpString_UndefinedVar(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()

@@ -92,7 +92,7 @@ func TestParse_PureCall_VarRefArg(t *testing.T) {
 	assert.Equal(t, "n", vr.Name)
 }
 
-func TestEvalIRExpr_PureCall_DispatchesThroughExecBind(t *testing.T) {
+func TestEvalExpr_PureCall_DispatchesThroughExecBind(t *testing.T) {
 	t.Parallel()
 
 	name := "u32le"
@@ -127,7 +127,7 @@ func TestEvalIRExpr_PureCall_DispatchesThroughExecBind(t *testing.T) {
 	assert.Equal(t, "42", word.Text)
 }
 
-func TestEvalIRExpr_PureCall_NoExecBindIsError(t *testing.T) {
+func TestEvalExpr_PureCall_NoExecBindIsError(t *testing.T) {
 	t.Parallel()
 
 	name := "u32le"
@@ -138,7 +138,7 @@ func TestEvalIRExpr_PureCall_NoExecBindIsError(t *testing.T) {
 	assert.Contains(t, err.Error(), name)
 }
 
-func TestEvalIRExpr_PureCall_FailingHandlerIsExpressionError(t *testing.T) {
+func TestEvalExpr_PureCall_FailingHandlerIsExpressionError(t *testing.T) {
 	t.Parallel()
 
 	name := "u32le"
@@ -154,7 +154,7 @@ func TestEvalIRExpr_PureCall_FailingHandlerIsExpressionError(t *testing.T) {
 	assert.Contains(t, err.Error(), "bad")
 }
 
-func TestEvalIRExpr_PureCall_InsideInterpString(t *testing.T) {
+func TestEvalExpr_PureCall_InsideInterpString(t *testing.T) {
 	t.Parallel()
 
 	name := "u32le"

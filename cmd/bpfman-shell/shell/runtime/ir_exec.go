@@ -501,14 +501,14 @@ func (ex *executor) execInstr(ins ir.Instr) (*ir.BasicBlock, bool, error) {
 		}
 		return nil, false, nil
 	case *ir.Eval:
-		val, err := evalIRExpr(v.Expr, ex.env)
+		val, err := evalExpr(v.Expr, ex.env)
 		if err != nil {
 			return nil, false, err
 		}
 		ex.temps[v.Dst] = val
 		return nil, false, nil
 	case *ir.BuildArgs:
-		args, err := evalIRArgs(v.Args, ex.env)
+		args, err := evalArgs(v.Args, ex.env)
 		if err != nil {
 			return nil, false, err
 		}
@@ -761,10 +761,10 @@ func (ex *executor) execInstr(ins ir.Instr) (*ir.BasicBlock, bool, error) {
 	case *ir.Fail:
 		return nil, false, syntax.SpanErrorf(v.Span, "%s", v.Msg)
 	case *ir.Assert:
-		if ex.env.ExecAssertIR == nil {
+		if ex.env.ExecAssert == nil {
 			return nil, false, syntax.SpanErrorf(v.Span, "assert: handler not installed")
 		}
-		return nil, false, ex.env.ExecAssertIR(v, ex.env)
+		return nil, false, ex.env.ExecAssert(v, ex.env)
 	case *ir.ForEach:
 		return ex.execForEach(v)
 	case *ir.ForEachContinue:

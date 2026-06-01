@@ -11,7 +11,7 @@ import (
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
 )
 
-func evalIRExpr(expr ir.Expr, env *Env) (Value, error) {
+func evalExpr(expr ir.Expr, env *Env) (Value, error) {
 	switch e := expr.(type) {
 	case *ir.LiteralExpr:
 		return literalValueParts(e.Text, e.Quoted), nil
@@ -24,7 +24,7 @@ func evalIRExpr(expr ir.Expr, env *Env) (Value, error) {
 		origins := make([]any, 0, len(e.Elems))
 		hasOrigin := false
 		for _, elem := range e.Elems {
-			v, err := evalIRExpr(elem, env)
+			v, err := evalExpr(elem, env)
 			if err != nil {
 				return Value{}, err
 			}
@@ -47,7 +47,7 @@ func evalIRExpr(expr ir.Expr, env *Env) (Value, error) {
 				b.WriteString(seg.Literal)
 				continue
 			}
-			v, err := evalIRExpr(seg.Expr, env)
+			v, err := evalExpr(seg.Expr, env)
 			if err != nil {
 				return Value{}, err
 			}
@@ -63,11 +63,11 @@ func evalIRExpr(expr ir.Expr, env *Env) (Value, error) {
 		if env.ExecBind == nil {
 			return Value{}, syntax.SpanErrorf(threadSpan, "'|>' is only valid where commands can run; not available in this context")
 		}
-		args, err := evalIRArgs(e.Args, env)
+		args, err := evalArgs(e.Args, env)
 		if err != nil {
 			return Value{}, err
 		}
-		lhsArg, err := evalIRArg(e.LHS, env)
+		lhsArg, err := evalArg(e.LHS, env)
 		if err != nil {
 			return Value{}, syntax.SpanErrorf(threadSpan, "thread: %v", err)
 		}
@@ -94,11 +94,11 @@ func evalIRExpr(expr ir.Expr, env *Env) (Value, error) {
 		}
 		return result.Primary, nil
 	case *ir.BinaryExpr:
-		leftV, err := evalIRExpr(e.Left, env)
+		leftV, err := evalExpr(e.Left, env)
 		if err != nil {
 			return Value{}, err
 		}
-		rightV, err := evalIRExpr(e.Right, env)
+		rightV, err := evalExpr(e.Right, env)
 		if err != nil {
 			return Value{}, err
 		}
@@ -119,7 +119,7 @@ func evalIRExpr(expr ir.Expr, env *Env) (Value, error) {
 		}
 		return evalCompare(e.Op, leftV, rightV, e.Span)
 	case *ir.UnaryExpr:
-		operand, err := evalIRExpr(e.Operand, env)
+		operand, err := evalExpr(e.Operand, env)
 		if err != nil {
 			return Value{}, err
 		}
@@ -130,7 +130,7 @@ func evalIRExpr(expr ir.Expr, env *Env) (Value, error) {
 			return Value{}, syntax.SpanErrorf(e.Span, "unknown unary predicate %q", e.Pred)
 		}
 	case *ir.LogicalExpr:
-		leftV, err := evalIRExpr(e.Left, env)
+		leftV, err := evalExpr(e.Left, env)
 		if err != nil {
 			return Value{}, err
 		}
@@ -150,7 +150,7 @@ func evalIRExpr(expr ir.Expr, env *Env) (Value, error) {
 		default:
 			return Value{}, syntax.SpanErrorf(e.Span, "unknown logical operator %q", e.Op)
 		}
-		rightV, err := evalIRExpr(e.Right, env)
+		rightV, err := evalExpr(e.Right, env)
 		if err != nil {
 			return Value{}, err
 		}
@@ -160,7 +160,7 @@ func evalIRExpr(expr ir.Expr, env *Env) (Value, error) {
 		}
 		return BoolValue(rightB), nil
 	case *ir.NotExpr:
-		v, err := evalIRExpr(e.Operand, env)
+		v, err := evalExpr(e.Operand, env)
 		if err != nil {
 			return Value{}, err
 		}
@@ -170,7 +170,7 @@ func evalIRExpr(expr ir.Expr, env *Env) (Value, error) {
 		}
 		return BoolValue(!b), nil
 	case *ir.NegateExpr:
-		v, err := evalIRExpr(e.Operand, env)
+		v, err := evalExpr(e.Operand, env)
 		if err != nil {
 			return Value{}, err
 		}
@@ -190,7 +190,7 @@ func evalIRExpr(expr ir.Expr, env *Env) (Value, error) {
 		args := make([]Arg, 0, len(e.Args)+1)
 		args = append(args, WordArg{Text: e.Name, Span: e.Span})
 		for _, a := range e.Args {
-			arg, err := evalIRArg(a, env)
+			arg, err := evalArg(a, env)
 			if err != nil {
 				return Value{}, syntax.SpanErrorf(irExprSpan(a), "%s: %v", e.Name, err)
 			}
@@ -208,32 +208,32 @@ func evalIRExpr(expr ir.Expr, env *Env) (Value, error) {
 		}
 		return result.Primary, nil
 	case *ir.MatchesExpr:
-		result, err := evalIRMatchesExprDetails(e, env)
+		result, err := evalMatchesExprDetails(e, env)
 		if err != nil {
 			return Value{}, err
 		}
 		return BoolValue(result.Matched), nil
 	default:
-		panic(fmt.Sprintf("evalIRExpr: unhandled lowered expression type %T", expr))
+		panic(fmt.Sprintf("evalExpr: unhandled lowered expression type %T", expr))
 	}
 }
 
-// EvalIRExpr evaluates one lowered expression against env.
-func EvalIRExpr(expr ir.Expr, env *Env) (Value, error) {
-	return evalIRExpr(expr, env)
+// EvalExpr evaluates one lowered expression against env.
+func EvalExpr(expr ir.Expr, env *Env) (Value, error) {
+	return evalExpr(expr, env)
 }
 
-// EvalIRArgs evaluates each lowered expression in exprs as a
+// EvalArgs evaluates each lowered expression in exprs as a
 // command argument and returns the resulting []Arg, suitable for
 // dispatch.
-func EvalIRArgs(exprs []ir.Expr, env *Env) ([]Arg, error) {
-	return evalIRArgs(exprs, env)
+func EvalArgs(exprs []ir.Expr, env *Env) ([]Arg, error) {
+	return evalArgs(exprs, env)
 }
 
-func evalIRArgs(exprs []ir.Expr, env *Env) ([]Arg, error) {
+func evalArgs(exprs []ir.Expr, env *Env) ([]Arg, error) {
 	out := make([]Arg, 0, len(exprs))
 	for _, expr := range exprs {
-		a, err := evalIRArg(expr, env)
+		a, err := evalArg(expr, env)
 		if err != nil {
 			return nil, err
 		}
@@ -242,7 +242,7 @@ func evalIRArgs(exprs []ir.Expr, env *Env) ([]Arg, error) {
 	return out, nil
 }
 
-func evalIRArg(expr ir.Expr, env *Env) (Arg, error) {
+func evalArg(expr ir.Expr, env *Env) (Arg, error) {
 	switch e := expr.(type) {
 	case *ir.LiteralExpr:
 		if e.Quoted {
@@ -254,7 +254,7 @@ func evalIRArg(expr ir.Expr, env *Env) (Arg, error) {
 	case *ir.AdapterExpr:
 		return resolveAdapterArgParts(e.Adapter, e.Name, e.Path, e.Span, env)
 	case *ir.ThreadExpr:
-		val, err := evalIRExpr(e, env)
+		val, err := evalExpr(e, env)
 		if err != nil {
 			return nil, err
 		}
@@ -263,7 +263,7 @@ func evalIRArg(expr ir.Expr, env *Env) (Arg, error) {
 		}
 		return valueToArg(val, e.Span)
 	default:
-		v, err := evalIRExpr(expr, env)
+		v, err := evalExpr(expr, env)
 		if err != nil {
 			return nil, err
 		}
@@ -274,7 +274,7 @@ func evalIRArg(expr ir.Expr, env *Env) (Arg, error) {
 	}
 }
 
-func evalIRMatchesBlock(e *ir.MatchesBlockExpr, env *Env) (resolvedMatchesBlock, error) {
+func evalMatchesBlock(e *ir.MatchesBlockExpr, env *Env) (resolvedMatchesBlock, error) {
 	out := resolvedMatchesBlock{
 		Entries:    make([]resolvedMatchEntry, 0, len(e.Entries)),
 		Exhaustive: e.Exhaustive,
@@ -288,7 +288,7 @@ func evalIRMatchesBlock(e *ir.MatchesBlockExpr, env *Env) (resolvedMatchesBlock,
 		}
 		switch {
 		case entry.SubBlock != nil:
-			sub, err := evalIRMatchesBlock(entry.SubBlock, env)
+			sub, err := evalMatchesBlock(entry.SubBlock, env)
 			if err != nil {
 				return resolvedMatchesBlock{}, err
 			}
@@ -296,7 +296,7 @@ func evalIRMatchesBlock(e *ir.MatchesBlockExpr, env *Env) (resolvedMatchesBlock,
 		case entry.Predicate != "":
 			// nothing to evaluate
 		default:
-			v, err := evalIRExpr(entry.Pattern, env)
+			v, err := evalExpr(entry.Pattern, env)
 			if err != nil {
 				return resolvedMatchesBlock{}, syntax.SpanErrorf(entry.Span, "matches entry %q: %v", entry.Path, err)
 			}

@@ -41,15 +41,15 @@ func completeAssertResult(cli *bpfmancli.CLI, session *runtime.Session, isRequir
 	return nil
 }
 
-// makeExecAssertIR returns the Env.ExecAssertIR callback used by
+// makeExecAssert returns the Env.ExecAssert callback used by
 // the lowered runtime.
-func makeExecAssertIR(cli *bpfmancli.CLI, session *runtime.Session) func(*ir.Assert, *runtime.Env) error {
+func makeExecAssert(cli *bpfmancli.CLI, session *runtime.Session) func(*ir.Assert, *runtime.Env) error {
 	return func(a *ir.Assert, env *runtime.Env) error {
-		return runAssertIRClause(cli, session, a.IsRequire, a.Span, a.Clause, env)
+		return runAssertClause(cli, session, a.IsRequire, a.Span, a.Clause, env)
 	}
 }
 
-func runAssertIRClause(cli *bpfmancli.CLI, session *runtime.Session, isRequire bool, span source.Span, clause ir.AssertClause, env *runtime.Env) error {
+func runAssertClause(cli *bpfmancli.CLI, session *runtime.Session, isRequire bool, span source.Span, clause ir.AssertClause, env *runtime.Env) error {
 	// Lowered helper calls preserve the original assert span, so a
 	// dynamic rejection under poll still points at the assert itself.
 	if !isRequire && env.InPoll() {
@@ -57,7 +57,7 @@ func runAssertIRClause(cli *bpfmancli.CLI, session *runtime.Session, isRequire b
 	}
 	switch v := clause.(type) {
 	case *ir.AssertExprClause:
-		if isBareNullIRExpr(v.Expr) {
+		if isBareNullExpr(v.Expr) {
 			return assertNullUsageError(assertLabel(isRequire), span)
 		}
 		return runAssertExprCallback(
@@ -68,21 +68,21 @@ func runAssertIRClause(cli *bpfmancli.CLI, session *runtime.Session, isRequire b
 			env,
 			ir.FormatAssertClauseSource(clause),
 			func(env *runtime.Env) (runtime.Value, error) {
-				return runtime.EvalIRExpr(v.Expr, env)
+				return runtime.EvalExpr(v.Expr, env)
 			},
 			func(env *runtime.Env, loc driver.SourceLoc) (string, error) {
-				return formatAssertIRExprFailure(v.Expr, env, session, loc)
+				return formatAssertExprFailure(v.Expr, env, session, loc)
 			},
 		)
 	case *ir.AssertCommandClause:
-		return runAssertIRCommandClause(cli, session, isRequire, span, v, env)
+		return runAssertCommandClause(cli, session, isRequire, span, v, env)
 	default:
 		return fmt.Errorf("assert: unsupported lowered clause %T", clause)
 	}
 }
 
-func runAssertIRCommandClause(cli *bpfmancli.CLI, session *runtime.Session, isRequire bool, span source.Span, clause *ir.AssertCommandClause, env *runtime.Env) error {
-	args, err := runtime.EvalIRArgs(clause.Args, env)
+func runAssertCommandClause(cli *bpfmancli.CLI, session *runtime.Session, isRequire bool, span source.Span, clause *ir.AssertCommandClause, env *runtime.Env) error {
+	args, err := runtime.EvalArgs(clause.Args, env)
 	if err != nil {
 		return err
 	}
@@ -100,7 +100,7 @@ func assertNullUsageError(label string, span source.Span) error {
 	return syntax.SpanErrorf(span, "%s null requires a target; did you mean %s null $x or %s $x == null?", label, label, label)
 }
 
-func isBareNullIRExpr(e ir.Expr) bool {
+func isBareNullExpr(e ir.Expr) bool {
 	lit, ok := e.(*ir.LiteralExpr)
 	return ok && !lit.Quoted && lit.Text == "null"
 }
@@ -158,13 +158,13 @@ func runAssertExprCallback(
 	})
 }
 
-func formatAssertIRExprFailure(expr ir.Expr, env *runtime.Env, session *runtime.Session, loc driver.SourceLoc) (string, error) {
-	if result, ok, err := runtime.FindFailedMatchesIRExpr(expr, env); err != nil {
+func formatAssertExprFailure(expr ir.Expr, env *runtime.Env, session *runtime.Session, loc driver.SourceLoc) (string, error) {
+	if result, ok, err := runtime.FindFailedMatchesExpr(expr, env); err != nil {
 		return "", err
 	} else if ok {
 		return formatMatchesFailureMessage(result, matchesLocator(loc)), nil
 	}
-	return formatIRExprFailure(expr, session), nil
+	return formatExprFailure(expr, session), nil
 }
 
 func formatMatchesFailureMessage(result runtime.MatchesResult, locate func(source.Pos, string) string) string {
@@ -186,11 +186,11 @@ func formatMatchesFailureMessage(result runtime.MatchesResult, locate func(sourc
 	return fmt.Sprintf("matches: %d %s\n  %s", len(lines), noun, strings.Join(lines, "\n  "))
 }
 
-func formatIRExprFailure(e ir.Expr, session *runtime.Session) string {
+func formatExprFailure(e ir.Expr, session *runtime.Session) string {
 	switch x := e.(type) {
 	case *ir.BinaryExpr:
-		left := irExprScalar(x.Left, session)
-		right := irExprScalar(x.Right, session)
+		left := exprScalar(x.Left, session)
+		right := exprScalar(x.Right, session)
 		switch x.Op {
 		case "==":
 			return fmt.Sprintf("expected %q to equal %q", left, right)
@@ -200,7 +200,7 @@ func formatIRExprFailure(e ir.Expr, session *runtime.Session) string {
 			return fmt.Sprintf("expected %s %s %s", left, x.Op, right)
 		}
 	case *ir.UnaryExpr:
-		operand := irExprScalar(x.Operand, session)
+		operand := exprScalar(x.Operand, session)
 		switch x.Pred {
 		case "not-empty":
 			return fmt.Sprintf("expected non-empty string, got %q", operand)
@@ -208,18 +208,18 @@ func formatIRExprFailure(e ir.Expr, session *runtime.Session) string {
 			return fmt.Sprintf("expected predicate %s to hold on %s", x.Pred, operand)
 		}
 	case *ir.NotExpr:
-		if msg, ok := formatIRPurePredicateExprFailure(x.Operand, session); ok {
+		if msg, ok := formatPurePredicateExprFailure(x.Operand, session); ok {
 			return negateMessage(msg)
 		}
 	case *ir.PureCallExpr:
-		if msg, ok := formatIRPurePredicateExprFailure(x, session); ok {
+		if msg, ok := formatPurePredicateExprFailure(x, session); ok {
 			return msg
 		}
 	}
-	return fmt.Sprintf("expected %s to be true", irExprScalar(e, session))
+	return fmt.Sprintf("expected %s to be true", exprScalar(e, session))
 }
 
-func formatIRPurePredicateExprFailure(e ir.Expr, session *runtime.Session) (string, bool) {
+func formatPurePredicateExprFailure(e ir.Expr, session *runtime.Session) (string, bool) {
 	call, ok := e.(*ir.PureCallExpr)
 	if !ok {
 		return "", false
@@ -227,11 +227,11 @@ func formatIRPurePredicateExprFailure(e ir.Expr, session *runtime.Session) (stri
 	switch call.Name {
 	case "path-exists":
 		if len(call.Args) == 1 {
-			return fmt.Sprintf("expected path %q to exist", irExprScalar(call.Args[0], session)), true
+			return fmt.Sprintf("expected path %q to exist", exprScalar(call.Args[0], session)), true
 		}
 	case "contains":
 		if len(call.Args) == 2 {
-			return fmt.Sprintf("expected %q to contain %q", irExprScalar(call.Args[0], session), irExprScalar(call.Args[1], session)), true
+			return fmt.Sprintf("expected %q to contain %q", exprScalar(call.Args[0], session), exprScalar(call.Args[1], session)), true
 		}
 	case "null":
 		if len(call.Args) == 1 {
@@ -253,8 +253,8 @@ func formatIRPurePredicateExprFailure(e ir.Expr, session *runtime.Session) (stri
 	return "", false
 }
 
-func irExprScalar(e ir.Expr, session *runtime.Session) string {
-	v, err := runtime.EvalIRExpr(e, &runtime.Env{Session: session})
+func exprScalar(e ir.Expr, session *runtime.Session) string {
+	v, err := runtime.EvalExpr(e, &runtime.Env{Session: session})
 	if err != nil {
 		return "<err>"
 	}

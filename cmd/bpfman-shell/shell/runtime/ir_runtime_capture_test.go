@@ -60,7 +60,7 @@ func captureLoweredRuntime(t *testing.T, src string, opts runtimeCaptureOpts) ru
 	assertFn := func(a *ir.Assert, env *Env) error {
 		clause, ok := a.Clause.(*ir.AssertExprClause)
 		require.True(t, ok, "assert clause = %T, want *ir.AssertExprClause", a.Clause)
-		v, err := EvalIRExpr(clause.Expr, env)
+		v, err := EvalExpr(clause.Expr, env)
 		if err != nil {
 			return err
 		}
@@ -91,7 +91,7 @@ func captureLoweredRuntime(t *testing.T, src string, opts runtimeCaptureOpts) ru
 			}
 			return BindResult{Rc: OkEnvelope()}, nil
 		},
-		ExecAssertIR: assertFn,
+		ExecAssert: assertFn,
 	}
 
 	lp, err := lowerToIR(prog)

@@ -205,7 +205,7 @@ func (c *CLI) Run(ctx context.Context) error {
 		NoCheck:      c.NoCheck,
 		Fallback:     commandFallback,
 		BindFallback: bindCommandFallback,
-		MakeAssertIR: makeExecAssertIR,
+		MakeAssert:   makeExecAssert,
 	})
 }
 
@@ -282,7 +282,7 @@ func runScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr
 		NoCheck:      noCheck,
 		Fallback:     commandFallback,
 		BindFallback: bindCommandFallback,
-		MakeAssertIR: makeExecAssertIR,
+		MakeAssert:   makeExecAssert,
 	})
 }
 

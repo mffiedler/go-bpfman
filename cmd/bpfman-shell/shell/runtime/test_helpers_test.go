@@ -25,11 +25,11 @@ func lowerExprs(exprs []syntax.Expr) []ir.Expr {
 }
 
 func evalLoweredExpr(expr syntax.Expr, env *Env) (Value, error) {
-	return EvalIRExpr(lowerExpr(expr), env)
+	return EvalExpr(lowerExpr(expr), env)
 }
 
 func evalLoweredArgs(exprs []syntax.Expr, env *Env) ([]Arg, error) {
-	return EvalIRArgs(lowerExprs(exprs), env)
+	return EvalArgs(lowerExprs(exprs), env)
 }
 
 func execParsedProgram(t *testing.T, prog *syntax.Program, env *Env) error {

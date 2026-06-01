@@ -367,7 +367,7 @@ func TestIRExpr_ASTRoundTripPreservesMatchesStructure(t *testing.T) {
 	}
 }
 
-func TestEvalIRExpr_ThreadAndPureCallDispatch(t *testing.T) {
+func TestEvalExpr_ThreadAndPureCallDispatch(t *testing.T) {
 	t.Parallel()
 
 	name := "u32le"
@@ -386,9 +386,9 @@ func TestEvalIRExpr_ThreadAndPureCallDispatch(t *testing.T) {
 		LHS:  &ir.VarRefExpr{Name: "x"},
 		Args: []ir.Expr{&ir.LiteralExpr{Text: "jq"}, &ir.LiteralExpr{Text: ".", Quoted: true}},
 	}
-	got, err := evalIRExpr(threadExpr, threadEnv)
+	got, err := evalExpr(threadExpr, threadEnv)
 	if err != nil {
-		t.Fatalf("evalIRExpr(thread): %v", err)
+		t.Fatalf("evalExpr(thread): %v", err)
 	}
 	if text, err := got.Scalar(); err != nil || text != "thread-ok" {
 		t.Fatalf("thread result = (%q, %v), want (%q, nil)", text, err, "thread-ok")
@@ -412,9 +412,9 @@ func TestEvalIRExpr_ThreadAndPureCallDispatch(t *testing.T) {
 		Name: name,
 		Args: []ir.Expr{&ir.VarRefExpr{Name: "x"}},
 	}
-	got, err = evalIRExpr(callExpr, callEnv)
+	got, err = evalExpr(callExpr, callEnv)
 	if err != nil {
-		t.Fatalf("evalIRExpr(pure): %v", err)
+		t.Fatalf("evalExpr(pure): %v", err)
 	}
 	if text, err := got.Scalar(); err != nil || text != "pure-ok" {
 		t.Fatalf("pure result = (%q, %v), want (%q, nil)", text, err, "pure-ok")
@@ -430,7 +430,7 @@ func TestEvalIRExpr_ThreadAndPureCallDispatch(t *testing.T) {
 	}
 }
 
-func TestEvalIRArg_ThreadWrapsThreadResultAsArg(t *testing.T) {
+func TestEvalArg_ThreadWrapsThreadResultAsArg(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -441,12 +441,12 @@ func TestEvalIRArg_ThreadWrapsThreadResultAsArg(t *testing.T) {
 			return StringValue("piped"), nil
 		}),
 	}
-	arg, err := evalIRArg(&ir.ThreadExpr{
+	arg, err := evalArg(&ir.ThreadExpr{
 		LHS:  &ir.VarRefExpr{Name: "x"},
 		Args: []ir.Expr{&ir.LiteralExpr{Text: "stage"}},
 	}, env)
 	if err != nil {
-		t.Fatalf("evalIRArg(thread): %v", err)
+		t.Fatalf("evalArg(thread): %v", err)
 	}
 	scalar, ok := arg.(ScalarValueArg)
 	if !ok {
@@ -457,18 +457,18 @@ func TestEvalIRArg_ThreadWrapsThreadResultAsArg(t *testing.T) {
 	}
 }
 
-func TestEvalIRArg_AdapterResolvesValue(t *testing.T) {
+func TestEvalArg_AdapterResolvesValue(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
 	s.Set("path", StringValue("/tmp/pin"))
-	arg, err := evalIRArg(&ir.AdapterExpr{
+	arg, err := evalArg(&ir.AdapterExpr{
 		Adapter: "file",
 		Name:    "path",
 		Path:    "",
 	}, &Env{Session: s})
 	if err != nil {
-		t.Fatalf("evalIRArg(adapter): %v", err)
+		t.Fatalf("evalArg(adapter): %v", err)
 	}
 	adapter, ok := arg.(AdapterArg)
 	if !ok {
@@ -532,12 +532,12 @@ func TestLower_AssertMatchesLowersToMatchesExpr(t *testing.T) {
 	}
 }
 
-func TestEvalIRMatchesBlock_ResolvesPatterns(t *testing.T) {
+func TestEvalMatchesBlock_ResolvesPatterns(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
 	s.Set("id", StringValue("42"))
-	block, err := evalIRMatchesBlock(&ir.MatchesBlockExpr{
+	block, err := evalMatchesBlock(&ir.MatchesBlockExpr{
 		Entries: []ir.MatchEntry{
 			{
 				Path:    "status.kernel.id",
@@ -559,7 +559,7 @@ func TestEvalIRMatchesBlock_ResolvesPatterns(t *testing.T) {
 		},
 	}, &Env{Session: s})
 	if err != nil {
-		t.Fatalf("evalIRMatchesBlock: %v", err)
+		t.Fatalf("evalMatchesBlock: %v", err)
 	}
 	if len(block.Entries) != 3 {
 		t.Fatalf("entries = %d, want 3", len(block.Entries))

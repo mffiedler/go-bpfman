@@ -32,7 +32,7 @@ func runWholeProgramStdin(t *testing.T, script string) (string, string, error) {
 		NoCheck:      false,
 		Fallback:     commandFallback,
 		BindFallback: bindCommandFallback,
-		MakeAssertIR: makeExecAssertIR,
+		MakeAssert:   makeExecAssert,
 	})
 	return outBuf.String(), errBuf.String(), err
 }

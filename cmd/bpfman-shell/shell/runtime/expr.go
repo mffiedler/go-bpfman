@@ -46,9 +46,9 @@ type Env struct {
 	// runtime error.
 	ExecBind func(args []Arg, span source.Span) (BindResult, error)
 
-	// ExecAssertIR runs a lowered Assert instruction. Set by the
+	// ExecAssert runs a lowered Assert instruction. Set by the
 	// shell runner; nil makes any lowered Assert a runtime error.
-	ExecAssertIR func(*ir.Assert, *Env) error
+	ExecAssert func(*ir.Assert, *Env) error
 
 	// PrintResult is called when a top-level syntax.ExprStmt produces a
 	// value. It is the shell auto-print hook: a top-level "$x"
