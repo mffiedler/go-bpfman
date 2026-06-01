@@ -148,6 +148,7 @@ STRESS_COUNT ?= 1
 # binary uses its own defaults.
 BPFMAN_GRPC_GOROUTINES ?=
 BPFMAN_GRPC_ITERATIONS ?=
+BPFMAN_GRPC_PROGRESS_INTERVAL ?=
 # Forwarded to the e2e test binary (test-e2e) and to the daemon
 # subprocess spawned by test-e2e-grpc. See the logging package's
 # component-level spec format (e.g. info,lock=debug,store=debug).
@@ -887,6 +888,7 @@ E2E_GRPC_BPFMAN_BIN   ?= $(BIN_DIR)/bpfman
 E2E_GRPC_FORWARD_VARS := \
 	BPFMAN_GRPC_GOROUTINES \
 	BPFMAN_GRPC_ITERATIONS \
+	BPFMAN_GRPC_PROGRESS_INTERVAL \
 	BPFMAN_LOCK_TIMEOUT \
 	BPFMAN_LOG \
 	BPFMAN_SQLITE_BUSY_TIMEOUT \

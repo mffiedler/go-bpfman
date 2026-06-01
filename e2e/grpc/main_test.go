@@ -25,6 +25,9 @@
 //
 //	BPFMAN_GRPC_GOROUTINES   goroutines per sub-test (default 32)
 //	BPFMAN_GRPC_ITERATIONS   iterations per goroutine (default 4)
+//	BPFMAN_GRPC_PROGRESS_INTERVAL progress log interval; accepts
+//	                               durations such as 5s or bare seconds
+//	                               (default 1s)
 //	BPFMAN_BIN               path to bpfman binary (default: looked up on $PATH)
 //
 // The spawned daemon's stdout and stderr are redirected to

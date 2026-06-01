@@ -157,8 +157,9 @@ func TestParallel_GRPC(t *testing.T) {
 // developer loop. Override via BPFMAN_GRPC_GOROUTINES and
 // BPFMAN_GRPC_ITERATIONS.
 const (
-	defaultGoroutines = 32
-	defaultIterations = 4
+	defaultGoroutines       = 32
+	defaultIterations       = 4
+	defaultProgressInterval = time.Second
 )
 
 const (
@@ -182,9 +183,41 @@ func runParallelLifecycles(t *testing.T, spec typeSpec, counter *atomic.Int64) {
 	// N x ITERS x sub-tests.
 	n := envInt("BPFMAN_GRPC_GOROUTINES", defaultGoroutines)
 	iters := envInt("BPFMAN_GRPC_ITERATIONS", defaultIterations)
+	total := int64(n * iters)
+	progressEvery := envDuration("BPFMAN_GRPC_PROGRESS_INTERVAL", defaultProgressInterval)
+
+	t.Logf("starting %s gRPC lifecycles: %d goroutines x %d iterations = %d lifecycles (~%d RPCs)",
+		spec.name, n, iters, total, total*int64(rpcsPerLifecycle))
 
 	var wg sync.WaitGroup
 	errCh := make(chan error, n*iters)
+	progressDone := make(chan struct{})
+	progressStopped := make(chan struct{})
+
+	go func() {
+		defer close(progressStopped)
+		ticker := time.NewTicker(progressEvery)
+		defer ticker.Stop()
+
+		started := time.Now()
+		for {
+			select {
+			case <-ticker.C:
+				done := counter.Load()
+				elapsed := time.Since(started)
+				rate := 0.0
+				if elapsed > 0 {
+					rate = float64(done) / elapsed.Seconds()
+				}
+				t.Logf("progress %s: %d/%d lifecycles complete (~%d/%d RPCs, %s elapsed, %.1f lifecycles/s)",
+					spec.name, done, total,
+					done*int64(rpcsPerLifecycle), total*int64(rpcsPerLifecycle),
+					elapsed.Round(time.Second), rate)
+			case <-progressDone:
+				return
+			}
+		}
+	}()
 
 	for g := 0; g < n; g++ {
 		wg.Add(1)
@@ -202,10 +235,30 @@ func runParallelLifecycles(t *testing.T, spec typeSpec, counter *atomic.Int64) {
 	}
 
 	wg.Wait()
+	close(progressDone)
+	<-progressStopped
 	close(errCh)
+
+	t.Logf("finished %s gRPC lifecycles: %d/%d complete", spec.name, counter.Load(), total)
 	for err := range errCh {
 		t.Error(err)
 	}
+}
+
+func envDuration(name string, def time.Duration) time.Duration {
+	s := os.Getenv(name)
+	if s == "" {
+		return def
+	}
+	d, err := time.ParseDuration(s)
+	if err == nil && d > 0 {
+		return d
+	}
+	n, err := strconv.Atoi(s)
+	if err == nil && n > 0 {
+		return time.Duration(n) * time.Second
+	}
+	return def
 }
 
 // runOneLifecycle drives one Load -> Get -> Attach -> GetLink ->
