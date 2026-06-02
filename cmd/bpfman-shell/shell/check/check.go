@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/jobsig"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/semantics"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
@@ -1707,7 +1708,7 @@ func (c *checker) checkKillFlags(prog *syntax.Program) {
 			switch {
 			case strings.HasPrefix(lit.Text, "--signal="):
 				name := strings.TrimPrefix(lit.Text, "--signal=")
-				if !isKnownSignalName(name) {
+				if !jobsig.KnownName(name) {
 					c.addIssue(lit.Span, "kill --signal: unknown signal %q", name)
 				}
 			case strings.HasPrefix(lit.Text, "--grace="):
@@ -1734,21 +1735,6 @@ func nonFlagArgCount(args []syntax.Expr) int {
 		n++
 	}
 	return n
-}
-
-// isKnownSignalName reports whether name matches one of the
-// signals the runtime kill builtin accepts. Case-insensitive,
-// optional 'SIG' prefix. Mirrors signalFromName in
-// cmd/bpfman-shell/internal/builtins/job.go; if that list grows, this list
-// grows the same way.
-func isKnownSignalName(name string) bool {
-	upper := strings.ToUpper(strings.TrimSpace(name))
-	upper = strings.TrimPrefix(upper, "SIG")
-	switch upper {
-	case "TERM", "KILL", "INT", "QUIT", "HUP", "USR1", "USR2", "STOP", "CONT":
-		return true
-	}
-	return false
 }
 
 // jobReferenceTarget returns the variable name of a 'kill $X'

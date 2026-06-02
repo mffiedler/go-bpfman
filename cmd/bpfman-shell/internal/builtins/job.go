@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/driver"
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/jobsig"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/semantics"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
@@ -254,7 +255,7 @@ func spawnJob(ctx context.Context, env *runtime.Env, spec spawnSpec) (*runtime.J
 			if errors.As(err, &exitErr) {
 				if ws, ok := exitErr.Sys().(syscall.WaitStatus); ok && ws.Signaled() { //nolint:misspell // syscall.WaitStatus.Signaled is a Go stdlib method name
 					sig := ws.Signal()
-					sigName = signalShortName(sig)
+					sigName = jobsig.ShortName(sig)
 					// Shell convention: signal-killed
 					// processes report code 128+signum.
 					exitCode = 128 + int(sig)
@@ -446,12 +447,12 @@ func KillEnvelope(ctx context.Context, args []runtime.Arg) (runtime.Envelope, er
 		switch {
 		case strings.HasPrefix(text, "--signal="):
 			name := strings.TrimPrefix(text, "--signal=")
-			s, err := signalFromName(name)
-			if err != nil {
-				return runtime.Envelope{}, err
+			s, ok := jobsig.FromName(name)
+			if !ok {
+				return runtime.Envelope{}, fmt.Errorf("unknown signal %q (try SIGTERM, SIGKILL, SIGINT, SIGUSR1, ...)", name)
 			}
 			sig = s
-			sigName = signalShortName(s)
+			sigName = jobsig.ShortName(s)
 			explicitSignal = true
 		case strings.HasPrefix(text, "--grace="):
 			d, err := time.ParseDuration(strings.TrimPrefix(text, "--grace="))
@@ -685,66 +686,6 @@ func jobStatus(j *runtime.Job) string {
 		return fmt.Sprintf("killed %s", signal)
 	}
 	return fmt.Sprintf("exited %d", exitCode)
-}
-
-// signalShortName is the inverse of signalFromName: it maps a
-// syscall.Signal to the bare 'TERM' / 'USR1' / ... spelling so
-// the envelope's Signal field reads naturally regardless of
-// which signal the process actually ended on. An unrecognised
-// signal falls back to the numeric form so tests can still
-// assert on it.
-func signalShortName(sig syscall.Signal) string {
-	switch sig {
-	case syscall.SIGTERM:
-		return "TERM"
-	case syscall.SIGKILL:
-		return "KILL"
-	case syscall.SIGINT:
-		return "INT"
-	case syscall.SIGQUIT:
-		return "QUIT"
-	case syscall.SIGHUP:
-		return "HUP"
-	case syscall.SIGUSR1:
-		return "USR1"
-	case syscall.SIGUSR2:
-		return "USR2"
-	case syscall.SIGSTOP:
-		return "STOP"
-	case syscall.SIGCONT:
-		return "CONT"
-	}
-	return fmt.Sprintf("%d", int(sig))
-}
-
-// signalFromName maps a signal name to a syscall.Signal. Both
-// the 'SIGNAME' and 'NAME' spellings are accepted; an unknown
-// name produces an error with the offending input quoted so
-// the user can correct it.
-func signalFromName(name string) (syscall.Signal, error) {
-	upper := strings.ToUpper(strings.TrimSpace(name))
-	upper = strings.TrimPrefix(upper, "SIG")
-	switch upper {
-	case "TERM":
-		return syscall.SIGTERM, nil
-	case "KILL":
-		return syscall.SIGKILL, nil
-	case "INT":
-		return syscall.SIGINT, nil
-	case "QUIT":
-		return syscall.SIGQUIT, nil
-	case "HUP":
-		return syscall.SIGHUP, nil
-	case "USR1":
-		return syscall.SIGUSR1, nil
-	case "USR2":
-		return syscall.SIGUSR2, nil
-	case "STOP":
-		return syscall.SIGSTOP, nil
-	case "CONT":
-		return syscall.SIGCONT, nil
-	}
-	return 0, fmt.Errorf("unknown signal %q (try SIGTERM, SIGKILL, SIGINT, SIGUSR1, ...)", name)
 }
 
 // jobFromArg unwraps the StructuredValueArg representing a
