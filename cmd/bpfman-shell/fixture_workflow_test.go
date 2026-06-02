@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -106,6 +107,12 @@ func runFixtureWorkflow(t *testing.T, fixture string) fixtureWorkflowRun {
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := runtime.NewSession()
+	// Drive poll deadlines and cadence off a fake clock so poll
+	// fixtures are deterministic regardless of host load: fake time
+	// advances only by the poll's own sleeps, never by command
+	// execution latency. Every fixture is self-contained, so no real
+	// wall-clock progress is needed for a poll to converge.
+	fakeNow := time.Unix(0, 0)
 	runErr := driver.Run(context.Background(), driver.Config{
 		CLI:          cli,
 		Mgr:          nil,
@@ -116,6 +123,8 @@ func runFixtureWorkflow(t *testing.T, fixture string) fixtureWorkflowRun {
 		Fallback:     commandFallback,
 		BindFallback: bindCommandFallback,
 		MakeAssert:   makeExecAssert,
+		Now:          func() time.Time { return fakeNow },
+		Sleep:        func(d time.Duration) { fakeNow = fakeNow.Add(d) },
 	})
 	return fixtureWorkflowRun{
 		session: session,

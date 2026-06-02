@@ -27,20 +27,22 @@ import (
 
 // RunHooks bundles the Env callbacks the runner installs when
 // it evaluates a parsed program.
-// Callers pass the same triple the outer Loop wires through
-// Config.Fallback / BindFallback / MakeAssert; the framework has no use for the hooks
-// outside the program-execution path, so they are not stored
-// on the context.
+// Callers pass the same set the outer Loop wires through
+// Config.Fallback / BindFallback / MakeAssert / Now / Sleep; the
+// framework has no use for the hooks outside the program-execution
+// path, so they are not stored on the context.
 type RunHooks struct {
 	Fallback     FallbackFunc
 	BindFallback BindFallbackFunc
 	MakeAssert   MakeAssertFunc
+	Now          func() time.Time
+	Sleep        func(time.Duration)
 }
 
 // Config bundles the call-site options Run needs. The embedding
 // binary fills it from its Kong-parsed CLI struct (or equivalent)
 // and passes it to Run; the driver package owns everything past
-// that seam.
+// that.
 type Config struct {
 	// CLI is the bpfmancli handle used for writers, manager
 	// construction, and logger access.
@@ -88,6 +90,13 @@ type Config struct {
 	// binary owns the actual verb dispatch and reporting policy.
 	// nil disables lowered assert evaluation at runtime.
 	MakeAssert MakeAssertFunc
+
+	// Now and Sleep override the clock the runtime uses for poll
+	// deadlines and the poll cadence. Both nil (the production
+	// default) means real wall-clock time; tests inject a fake
+	// clock so poll is deterministic regardless of host load.
+	Now   func() time.Time
+	Sleep func(time.Duration)
 }
 
 // FallbackFunc dispatches unhandled commands (statement
@@ -165,6 +174,8 @@ func wireEnvForRun(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager
 	if hooks.MakeAssert != nil {
 		env.ExecAssert = hooks.MakeAssert(cli, session)
 	}
+	env.Now = hooks.Now
+	env.Sleep = hooks.Sleep
 	env.Trace = makeTraceHook(cli, session)
 	env.RenderPollFailure = makeRenderPollFailure(cli)
 }
@@ -184,14 +195,16 @@ func makeRenderPollFailure(cli *bpfmancli.CLI) func(source.Span, time.Duration, 
 	}
 }
 
-// configHooks extracts the RunHooks triple from the loop's
+// configHooks extracts the RunHooks set from the loop's
 // Config so the same env-wiring helper serves both the CLI and
-// the test seams.
+// the test.
 func configHooks(cfg Config) RunHooks {
 	return RunHooks{
 		Fallback:     cfg.Fallback,
 		BindFallback: cfg.BindFallback,
 		MakeAssert:   cfg.MakeAssert,
+		Now:          cfg.Now,
+		Sleep:        cfg.Sleep,
 	}
 }
 
