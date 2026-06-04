@@ -232,7 +232,7 @@ jobs:
           BPFMAN_LOCK_TIMEOUT: ${{ matrix.race == 1 && '120s' || '' }}
 
   test-e2e-scripts:
-    name: E2E .bpfman scripts (${{ matrix.arch }}, RACE=${{ matrix.race }}, DISPATCH=${{ matrix.dispatch }})
+    name: E2E .bpfman scripts (${{ matrix.arch }}, RACE=${{ matrix.race }}, DISPATCH=${{ matrix.dispatch }}, SOURCE=${{ matrix.bytecode_source }})
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -247,6 +247,14 @@ jobs:
         # are required to produce byte-identical responses; a
         # divergence on either lane is a real failure.
         dispatch: [library, external]
+        # Rerun the whole corpus with every `program load file`
+        # brokered through an image build/push/pull cycle
+        # (BPFMAN_E2E_BYTECODE_SOURCE=image). Image mode is heavier
+        # -- a real build and registry round-trip per load -- so
+        # gate it to RACE=0 while still covering both architectures.
+        bytecode_source: [file, image]
+        exclude:
+          - { bytecode_source: image, race: 1 }
         include:
           - arch: amd64
             runner: ubuntu-latest
@@ -316,3 +324,4 @@ jobs:
       - run: make ci-test-e2e-scripts RACE=${{ matrix.race }} STRESS_COUNT=${{ matrix.race == 1 && '1' || '5' }}
         env:
           BPFMAN_DISPATCH: ${{ matrix.dispatch }}
+          BPFMAN_E2E_BYTECODE_SOURCE: ${{ matrix.bytecode_source }}
