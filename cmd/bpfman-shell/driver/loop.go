@@ -131,6 +131,9 @@ func Run(ctx context.Context, cfg Config) error {
 
 	loopErr := Loop(ctx, cfg)
 
+	if errors.Is(loopErr, context.Canceled) || errors.Is(loopErr, context.DeadlineExceeded) {
+		return loopErr
+	}
 	if errors.Is(loopErr, runtime.ErrRequireFailed) || errors.Is(loopErr, ErrScriptError) {
 		return ErrSilent
 	}
@@ -277,6 +280,9 @@ func runProgramSource(cli *bpfmancli.CLI, env *runtime.Env, input string, loc So
 		_ = cli.PrintErrf("%s%s\n", loc.WithSpan(span).String(), body)
 	}
 	report := func(err error) error {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
 		var re *RuntimeError
 		if errors.As(err, &re) {
 			cite(re.Span, re.Msg)
