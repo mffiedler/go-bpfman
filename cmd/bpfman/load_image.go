@@ -57,17 +57,12 @@ func (c *LoadImageCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	// the writer flock.
 
 	// Parse auth config from base64-encoded registry-auth.
-	var auth *platform.ImageAuth
-	if c.RegistryAuth != "" {
-		username, password, parseErr := parseRegistryAuth(c.RegistryAuth)
-		if parseErr != nil {
-			return fmt.Errorf("invalid registry-auth: %w", parseErr)
-		}
-		logger.Debug("using registry auth", "username", username)
-		auth = &platform.ImageAuth{
-			Username: username,
-			Password: password,
-		}
+	auth, err := registryAuthFromFlag(c.RegistryAuth)
+	if err != nil {
+		return err
+	}
+	if auth != nil {
+		logger.Debug("using registry auth", "username", auth.Username)
 	}
 
 	var globalData map[string][]byte
@@ -98,6 +93,22 @@ func (c *LoadImageCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 		return err
 	}
 	return cli.PrintOut(output)
+}
+
+// registryAuthFromFlag decodes a base64-encoded registry-auth flag
+// value into ImageAuth, returning nil when the flag is empty.
+func registryAuthFromFlag(encoded string) (*platform.ImageAuth, error) {
+	if encoded == "" {
+		return nil, nil
+	}
+	username, password, err := parseRegistryAuth(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("invalid registry-auth: %w", err)
+	}
+	return &platform.ImageAuth{
+		Username: username,
+		Password: password,
+	}, nil
 }
 
 // parseRegistryAuth parses a base64-encoded "username:password" string.

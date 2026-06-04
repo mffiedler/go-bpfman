@@ -206,7 +206,7 @@ func (c *ImageVerifyCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	if c.CertificateOIDCIssuer != nil && c.CertificateOIDCIssuerRegexp != nil {
 		return fmt.Errorf("--certificate-oidc-issuer and --certificate-oidc-issuer-regexp are mutually exclusive")
 	}
-	registryAuth, err := c.registryAuth()
+	registryAuth, err := registryAuthFromFlag(c.RegistryAuth)
 	if err != nil {
 		return err
 	}
@@ -265,20 +265,4 @@ func (c *ImageVerifyCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	default:
 		return cli.PrintOutf("Image %s: signature policy accepted (%s)\n", c.ImageURL, verification.Status)
 	}
-}
-
-func (c *ImageVerifyCmd) registryAuth() (*platform.ImageAuth, error) {
-	if c.RegistryAuth == "" {
-		return nil, nil
-	}
-
-	username, password, err := parseRegistryAuth(c.RegistryAuth)
-	if err != nil {
-		return nil, fmt.Errorf("invalid registry-auth: %w", err)
-	}
-
-	return &platform.ImageAuth{
-		Username: username,
-		Password: password,
-	}, nil
 }
