@@ -453,7 +453,7 @@ func TestTC_DispatcherChainExecution(t *testing.T) {
 	}
 
 	var progs []loadedProg
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		programs, err := env.LoadFile(ctx, objFile, []manager.ProgramSpec{
 			{Type: bpfman.ProgramTypeTC, Name: "stats"},
 		}, manager.LoadOpts{})

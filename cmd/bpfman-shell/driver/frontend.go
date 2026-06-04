@@ -2,6 +2,7 @@ package driver
 
 import (
 	"fmt"
+	"maps"
 	"path/filepath"
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/check"
@@ -109,9 +110,7 @@ func topLevelDefInfo(stmts []syntax.Stmt) map[string]check.DefStaticInfo {
 
 func cloneDefInfo(src map[string]check.DefStaticInfo) map[string]check.DefStaticInfo {
 	out := make(map[string]check.DefStaticInfo, len(src))
-	for name, info := range src {
-		out[name] = info
-	}
+	maps.Copy(out, src)
 	return out
 }
 

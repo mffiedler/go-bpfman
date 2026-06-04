@@ -874,12 +874,13 @@ let v = maker
 `
 	issues := checkSource(t, src)
 	require.NotEmpty(t, issues, "the suspicious shape must produce an issue")
-	combined := issues[0].Msg
+	var combined strings.Builder
+	combined.WriteString(issues[0].Msg)
 	for _, i := range issues[1:] {
-		combined += "\n" + i.Msg
+		combined.WriteString("\n" + i.Msg)
 	}
-	assert.Contains(t, combined, "maker", "the diagnostic must name the def")
-	assert.Contains(t, combined, "<-", "the diagnostic must point at the bind form")
+	assert.Contains(t, combined.String(), "maker", "the diagnostic must name the def")
+	assert.Contains(t, combined.String(), "<-", "the diagnostic must point at the bind form")
 }
 
 // Regression: the same hint must NOT fire for a let whose RHS
@@ -914,13 +915,14 @@ let v <- loaderr
 `
 	issues := checkSource(t, src)
 	require.NotEmpty(t, issues, "the typo'd bind head must produce a hint")
-	combined := issues[0].Msg
+	var combined strings.Builder
+	combined.WriteString(issues[0].Msg)
 	for _, i := range issues[1:] {
-		combined += "\n" + i.Msg
+		combined.WriteString("\n" + i.Msg)
 	}
-	assert.Contains(t, combined, "loaderr", "the diagnostic must name the typo")
-	assert.Contains(t, combined, "loader", "the diagnostic must suggest the actual def name")
-	assert.Contains(t, combined, "did you mean", "the diagnostic must explicitly frame the suggestion")
+	assert.Contains(t, combined.String(), "loaderr", "the diagnostic must name the typo")
+	assert.Contains(t, combined.String(), "loader", "the diagnostic must suggest the actual def name")
+	assert.Contains(t, combined.String(), "did you mean", "the diagnostic must explicitly frame the suggestion")
 }
 
 // Regression: a bind head that genuinely is an unknown
@@ -952,12 +954,13 @@ if two == 2 {
 `
 	issues := checkSource(t, src)
 	require.NotEmpty(t, issues, "the mismatch must still be reported")
-	combined := issues[0].Msg
+	var combined strings.Builder
+	combined.WriteString(issues[0].Msg)
 	for _, i := range issues[1:] {
-		combined += "\n" + i.Msg
+		combined.WriteString("\n" + i.Msg)
 	}
-	assert.Contains(t, combined, "two", "the diagnostic must name the offending operand")
-	assert.Contains(t, combined, "<-", "the diagnostic must point at the bind form")
+	assert.Contains(t, combined.String(), "two", "the diagnostic must name the offending operand")
+	assert.Contains(t, combined.String(), "<-", "the diagnostic must point at the bind form")
 }
 
 // Regression: a non-numeric arithmetic operand whose text
@@ -976,12 +979,13 @@ let x = two + 3
 `
 	issues := checkSource(t, src)
 	require.NotEmpty(t, issues, "non-numeric operand still rejected")
-	combined := issues[0].Msg
+	var combined strings.Builder
+	combined.WriteString(issues[0].Msg)
 	for _, i := range issues[1:] {
-		combined += "\n" + i.Msg
+		combined.WriteString("\n" + i.Msg)
 	}
-	assert.Contains(t, combined, "two", "the diagnostic must name the offending operand")
-	assert.Contains(t, combined, "<-", "hint must point at the bind form")
+	assert.Contains(t, combined.String(), "two", "the diagnostic must name the offending operand")
+	assert.Contains(t, combined.String(), "<-", "hint must point at the bind form")
 }
 
 // Regression: a runtime error inside a def body cited only

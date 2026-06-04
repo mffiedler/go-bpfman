@@ -3,6 +3,7 @@ package runtime
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
@@ -76,14 +77,14 @@ func joinArgTexts(c recordedCall) string {
 }
 
 func joinWithSpace(parts []string) string {
-	out := ""
+	var out strings.Builder
 	for i, p := range parts {
 		if i > 0 {
-			out += " "
+			out.WriteString(" ")
 		}
-		out += p
+		out.WriteString(p)
 	}
-	return out
+	return out.String()
 }
 
 func runProgramWithEnv(t *testing.T, src string, env *Env) error {

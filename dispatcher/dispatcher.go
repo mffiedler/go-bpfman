@@ -84,7 +84,7 @@ func NewXDPConfig(numProgs int) (XDPConfig, error) {
 		DispatcherVersion: xdpDispatcherVersion,
 		NumProgsEnabled:   uint8(numProgs),
 	}
-	for i := 0; i < MaxPrograms; i++ {
+	for i := range MaxPrograms {
 		cfg.RunPrios[i] = DefaultPriority
 	}
 	return cfg, nil
@@ -99,7 +99,7 @@ func NewTCConfig(numProgs int) (TCConfig, error) {
 	cfg := TCConfig{
 		NumProgsEnabled: uint8(numProgs),
 	}
-	for i := 0; i < MaxPrograms; i++ {
+	for i := range MaxPrograms {
 		cfg.RunPrios[i] = DefaultPriority
 	}
 	return cfg, nil

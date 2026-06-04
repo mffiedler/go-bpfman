@@ -422,7 +422,7 @@ func (s *sqliteStore) DeleteDispatcherSnapshot(ctx context.Context, key dispatch
 // set bit positions, matching the storage format used by the schema.
 func proceedOnToJSON(bitmask uint32) (string, error) {
 	var actions []int32
-	for i := 0; i < 32; i++ {
+	for i := range 32 {
 		if bitmask&(1<<uint(i)) != 0 {
 			actions = append(actions, int32(i))
 		}

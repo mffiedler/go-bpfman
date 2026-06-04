@@ -60,7 +60,7 @@ func runUnlinkatFireWorker(args []string) error {
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
-		for i := 0; i < n; i++ {
+		for i := range n {
 			path := "unlinkat-target"
 			fd, err := syscall.Open(path, syscall.O_CREAT|syscall.O_WRONLY|syscall.O_TRUNC, 0o644)
 			if err != nil {

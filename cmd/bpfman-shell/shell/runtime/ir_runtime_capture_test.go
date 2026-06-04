@@ -3,6 +3,7 @@ package runtime
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"testing"
 
@@ -52,9 +53,7 @@ func captureLoweredRuntime(t *testing.T, src string, opts runtimeCaptureOpts) ru
 	}
 
 	failures := make(map[string]int, len(opts.Schedule))
-	for k, v := range opts.Schedule {
-		failures[k] = v
-	}
+	maps.Copy(failures, opts.Schedule)
 
 	var calls []execCall
 	assertFn := func(a *ir.Assert, env *Env) error {

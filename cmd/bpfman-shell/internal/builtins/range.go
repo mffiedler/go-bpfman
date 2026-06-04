@@ -70,7 +70,7 @@ func HandleRange(c driver.Ctx) (runtime.Value, error) {
 		return runtime.Value{}, fmt.Errorf("range: bound %d exceeds the maximum of %d", n, int64(math.MaxInt32))
 	}
 	out := make([]any, 0, n)
-	for i := uint64(0); i < n; i++ {
+	for i := range n {
 		out = append(out, json.Number(strconv.FormatUint(i, 10)))
 	}
 	return runtime.ValueFromAny(out), nil

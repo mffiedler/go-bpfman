@@ -1060,7 +1060,7 @@ func formatProceedOnMask(mask uint32, dispType dispatcher.DispatcherType) string
 	isXDP := dispType == dispatcher.DispatcherTypeXDP
 
 	var names []string
-	for bit := uint(0); bit < 32; bit++ {
+	for bit := range uint(32) {
 		if mask&(1<<bit) == 0 {
 			continue
 		}

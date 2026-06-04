@@ -209,13 +209,13 @@ func parseHelperOutput(t *testing.T, stdout, stderr string) helperResult {
 	t.Helper()
 
 	const marker = "NSENTER_OK inode="
-	idx := strings.Index(stdout, marker)
-	if idx < 0 {
+	_, after, ok := strings.Cut(stdout, marker)
+	if !ok {
 		t.Fatalf("subprocess did not report\nstdout:\n%s\nstderr:\n%s",
 			stdout, stderr)
 	}
 
-	line := stdout[idx+len(marker):]
+	line := after
 	if nl := strings.IndexByte(line, '\n'); nl >= 0 {
 		line = line[:nl]
 	}

@@ -1795,7 +1795,7 @@ func parseDeleteProgram(args []runtime.Arg) (*DeleteProgramCommand, error) {
 	cmd := &DeleteProgramCommand{}
 
 	var positionals []runtime.Arg
-	for i := 0; i < len(args); i++ {
+	for i := range args {
 		text := driver.ArgText(args[i])
 		switch text {
 		case "--all":
@@ -1856,7 +1856,7 @@ func parseDeleteLink(args []runtime.Arg) (*DeleteLinkCommand, error) {
 	cmd := &DeleteLinkCommand{}
 
 	var positionals []runtime.Arg
-	for i := 0; i < len(args); i++ {
+	for i := range args {
 		text := driver.ArgText(args[i])
 		switch text {
 		case "-r", "--recursive":

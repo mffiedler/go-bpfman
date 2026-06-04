@@ -195,8 +195,8 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 	}
 
 	// 6. Re-pin each requested map
-	mapNames := strings.Split(mapsStr, ",")
-	for _, mapName := range mapNames {
+	mapNames := strings.SplitSeq(mapsStr, ",")
+	for mapName := range mapNames {
 		mapName = strings.TrimSpace(mapName)
 		if mapName == "" {
 			continue

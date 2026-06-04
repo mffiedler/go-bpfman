@@ -479,7 +479,7 @@ func testAttachExceedsMaxPrograms(t *testing.T, h dispatcherTestHarness) {
 	progID := h.loadProg(t)
 
 	var links []bpfman.LinkRecord
-	for i := 0; i < dispatcher.MaxPrograms; i++ {
+	for i := range dispatcher.MaxPrograms {
 		link := h.attach(t, progID, (i+1)*100)
 		links = append(links, link)
 	}
@@ -514,7 +514,7 @@ func testSlotReusedAfterDetach(t *testing.T, h dispatcherTestHarness) {
 	// Fill all 10 slots with ascending priorities.
 	// links[i] has priority (i+1)*100: 100, 200, ..., 1000.
 	var links []bpfman.LinkRecord
-	for i := 0; i < dispatcher.MaxPrograms; i++ {
+	for i := range dispatcher.MaxPrograms {
 		link := h.attach(t, progID, (i+1)*100)
 		links = append(links, link)
 	}
@@ -631,7 +631,7 @@ func testMultipleInterfacesIndependent(t *testing.T, h dispatcherTestHarness) {
 
 	// Attach 3 programs to default interface (A).
 	var linksA []bpfman.LinkRecord
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		link := h.attach(t, progID, (i+1)*100)
 		linksA = append(linksA, link)
 	}
@@ -643,7 +643,7 @@ func testMultipleInterfacesIndependent(t *testing.T, h dispatcherTestHarness) {
 
 	// Attach 2 programs to interface B.
 	var linksB []bpfman.LinkRecord
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		link := h.attachTo(t, progID, ifaceB, (i+1)*100)
 		linksB = append(linksB, link)
 	}

@@ -166,7 +166,7 @@ type kfuncCandidate struct {
 
 func scanKfuncSlots(root string) ([]kfuncCandidate, error) {
 	out := make([]kfuncCandidate, 0, kfuncPoolSize)
-	for slot := uint32(0); slot < kfuncPoolSize; slot++ {
+	for slot := range uint32(kfuncPoolSize) {
 		path := kfuncSlotLockPath(root, slot)
 		info, err := os.Stat(path)
 		if errors.Is(err, fs.ErrNotExist) {

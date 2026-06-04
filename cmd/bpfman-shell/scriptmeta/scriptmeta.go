@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"strings"
 
@@ -60,9 +61,7 @@ func ParsePragma(path, line string, labels k8slabels.Set) error {
 	if err != nil {
 		return err
 	}
-	for key, value := range parsed {
-		labels[key] = value
-	}
+	maps.Copy(labels, parsed)
 	return nil
 }
 

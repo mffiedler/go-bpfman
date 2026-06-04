@@ -669,7 +669,7 @@ func isMounted(path string) bool {
 	if err != nil {
 		return false
 	}
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) >= 2 && fields[1] == path {
 			return true
@@ -723,7 +723,7 @@ func tcFilterCount(t *testing.T, iface, direction string) int {
 		return 0
 	}
 	count := 0
-	for _, line := range strings.Split(string(out), "\n") {
+	for line := range strings.SplitSeq(string(out), "\n") {
 		if strings.Contains(line, "pref") {
 			count++
 		}
@@ -1251,7 +1251,7 @@ var (
 
 func initKmodSlotPool() {
 	kmodSlotPool = make(chan int, kmodSlotPoolSize)
-	for i := 0; i < kmodSlotPoolSize; i++ {
+	for i := range kmodSlotPoolSize {
 		kmodSlotPool <- i
 	}
 }
@@ -1313,7 +1313,7 @@ func (s KmodSlot) Fire(t *testing.T, n int) {
 	f, err := os.OpenFile(s.TriggerPath, os.O_WRONLY, 0)
 	require.NoError(t, err, "open trigger %s", s.TriggerPath)
 	defer f.Close()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if _, err := f.Write([]byte{0}); err != nil {
 			t.Fatalf("write trigger %s (event %d/%d): %v", s.TriggerPath, i+1, n, err)
 		}

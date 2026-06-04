@@ -379,8 +379,8 @@ func matchesLocator(base driver.SourceLoc) func(source.Pos, string) string {
 // "expected X not to be Y".
 func negateMessage(msg string) string {
 	// Try "to equal", "to not equal", "to be", "to contain", "to exist", "to succeed", "to fail".
-	if i := strings.Index(msg, " to "); i >= 0 {
-		return msg[:i] + " not to " + msg[i+4:]
+	if before, after, ok := strings.Cut(msg, " to "); ok {
+		return before + " not to " + after
 	}
 	// Try "expected command to" patterns.
 	if strings.HasPrefix(msg, "expected") {

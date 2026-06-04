@@ -54,14 +54,14 @@ func IsMounted(mountInfoPath, mountPoint string) (bool, error) {
 		// Find the separator " - " which precedes "fstype
 		// source super_options". This is how libmount parses
 		// mountinfo (see mnt_parse_mountinfo_line).
-		sepIdx := strings.Index(line, " - ")
-		if sepIdx == -1 {
+		before, after, ok := strings.Cut(line, " - ")
+		if !ok {
 			continue
 		}
 
 		// Parse the prefix: mount_id parent_id major:minor
 		// root mount_point ...
-		prefix := line[:sepIdx]
+		prefix := before
 		fields := strings.Fields(prefix)
 		if len(fields) < 5 {
 			continue
@@ -70,7 +70,7 @@ func IsMounted(mountInfoPath, mountPoint string) (bool, error) {
 
 		// Parse the suffix after " - ": fstype source
 		// super_options.
-		suffix := line[sepIdx+3:] // skip " - "
+		suffix := after // skip " - "
 		suffixFields := strings.Fields(suffix)
 		if len(suffixFields) < 1 {
 			continue

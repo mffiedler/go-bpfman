@@ -382,7 +382,7 @@ func renderTrace(w io.Writer, tl *timeline) error {
 		})
 	}
 
-	for lane := 0; lane < laneCount; lane++ {
+	for lane := range laneCount {
 		tid := lane + 2
 		trace.TraceEvents = append(trace.TraceEvents, traceEvent{
 			Name: "thread_name",
@@ -483,10 +483,7 @@ func assignLanes(rows []*testRow) ([]scheduledRow, int) {
 		for _, iv := range row.Intervals {
 			if iv.State == "running" && !dropRegistrationInterval(row, iv) {
 				ts := iv.Start.UnixMicro()
-				dur := iv.End.Sub(iv.Start).Microseconds()
-				if dur < 1 {
-					dur = 1
-				}
+				dur := max(iv.End.Sub(iv.Start).Microseconds(), 1)
 				intervals = append(intervals, scheduledRow{
 					Row:      row,
 					Interval: iv,

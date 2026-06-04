@@ -149,14 +149,14 @@ func TestLinkAttachKindDetailsType_CoversEveryAttachKind(t *testing.T) {
 	t.Parallel()
 
 	want := map[string]reflect.Type{
-		"xdp":        reflect.TypeOf(bpfman.XDPDetails{}),
-		"tc":         reflect.TypeOf(bpfman.TCDetails{}),
-		"tcx":        reflect.TypeOf(bpfman.TCXDetails{}),
-		"tracepoint": reflect.TypeOf(bpfman.TracepointDetails{}),
-		"kprobe":     reflect.TypeOf(bpfman.KprobeDetails{}),
-		"uprobe":     reflect.TypeOf(bpfman.UprobeDetails{}),
-		"fentry":     reflect.TypeOf(bpfman.FentryDetails{}),
-		"fexit":      reflect.TypeOf(bpfman.FexitDetails{}),
+		"xdp":        reflect.TypeFor[bpfman.XDPDetails](),
+		"tc":         reflect.TypeFor[bpfman.TCDetails](),
+		"tcx":        reflect.TypeFor[bpfman.TCXDetails](),
+		"tracepoint": reflect.TypeFor[bpfman.TracepointDetails](),
+		"kprobe":     reflect.TypeFor[bpfman.KprobeDetails](),
+		"uprobe":     reflect.TypeFor[bpfman.UprobeDetails](),
+		"fentry":     reflect.TypeFor[bpfman.FentryDetails](),
+		"fexit":      reflect.TypeFor[bpfman.FexitDetails](),
 	}
 
 	for _, kind := range bpfman.LinkAttachKinds() {

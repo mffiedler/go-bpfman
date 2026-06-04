@@ -103,8 +103,8 @@ func ExtractAttachFunc(sectionName string) string {
 	sectionName = strings.TrimPrefix(sectionName, "?")
 
 	// Section format is "type/function" (e.g., "fentry/vfs_read")
-	if idx := strings.Index(sectionName, "/"); idx != -1 {
-		return sectionName[idx+1:]
+	if _, after, ok := strings.Cut(sectionName, "/"); ok {
+		return after
 	}
 	return ""
 }

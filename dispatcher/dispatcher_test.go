@@ -57,7 +57,7 @@ func TestNewXDPConfig(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for i := 0; i < dispatcher.MaxPrograms; i++ {
+		for i := range dispatcher.MaxPrograms {
 			if cfg.RunPrios[i] != dispatcher.DefaultPriority {
 				t.Errorf("RunPrios[%d] = %d, want %d", i, cfg.RunPrios[i], dispatcher.DefaultPriority)
 			}
@@ -108,7 +108,7 @@ func TestNewTCConfig(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for i := 0; i < dispatcher.MaxPrograms; i++ {
+		for i := range dispatcher.MaxPrograms {
 			if cfg.RunPrios[i] != dispatcher.DefaultPriority {
 				t.Errorf("RunPrios[%d] = %d, want %d", i, cfg.RunPrios[i], dispatcher.DefaultPriority)
 			}
@@ -142,7 +142,7 @@ func TestSlotName(t *testing.T) {
 
 	t.Run("valid positions", func(t *testing.T) {
 		t.Parallel()
-		for i := 0; i < dispatcher.MaxPrograms; i++ {
+		for i := range dispatcher.MaxPrograms {
 			name, err := dispatcher.SlotName(i)
 			if err != nil {
 				t.Fatalf("SlotName(%d): unexpected error: %v", i, err)

@@ -44,9 +44,9 @@ func ParseSpec(s string) (Spec, error) {
 		}
 
 		// Check if this is a component=level pair
-		if idx := strings.Index(part, "="); idx != -1 {
-			component := strings.TrimSpace(part[:idx])
-			levelStr := strings.TrimSpace(part[idx+1:])
+		if before, after, ok := strings.Cut(part, "="); ok {
+			component := strings.TrimSpace(before)
+			levelStr := strings.TrimSpace(after)
 
 			if component == "" {
 				return spec, fmt.Errorf("empty component name in %q", part)

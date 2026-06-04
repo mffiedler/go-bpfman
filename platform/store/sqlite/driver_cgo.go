@@ -4,6 +4,7 @@ package sqlite
 
 import (
 	"errors"
+	"strings"
 
 	sqlite3 "github.com/mattn/go-sqlite3"
 )
@@ -27,14 +28,15 @@ func isBusyError(err error) bool {
 // dsn builds a mattn/go-sqlite3 DSN from a path and pragma key-value
 // pairs. Each pair is formatted as _key=value in the query string.
 func dsn(path string, pragmas [][2]string) string {
-	s := path
+	var s strings.Builder
+	s.WriteString(path)
 	for i, p := range pragmas {
 		if i == 0 {
-			s += "?"
+			s.WriteString("?")
 		} else {
-			s += "&"
+			s.WriteString("&")
 		}
-		s += "_" + p[0] + "=" + p[1]
+		s.WriteString("_" + p[0] + "=" + p[1])
 	}
-	return s
+	return s.String()
 }

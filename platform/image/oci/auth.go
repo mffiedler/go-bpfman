@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"slices"
 
 	gcrAuthn "github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -36,10 +37,8 @@ func credentialStorePaths() []string {
 		if path == "" {
 			return
 		}
-		for _, existing := range paths {
-			if existing == path {
-				return
-			}
+		if slices.Contains(paths, path) {
+			return
 		}
 		paths = append(paths, path)
 	}

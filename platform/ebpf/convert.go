@@ -75,7 +75,7 @@ func bootTime() time.Time {
 	if err != nil {
 		return time.Now()
 	}
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		if strings.HasPrefix(line, "btime ") {
 			var btime int64
 			if _, err := fmt.Sscanf(line, "btime %d", &btime); err == nil {

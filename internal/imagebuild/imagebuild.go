@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"runtime"
+	"slices"
 	"strings"
 )
 
@@ -109,11 +110,9 @@ func BytecodeInputForCiliumObject(arch, endian string) (BytecodeInput, bool) {
 		if spec.ciliumEndian != endian {
 			continue
 		}
-		for _, token := range spec.ciliumArchs {
-			if token == arch {
-				input, _ := BytecodeInputForArch(spec.arch, "")
-				return input, true
-			}
+		if slices.Contains(spec.ciliumArchs, arch) {
+			input, _ := BytecodeInputForArch(spec.arch, "")
+			return input, true
 		}
 	}
 	return BytecodeInput{}, false

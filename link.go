@@ -458,21 +458,21 @@ func LinkAttachKinds() []string {
 func LinkAttachKindDetailsType(attachKind string) reflect.Type {
 	switch attachKind {
 	case "xdp":
-		return reflect.TypeOf(XDPDetails{})
+		return reflect.TypeFor[XDPDetails]()
 	case "tc":
-		return reflect.TypeOf(TCDetails{})
+		return reflect.TypeFor[TCDetails]()
 	case "tcx":
-		return reflect.TypeOf(TCXDetails{})
+		return reflect.TypeFor[TCXDetails]()
 	case "tracepoint":
-		return reflect.TypeOf(TracepointDetails{})
+		return reflect.TypeFor[TracepointDetails]()
 	case "kprobe":
-		return reflect.TypeOf(KprobeDetails{})
+		return reflect.TypeFor[KprobeDetails]()
 	case "uprobe":
-		return reflect.TypeOf(UprobeDetails{})
+		return reflect.TypeFor[UprobeDetails]()
 	case "fentry":
-		return reflect.TypeOf(FentryDetails{})
+		return reflect.TypeFor[FentryDetails]()
 	case "fexit":
-		return reflect.TypeOf(FexitDetails{})
+		return reflect.TypeFor[FexitDetails]()
 	}
 	return nil
 }

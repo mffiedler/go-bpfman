@@ -22,10 +22,10 @@ import (
 // the mapping directly instead of asking cmd-side init to mutate
 // it at startup.
 var typeKind = map[reflect.Type]OriginKind{
-	reflect.TypeOf(bpfman.Program{}):       OriginProgram,
-	reflect.TypeOf(bpfman.ProgramRecord{}): OriginProgram,
-	reflect.TypeOf(bpfman.Link{}):          OriginLink,
-	reflect.TypeOf(bpfman.LinkRecord{}):    OriginLink,
+	reflect.TypeFor[bpfman.Program]():       OriginProgram,
+	reflect.TypeFor[bpfman.ProgramRecord](): OriginProgram,
+	reflect.TypeFor[bpfman.Link]():          OriginLink,
+	reflect.TypeFor[bpfman.LinkRecord]():    OriginLink,
 }
 
 // kindForType returns the OriginKind registered for t (or its
@@ -39,7 +39,7 @@ func kindForType(t reflect.Type) OriginKind {
 	if k, ok := typeKind[t]; ok {
 		return k
 	}
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		if k, ok := typeKind[t.Elem()]; ok {
 			return k
 		}
@@ -118,7 +118,7 @@ func WalkSuborigin(origin any, steps []syntax.PathStep) (any, OriginKind) {
 func unwrap(v reflect.Value) reflect.Value {
 	for {
 		switch v.Kind() {
-		case reflect.Ptr, reflect.Interface:
+		case reflect.Pointer, reflect.Interface:
 			if v.IsNil() {
 				return reflect.Value{}
 			}
@@ -153,7 +153,7 @@ func jsonFieldByName(t reflect.Type, name string) (reflect.StructField, bool) {
 		// to keep walkOrigin in lockstep with the JSON walk.
 		if f.Anonymous && tag == "" {
 			ft := f.Type
-			for ft.Kind() == reflect.Ptr {
+			for ft.Kind() == reflect.Pointer {
 				ft = ft.Elem()
 			}
 			if ft.Kind() == reflect.Struct {
@@ -182,8 +182,8 @@ func parseJSONTag(tag string) (name string, omit bool) {
 	if tag == "-" {
 		return "", true
 	}
-	if comma := strings.Index(tag, ","); comma >= 0 {
-		return tag[:comma], false
+	if before, _, ok := strings.Cut(tag, ","); ok {
+		return before, false
 	}
 	return tag, false
 }

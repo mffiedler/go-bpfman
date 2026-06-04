@@ -98,7 +98,7 @@ func handleKfuncFire(args []runtime.Arg) (runtime.Value, error) {
 		return runtime.Value{}, fmt.Errorf("kfunc fire: open %s: %w", kf.Trigger, err)
 	}
 	defer f.Close()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if _, err := f.Write([]byte{0}); err != nil {
 			return runtime.Value{}, fmt.Errorf("kfunc fire: write %s (%d/%d): %w", kf.Trigger, i+1, n, err)
 		}

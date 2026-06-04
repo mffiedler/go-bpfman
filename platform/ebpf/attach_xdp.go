@@ -110,7 +110,7 @@ func (k *kernelAdapter) AttachXDPDispatcher(ctx context.Context, spec dispatcher
 	if err != nil {
 		return nil, fmt.Errorf("create XDP dispatcher config: %w", err)
 	}
-	for i := 0; i < dispatcher.MaxPrograms; i++ {
+	for i := range dispatcher.MaxPrograms {
 		cfg.ChainCallActions[i] = spec.ProceedOn | (1 << xdpDispatcherRetval)
 	}
 

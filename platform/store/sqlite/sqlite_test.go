@@ -105,7 +105,7 @@ func TestForeignKey_CascadeDeleteRemovesLinks(t *testing.T) {
 	require.NoError(t, store.Save(ctx, programID, prog), "Save failed")
 
 	// Create two links for that program.
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		details := bpfman.KprobeDetails{
 			FnName:   "test_fn",
 			Offset:   0,

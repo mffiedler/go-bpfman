@@ -33,7 +33,7 @@ func TestUniqueTestName(t *testing.T) {
 
 	t.Run("uniqueness", func(t *testing.T) {
 		seen := make(map[string]bool)
-		for i := 0; i < 1000; i++ {
+		for i := range 1000 {
 			name := uniqueTestName()
 			assert.False(t, seen[name], "name %s should be unique (collision at call %d)", name, i)
 			seen[name] = true

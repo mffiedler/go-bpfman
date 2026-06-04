@@ -85,7 +85,7 @@ func singleUintArg(verb string, args []runtime.Arg, max uint64) (uint64, error) 
 func formatLE(n uint64, width int) string {
 	var sb strings.Builder
 	sb.Grow(width * 2)
-	for i := 0; i < width; i++ {
+	for i := range width {
 		fmt.Fprintf(&sb, "%02x", byte(n>>(8*i)))
 	}
 	return sb.String()

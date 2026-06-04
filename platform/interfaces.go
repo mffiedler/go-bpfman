@@ -151,8 +151,7 @@ type ProgramLister interface {
 
 // ProgramFinder finds programs by criteria.
 // This interface is currently empty but retained for future extensions.
-type ProgramFinder interface {
-}
+type ProgramFinder any
 
 // MapOwnershipReader provides access to map ownership information.
 type MapOwnershipReader interface {

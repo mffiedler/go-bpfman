@@ -2,6 +2,7 @@ package semantics
 
 import (
 	"encoding/json"
+	"maps"
 	"reflect"
 	"strings"
 	"time"
@@ -16,12 +17,12 @@ import (
 
 var (
 	typeToOriginKind = map[reflect.Type]OriginKind{
-		reflect.TypeOf(bpfman.Program{}): OriginProgram,
-		reflect.TypeOf(bpfman.Link{}):    OriginLink,
+		reflect.TypeFor[bpfman.Program](): OriginProgram,
+		reflect.TypeFor[bpfman.Link]():    OriginLink,
 	}
 
-	programShape = shapeFromType(reflect.TypeOf(bpfman.Program{}), OriginProgram)
-	linkShape    = shapeFromType(reflect.TypeOf(bpfman.Link{}), OriginLink)
+	programShape = shapeFromType(reflect.TypeFor[bpfman.Program](), OriginProgram)
+	linkShape    = shapeFromType(reflect.TypeFor[bpfman.Link](), OriginLink)
 
 	linkDetailsShapes = buildLinkDetailsShapes()
 )
@@ -114,10 +115,10 @@ func buildShape(t reflect.Type, seen map[reflect.Type]bool, kind OriginKind) Sha
 	if mapped, ok := typeToOriginKind[t]; ok && kind == OriginUnknown {
 		kind = mapped
 	}
-	if t == reflect.TypeOf(time.Time{}) {
+	if t == reflect.TypeFor[time.Time]() {
 		return Shape{Sealed: true, Kind: OriginScalar}
 	}
-	if t == reflect.TypeOf(json.Number("")) {
+	if t == reflect.TypeFor[json.Number]() {
 		return Shape{Sealed: true, Kind: OriginScalar}
 	}
 	if implementsJSONMarshaler(t) {
@@ -143,9 +144,7 @@ func buildShape(t reflect.Type, seen map[reflect.Type]bool, kind OriginKind) Sha
 			child := buildShape(f.Type, seen, OriginUnknown)
 			if f.Anonymous && f.Tag.Get("json") == "" {
 				if child.Sealed {
-					for k, v := range child.Fields {
-						fields[k] = v
-					}
+					maps.Copy(fields, child.Fields)
 				}
 				continue
 			}
@@ -185,7 +184,7 @@ func jsonFieldName(f reflect.StructField) (name string, omit bool) {
 	return tag, false
 }
 
-var jsonMarshalerType = reflect.TypeOf((*json.Marshaler)(nil)).Elem()
+var jsonMarshalerType = reflect.TypeFor[json.Marshaler]()
 
 func implementsJSONMarshaler(t reflect.Type) bool {
 	if t.Implements(jsonMarshalerType) {

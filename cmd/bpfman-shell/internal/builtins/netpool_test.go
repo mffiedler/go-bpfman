@@ -156,7 +156,7 @@ func TestAcquirePoolSlot_PreferReleasedOverHeld(t *testing.T) {
 			}
 		}
 	}()
-	for i := uint32(0); i < poolSize; i++ {
+	for i := range uint32(poolSize) {
 		l, err := acquirePoolSlot(poolReq(root, fmt.Sprintf("init-%d", i), "", ""))
 		require.NoError(t, err)
 		held[i] = l
@@ -384,7 +384,7 @@ func TestAcquirePoolSlot_ConcurrentDistinctSlots(t *testing.T) {
 	results := make([]*poolLease, n)
 	errs := make([]error, n)
 	var wg sync.WaitGroup
-	for i := 0; i < n; i++ {
+	for i := range n {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -406,7 +406,7 @@ func TestAcquirePoolSlot_ConcurrentDistinctSlots(t *testing.T) {
 		slots = append(slots, int(results[i].slot))
 	}
 	sort.Ints(slots)
-	for i := 0; i < n-1; i++ {
+	for i := range n - 1 {
 		assert.NotEqualf(t, slots[i], slots[i+1], "two goroutines got the same slot %d", slots[i])
 	}
 }

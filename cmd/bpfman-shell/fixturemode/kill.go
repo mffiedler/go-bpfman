@@ -53,7 +53,7 @@ func runKillFireWorker(args []string) error {
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if err := syscall.Kill(pid, syscall.SIGUSR1); err != nil {
 				return fmt.Errorf("kill-fire-worker: kill wave=%d i=%d: %w", wave, i, err)
 			}

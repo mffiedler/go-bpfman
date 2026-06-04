@@ -674,7 +674,7 @@ func NewTestVethPair(t *testing.T, opts ...VethOption) TestVethPair {
 				monCmd.Process.Kill()
 				monCmd.Wait()
 				// Filter output to only show events for our interfaces.
-				for _, line := range strings.Split(monBuf.String(), "\n") {
+				for line := range strings.SplitSeq(monBuf.String(), "\n") {
 					if strings.Contains(line, nameA) || strings.Contains(line, nameB) || strings.Contains(line, nsName) {
 						t.Logf("[ip-monitor %s] %s", base, line)
 					}

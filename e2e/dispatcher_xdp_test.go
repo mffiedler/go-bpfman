@@ -43,7 +43,7 @@ func TestXDP_DispatcherConfigAfterDetach(t *testing.T) {
 	require.NoError(t, err)
 
 	var linkIDs []bpfman.LinkRecord
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		link, err := env.Attach(ctx, xdpSpec)
 		require.NoError(t, err, "attach %d should succeed", i)
 		linkIDs = append(linkIDs, link)
@@ -62,7 +62,7 @@ func TestXDP_DispatcherConfigAfterDetach(t *testing.T) {
 	require.Len(t, snap.Members, 10, "should have 10 programs before detach")
 
 	// Detach first 9 links one at a time, verifying count decreases.
-	for i := 0; i < 9; i++ {
+	for i := range 9 {
 		err = env.Detach(ctx, linkIDs[i].ID)
 		require.NoError(t, err, "detach %d should succeed", i)
 

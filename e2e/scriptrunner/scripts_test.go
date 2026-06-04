@@ -129,7 +129,7 @@ func TestBPFManScripts(t *testing.T) {
 	// skip the repeat: they are serialized with other serial
 	// scripts by scriptSerialMu, so extra registrations only
 	// burn wall-clock time without tickling new race windows.
-	for r := 0; r < repeats; r++ {
+	for r := range repeats {
 		for _, abs := range matches {
 			if (serial[abs] || exclusive[abs]) && r > 0 {
 				continue

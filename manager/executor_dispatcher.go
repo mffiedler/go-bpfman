@@ -1239,7 +1239,7 @@ func sortRebuildSlots(slots []rebuildSlot) {
 // attach_tc.go and attach_xdp.go.
 func bitmaskToActions(mask uint32) []int32 {
 	var actions []int32
-	for i := 0; i < 32; i++ {
+	for i := range 32 {
 		if mask&(1<<uint(i)) != 0 {
 			actions = append(actions, int32(i))
 		}

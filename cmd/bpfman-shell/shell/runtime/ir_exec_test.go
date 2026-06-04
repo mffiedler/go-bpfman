@@ -3,6 +3,7 @@ package runtime
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"testing"
 
@@ -548,9 +549,7 @@ func runScriptWithSchedule(t *testing.T, src string, schedule map[string]int) *E
 	t.Helper()
 	prog := parseProgram(t, src)
 	failures := make(map[string]int, len(schedule))
-	for k, v := range schedule {
-		failures[k] = v
-	}
+	maps.Copy(failures, schedule)
 	env := &Env{
 		Session: NewSession(),
 		ExecCommand: func(args []Arg, span source.Span) (Value, error) {
@@ -583,9 +582,7 @@ func runScriptError(t *testing.T, src string, schedule map[string]int) error {
 	t.Helper()
 	prog := parseProgram(t, src)
 	failures := make(map[string]int, len(schedule))
-	for k, v := range schedule {
-		failures[k] = v
-	}
+	maps.Copy(failures, schedule)
 	env := &Env{
 		Session: NewSession(),
 		ExecAssert: func(a *ir.Assert, env *Env) error {

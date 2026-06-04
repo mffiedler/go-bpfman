@@ -219,12 +219,12 @@ func runParallelLifecycles(t *testing.T, spec typeSpec, counter *atomic.Int64) {
 		}
 	}()
 
-	for g := 0; g < n; g++ {
+	for g := range n {
 		wg.Add(1)
 		go func(gid int) {
 			defer wg.Done()
 			buildAttach := spec.attachBuilder(t, gid)
-			for i := 0; i < iters; i++ {
+			for i := range iters {
 				if err := runOneLifecycle(t, spec, buildAttach, gid, i); err != nil {
 					errCh <- fmt.Errorf("%s g%d iter%d: %w", spec.name, gid, i, err)
 					return

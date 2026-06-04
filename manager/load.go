@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"time"
@@ -151,9 +152,7 @@ func loadRequestMetadata(metadata map[string]string, application string) map[str
 	}
 
 	out := make(map[string]string, len(metadata)+1)
-	for k, v := range metadata {
-		out[k] = v
-	}
+	maps.Copy(out, metadata)
 	if application != "" {
 		out[ApplicationMetadataKey] = application
 	}

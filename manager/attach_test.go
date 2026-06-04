@@ -461,7 +461,7 @@ func TestXDP_MultipleAttachesCreateMultipleLinks(t *testing.T) {
 
 	// Attach multiple times
 	var linkIDs []kernel.LinkID
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
 		require.NoError(t, err)
 		link, err := fix.Attach(ctx, attachSpec)
@@ -490,7 +490,7 @@ func TestXDP_FullLifecycle(t *testing.T) {
 	// Step 2: Attach multiple times
 	numAttachments := 3
 	var linkIDs []kernel.LinkID
-	for i := 0; i < numAttachments; i++ {
+	for i := range numAttachments {
 		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
 		require.NoError(t, err)
 		link, err := fix.Attach(ctx, attachSpec)
@@ -1226,7 +1226,7 @@ func TestXDP_DispatcherStateInStore(t *testing.T) {
 
 	// Attach two extensions
 	var linkIDs []kernel.LinkID
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
 		require.NoError(t, err)
 		link, err := fix.Attach(ctx, attachSpec)
@@ -1320,7 +1320,7 @@ func TestXDP_ExtensionPositionsAreSequential(t *testing.T) {
 	require.NoError(t, err)
 
 	var linkIDs []kernel.LinkID
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
 		require.NoError(t, err)
 		link, err := fix.Attach(ctx, attachSpec)
@@ -1341,7 +1341,7 @@ func TestXDP_ExtensionPositionsAreSequential(t *testing.T) {
 		positions[xdpDetails.Position] = true
 	}
 	assert.Len(t, positions, 3, "should have 3 unique positions")
-	for i := int32(0); i < 3; i++ {
+	for i := range int32(3) {
 		assert.True(t, positions[i], "position %d should be assigned", i)
 	}
 
@@ -1369,7 +1369,7 @@ func TestTC_ExtensionPositionsAreSequential(t *testing.T) {
 
 	// Attach three times to the same interface/direction
 	var linkIDs []kernel.LinkID
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
 		require.NoError(t, err)
 		attachSpec = attachSpec.WithPriority(50)
@@ -1388,7 +1388,7 @@ func TestTC_ExtensionPositionsAreSequential(t *testing.T) {
 		positions[tcDetails.Position] = true
 	}
 	assert.Len(t, positions, 3, "should have 3 unique positions")
-	for i := int32(0); i < 3; i++ {
+	for i := range int32(3) {
 		assert.True(t, positions[i], "position %d should be assigned", i)
 	}
 
@@ -1708,7 +1708,7 @@ func TestXDPDispatcher_MultipleAttachesCreateMultipleLinks(t *testing.T) {
 	require.NoError(t, err)
 
 	var linkIDs []kernel.LinkID
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
 		require.NoError(t, err)
 		link, err := fix.Attach(ctx, attachSpec)
@@ -1773,7 +1773,7 @@ func TestXDPDispatcher_FullLifecycle(t *testing.T) {
 	// Step 2: Attach multiple times
 	numAttachments := 5
 	var linkIDs []kernel.LinkID
-	for i := 0; i < numAttachments; i++ {
+	for i := range numAttachments {
 		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
 		require.NoError(t, err)
 		link, err := fix.Attach(ctx, attachSpec)

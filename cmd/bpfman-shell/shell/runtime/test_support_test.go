@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"testing"
 
@@ -40,9 +41,7 @@ func mustReadInt(t *testing.T, v any) int {
 
 func cloneFailureSchedule(in map[string]int) map[string]int {
 	out := make(map[string]int, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
+	maps.Copy(out, in)
 	return out
 }
 

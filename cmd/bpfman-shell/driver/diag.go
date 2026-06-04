@@ -70,10 +70,7 @@ func renderDiagnostic(src, file string, d diagnostic) string {
 		text := lines[startLine-1]
 		fmt.Fprintf(&b, "%*d | %s\n", gutter, startLine, text)
 
-		caretStart := startCol - 1
-		if caretStart < 0 {
-			caretStart = 0
-		}
+		caretStart := max(startCol-1, 0)
 		caretEnd := endCol - 1
 		if endLine != startLine || caretEnd <= caretStart {
 			caretEnd = len(text)
@@ -81,10 +78,7 @@ func renderDiagnostic(src, file string, d diagnostic) string {
 		if caretEnd > len(text) {
 			caretEnd = len(text)
 		}
-		width := caretEnd - caretStart
-		if width < 1 {
-			width = 1
-		}
+		width := max(caretEnd-caretStart, 1)
 		fmt.Fprintf(&b, "%s | %s%s %s\n",
 			pad,
 			strings.Repeat(" ", caretStart),
