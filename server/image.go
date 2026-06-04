@@ -24,16 +24,7 @@ func (s *Server) PullBytecode(ctx context.Context, req *pb.PullBytecodeRequest) 
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid pull policy: %v", err)
 	}
-	ref := platform.ImageRef{URL: req.Image.Url, PullPolicy: pullPolicy}
-	if req.Image.Username != nil && *req.Image.Username != "" {
-		auth := &platform.ImageAuth{
-			Username: *req.Image.Username,
-		}
-		if req.Image.Password != nil {
-			auth.Password = *req.Image.Password
-		}
-		ref.Auth = auth
-	}
+	ref := platform.ImageRef{URL: req.Image.Url, PullPolicy: pullPolicy, Auth: protoImageAuth(req.Image)}
 
 	_, err = s.mgr.PullBytecode(ctx, ref)
 	if errors.Is(err, manager.ErrImagePullerNotConfigured) {

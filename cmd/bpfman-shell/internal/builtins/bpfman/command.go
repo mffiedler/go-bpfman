@@ -1535,6 +1535,9 @@ func execLoadImage(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager
 		if len(parts) != 2 {
 			return runtime.Value{}, fmt.Errorf("invalid registry-auth: expected 'username:password' format")
 		}
+		if parts[0] == "" || parts[1] == "" {
+			return runtime.Value{}, fmt.Errorf("invalid registry-auth: username and password must both be non-empty")
+		}
 		ref.Auth = &platform.ImageAuth{
 			Username: parts[0],
 			Password: parts[1],

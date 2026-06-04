@@ -119,12 +119,25 @@ func TestBytecodeSourceRejectsDuplicateMappedPlatform(t *testing.T) {
 func TestImageVerifyRegistryAuthRejectsInvalidValue(t *testing.T) {
 	t.Parallel()
 
-	_, err := registryAuthFromFlag("not-base64")
-	if err == nil {
-		t.Fatal("registryAuthFromFlag returned nil error for invalid auth")
+	cases := []struct {
+		name    string
+		encoded string
+	}{
+		{"invalid base64", "not-base64"},
+		{"missing password", base64.StdEncoding.EncodeToString([]byte("user:"))},
+		{"missing username", base64.StdEncoding.EncodeToString([]byte(":pass"))},
 	}
-	if !strings.Contains(err.Error(), "invalid registry-auth") {
-		t.Fatalf("registryAuthFromFlag error = %q, want invalid registry-auth error", err)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := registryAuthFromFlag(tc.encoded)
+			if err == nil {
+				t.Fatal("registryAuthFromFlag returned nil error for invalid auth")
+			}
+			if !strings.Contains(err.Error(), "invalid registry-auth") {
+				t.Fatalf("registryAuthFromFlag error = %q, want invalid registry-auth error", err)
+			}
+		})
 	}
 }
 

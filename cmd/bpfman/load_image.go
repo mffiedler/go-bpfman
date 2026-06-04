@@ -122,6 +122,9 @@ func parseRegistryAuth(encoded string) (username, password string, err error) {
 	if len(parts) != 2 {
 		return "", "", fmt.Errorf("expected 'username:password' format")
 	}
+	if parts[0] == "" || parts[1] == "" {
+		return "", "", fmt.Errorf("username and password must both be non-empty")
+	}
 
 	return parts[0], parts[1], nil
 }

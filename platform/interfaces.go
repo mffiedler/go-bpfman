@@ -431,6 +431,11 @@ type ImageAuth struct {
 	Password string
 }
 
+// Complete reports whether the credentials are usable for basic auth.
+func (a *ImageAuth) Complete() bool {
+	return a != nil && a.Username != "" && a.Password != ""
+}
+
 // PulledImage is the result of successfully pulling an OCI image.
 type PulledImage struct {
 	// ObjectPath is the path to the extracted ELF bytecode file.

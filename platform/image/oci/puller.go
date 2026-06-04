@@ -139,7 +139,7 @@ func (p *puller) Pull(ctx context.Context, ref platform.ImageRef) (platform.Pull
 	if err != nil {
 		logger.Error("failed to resolve image", "error", err)
 		resolveErr := fmt.Errorf("failed to resolve image: %w", err)
-		if (ref.Auth == nil || ref.Auth.Username == "") && !registryCredentialsFound(ctx, repo.Reference.Registry, logger) {
+		if !ref.Auth.Complete() && !registryCredentialsFound(ctx, repo.Reference.Registry, logger) {
 			resolveErr = missingCredentialError(repo.Reference.Registry, resolveErr)
 		}
 		return platform.PulledImage{}, resolveErr
@@ -346,7 +346,7 @@ func (p *puller) checkCache(cacheKey string, ref platform.ImageRef, logger *slog
 // configureAuth sets up authentication for the repository.
 func (p *puller) configureAuth(repo *remote.Repository, authConfig *platform.ImageAuth, logger *slog.Logger) error {
 	// If explicit credentials provided, use them
-	if authConfig != nil && authConfig.Username != "" {
+	if authConfig.Complete() {
 		logger.Debug("using explicit credentials", "username", authConfig.Username)
 		repo.Client = &auth.Client{
 			Client: retry.DefaultClient,

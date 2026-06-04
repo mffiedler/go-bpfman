@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/platform"
 	pb "github.com/frobware/go-bpfman/server/pb"
 )
 
@@ -68,5 +69,21 @@ func protoToPullPolicy(policy int32) (bpfman.ImagePullPolicy, error) {
 		return bpfman.PullNever, nil
 	default:
 		return bpfman.ImagePullPolicy{}, fmt.Errorf("unknown pull policy: %d", policy)
+	}
+}
+
+// protoImageAuth converts optional proto registry credentials to ImageAuth.
+// Empty or incomplete credentials are treated as anonymous access, matching
+// the Rust API boundary's empty-string normalisation.
+func protoImageAuth(image *pb.BytecodeImage) *platform.ImageAuth {
+	if image == nil || image.Username == nil || image.Password == nil {
+		return nil
+	}
+	if *image.Username == "" || *image.Password == "" {
+		return nil
+	}
+	return &platform.ImageAuth{
+		Username: *image.Username,
+		Password: *image.Password,
 	}
 }
