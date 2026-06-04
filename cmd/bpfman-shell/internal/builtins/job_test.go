@@ -23,7 +23,11 @@ import (
 // left nil because none of these tests register the spawned job
 // in a scope.
 func startCall(args []runtime.Arg) (runtime.Value, error) {
-	return handleStart(driver.Ctx{Ctx: context.Background(), Args: args})
+	return startCallContext(context.Background(), args)
+}
+
+func startCallContext(ctx context.Context, args []runtime.Arg) (runtime.Value, error) {
+	return handleStart(driver.Ctx{Ctx: ctx, Args: args})
 }
 
 // waitForJob blocks until the job exits or the timeout fires.
@@ -244,6 +248,65 @@ func TestJobWait_ContextCancelReturnsNotOk(t *testing.T) {
 	// not leak a sleep into the suite.
 	_ = syscall.Kill(-job.PID, syscall.SIGKILL)
 	waitForJob(t, job)
+}
+
+func TestJobStart_ContextCancelInterruptsGrandchildInProcessGroup(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	ready := filepath.Join(dir, "ready")
+	ack := filepath.Join(dir, "ack")
+	grandchild := filepath.Join(dir, "grandchild.sh")
+	require.NoError(t, os.WriteFile(grandchild, []byte(`#!/bin/sh
+trap 'echo interrupted > "$1"; exit 0' INT
+echo ready > "$2"
+sleep 5
+`), 0o755))
+
+	ctx, cancel := context.WithCancel(t.Context())
+	val, err := startCallContext(ctx, []runtime.Arg{
+		runtime.WordArg{Text: "sh"},
+		runtime.WordArg{Text: "-c"},
+		runtime.QuotedArg{Text: `"$1" "$2" "$3"; :`},
+		runtime.WordArg{Text: "sh"},
+		runtime.WordArg{Text: grandchild},
+		runtime.WordArg{Text: ack},
+		runtime.WordArg{Text: ready},
+	})
+	require.NoError(t, err)
+	job := val.Origin().(*runtime.Job)
+	defer func() {
+		_ = syscall.Kill(-job.PID, syscall.SIGKILL)
+		waitForJob(t, job)
+	}()
+
+	waitForFile(t, ready)
+	cancel()
+
+	assert.Eventually(t, func() bool {
+		_, statErr := os.Stat(ack)
+		return statErr == nil
+	}, time.Second, 20*time.Millisecond)
+}
+
+func TestJobStart_ContextCancelRecordsInterruptSignal(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	val, err := startCallContext(ctx, []runtime.Arg{
+		runtime.WordArg{Text: "sleep"},
+		runtime.WordArg{Text: "5"},
+	})
+	require.NoError(t, err)
+	job := val.Origin().(*runtime.Job)
+
+	cancel()
+	waitForJob(t, job)
+
+	job.Mu.Lock()
+	defer job.Mu.Unlock()
+	assert.Equal(t, "INT", job.Signal)
+	assert.Equal(t, 130, job.ExitCode)
 }
 
 func TestJobWait_RejectsNonJobArg(t *testing.T) {

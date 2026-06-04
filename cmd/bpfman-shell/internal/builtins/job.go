@@ -19,6 +19,7 @@ import (
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/semantics"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
+	"github.com/frobware/go-bpfman/internal/execcancel"
 )
 
 func init() {
@@ -204,11 +205,7 @@ type spawnSpec struct {
 // is returned, so the caller does not have to repeat the cleanup.
 func spawnJob(ctx context.Context, env *runtime.Env, spec spawnSpec) (*runtime.Job, error) {
 	cmd := exec.CommandContext(ctx, spec.Argv[0], spec.Argv[1:]...)
-
-	// Process-group leader: 'kill -<pgid>' reaches every
-	// descendant the child fork-execs (an 'ip netns exec ...
-	// ping' wrapper, a shell-c spawned worker, etc.).
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	execcancel.Configure(cmd)
 
 	if spec.Env != nil {
 		cmd.Env = spec.Env
