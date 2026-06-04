@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -29,7 +28,7 @@ func runMatchesScript(t *testing.T, record map[string]any, script string) (out, 
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := driver.NewScannerReader(strings.NewReader(script), nil)
-	err := runScript(context.Background(), cli, nil, lr, session, "", true, true)
+	err := runScript(t.Context(), cli, nil, lr, session, "", true, true)
 	return outBuf.String(), errBuf.String(), err
 }
 
@@ -153,7 +152,7 @@ func TestAssertMatches_VarPattern(t *testing.T) {
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := driver.NewScannerReader(strings.NewReader(script), nil)
-	err := runScript(context.Background(), cli, nil, lr, session, "", true, true)
+	err := runScript(t.Context(), cli, nil, lr, session, "", true, true)
 	require.NoError(t, err)
 	assert.Empty(t, errBuf.String())
 }
@@ -189,7 +188,7 @@ func TestAssertOkWithoutCommandRejected(t *testing.T) {
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := driver.NewScannerReader(strings.NewReader("assert ok\n"), nil)
-	err := runScript(context.Background(), cli, nil, lr, session, "", true, true)
+	err := runScript(t.Context(), cli, nil, lr, session, "", true, true)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, driver.ErrScriptError)
 	assert.Contains(t, errBuf.String(), "ok requires a command")
@@ -251,7 +250,7 @@ assert $prog matches {
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := driver.NewScannerReader(strings.NewReader(script), nil)
-	require.NoError(t, runScript(context.Background(), cli, nil, lr, session, "fake.bpfman", false, true))
+	require.NoError(t, runScript(t.Context(), cli, nil, lr, session, "fake.bpfman", false, true))
 
 	errOut := errBuf.String()
 	require.Contains(t, errOut, "FAIL")
@@ -266,7 +265,7 @@ func runAssertPredicateScript(t *testing.T, session *runtime.Session, script str
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := driver.NewScannerReader(strings.NewReader(script), nil)
-	err := runScript(context.Background(), cli, nil, lr, session, "", true, true)
+	err := runScript(t.Context(), cli, nil, lr, session, "", true, true)
 	return outBuf.String(), errBuf.String(), err
 }
 

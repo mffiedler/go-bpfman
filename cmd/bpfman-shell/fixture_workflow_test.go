@@ -96,8 +96,14 @@ var workflowStderrNormalizers = map[string]func(string) string{
 	"poll_timeout": normalisePollStderr,
 }
 
+const fixtureWorkflowTimeout = 30 * time.Second
+
 func runFixtureWorkflow(t *testing.T, fixture string) fixtureWorkflowRun {
 	t.Helper()
+
+	timeoutCause := fmt.Errorf("fixture %s exceeded %s: %w", fixture, fixtureWorkflowTimeout, context.DeadlineExceeded)
+	ctx, cancel := context.WithTimeoutCause(t.Context(), fixtureWorkflowTimeout, timeoutCause)
+	defer cancel()
 
 	mainPath := workflowFixtureMain(fixture)
 	lr, err := driver.OpenScriptReader(mainPath)
@@ -113,7 +119,7 @@ func runFixtureWorkflow(t *testing.T, fixture string) fixtureWorkflowRun {
 	// execution latency. Every fixture is self-contained, so no real
 	// wall-clock progress is needed for a poll to converge.
 	fakeNow := time.Unix(0, 0)
-	runErr := driver.Run(context.Background(), driver.Config{
+	runErr := driver.Run(ctx, driver.Config{
 		CLI:          cli,
 		Mgr:          nil,
 		LineReader:   lr,

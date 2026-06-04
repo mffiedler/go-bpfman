@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,11 +20,17 @@ import (
 func runWholeProgramStdin(t *testing.T, script string) (string, string, error) {
 	t.Helper()
 
+	return runWholeProgramStdinContext(t, t.Context(), script)
+}
+
+func runWholeProgramStdinContext(t *testing.T, ctx context.Context, script string) (string, string, error) {
+	t.Helper()
+
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := driver.NewScannerReader(strings.NewReader(script), nil)
 
-	err := driver.Run(context.Background(), driver.Config{
+	err := driver.Run(ctx, driver.Config{
 		CLI:          cli,
 		Mgr:          nil,
 		LineReader:   lr,
@@ -35,6 +42,18 @@ func runWholeProgramStdin(t *testing.T, script string) (string, string, error) {
 		MakeAssert:   makeExecAssert,
 	})
 	return outBuf.String(), errBuf.String(), err
+}
+
+func TestScriptRun_StdinWholeProgram_HonoursContextDeadline(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+
+	stdout, stderr, err := runWholeProgramStdinContext(t, ctx, "exec sleep 5\nprint after\n")
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Empty(t, stdout)
+	assert.Empty(t, stderr)
 }
 
 func TestScriptRun_StdinWholeProgram_ForwardDefVisible(t *testing.T) {

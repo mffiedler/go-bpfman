@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -26,7 +25,7 @@ func runScriptWithCheck(t *testing.T, script string, noCheck bool) (string, erro
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := driver.NewScannerReader(strings.NewReader(script), nil)
 
-	err := driver.Run(context.Background(), driver.Config{
+	err := driver.Run(t.Context(), driver.Config{
 		CLI:          cli,
 		Mgr:          nil,
 		LineReader:   lr,
