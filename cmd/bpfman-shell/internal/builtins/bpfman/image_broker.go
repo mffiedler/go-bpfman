@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -167,19 +166,17 @@ func imageRefForBytecode(registryHost, relBytecode string) string {
 }
 
 func buildBrokeredImage(ctx context.Context, bytecode, imageRef string) error {
-	bin := os.Getenv("BPFMAN_BIN")
-	if bin == "" {
-		bin = "bpfman"
-	}
-
 	args := []string{
 		"image", "build",
 		imageRef,
 		bytecode,
 	}
 
-	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd, cancellationErr := newBPFManCommand(ctx, args...)
 	out, err := cmd.CombinedOutput()
+	if cancelErr := cancellationErr(); cancelErr != nil {
+		return cancelErr
+	}
 	if err != nil {
 		return fmt.Errorf("build bytecode image %s from %s: %w\n%s", imageRef, bytecode, err, strings.TrimSpace(string(out)))
 	}

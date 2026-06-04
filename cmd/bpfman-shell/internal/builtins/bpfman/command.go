@@ -5,8 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 
@@ -180,17 +178,16 @@ func parseImageBuild(args []runtime.Arg) (*ImageBuildCommand, error) {
 }
 
 func execImageBuild(ctx context.Context, cli *bpfmancli.CLI, cmd *ImageBuildCommand) error {
-	bin := os.Getenv("BPFMAN_BIN")
-	if bin == "" {
-		bin = "bpfman"
-	}
 	argv := append([]string{"image", "build"}, cmd.Args...)
-	child := exec.CommandContext(ctx, bin, argv...)
+	child, cancellationErr := newBPFManCommand(ctx, argv...)
 	output, err := child.CombinedOutput()
 	if len(output) > 0 {
 		if err := cli.PrintOut(string(output)); err != nil {
 			return err
 		}
+	}
+	if cancelErr := cancellationErr(); cancelErr != nil {
+		return cancelErr
 	}
 	if err != nil {
 		return fmt.Errorf("image build: %w", err)

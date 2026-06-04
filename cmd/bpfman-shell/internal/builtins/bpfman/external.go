@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 
@@ -74,21 +73,22 @@ func dispatchCommandExternal(ctx context.Context, args []runtime.Arg) (runtime.V
 		argv = append(argv, "-o", "json")
 	}
 
-	bin := os.Getenv("BPFMAN_BIN")
-	if bin == "" {
-		bin = "bpfman"
-	}
-
 	var stdout, stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, bin, argv...)
+	cmd, cancellationErr := newBPFManCommand(ctx, argv...)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
+		if cancelErr := cancellationErr(); cancelErr != nil {
+			return runtime.Value{}, cancelErr
+		}
 		msg := strings.TrimSpace(stderr.String())
 		if msg == "" {
 			msg = err.Error()
 		}
 		return runtime.Value{}, errors.New(msg)
+	}
+	if cancelErr := cancellationErr(); cancelErr != nil {
+		return runtime.Value{}, cancelErr
 	}
 	return decodeBpfmanResult(args, stdout.Bytes())
 }

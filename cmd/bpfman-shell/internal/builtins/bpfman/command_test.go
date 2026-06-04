@@ -2,9 +2,11 @@ package bpfmanbuiltin
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -133,6 +135,50 @@ printf '{"programs":[]}'
 	got, err := os.ReadFile(seen)
 	require.NoError(t, err)
 	assert.Equal(t, configPath, string(got))
+}
+
+func TestDispatchCommandExternal_ContextCancelInterruptsChildProcessGroup(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bpfman")
+	child := filepath.Join(dir, "child.sh")
+	ready := filepath.Join(dir, "ready")
+	ack := filepath.Join(dir, "ack")
+	require.NoError(t, os.WriteFile(bin, []byte(`#!/bin/sh
+"$BPFMAN_CANCEL_CHILD" "$BPFMAN_CANCEL_ACK" "$BPFMAN_CANCEL_READY"; :
+`), 0o755))
+	require.NoError(t, os.WriteFile(child, []byte(`#!/bin/sh
+trap 'echo interrupted > "$1"; exit 0' INT
+echo ready > "$2"
+sleep 2
+`), 0o755))
+
+	t.Setenv("BPFMAN_BIN", bin)
+	t.Setenv("BPFMAN_CANCEL_CHILD", child)
+	t.Setenv("BPFMAN_CANCEL_READY", ready)
+	t.Setenv("BPFMAN_CANCEL_ACK", ack)
+
+	ctx, cancel := context.WithCancelCause(t.Context())
+	cause := errors.New("script context cancelled")
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := dispatchCommandExternal(ctx, []runtime.Arg{
+			word("program"),
+			word("list"),
+		})
+		errCh <- err
+	}()
+
+	assert.Eventually(t, func() bool {
+		_, err := os.Stat(ready)
+		return err == nil
+	}, time.Second, 20*time.Millisecond)
+	cancel(cause)
+
+	assert.Eventually(t, func() bool {
+		_, err := os.Stat(ack)
+		return err == nil
+	}, time.Second, 20*time.Millisecond)
+	assert.Equal(t, cause, <-errCh)
 }
 
 func TestParseImageInspectRejectsMissingImage(t *testing.T) {
