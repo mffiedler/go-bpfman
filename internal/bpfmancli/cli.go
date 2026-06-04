@@ -29,11 +29,11 @@ import (
 // Kong-tagged fields are picked up automatically through the
 // embedding.
 type CLI struct {
-	RuntimeDir    string        `name:"runtime-dir" group:"global" help:"Root directory for runtime files." default:"${default_runtime_dir}"`
-	ImageCacheDir string        `name:"image-cache-dir" group:"global" help:"Root directory for OCI image cache." default:"${default_image_cache_dir}"`
-	Config        string        `name:"config" group:"global" help:"Config file path." default:"${default_config_path}"`
-	Log           string        `name:"log" group:"global" help:"Log spec (e.g., 'info,manager=debug')." env:"BPFMAN_LOG"`
-	LockTimeout   time.Duration `name:"lock-timeout" group:"global" help:"Timeout for acquiring the global writer lock (0 for indefinite)." default:"30s" env:"BPFMAN_LOCK_TIMEOUT"`
+	RuntimeDir    string        `name:"runtime-dir" placeholder:"DIR" group:"global" help:"Root directory for runtime files." default:"${default_runtime_dir}"`
+	ImageCacheDir string        `name:"image-cache-dir" placeholder:"DIR" group:"global" help:"Root directory for OCI image cache." default:"${default_image_cache_dir}"`
+	Config        string        `name:"config" placeholder:"FILE" group:"global" help:"Config file path (default: /etc/bpfman/bpfman.toml)."`
+	Log           string        `name:"log" placeholder:"SPEC" group:"global" help:"Log spec (e.g., 'info,manager=debug')." env:"BPFMAN_LOG"`
+	LockTimeout   time.Duration `name:"lock-timeout" placeholder:"DURATION" group:"global" help:"Timeout for acquiring the global writer lock (0 for indefinite)." default:"30s" env:"BPFMAN_LOCK_TIMEOUT"`
 
 	// Out is the writer for command output. Defaults to os.Stdout
 	// when DefaultWriters is called. Injected for testability.
