@@ -196,6 +196,9 @@ func (c *CLI) Run(ctx context.Context) error {
 	}
 	mgr, cleanup, err := c.NewManagerWithPuller(ctx)
 	if err != nil {
+		if ctx.Err() != nil {
+			return context.Cause(ctx)
+		}
 		return fmt.Errorf("create manager: %w", err)
 	}
 	defer cleanup()

@@ -13,10 +13,10 @@
 // would otherwise stop the shell.
 //
 // The default Go signal set includes SIGTTOU under signal.Ignore
-// for any process that uses the runtime's default behaviour,
-// but our explicit signal.NotifyContext usage upstream in
-// main.go can re-enable delivery, so we ignore them
-// explicitly here as well.
+// for any process that uses the runtime's default behaviour, but
+// bpfman-shell installs explicit signal notification at process
+// startup. Ignore these stop signals explicitly so job control
+// remains stable regardless of the process signal wiring.
 
 package driver
 

@@ -11,9 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/ir"
@@ -131,7 +129,10 @@ func Run(ctx context.Context, cfg Config) error {
 
 	loopErr := Loop(ctx, cfg)
 
-	if errors.Is(loopErr, context.Canceled) || errors.Is(loopErr, context.DeadlineExceeded) {
+	if isContextCancellation(ctx, loopErr) {
+		if cause := context.Cause(ctx); cause != nil {
+			return cause
+		}
 		return loopErr
 	}
 	if errors.Is(loopErr, runtime.ErrRequireFailed) || errors.Is(loopErr, ErrScriptError) {
@@ -215,12 +216,10 @@ func configHooks(cfg Config) RunHooks {
 // runtime.Exec owns the outer job scope for one program run, and the
 // lowered IR owns program/def/poll defer scopes directly.
 //
-// SIGINT and SIGTERM cancel the script-wide context, matching
-// the way a bash script aborts on ^C.
+// The caller owns cancellation. The bpfman-shell binary passes a
+// signal-aware root context from main; tests and other embedders pass
+// their own context.
 func scriptLoop(ctx context.Context, cfg Config) error {
-	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
-
 	cli := cfg.CLI
 	lr := cfg.LineReader
 	session := cfg.Session
@@ -252,7 +251,7 @@ func scriptLoop(ctx context.Context, cfg Config) error {
 	hooks := configHooks(cfg)
 	loc := SourceLoc{File: file, Line: 1}
 	wireEnvForRun(ctx, cli, cfg.Mgr, session, env, loc, hooks)
-	return runProgramSource(cli, env, src, loc, baseDir)
+	return runProgramSource(ctx, cli, env, src, loc, baseDir)
 }
 
 func sourceBaseDir(file string) string {
@@ -269,7 +268,7 @@ func sourceBaseDir(file string) string {
 // runProgramSource tokenises, parses, and executes one whole program.
 // Typed errors with a Span are rendered as rust-style frames against the
 // source text.
-func runProgramSource(cli *bpfmancli.CLI, env *runtime.Env, input string, loc SourceLoc, baseDir string) error {
+func runProgramSource(ctx context.Context, cli *bpfmancli.CLI, env *runtime.Env, input string, loc SourceLoc, baseDir string) error {
 	emitFrame := func(span source.Span, msg string) {
 		_ = cli.PrintErr(renderDiagnostic(input, loc.File, diagnostic{
 			Span: span,
@@ -280,7 +279,7 @@ func runProgramSource(cli *bpfmancli.CLI, env *runtime.Env, input string, loc So
 		_ = cli.PrintErrf("%s%s\n", loc.WithSpan(span).String(), body)
 	}
 	report := func(err error) error {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		if isContextCancellation(ctx, err) {
 			return err
 		}
 		var re *RuntimeError
@@ -375,6 +374,20 @@ func execProgram(prog *syntax.Program, env *runtime.Env) error {
 		return err
 	}
 	return runtime.Exec(lp, env)
+}
+
+func isContextCancellation(ctx context.Context, err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	if ctx.Err() == nil {
+		return false
+	}
+	cause := context.Cause(ctx)
+	return cause != nil && errors.Is(err, cause)
 }
 
 // Dispatch looks the first token of args up in the builtin

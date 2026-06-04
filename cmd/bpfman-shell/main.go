@@ -14,16 +14,19 @@ import (
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/fixturemode"
 )
 
-// main wires the process-level signal model. The root context
-// is plain context.Background(): the shell runner installs its
-// own NotifyContext so a ^C aborts the whole program, matching
-// the way a bash script exits on SIGINT.
+var errInterrupted = fmt.Errorf("interrupted by signal: %w", context.Canceled)
+
+// main wires the process-level signal model. The root context is
+// cancelled by SIGINT or SIGTERM and then propagated through the
+// whole CLI lifecycle: manager setup, script loading, and every
+// command the runner spawns.
 //
 // A small watcher goroutine catches a second SIGINT/SIGTERM
 // after the first has been observed by the running program and
 // hard-exits, so a wedged script can always be killed by typing
-// ^C twice. The first signal goes to the runner's NotifyContext;
-// the second is the escape hatch.
+// ^C twice. The first signal cancels the root context; the second
+// is the escape hatch. A single signal.Notify registration owns
+// both steps so the first signal cannot be mistaken for the second.
 func main() {
 	// Mode dispatch: when BPFMAN_SHELL_MODE is set, bpfman-shell
 	// acts as a test-fixture helper rather than a user-facing
@@ -45,24 +48,21 @@ func main() {
 		os.Exit(1)
 	}
 
-	go watchForHardExit()
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
 
-	if err := c.Execute(context.Background()); err != nil {
-		os.Exit(1)
-	}
-}
-
-// watchForHardExit installs a long-lived signal watcher that
-// hard-exits the process on the second SIGINT or SIGTERM. The
-// first signal is consumed by the runner's NotifyContext; if
-// that context cancellation is observed and acted on, the
-// process exits cleanly. A user who sends a second signal has
-// asked unambiguously for the process to die, and we honour
-// that without further negotiation.
-func watchForHardExit() {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	<-sig // first signal observed
-	<-sig // second signal: hard exit
-	os.Exit(1)
+	defer signal.Stop(sig)
+
+	go func() {
+		<-sig
+		cancel(errInterrupted)
+		<-sig
+		os.Exit(1)
+	}()
+
+	if err := c.Execute(ctx); err != nil {
+		os.Exit(1)
+	}
 }

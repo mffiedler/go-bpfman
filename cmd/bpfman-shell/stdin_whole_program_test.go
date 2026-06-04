@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,6 +53,21 @@ func TestScriptRun_StdinWholeProgram_HonoursContextDeadline(t *testing.T) {
 
 	stdout, stderr, err := runWholeProgramStdinContext(t, ctx, "exec sleep 5\nprint after\n")
 	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Empty(t, stdout)
+	assert.Empty(t, stderr)
+}
+
+func TestScriptRun_StdinWholeProgram_PropagatesPlainCancellationCause(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancelCause(t.Context())
+	cause := errors.New("interrupted by signal")
+	time.AfterFunc(50*time.Millisecond, func() {
+		cancel(cause)
+	})
+
+	stdout, stderr, err := runWholeProgramStdinContext(t, ctx, "exec sleep 5\nprint after\n")
+	require.ErrorIs(t, err, cause)
 	assert.Empty(t, stdout)
 	assert.Empty(t, stderr)
 }
