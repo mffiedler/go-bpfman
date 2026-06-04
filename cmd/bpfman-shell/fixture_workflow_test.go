@@ -148,6 +148,17 @@ func loadFixtureExpectation(t *testing.T, fixture string) *fixtureExpectation {
 	return exp
 }
 
+func TestFixtureExpectationRejectsConflictingErrorFields(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "expect.yaml"), []byte("err_text: boom\nerr_is: silent\n"), 0o644))
+
+	_, err := readFixtureExpectationDir(root)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "err_text and err_is are mutually exclusive")
+}
+
 func readFixtureExpectationDir(root string) (*fixtureExpectation, error) {
 	path := filepath.Join(root, "expect.yaml")
 	data, err := os.ReadFile(path)
@@ -161,10 +172,20 @@ func readFixtureExpectationDir(root string) (*fixtureExpectation, error) {
 	if err := dec.Decode(&exp); err != nil {
 		return nil, fmt.Errorf("failed to parse %s: %w", path, err)
 	}
+	if err := validateFixtureExpectation(path, &exp); err != nil {
+		return nil, err
+	}
 	if err := expandFixtureExpectationDir(root, &exp); err != nil {
 		return nil, err
 	}
 	return &exp, nil
+}
+
+func validateFixtureExpectation(path string, exp *fixtureExpectation) error {
+	if exp.ErrText != "" && exp.ErrIs != "" {
+		return fmt.Errorf("%s: err_text and err_is are mutually exclusive", path)
+	}
+	return nil
 }
 
 func expandFixtureExpectationDir(root string, exp *fixtureExpectation) error {
@@ -298,7 +319,7 @@ func assertFixtureWorkflowOutcome(t *testing.T, tc fixtureWorkflowCase, run fixt
 	}
 
 	if tc.wantOutLines != nil {
-		assert.Equal(t, tc.wantOutLines, nonEmptyOutputLines(out))
+		assert.Equal(t, tc.wantOutLines, exactOutputLines(out))
 	}
 	for _, want := range tc.wantOutContains {
 		assert.Contains(t, out, want)
@@ -311,6 +332,9 @@ func assertFixtureWorkflowOutcome(t *testing.T, tc fixtureWorkflowCase, run fixt
 	}
 	for _, want := range tc.wantErrNotContains {
 		assert.NotContains(t, errOut, want)
+	}
+	if tc.wantErrText == "" && tc.wantErrIs == nil && len(tc.wantErrContains) == 0 && tc.normaliseStderr == nil {
+		assert.Empty(t, errOut, "successful fixtures must not write unexpected stderr; declare stderr_contains for expected stderr")
 	}
 	assert.Equal(t, tc.wantAssertFails, run.session.AssertFailures(), "assert counter mismatch")
 	assert.Equal(t, tc.wantDeferFails, run.session.DeferFailures(), "defer counter mismatch")
@@ -329,15 +353,16 @@ func assertFixtureWorkflowMatrix(t *testing.T, tc fixtureWorkflowCase) {
 	assertFixtureWorkflowOutcome(t, tc, run)
 }
 
-func nonEmptyOutputLines(out string) []string {
-	raw := strings.Split(out, "\n")
-	lines := make([]string, 0, len(raw))
-	for _, line := range raw {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		lines = append(lines, line)
+func exactOutputLines(out string) []string {
+	if out == "" {
+		return []string{}
 	}
-	return lines
+	return strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+}
+
+func TestExactOutputLinesPreservesWhitespaceAndBlankLines(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, []string{}, exactOutputLines(""))
+	assert.Equal(t, []string{"  alpha()", "", "beta(seed)  "}, exactOutputLines("  alpha()\n\nbeta(seed)  \n"))
 }

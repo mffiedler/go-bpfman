@@ -1,4 +1,4 @@
 stdout_lines:
-  - "helper(seed)"
-  - "local(name)"
-  - "range(limit)"
+  - "  helper(seed)"
+  - "  local(name)"
+  - "  range(limit)"

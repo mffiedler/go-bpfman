@@ -78,7 +78,7 @@ func TestScriptRun_StdinWholeProgram_ForwardDefVisible(t *testing.T) {
 	script := "hello\ndef hello() { print from-stdin }\n"
 	stdout, stderr, err := runWholeProgramStdin(t, script)
 	require.NoError(t, err)
-	assert.Equal(t, []string{"from-stdin"}, nonEmptyOutputLines(stdout))
+	assert.Equal(t, []string{"from-stdin"}, exactOutputLines(stdout))
 	assert.Empty(t, stderr)
 }
 
@@ -92,6 +92,6 @@ func TestScriptRun_StdinWholeProgram_ImportResolvesFromCwd(t *testing.T) {
 	script := "import ./lib.bpfman\nhi\n"
 	stdout, stderr, err := runWholeProgramStdin(t, script)
 	require.NoError(t, err)
-	assert.Equal(t, []string{"cwd-lib"}, nonEmptyOutputLines(stdout))
+	assert.Equal(t, []string{"cwd-lib"}, exactOutputLines(stdout))
 	assert.Empty(t, stderr)
 }
