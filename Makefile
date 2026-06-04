@@ -27,6 +27,10 @@ comma-join = $(subst $(space),$(comma),$(strip $(1)))
 # ---------------------------------------------------------------------------
 FEDORA_VERSION ?= 43
 GO_VERSION ?= 1.25
+# GOTOOLCHAIN-format pin for the go fix modernisers (see bpfman-gofix).
+# The fixers ship with the toolchain, so this version -- not GO_VERSION
+# -- decides which modernisers run; bump it deliberately.
+GOFIX_GO_VERSION ?= go1.26.4
 GOLANGCI_LINT_VERSION ?= v2.11.2
 PROTOC_GEN_GO_VERSION ?= v1.36.11
 PROTOC_GEN_GO_GRPC_VERSION ?= v1.6.1
@@ -1273,6 +1277,18 @@ bpfman-vet: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS) $(E2E_BPF_OBJEC
 	go vet -tags 'e2e,nsenter' ./...
 	go vet -tags 'cgo_sqlite,e2e,nsenter' ./...
 
+# Apply the Go modernisers (go fix) across the same two tag passes as
+# bpfman-vet, so every file -- the e2e/nsenter build-tagged packages
+# and both SQLite driver branches included -- is rewritten to the
+# latest idioms. GOTOOLCHAIN forces the moderniser toolchain on top of
+# whatever build Go is active, downloading it on demand; see
+# GOFIX_GO_VERSION for why the pin lives apart from GO_VERSION. Like
+# bpfman-fmt this mutates the tree in place; ci-check-gofix wraps it
+# with a git-diff gate.
+bpfman-gofix: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS) $(E2E_BPF_OBJECTS)
+	GOTOOLCHAIN=$(GOFIX_GO_VERSION) go fix -tags 'e2e,nsenter' ./...
+	GOTOOLCHAIN=$(GOFIX_GO_VERSION) go fix -tags 'cgo_sqlite,e2e,nsenter' ./...
+
 # Compile bpfman. Depends on the dispatcher BPF embeds because
 # the dispatcher Go package's go:embed directives need them at
 # compile time. Make's pattern rules build them on demand if
@@ -1660,6 +1676,17 @@ ci-lint: ci-image
 ci-check-vet: ci-image
 	$(CI_RUN) make clean-bpf bpfman-vet
 
+# Reproduce the workflow's check-gofix job locally. Applies the Go
+# modernisers inside the CI container, which supplies the clang,
+# libbpf, and CGO toolchain the package load needs, then asserts the
+# tree is unchanged. A non-empty diff means the branch carries
+# unmodernised code; run `make bpfman-gofix` to apply the fixes. The
+# container bind-mounts the source, so fixes applied inside are
+# visible to the host git-diff, matching the ci-check-fmt contract.
+ci-check-gofix: ci-image
+	$(CI_RUN) make clean-bpf bpfman-gofix
+	git diff --exit-code
+
 # Reproduce the workflow's unit-test job locally. Source is
 # mounted into the container so the test process sees the
 # current working tree exactly as a host build would. Same Go
@@ -1730,7 +1757,7 @@ ci-test-e2e-grpc:
 # attach failures to shell counter assertions seeing the other
 # suite's events. Don't `make -j ci-test-e2e ci-test-e2e-scripts`
 # locally, and don't run them in two shells at once.
-ci: ci-check-vendor ci-check-fmt ci-check-goimports ci-check-goldens ci-check-vet ci-build ci-lint ci-test ci-test-e2e ci-test-e2e-scripts ci-test-e2e-grpc
+ci: ci-check-vendor ci-check-fmt ci-check-goimports ci-check-goldens ci-check-vet ci-check-gofix ci-build ci-lint ci-test ci-test-e2e ci-test-e2e-scripts ci-test-e2e-grpc
 
 # ---------------------------------------------------------------------------
 # gRPC integration test.
@@ -1748,12 +1775,12 @@ bpfman-test-grpc: build-image-dev
 .PHONY: all build-all clean clean-mrproper help lint lint-dockerfile lint-go lint-hack lint-make
 .PHONY: clean-bpf
 .PHONY: e2e-kmod-build e2e-kmod-insmod e2e-kmod-rmmod e2e-kmod-reload e2e-kmod-force-reload clean-e2e-kmod
-.PHONY: bpfman-build clean-bpfman bpfman-compile bpfman-fmt bpfman-goimports bpfman-proto bpfman-test-grpc bpfman-vet
+.PHONY: bpfman-build clean-bpfman bpfman-compile bpfman-fmt bpfman-gofix bpfman-goimports bpfman-proto bpfman-test-grpc bpfman-vet
 .PHONY: bpfman-shell-build bpfman-shell-compile clean-bpfman-shell
 .PHONY: bpfman-e2e-cleanup-build bpfman-e2e-cleanup-compile clean-bpfman-e2e-cleanup
 .PHONY: go-test-timeline-build go-test-timeline-compile clean-go-test-timeline
 .PHONY: build-image build-image-amd64 build-image-arm64 build-image-csi-sanity build-image-dev build-image-nix build-image-openshift build-image-ppc64le build-image-s390x cosign-sign
-.PHONY: ci ci-build ci-check-fmt ci-check-goimports ci-check-goldens ci-check-vendor ci-check-vet ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-grpc ci-test-e2e-scripts
+.PHONY: ci ci-build ci-check-fmt ci-check-gofix ci-check-goimports ci-check-goldens ci-check-vendor ci-check-vet ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-grpc ci-test-e2e-scripts
 .PHONY: coverage clean-coverage coverage-func coverage-html coverage-open
 .PHONY: doc doc-text
 .PHONY: print-fedora-version print-go-version print-golangci-lint-version
