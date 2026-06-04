@@ -175,6 +175,9 @@ BPFMAN_LOCK_TIMEOUT ?=
 # external); BPFMAN_E2E_SCRIPT_TIMEOUT widens the per-script
 # deadline. The test binary carries the actual defaults.
 BPFMAN_DISPATCH ?=
+BPFMAN_E2E_BYTECODE_SOURCE ?=
+BPFMAN_E2E_IMAGE_REGISTRY ?=
+BPFMAN_E2E_SCRIPT_SELECTOR ?=
 BPFMAN_E2E_SCRIPT_TIMEOUT ?=
 BPFMAN_E2E_SCRIPT_REPEATS ?=
 BPFMAN_E2E_SCRIPT_STRESS_REPEATS ?= 16
@@ -255,7 +258,7 @@ override RACE := $(filter 1,$(RACE))
 BPFMAN_E2E_ISOLATED_RUNTIME ?=
 override BPFMAN_E2E_ISOLATED_RUNTIME := $(filter 1,$(BPFMAN_E2E_ISOLATED_RUNTIME))
 
-# forward-env renders `VAR=value` for each VAR in $(1) that has
+# forward-env renders `VAR='value'` for each VAR in $(1) that has
 # a non-empty value in the current Make environment. Suitable for
 # prepending to a sudo command line where sudo strips arbitrary
 # env by default and the recipe needs to re-inject a controlled
@@ -263,7 +266,7 @@ override BPFMAN_E2E_ISOLATED_RUNTIME := $(filter 1,$(BPFMAN_E2E_ISOLATED_RUNTIME
 # adding a new env knob means picking a Make var name that aligns
 # (BPFMAN_FOO=$(BPFMAN_FOO), not FOO=$(BPFMAN_FOO)) and appending
 # it to the recipe's per-recipe forward list.
-forward-env = $(foreach v,$(1),$(if $($(v)),$(v)=$($(v))))
+forward-env = $(foreach v,$(1),$(if $($(v)),$(v)='$($(v))'))
 
 # ---------------------------------------------------------------------------
 # Runtime image dispatch.
@@ -632,6 +635,8 @@ help:
 	@echo "  test-e2e                    Run e2e tests (requires root)"
 	@echo "  test-e2e-grpc               Run the parallel gRPC e2e test against a real bpfman serve daemon (requires root)"
 	@echo "  test-e2e-scripts            Run .bpfman e2e scripts under e2e/scripts/ via the Go test binary in e2e/scriptrunner (requires root)"
+	@echo "  test-e2e-scripts-matrix     Run .bpfman e2e scripts under both bpfman-shell dispatch backends (requires root)"
+	@echo "  test-e2e-published-images   Run published-image .bpfman scripts against quay.io (requires root and network)"
 	@echo "  test-e2e-scripts-stress     Run .bpfman e2e scripts with high repeat/parallel defaults (requires root)"
 	@echo "  test-e2e-scripts-timeline   Run .bpfman e2e scripts and render $(E2E_SCRIPTS_TIMELINE_TRACE) (requires root)"
 	@echo "  e2e-kmod-force-reload       Delete managed bpfman state, then rebuild and reload the e2e kmod (requires root)"
@@ -771,14 +776,20 @@ lint-dockerfile:
 # Tests.
 # ---------------------------------------------------------------------------
 # platform/ebpf unit tests embed xdp_pass.bpf.o via go:embed, so
-# the embed object must exist at `go test -c` time. The dispatcher
-# embeds are needed because dispatcher tests likewise go:embed
-# their .bpf.o files. Unit tests no longer reach into
-# e2e/testdata/bpf/ at runtime.
-test: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS)
+# the embed object must exist at `go test -c` time, and the
+# dispatcher embeds are needed because dispatcher tests likewise
+# go:embed their .bpf.o files. The OCI puller tests use
+# e2e/testdata/bpf/xdp_pass.bpf.o as their real bytecode fixture,
+# read at runtime: successful-pull cases extract and validate a
+# genuine ELF, and the malformed-label cases share the same fixture
+# for consistency even though they fail before extraction. Building
+# the whole $(E2E_BPF_OBJECTS) set rather than that one object is a
+# deliberate choice -- the e2e corpus is one small, coherent build
+# set, and bpfman-vet already depends on it.
+test: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS) $(E2E_BPF_OBJECTS)
 	$(strip go test $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") $(if $(PARALLEL),-parallel $(PARALLEL)) ./...)
 
-test-timeline: go-test-timeline-compile $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS)
+test-timeline: go-test-timeline-compile $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS) $(E2E_BPF_OBJECTS)
 	$(Q)mkdir -p $(dir $(GO_TEST_TIMELINE_EVENTS)) $(dir $(GO_TEST_TIMELINE_TRACE))
 	$(Q)rc=0; \
 	    $(strip go test $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") $(if $(PARALLEL),-parallel $(PARALLEL)) $(if $(TEST),-run "$(TEST)") -json ./...) > $(GO_TEST_TIMELINE_EVENTS) || rc=$$?; \
@@ -803,7 +814,7 @@ test-all:
 	$(Q)$(MAKE) test-lowered-corpus
 	$(Q)$(MAKE) lint-go
 	$(Q)$(MAKE) lint-make
-	$(Q)$(MAKE) test-e2e-scripts
+	$(Q)$(MAKE) test-e2e-scripts-matrix
 	$(Q)$(MAKE) test-e2e
 	$(Q)$(MAKE) test-e2e-grpc
 
@@ -935,11 +946,18 @@ E2E_SCRIPTS_TEST_BIN := $(BIN_DIR)/e2e-scripts.test
 E2E_SCRIPTS_TEST_PKG := github.com/frobware/go-bpfman/e2e/scriptrunner
 
 # Env vars forwarded into the sudo'd test process.
+# The script runner hosts a throwaway anonymous local registry for
+# image build/load scripts. BPFMAN_E2E_BYTECODE_SOURCE=image also has
+# bpfman-shell broker each `program load file` through
+# `bpfman image build` plus `program load image`.
+# BPFMAN_E2E_IMAGE_REGISTRY overrides the throwaway registry for
+# explicit external-registry checks.
 # BPFMAN_E2E_SCRIPT_TIMEOUT widens the per-script deadline;
 # BPFMAN_E2E_SCRIPT_REPEATS turns the corpus into a stress run
 # (each script registered N times, wave-diverse dispatch);
-# BPFMAN_DISPATCH selects the bpfman-shell backend (library vs
-# external); BPFMAN_LOG threads through to bpfman-shell when set.
+# BPFMAN_E2E_SCRIPT_SELECTOR selects scripts with matching #pragma
+# labels; BPFMAN_DISPATCH selects the bpfman-shell backend (library
+# vs external); BPFMAN_LOG threads through to bpfman-shell when set.
 # BPFMAN_LOCK_TIMEOUT is set directly in run-e2e-scripts below:
 # high-parallel stress runs can leave many short-lived bpfman
 # invocations queued behind the global writer lock, so the script
@@ -948,7 +966,10 @@ E2E_SCRIPTS_TEST_PKG := github.com/frobware/go-bpfman/e2e/scriptrunner
 # because the value gets abspath'd at the call site.
 E2E_SCRIPTS_FORWARD_VARS := \
 	BPFMAN_DISPATCH \
+	BPFMAN_E2E_BYTECODE_SOURCE \
+	BPFMAN_E2E_IMAGE_REGISTRY \
 	BPFMAN_E2E_SCRIPT_REPEATS \
+	BPFMAN_E2E_SCRIPT_SELECTOR \
 	BPFMAN_E2E_SCRIPT_TIMEOUT \
 	BPFMAN_LOG
 
@@ -984,11 +1005,26 @@ run-e2e-scripts:
 test-e2e-scripts: build-e2e-scripts e2e-kmod-reload
 	$(Q)$(MAKE) run-e2e-scripts
 
+# Run the .bpfman corpus under both bpfman-shell dispatch backends,
+# mirroring the workflow's dispatch matrix. library and external must
+# produce byte-identical results; a one-backend failure (such as an
+# image-build path that only resolves under one cwd) is invisible to a
+# single-dispatch run. Build and reload once, then run twice -- dispatch
+# is a runtime selector, so the binaries do not change between runs.
+test-e2e-scripts-matrix: build-e2e-scripts e2e-kmod-reload
+	$(Q)$(MAKE) run-e2e-scripts BPFMAN_DISPATCH=library
+	$(Q)$(MAKE) run-e2e-scripts BPFMAN_DISPATCH=external
+
 test-e2e-scripts-stress:
 	$(Q)$(MAKE) test-e2e-scripts \
 	    BPFMAN_E2E_SCRIPT_REPEATS=$(if $(BPFMAN_E2E_SCRIPT_REPEATS),$(BPFMAN_E2E_SCRIPT_REPEATS),$(BPFMAN_E2E_SCRIPT_STRESS_REPEATS)) \
 	    PARALLEL=$(if $(PARALLEL),$(PARALLEL),$(BPFMAN_E2E_SCRIPT_STRESS_PARALLEL)) \
 	    BPFMAN_LOCK_TIMEOUT=$(if $(BPFMAN_LOCK_TIMEOUT),$(BPFMAN_LOCK_TIMEOUT),5m)
+
+test-e2e-published-images:
+	$(Q)$(MAKE) test-e2e-scripts \
+	    BPFMAN_E2E_SCRIPT_SELECTOR=external \
+	    TEST='TestBPFManScripts/scripts/TestPublishedImage'
 
 run-e2e-scripts-timeline: go-test-timeline-compile
 	$(Q)mkdir -p $(dir $(E2E_SCRIPTS_TIMELINE_EVENTS)) $(dir $(E2E_SCRIPTS_TIMELINE_MARKERS)) $(dir $(E2E_SCRIPTS_TIMELINE_TRACE))
@@ -1688,5 +1724,5 @@ bpfman-test-grpc: build-image-dev
 .PHONY: coverage clean-coverage coverage-func coverage-html coverage-open
 .PHONY: doc doc-text
 .PHONY: print-fedora-version print-go-version print-golangci-lint-version
-.PHONY: build-e2e-grpc build-e2e-scripts $(BIN_DIR)/e2e.test $(BIN_DIR)/e2e-grpc.test $(BIN_DIR)/e2e-scripts.test run-e2e-grpc run-e2e-scripts run-e2e-scripts-timeline test test-timeline test-all test-lowered-corpus update-lowered-corpus test-e2e test-e2e-grpc test-e2e-scripts test-e2e-scripts-stress test-e2e-scripts-timeline test-examples
+.PHONY: build-e2e-grpc build-e2e-scripts $(BIN_DIR)/e2e.test $(BIN_DIR)/e2e-grpc.test $(BIN_DIR)/e2e-scripts.test run-e2e-grpc run-e2e-scripts run-e2e-scripts-timeline test test-timeline test-all test-lowered-corpus update-lowered-corpus test-e2e test-e2e-grpc test-e2e-scripts test-e2e-scripts-matrix test-e2e-published-images test-e2e-scripts-stress test-e2e-scripts-timeline test-examples
 .PHONY: test-nsenter test-nsenter-amd64 test-nsenter-arm64 test-nsenter-cross test-nsenter-ppc64le test-nsenter-s390x
