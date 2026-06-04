@@ -3,6 +3,7 @@
 package scriptrunner
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,9 +18,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	k8slabels "k8s.io/apimachinery/pkg/labels"
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/scriptmeta"
+	"github.com/frobware/go-bpfman/internal/execcancel"
 )
 
 // TestBPFManScripts discovers every .bpfman script under
@@ -336,7 +339,8 @@ func scriptSelectorSkipReason(selector k8slabels.Selector, labels k8slabels.Set)
 // up cleanly.
 func runBPFManScript(t *testing.T, e2eDir, script string, timeout time.Duration) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	timeoutCause := fmt.Errorf("script %s exceeded %s: %w", script, timeout, context.DeadlineExceeded)
+	ctx, cancel := context.WithTimeoutCause(t.Context(), timeout, timeoutCause)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "bpfman-shell", script)
@@ -346,9 +350,9 @@ func runBPFManScript(t *testing.T, e2eDir, script string, timeout time.Duration)
 	// invoked from. PATH is already set up at TestMain (BIN_DIR
 	// prepended once, before any exec.Command).
 	cmd.Dir = e2eDir
-	out, err := cmd.CombinedOutput()
+	out, err := runScriptCommand(ctx, cmd)
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		t.Fatalf("%s timed out after %s\n\n%s", script, timeout, out)
+		t.Fatalf("%s timed out after %s: %v\n\n%s", script, timeout, context.Cause(ctx), out)
 	}
 	if err != nil {
 		t.Fatalf("%s failed: %v\n\n%s", script, err, out)
@@ -356,4 +360,34 @@ func runBPFManScript(t *testing.T, e2eDir, script string, timeout time.Duration)
 	if s := strings.TrimSpace(string(out)); s != "" {
 		t.Logf("%s", s)
 	}
+}
+
+func TestRunScriptCommand_AllowsInterruptHandlerToFinish(t *testing.T) {
+	t.Parallel()
+
+	ack := filepath.Join(t.TempDir(), "ack")
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "sh", "-c", "trap 'sleep 0.4; echo cleaned > \"$1\"; exit 0' INT; sleep 5", "sh", ack)
+	_, err := runScriptCommand(ctx, cmd)
+
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.Eventually(t, func() bool {
+		_, statErr := os.Stat(ack)
+		return statErr == nil
+	}, time.Second, 20*time.Millisecond)
+}
+
+func runScriptCommand(ctx context.Context, cmd *exec.Cmd) ([]byte, error) {
+	cancelled := execcancel.Configure(cmd)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+
+	err := cmd.Run()
+	if cancelled.Load() {
+		return bytes.Clone(out.Bytes()), context.Cause(ctx)
+	}
+	return bytes.Clone(out.Bytes()), err
 }
