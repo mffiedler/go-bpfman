@@ -8,7 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/sigstore/cosign/v2/pkg/cosign"
+	cosignremote "github.com/sigstore/cosign/v2/pkg/oci/remote"
 
 	"github.com/frobware/go-bpfman/config"
 	"github.com/frobware/go-bpfman/platform"
@@ -17,7 +19,9 @@ import (
 func TestNoSignReportsVerificationDisabled(t *testing.T) {
 	t.Parallel()
 
-	result, err := NoSign().Verify(context.Background(), "example.test/x:latest")
+	result, err := NoSign().Verify(context.Background(), platform.SignatureVerificationRequest{
+		ImageRef: "example.test/x:latest",
+	})
 	if err != nil {
 		t.Fatalf("Verify returned error: %v", err)
 	}
@@ -53,7 +57,9 @@ func TestFromSigningConfigReturnsNoSignWhenVerificationDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FromSigningConfig returned error: %v", err)
 	}
-	result, err := verifier.Verify(context.Background(), "example.test/x:latest")
+	result, err := verifier.Verify(context.Background(), platform.SignatureVerificationRequest{
+		ImageRef: "example.test/x:latest",
+	})
 	if err != nil {
 		t.Fatalf("Verify returned error: %v", err)
 	}
@@ -160,5 +166,26 @@ func TestFromSigningConfigAppliesTrustedIdentity(t *testing.T) {
 	}
 	if second.IssuerRegExp != "" {
 		t.Fatalf("IssuerRegExp = %q, want empty", second.IssuerRegExp)
+	}
+}
+
+// TestRegistryClientOptsDoNotConflictWithDefaultKeychain guards the
+// auth wiring. cosign seeds its remote options with a default keychain,
+// and go-containerregistry rejects an option set that carries both an
+// Authenticator and a Keychain. The explicit credentials must therefore
+// replace the default rather than be appended to it. Pointing at a
+// closed port keeps this offline: the call must reach the network (a
+// connection error), not fail at option validation with "not both".
+func TestRegistryClientOptsDoNotConflictWithDefaultKeychain(t *testing.T) {
+	t.Parallel()
+
+	ref, err := name.NewTag("127.0.0.1:1/repo:sha256-aaaa.sig")
+	if err != nil {
+		t.Fatalf("NewTag returned error: %v", err)
+	}
+	opts := registryClientOpts(&platform.ImageAuth{Username: "u", Password: "p"})
+	_, err = cosignremote.Signatures(ref, opts...)
+	if err != nil && strings.Contains(err.Error(), "not both") {
+		t.Fatalf("auth and default keychain conflict: %v", err)
 	}
 }

@@ -471,13 +471,20 @@ type SignatureVerification struct {
 	Status SignatureVerificationStatus
 }
 
+// SignatureVerificationRequest describes an OCI image signature policy
+// check.
+type SignatureVerificationRequest struct {
+	ImageRef string
+	Auth     *ImageAuth // nil for anonymous/default registry access
+}
+
 // SignatureVerifier verifies OCI image signatures.
 type SignatureVerifier interface {
 	// Verify checks that the image satisfies signature policy.
 	// Returns a result describing how the image was accepted.
 	// Returns an error if the image signature is invalid or missing
 	// (when unsigned images are not allowed).
-	Verify(ctx context.Context, imageRef string) (SignatureVerification, error)
+	Verify(ctx context.Context, req SignatureVerificationRequest) (SignatureVerification, error)
 }
 
 // DiscoveredProgram represents a program found in a BPF object file.

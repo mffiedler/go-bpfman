@@ -155,7 +155,10 @@ func (p *puller) Pull(ctx context.Context, ref platform.ImageRef) (platform.Pull
 			// Append digest to ensure we verify the exact image
 			verifyRef = ref.URL + "@" + desc.Digest.String()
 		}
-		verification, err := p.verifier.Verify(ctx, verifyRef)
+		verification, err := p.verifier.Verify(ctx, platform.SignatureVerificationRequest{
+			ImageRef: verifyRef,
+			Auth:     ref.Auth,
+		})
 		if err != nil {
 			logger.Error("image signature verification failed", "error", err)
 			return platform.PulledImage{}, fmt.Errorf("signature verification failed: %w", err)

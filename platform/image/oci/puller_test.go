@@ -234,6 +234,67 @@ func TestPullerPullRejectsMalformedProgramLabel(t *testing.T) {
 	requireErrorContains(t, err, "failed to extract labels", "failed to parse io.ebpf.programs label")
 }
 
+func TestPullerPassesExplicitAuthToVerifier(t *testing.T) {
+	t.Parallel()
+
+	server := newTestRegistry(t)
+	ref := registryRef(t, server.URL, "bpfman/authenticated:latest")
+	writeTestImage(t, ref, map[string]string{
+		LabelPrograms: `{"pass":"xdp"}`,
+		LabelMaps:     `{"xdp_pass_stats_map":"per_cpu_array"}`,
+	}, testBytecodeObject(t))
+
+	cache, err := fs.NewImageCache(filepath.Join(t.TempDir(), "cache"))
+	if err != nil {
+		t.Fatalf("NewImageCache returned error: %v", err)
+	}
+	ensured, err := fs.EnsureCache(cache)
+	if err != nil {
+		t.Fatalf("EnsureCache returned error: %v", err)
+	}
+	verifier := &capturingVerifier{}
+	puller, err := NewPuller(ensured, WithVerifier(verifier))
+	if err != nil {
+		t.Fatalf("NewPuller returned error: %v", err)
+	}
+
+	auth := &platform.ImageAuth{
+		Username: "user",
+		Password: "pass",
+	}
+	pulled, err := puller.Pull(context.Background(), platform.ImageRef{
+		URL:        ref,
+		PullPolicy: bpfman.PullAlways,
+		Auth:       auth,
+	})
+	if err != nil {
+		t.Fatalf("Pull returned error: %v", err)
+	}
+	if verifier.request.ImageRef != ref+"@"+pulled.Digest {
+		t.Fatalf("verifier image ref = %q, want %q", verifier.request.ImageRef, ref+"@"+pulled.Digest)
+	}
+	if verifier.request.Auth == nil {
+		t.Fatal("verifier auth is nil")
+	}
+	if verifier.request.Auth.Username != auth.Username {
+		t.Fatalf("verifier auth username = %q, want %q", verifier.request.Auth.Username, auth.Username)
+	}
+	if verifier.request.Auth.Password != auth.Password {
+		t.Fatalf("verifier auth password = %q, want %q", verifier.request.Auth.Password, auth.Password)
+	}
+}
+
+type capturingVerifier struct {
+	request platform.SignatureVerificationRequest
+}
+
+func (v *capturingVerifier) Verify(_ context.Context, req platform.SignatureVerificationRequest) (platform.SignatureVerification, error) {
+	v.request = req
+	return platform.SignatureVerification{
+		Status: platform.SignatureVerificationDisabled,
+	}, nil
+}
+
 func newTestRegistry(t *testing.T) *httptest.Server {
 	t.Helper()
 	server := httptest.NewServer(registry.New(

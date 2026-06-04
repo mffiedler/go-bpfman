@@ -7,11 +7,14 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
+	gcrremote "github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/sigstore/cosign/v2/cmd/cosign/cli/fulcio"
 	"github.com/sigstore/cosign/v2/cmd/cosign/cli/options"
 	"github.com/sigstore/cosign/v2/cmd/cosign/cli/rekor"
 	"github.com/sigstore/cosign/v2/pkg/cosign"
+	cosignremote "github.com/sigstore/cosign/v2/pkg/oci/remote"
 
 	"github.com/frobware/go-bpfman/config"
 	"github.com/frobware/go-bpfman/platform"
@@ -25,7 +28,7 @@ func NoSign() platform.SignatureVerifier {
 
 type noSignVerifier struct{}
 
-func (noSignVerifier) Verify(ctx context.Context, imageRef string) (platform.SignatureVerification, error) {
+func (noSignVerifier) Verify(ctx context.Context, req platform.SignatureVerificationRequest) (platform.SignatureVerification, error) {
 	return platform.SignatureVerification{
 		Status: platform.SignatureVerificationDisabled,
 	}, nil
@@ -129,7 +132,8 @@ type cosignVerifier struct {
 }
 
 // Verify checks that the image has a valid sigstore signature.
-func (v *cosignVerifier) Verify(ctx context.Context, imageRef string) (platform.SignatureVerification, error) {
+func (v *cosignVerifier) Verify(ctx context.Context, req platform.SignatureVerificationRequest) (platform.SignatureVerification, error) {
+	imageRef := req.ImageRef
 	logger := v.logger.With("image", imageRef)
 	logger.Debug("verifying image signature")
 
@@ -164,12 +168,13 @@ func (v *cosignVerifier) Verify(ctx context.Context, imageRef string) (platform.
 	}
 
 	co := &cosign.CheckOpts{
-		RekorClient:       rekorClient,
-		RekorPubKeys:      rekorPubKeys,
-		RootCerts:         rootCerts,
-		IntermediateCerts: intermediateCerts,
-		CTLogPubKeys:      ctLogPubKeys,
-		Identities:        v.identities,
+		RegistryClientOpts: registryClientOpts(req.Auth),
+		RekorClient:        rekorClient,
+		RekorPubKeys:       rekorPubKeys,
+		RootCerts:          rootCerts,
+		IntermediateCerts:  intermediateCerts,
+		CTLogPubKeys:       ctLogPubKeys,
+		Identities:         v.identities,
 	}
 
 	logger.Debug("calling cosign.VerifyImageSignatures",
@@ -205,4 +210,16 @@ func isNoSignaturesError(err error) bool {
 	// version-fragile and can silently widen what counts as unsigned.
 	var noSignatures *cosign.ErrNoSignaturesFound
 	return errors.As(err, &noSignatures)
+}
+
+func registryClientOpts(imageAuth *platform.ImageAuth) []cosignremote.Option {
+	if imageAuth == nil {
+		return nil
+	}
+	return []cosignremote.Option{
+		cosignremote.WithRemoteOptions(gcrremote.WithAuth(authn.FromConfig(authn.AuthConfig{
+			Username: imageAuth.Username,
+			Password: imageAuth.Password,
+		}))),
+	}
 }
