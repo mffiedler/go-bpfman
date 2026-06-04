@@ -103,17 +103,9 @@ func Run(ctx context.Context, cfg RunConfig) error {
 		return fmt.Errorf("ensure runtime: %w", err)
 	}
 
-	// Build signature verifier based on config
-	var verifier platform.SignatureVerifier
-	if cfg.Config.Signing.ShouldVerify() {
-		logger.Info("signature verification enabled")
-		verifier = verify.Cosign(
-			verify.WithLogger(logger),
-			verify.WithAllowUnsigned(cfg.Config.Signing.AllowUnsigned),
-		)
-	} else {
-		logger.Info("signature verification disabled")
-		verifier = verify.NoSign()
+	verifier, err := verify.FromSigningConfig(cfg.Config.Signing, logger)
+	if err != nil {
+		return fmt.Errorf("configure signature verifier: %w", err)
 	}
 
 	// Create image puller for OCI images

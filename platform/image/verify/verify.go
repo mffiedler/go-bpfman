@@ -3,9 +3,9 @@ package verify
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/sigstore/cosign/v2/cmd/cosign/cli/fulcio"
@@ -13,6 +13,7 @@ import (
 	"github.com/sigstore/cosign/v2/cmd/cosign/cli/rekor"
 	"github.com/sigstore/cosign/v2/pkg/cosign"
 
+	"github.com/frobware/go-bpfman/config"
 	"github.com/frobware/go-bpfman/platform"
 )
 
@@ -24,8 +25,10 @@ func NoSign() platform.SignatureVerifier {
 
 type noSignVerifier struct{}
 
-func (noSignVerifier) Verify(ctx context.Context, imageRef string) error {
-	return nil
+func (noSignVerifier) Verify(ctx context.Context, imageRef string) (platform.SignatureVerification, error) {
+	return platform.SignatureVerification{
+		Status: platform.SignatureVerificationDisabled,
+	}, nil
 }
 
 // CosignOption configures a cosign verifier.
@@ -34,7 +37,9 @@ type CosignOption func(*cosignVerifier)
 // WithLogger sets the logger for verification operations.
 func WithLogger(logger *slog.Logger) CosignOption {
 	return func(v *cosignVerifier) {
-		v.logger = logger
+		if logger != nil {
+			v.logger = logger
+		}
 	}
 }
 
@@ -45,12 +50,30 @@ func WithAllowUnsigned(allow bool) CosignOption {
 	}
 }
 
-// WithIdentity sets the certificate identity constraints.
-// Use ".*" for either value to accept any valid certificate.
-func WithIdentity(issuerRegexp, subjectRegexp string) CosignOption {
+// WithIdentity sets exact certificate identity constraints.
+func WithIdentity(issuer, subject string) CosignOption {
 	return func(v *cosignVerifier) {
-		v.issuerRegexp = issuerRegexp
-		v.subjectRegexp = subjectRegexp
+		v.identities = []cosign.Identity{
+			{
+				Issuer:  issuer,
+				Subject: subject,
+			},
+		}
+	}
+}
+
+// WithIdentities sets the acceptable certificate identity constraints.
+func WithIdentities(identities []config.SigningIdentity) CosignOption {
+	return func(v *cosignVerifier) {
+		v.identities = make([]cosign.Identity, 0, len(identities))
+		for _, identity := range identities {
+			v.identities = append(v.identities, cosign.Identity{
+				Issuer:        identity.Issuer,
+				IssuerRegExp:  identity.IssuerRegexp,
+				Subject:       identity.Subject,
+				SubjectRegExp: identity.SubjectRegexp,
+			})
+		}
 	}
 }
 
@@ -59,8 +82,12 @@ func Cosign(opts ...CosignOption) platform.SignatureVerifier {
 	v := &cosignVerifier{
 		logger:        slog.Default(),
 		allowUnsigned: true, // Permissive default
-		issuerRegexp:  ".*", // Accept any issuer by default
-		subjectRegexp: ".*", // Accept any subject by default
+		identities: []cosign.Identity{
+			{
+				IssuerRegExp:  ".*", // Accept any issuer by default
+				SubjectRegExp: ".*", // Accept any subject by default
+			},
+		},
 	}
 	for _, opt := range opts {
 		opt(v)
@@ -68,47 +95,72 @@ func Cosign(opts ...CosignOption) platform.SignatureVerifier {
 	return v
 }
 
+// FromSigningConfig returns the signature verifier described by cfg.
+func FromSigningConfig(cfg config.SigningConfig, logger *slog.Logger) (platform.SignatureVerifier, error) {
+	if !cfg.ShouldVerify() {
+		return NoSign(), nil
+	}
+	identities, err := cfg.TrustedSigningIdentities()
+	if err != nil {
+		return nil, err
+	}
+	if cfg.AllowUnsigned && len(identities) > 0 && logger != nil {
+		logger.Warn("trusted signing identities configured but unsigned images are still allowed")
+	}
+	if !cfg.AllowUnsigned && len(identities) == 0 && logger != nil {
+		logger.Warn("signature enforcement enabled but no trusted identities configured; accepting any valid signer")
+	}
+
+	opts := []CosignOption{
+		WithLogger(logger),
+		WithAllowUnsigned(cfg.AllowUnsigned),
+	}
+	if len(identities) > 0 {
+		opts = append(opts, WithIdentities(identities))
+	}
+	return Cosign(opts...), nil
+}
+
 // cosignVerifier verifies OCI image signatures using cosign/sigstore.
 type cosignVerifier struct {
 	logger        *slog.Logger
 	allowUnsigned bool
-	issuerRegexp  string
-	subjectRegexp string
+	identities    []cosign.Identity
 }
 
 // Verify checks that the image has a valid sigstore signature.
-func (v *cosignVerifier) Verify(ctx context.Context, imageRef string) error {
+func (v *cosignVerifier) Verify(ctx context.Context, imageRef string) (platform.SignatureVerification, error) {
 	logger := v.logger.With("image", imageRef)
 	logger.Debug("verifying image signature")
 
 	ref, err := name.ParseReference(imageRef)
 	if err != nil {
-		return fmt.Errorf("failed to parse image reference: %w", err)
+		return platform.SignatureVerification{}, fmt.Errorf("failed to parse image reference: %w", err)
 	}
 
 	rootCerts, err := fulcio.GetRoots()
 	if err != nil {
-		return fmt.Errorf("failed to get Fulcio root certificates: %w", err)
+		return platform.SignatureVerification{}, fmt.Errorf("failed to get Fulcio root certificates: %w", err)
 	}
 
 	intermediateCerts, err := fulcio.GetIntermediates()
 	if err != nil {
-		return fmt.Errorf("failed to get Fulcio intermediate certificates: %w", err)
+		return platform.SignatureVerification{}, fmt.Errorf("failed to get Fulcio intermediate certificates: %w", err)
 	}
 
 	rekorClient, err := rekor.NewClient(options.DefaultRekorURL)
 	if err != nil {
-		return fmt.Errorf("failed to create Rekor client: %w", err)
+		return platform.SignatureVerification{}, fmt.Errorf("failed to create Rekor client: %w", err)
 	}
 
 	rekorPubKeys, err := cosign.GetRekorPubs(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get Rekor public keys: %w", err)
+		return platform.SignatureVerification{}, fmt.Errorf("failed to get Rekor public keys: %w", err)
 	}
 
 	ctLogPubKeys, err := cosign.GetCTLogPubs(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get CT log public keys: %w", err)
+		return platform.SignatureVerification{}, fmt.Errorf("failed to get CT log public keys: %w", err)
 	}
 
 	co := &cosign.CheckOpts{
@@ -117,17 +169,11 @@ func (v *cosignVerifier) Verify(ctx context.Context, imageRef string) error {
 		RootCerts:         rootCerts,
 		IntermediateCerts: intermediateCerts,
 		CTLogPubKeys:      ctLogPubKeys,
-		Identities: []cosign.Identity{
-			{
-				IssuerRegExp:  v.issuerRegexp,
-				SubjectRegExp: v.subjectRegexp,
-			},
-		},
+		Identities:        v.identities,
 	}
 
 	logger.Debug("calling cosign.VerifyImageSignatures",
-		"issuer_regexp", v.issuerRegexp,
-		"subject_regexp", v.subjectRegexp,
+		"identities", len(v.identities),
 	)
 	signatures, bundleVerified, err := cosign.VerifyImageSignatures(ctx, ref, co)
 	if err != nil {
@@ -135,13 +181,13 @@ func (v *cosignVerifier) Verify(ctx context.Context, imageRef string) error {
 		if isNoSignaturesError(err) {
 			if v.allowUnsigned {
 				logger.Debug("image has no signatures, but unsigned images are allowed")
-				return nil
+				return platform.SignatureVerification{
+					Status: platform.SignatureVerificationUnsignedAccepted,
+				}, nil
 			}
-			logger.Error("image has no signatures and unsigned images are not allowed")
-			return fmt.Errorf("image %s has no signatures and unsigned images are not allowed", imageRef)
+			return platform.SignatureVerification{}, fmt.Errorf("image %s has no signatures and unsigned images are not allowed", imageRef)
 		}
-		logger.Error("signature verification failed", "error", err)
-		return fmt.Errorf("signature verification failed for %s: %w", imageRef, err)
+		return platform.SignatureVerification{}, fmt.Errorf("signature verification failed for %s: %w", imageRef, err)
 	}
 
 	logger.Info("image signature verified",
@@ -149,15 +195,14 @@ func (v *cosignVerifier) Verify(ctx context.Context, imageRef string) error {
 		"bundle_verified", bundleVerified,
 	)
 
-	return nil
+	return platform.SignatureVerification{
+		Status: platform.SignatureVerificationVerified,
+	}, nil
 }
 
 func isNoSignaturesError(err error) bool {
-	if err == nil {
-		return false
-	}
-	errMsg := err.Error()
-	return strings.Contains(errMsg, "no matching signatures") ||
-		strings.Contains(errMsg, "no signatures found") ||
-		strings.Contains(errMsg, "MANIFEST_UNKNOWN")
+	// Match cosign's typed error only. Classifying by message is
+	// version-fragile and can silently widen what counts as unsigned.
+	var noSignatures *cosign.ErrNoSignaturesFound
+	return errors.As(err, &noSignatures)
 }

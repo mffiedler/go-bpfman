@@ -120,18 +120,10 @@ func (c *CLI) buildImagePuller() (platform.ImagePuller, error) {
 		return nil, fmt.Errorf("ensure image cache: %w", err)
 	}
 
-	// Build signature verifier based on config
-	var verifier platform.SignatureVerifier
 	slogLogger := c.Logger()
-	if cfg.Signing.ShouldVerify() {
-		slogLogger.Info("signature verification enabled")
-		verifier = verify.Cosign(
-			verify.WithLogger(slogLogger),
-			verify.WithAllowUnsigned(cfg.Signing.AllowUnsigned),
-		)
-	} else {
-		slogLogger.Debug("signature verification disabled")
-		verifier = verify.NoSign()
+	verifier, err := verify.FromSigningConfig(cfg.Signing, slogLogger)
+	if err != nil {
+		return nil, fmt.Errorf("configure signature verifier: %w", err)
 	}
 
 	return oci.NewPuller(

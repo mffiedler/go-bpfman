@@ -455,13 +455,29 @@ type ImagePuller interface {
 	Pull(ctx context.Context, ref ImageRef) (PulledImage, error)
 }
 
+// SignatureVerificationStatus describes how an image satisfied signature
+// policy.
+type SignatureVerificationStatus string
+
+const (
+	SignatureVerificationDisabled         SignatureVerificationStatus = "disabled"
+	SignatureVerificationVerified         SignatureVerificationStatus = "verified"
+	SignatureVerificationUnsignedAccepted SignatureVerificationStatus = "unsigned_accepted"
+)
+
+// SignatureVerification is the result of a successful signature policy
+// decision.
+type SignatureVerification struct {
+	Status SignatureVerificationStatus
+}
+
 // SignatureVerifier verifies OCI image signatures.
 type SignatureVerifier interface {
-	// Verify checks that the image has a valid signature.
-	// Returns nil if verification succeeds or is not required.
+	// Verify checks that the image satisfies signature policy.
+	// Returns a result describing how the image was accepted.
 	// Returns an error if the image signature is invalid or missing
 	// (when unsigned images are not allowed).
-	Verify(ctx context.Context, imageRef string) error
+	Verify(ctx context.Context, imageRef string) (SignatureVerification, error)
 }
 
 // DiscoveredProgram represents a program found in a BPF object file.

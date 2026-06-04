@@ -9,13 +9,14 @@
 //  3. CLI flags and environment variables override at runtime (handled by CLI layer)
 //
 // This ensures a valid configuration is always available, even when no
-// config file exists. The TOML decoder only sets fields present in the
-// file, leaving unspecified fields at their default values.
+// default config file exists. An explicitly supplied config path must
+// exist. The TOML decoder only sets fields present in the file, leaving
+// unspecified fields at their default values.
 //
-// If the config file exists but is invalid (malformed TOML or failed
-// validation), [Load] returns an error rather than silently falling back
-// to defaults. This fail-fast behaviour prevents running with unintended
-// configuration.
+// If the config file exists but cannot be read, is malformed TOML, or
+// fails validation, [Load] returns an error rather than silently falling
+// back to defaults. This fail-fast behaviour prevents running with
+// unintended configuration.
 //
 // # Configuration Sections
 //
@@ -30,13 +31,23 @@
 //
 //   - AllowUnsigned: whether unsigned images can be loaded (default: true)
 //   - VerifyEnabled: whether to verify signatures on signed images (default: true)
+//   - TrustedIdentities: keyless signing identity/issuer pairs trusted for
+//     signed images
 //
 // The interaction between these fields:
 //
 //	AllowUnsigned=true,  VerifyEnabled=true  → verify if signed, accept if unsigned
 //	AllowUnsigned=true,  VerifyEnabled=false → accept all, no verification
 //	AllowUnsigned=false, VerifyEnabled=true  → require valid signature
-//	AllowUnsigned=false, VerifyEnabled=false → reject all images (pathological)
+//	AllowUnsigned=false, VerifyEnabled=false → accept all, no verification
+//
+// When unsigned images are forbidden and verification is enabled, a trusted
+// certificate identity list may be configured to restrict who can sign.
+// If the list is empty, any valid sigstore identity is accepted. Exact
+// values are matched exactly, regexp values are anchored to the whole
+// certificate value, and exact and regexp forms are mutually exclusive
+// within each trusted identity entry. A wildcard identity entry may not
+// be mixed with specific entries.
 //
 // Use [SigningConfig.MustRequireSignatures] to check if signatures are
 // mandatory, and [SigningConfig.ShouldVerify] to check if verification
@@ -73,6 +84,9 @@
 //	[signing]
 //	allow_unsigned = true
 //	verify_enabled = true
+//	# [[signing.trusted_identities]]
+//	# certificate_identity = "signer@example.com"
+//	# certificate_oidc_issuer = "https://github.com/login/oauth"
 //
 //	[logging]
 //	level = "info"
