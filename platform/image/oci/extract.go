@@ -83,8 +83,7 @@ func extractBytecode(dir string, logger *slog.Logger) (string, error) {
 			logger.Debug("found tar archive, extracting", "name", entry.Name())
 			extracted, err := extractFromTar(path, dir, logger)
 			if err != nil {
-				logger.Warn("failed to extract archive", "name", entry.Name(), "error", err)
-				continue
+				return "", fmt.Errorf("failed to extract archive %s: %w", entry.Name(), err)
 			}
 			if extracted != "" {
 				return extracted, nil
@@ -192,14 +191,12 @@ func extractFromTarReader(tr *tar.Reader, destDir string, logger *slog.Logger) (
 		// Security: prevent path traversal
 		cleanName := filepath.Clean(hdr.Name)
 		if strings.HasPrefix(cleanName, "..") {
-			logger.Warn("skipping entry with invalid path", "name", hdr.Name)
-			continue
+			return "", fmt.Errorf("archive entry has invalid path: %s", hdr.Name)
 		}
 
 		// Check size limit
 		if hdr.Size > maxBytecodeSize {
-			logger.Warn("skipping oversized file", "name", hdr.Name, "size", hdr.Size)
-			continue
+			return "", fmt.Errorf("archive entry %s is too large: %d bytes", hdr.Name, hdr.Size)
 		}
 
 		destPath := filepath.Join(destDir, "extracted_"+filepath.Base(cleanName))
@@ -265,8 +262,7 @@ func validateELF(path string, logger *slog.Logger) error {
 	}
 
 	if fileEndian != hostEndian {
-		logger.Warn("ELF endianness mismatch", "file", fileEndian, "host", hostEndian)
-		// This is a warning, not an error - the kernel may still handle it
+		return fmt.Errorf("ELF endianness mismatch: file is %s, host is %s", fileEndian, hostEndian)
 	}
 
 	// Check it's a relocatable object file

@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/opencontainers/go-digest"
@@ -121,6 +123,9 @@ func (p *puller) Pull(ctx context.Context, ref platform.ImageRef) (platform.Pull
 		logger.Error("failed to parse image reference", "error", err)
 		return platform.PulledImage{}, fmt.Errorf("failed to parse image reference: %w", err)
 	}
+	if isLoopbackRegistry(repo.Reference.Registry) {
+		repo.PlainHTTP = true
+	}
 
 	// Set up authentication
 	if err := p.configureAuth(repo, ref.Auth, logger); err != nil {
@@ -130,10 +135,14 @@ func (p *puller) Pull(ctx context.Context, ref platform.ImageRef) (platform.Pull
 	logger.Debug("resolving image manifest")
 
 	// Resolve the manifest descriptor
-	desc, err := repo.Resolve(ctx, repo.Reference.Reference)
+	desc, err := repo.Resolve(ctx, repo.Reference.ReferenceOrDefault())
 	if err != nil {
 		logger.Error("failed to resolve image", "error", err)
-		return platform.PulledImage{}, fmt.Errorf("failed to resolve image: %w", err)
+		resolveErr := fmt.Errorf("failed to resolve image: %w", err)
+		if (ref.Auth == nil || ref.Auth.Username == "") && !registryCredentialsFound(ctx, repo.Reference.Registry, logger) {
+			resolveErr = missingCredentialError(repo.Reference.Registry, resolveErr)
+		}
+		return platform.PulledImage{}, resolveErr
 	}
 
 	logger.Info("image resolved", "digest", desc.Digest.String(), "media_type", desc.MediaType)
@@ -146,11 +155,21 @@ func (p *puller) Pull(ctx context.Context, ref platform.ImageRef) (platform.Pull
 			// Append digest to ensure we verify the exact image
 			verifyRef = ref.URL + "@" + desc.Digest.String()
 		}
-		if err := p.verifier.Verify(ctx, verifyRef); err != nil {
+		verification, err := p.verifier.Verify(ctx, verifyRef)
+		if err != nil {
 			logger.Error("image signature verification failed", "error", err)
 			return platform.PulledImage{}, fmt.Errorf("signature verification failed: %w", err)
 		}
-		logger.Info("image signature verified")
+		switch verification.Status {
+		case platform.SignatureVerificationVerified:
+			logger.Info("image signature verified")
+		case platform.SignatureVerificationUnsignedAccepted:
+			logger.Info("unsigned image accepted by policy")
+		case platform.SignatureVerificationDisabled:
+			logger.Debug("image signature verification disabled")
+		default:
+			logger.Info("image signature policy accepted", "status", verification.Status)
+		}
 	}
 
 	// Handle OCI image index (multi-platform manifest list)
@@ -180,9 +199,7 @@ func (p *puller) Pull(ctx context.Context, ref platform.ImageRef) (platform.Pull
 
 	// Parse manifest to find layers and config
 	var manifest struct {
-		Config struct {
-			Digest string `json:"digest"`
-		} `json:"config"`
+		Config ocispec.Descriptor `json:"config"`
 		Layers []struct {
 			Digest    string `json:"digest"`
 			Size      int64  `json:"size"`
@@ -200,9 +217,9 @@ func (p *puller) Pull(ctx context.Context, ref platform.ImageRef) (platform.Pull
 	}
 
 	// Extract labels from config
-	programs, maps, err := p.extractLabels(ctx, repo, manifest.Config.Digest, logger)
+	programs, maps, err := p.extractLabels(ctx, repo, manifest.Config, logger)
 	if err != nil {
-		logger.Warn("failed to extract labels", "error", err)
+		return platform.PulledImage{}, fmt.Errorf("failed to extract labels: %w", err)
 	}
 
 	logger.Debug("extracted image labels", "programs", programs, "maps", maps)
@@ -281,8 +298,7 @@ func (p *puller) Pull(ctx context.Context, ref platform.ImageRef) (platform.Pull
 	}
 
 	if err := p.cache.SaveMetadata(cacheKey, meta); err != nil {
-		logger.Warn("failed to save metadata", "error", err)
-		// Not fatal - continue
+		return platform.PulledImage{}, fmt.Errorf("failed to save metadata: %w", err)
 	}
 
 	logger.Info("image cached successfully", "path", destPath)
@@ -338,6 +354,10 @@ func (p *puller) configureAuth(repo *remote.Repository, authConfig *platform.Ima
 		}
 		return nil
 	}
+	if isLoopbackRegistry(repo.Reference.Registry) {
+		logger.Debug("using anonymous access for loopback registry")
+		return nil
+	}
 
 	// Try to load credentials from credential stores
 	credStore, err := newCredentialStore(logger)
@@ -355,29 +375,17 @@ func (p *puller) configureAuth(repo *remote.Repository, authConfig *platform.Ima
 	return nil
 }
 
-// newCredentialStore creates a credential store checking Podman and Docker locations.
-func newCredentialStore(logger *slog.Logger) (credentials.Store, error) {
-	// Try Podman locations first
-	podmanPaths := []string{}
-
-	if xdgRuntime := os.Getenv("XDG_RUNTIME_DIR"); xdgRuntime != "" {
-		podmanPaths = append(podmanPaths, filepath.Join(xdgRuntime, "containers/auth.json"))
+func isLoopbackRegistry(registry string) bool {
+	host := registry
+	if h, _, err := net.SplitHostPort(registry); err == nil {
+		host = h
 	}
-
-	if home := os.Getenv("HOME"); home != "" {
-		podmanPaths = append(podmanPaths, filepath.Join(home, ".config/containers/auth.json"))
+	host = strings.Trim(host, "[]")
+	if host == "localhost" {
+		return true
 	}
-
-	for _, path := range podmanPaths {
-		if _, err := os.Stat(path); err == nil {
-			logger.Debug("found Podman credentials", "path", path)
-			return credentials.NewStore(path, credentials.StoreOptions{})
-		}
-	}
-
-	// Fall back to Docker
-	logger.Debug("trying Docker credential store")
-	return credentials.NewStoreFromDocker(credentials.StoreOptions{})
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // selectPlatform selects the appropriate platform manifest from an image index.
@@ -428,16 +436,7 @@ func (p *puller) selectPlatform(ctx context.Context, repo *remote.Repository, in
 		}
 	}
 
-	// Fall back to first manifest
-	m := index.Manifests[0]
-	logger.Warn("no matching platform found, using first manifest",
-		"host_arch", hostArch,
-		"first_arch", m.Platform.Architecture)
-	return ocispec.Descriptor{
-		MediaType: m.MediaType,
-		Digest:    digest.Digest(m.Digest),
-		Size:      m.Size,
-	}, nil
+	return ocispec.Descriptor{}, fmt.Errorf("no linux/%s manifest found in image index", hostArch)
 }
 
 // getHostArch returns the host architecture in OCI format.
@@ -481,17 +480,17 @@ func goArchToOCI(goArch string) string {
 }
 
 // extractLabels fetches the image config blob and extracts BPF labels.
-// configDigest should be the digest of the config blob from the manifest.
-func (p *puller) extractLabels(ctx context.Context, repo *remote.Repository, configDigest string, logger *slog.Logger) (programs, maps map[string]string, err error) {
-	if configDigest == "" {
+func (p *puller) extractLabels(ctx context.Context, repo *remote.Repository, configDesc ocispec.Descriptor, logger *slog.Logger) (programs, maps map[string]string, err error) {
+	if configDesc.Digest == "" {
 		logger.Debug("no config digest provided, skipping label extraction")
 		return nil, nil, nil
 	}
 
-	logger.Debug("fetching config for labels", "config_digest", configDigest)
+	logger.Debug("fetching config for labels", "config_digest", configDesc.Digest.String(), "size", configDesc.Size, "media_type", configDesc.MediaType)
 
-	// Fetch the config blob directly
-	rc, err := repo.Fetch(ctx, ocispec.Descriptor{Digest: digest.Digest(configDigest)})
+	// Fetch the config blob directly. Use the full descriptor from
+	// the manifest so ORAS can validate the registry response size.
+	rc, err := repo.Blobs().Fetch(ctx, configDesc)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to fetch config: %w", err)
 	}
@@ -516,7 +515,7 @@ func (p *puller) extractLabels(ctx context.Context, repo *remote.Repository, con
 	if progJSON := config.Config.Labels[LabelPrograms]; progJSON != "" {
 		programs = make(map[string]string)
 		if err := json.Unmarshal([]byte(progJSON), &programs); err != nil {
-			logger.Warn("failed to parse programs label", "error", err)
+			return nil, nil, fmt.Errorf("failed to parse %s label: %w", LabelPrograms, err)
 		}
 	}
 
@@ -524,7 +523,7 @@ func (p *puller) extractLabels(ctx context.Context, repo *remote.Repository, con
 	if mapJSON := config.Config.Labels[LabelMaps]; mapJSON != "" {
 		maps = make(map[string]string)
 		if err := json.Unmarshal([]byte(mapJSON), &maps); err != nil {
-			logger.Warn("failed to parse maps label", "error", err)
+			return nil, nil, fmt.Errorf("failed to parse %s label: %w", LabelMaps, err)
 		}
 	}
 
