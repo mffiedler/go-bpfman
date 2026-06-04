@@ -2,6 +2,7 @@ package main
 
 import (
 	"debug/elf"
+	"encoding/base64"
 	"strings"
 	"testing"
 
@@ -112,6 +113,41 @@ func TestBytecodeSourceRejectsDuplicateMappedPlatform(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "platform linux/amd64 specified more than once") {
 		t.Fatalf("bytecodeSource error = %q, want duplicate-platform error", err)
+	}
+}
+
+func TestImageVerifyRegistryAuthRejectsInvalidValue(t *testing.T) {
+	t.Parallel()
+
+	cmd := ImageVerifyCmd{RegistryAuth: "not-base64"}
+	_, err := cmd.registryAuth()
+	if err == nil {
+		t.Fatal("registryAuth returned nil error for invalid auth")
+	}
+	if !strings.Contains(err.Error(), "invalid registry-auth") {
+		t.Fatalf("registryAuth error = %q, want invalid registry-auth error", err)
+	}
+}
+
+func TestImageVerifyRegistryAuthReturnsCredentials(t *testing.T) {
+	t.Parallel()
+
+	username := "user"
+	password := "pass"
+	encoded := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
+	cmd := ImageVerifyCmd{RegistryAuth: encoded}
+	auth, err := cmd.registryAuth()
+	if err != nil {
+		t.Fatalf("registryAuth returned error: %v", err)
+	}
+	if auth == nil {
+		t.Fatal("registryAuth returned nil auth")
+	}
+	if auth.Username != username {
+		t.Fatalf("Username = %q, want %q", auth.Username, username)
+	}
+	if auth.Password != password {
+		t.Fatalf("Password = %q, want %q", auth.Password, password)
 	}
 }
 

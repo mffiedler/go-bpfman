@@ -178,6 +178,9 @@ type ImageVerifyCmd struct {
 	CertificateOIDCIssuer       *string `name:"certificate-oidc-issuer" help:"Expected signing certificate OIDC issuer (overrides config file)."`
 	CertificateIdentityRegexp   *string `name:"certificate-identity-regexp" help:"Expected signing certificate identity regexp (overrides config file)."`
 	CertificateOIDCIssuerRegexp *string `name:"certificate-oidc-issuer-regexp" help:"Expected signing certificate OIDC issuer regexp (overrides config file)."`
+
+	// Registry authentication
+	RegistryAuth string `name:"registry-auth" env:"BPFMAN_REGISTRY_AUTH" help:"Base64-encoded registry auth (username:password). Prefer BPFMAN_REGISTRY_AUTH env var to avoid exposing credentials in process listings."`
 }
 
 func (c *ImageVerifyCmd) AllowRootless() bool { return true }
@@ -202,6 +205,10 @@ func (c *ImageVerifyCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	}
 	if c.CertificateOIDCIssuer != nil && c.CertificateOIDCIssuerRegexp != nil {
 		return fmt.Errorf("--certificate-oidc-issuer and --certificate-oidc-issuer-regexp are mutually exclusive")
+	}
+	registryAuth, err := c.registryAuth()
+	if err != nil {
+		return err
 	}
 
 	override := config.TrustedIdentityConfig{}
@@ -238,7 +245,12 @@ func (c *ImageVerifyCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 		return fmt.Errorf("configure signature verifier: %w", err)
 	}
 
-	verification, err := verifier.Verify(ctx, c.ImageURL)
+	req := platform.SignatureVerificationRequest{
+		ImageRef: c.ImageURL,
+		Auth:     registryAuth,
+	}
+
+	verification, err := verifier.Verify(ctx, req)
 	if err != nil {
 		return fmt.Errorf("verification failed: %w", err)
 	}
@@ -253,4 +265,20 @@ func (c *ImageVerifyCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	default:
 		return cli.PrintOutf("Image %s: signature policy accepted (%s)\n", c.ImageURL, verification.Status)
 	}
+}
+
+func (c *ImageVerifyCmd) registryAuth() (*platform.ImageAuth, error) {
+	if c.RegistryAuth == "" {
+		return nil, nil
+	}
+
+	username, password, err := parseRegistryAuth(c.RegistryAuth)
+	if err != nil {
+		return nil, fmt.Errorf("invalid registry-auth: %w", err)
+	}
+
+	return &platform.ImageAuth{
+		Username: username,
+		Password: password,
+	}, nil
 }
