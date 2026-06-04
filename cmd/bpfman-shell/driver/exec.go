@@ -18,10 +18,12 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
+	"github.com/frobware/go-bpfman/internal/execcancel"
 )
 
 // ExecFailure is the typed error returned by RunExecStatement when
@@ -215,20 +217,25 @@ func RunExternal(ctx context.Context, args []runtime.Arg) (ExecCapture, error) {
 	}()
 
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cancelled := execcancel.Configure(cmd)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	cap := ExecCapture{Argv: argv}
-	if err := cmd.Run(); err != nil {
+	err = cmd.Run()
+	cap.Stdout = stdout.String()
+	cap.Stderr = stderr.String()
+	if cancelled.Load() {
+		return cap, context.Cause(ctx)
+	}
+	if err != nil {
 		var exitErr *exec.ExitError
 		if !errors.As(err, &exitErr) {
 			return ExecCapture{}, fmt.Errorf("exec %s: %w", argv[0], err)
 		}
 		cap.ExitCode = exitErr.ExitCode()
 	}
-	cap.Stdout = stdout.String()
-	cap.Stderr = stderr.String()
 	return cap, nil
 }
 
@@ -238,18 +245,16 @@ func RunExternal(ctx context.Context, args []runtime.Arg) (ExecCapture, error) {
 // job control so the child owns the terminal for the duration of
 // the call. Interactive programs (vi, less, htop) get a real TTY.
 //
-// The ctx parameter is intentionally not threaded into
-// exec.CommandContext for the spawn: a cancellation of the
-// shell's root ctx (a ^C the user intended for the foreground
-// program) must not SIGKILL the child via cmd.Cancel. With job
-// control in place the child receives SIGINT directly through
-// the TTY and handles it itself.
-//
-// Off-TTY callers (script mode, stdin pipe, CI) skip the
-// foreground-group dance via FgJob's disabled zero value;
-// behaviour there matches the no-job-control case.
+// Cancellation is split by whether we are on a TTY. On a TTY the
+// child owns the foreground group, so the terminal delivers a ^C
+// straight to it; ctx is left out of the spawn so that cancelling
+// the shell's root ctx does not tear down a foreground program the
+// user is still driving. Off a TTY (script mode, stdin pipe, CI)
+// there is no foreground group to route signals, so the child is
+// spawned through exec.CommandContext with cooperative
+// cancellation: ctx cancellation SIGINTs the child's process group
+// and WaitDelay escalates to SIGKILL after a grace period.
 func RunExternalInherit(ctx context.Context, cli *bpfmancli.CLI, args []runtime.Arg) (argv []string, exitCode int, err error) {
-	_ = ctx
 	if len(args) == 0 {
 		return nil, 0, fmt.Errorf("exec requires at least one argument")
 	}
@@ -264,8 +269,15 @@ func RunExternalInherit(ctx context.Context, cli *bpfmancli.CLI, args []runtime.
 	}()
 
 	fg := NewFgJob()
-	cmd := exec.Command(argv[0], argv[1:]...)
-	cmd.SysProcAttr = fg.SysProcAttr()
+	var cmd *exec.Cmd
+	cancelled := &atomic.Bool{}
+	if fg.Enabled() {
+		cmd = exec.Command(argv[0], argv[1:]...)
+		cmd.SysProcAttr = fg.SysProcAttr()
+	} else {
+		cmd = exec.CommandContext(ctx, argv[0], argv[1:]...)
+		cancelled = execcancel.Configure(cmd)
+	}
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = cli.Out
 	cmd.Stderr = cli.Err
@@ -282,12 +294,19 @@ func RunExternalInherit(ctx context.Context, cli *bpfmancli.CLI, args []runtime.
 	_ = fg.Grant(cmd.Process.Pid)
 	defer func() { _ = fg.Reclaim() }()
 
-	if rerr := cmd.Wait(); rerr != nil {
+	rerr := cmd.Wait()
+	if rerr != nil {
 		var exitErr *exec.ExitError
 		if !errors.As(rerr, &exitErr) {
 			return argv, 0, fmt.Errorf("exec %s: %w", argv[0], rerr)
 		}
+		if cancelled.Load() {
+			return argv, exitErr.ExitCode(), context.Cause(ctx)
+		}
 		return argv, exitErr.ExitCode(), nil
+	}
+	if cancelled.Load() {
+		return argv, 0, context.Cause(ctx)
 	}
 	return argv, 0, nil
 }

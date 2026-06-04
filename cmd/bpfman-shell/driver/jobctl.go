@@ -37,6 +37,11 @@ type FgJob struct {
 	shellPgid int // shell's process group, restored after the child exits
 }
 
+// Enabled reports whether foreground TTY job control is active.
+func (f FgJob) Enabled() bool {
+	return f.ttyFD >= 0
+}
+
 // NewFgJob inspects stdin. If it is a TTY, returns an FgJob
 // ready to grant the terminal to a child via Grant. Otherwise
 // returns the disabled zero value: every FgJob method becomes
