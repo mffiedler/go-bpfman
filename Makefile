@@ -628,30 +628,35 @@ help:
 	@echo "  clean-mrproper              Like 'clean', plus wipe Go's shared build/test/fuzz caches (~/.cache/go-build); affects all Go projects on this machine"
 	@echo ""
 	@echo "Testing:"
-	@echo "  test                        Run all tests"
-	@echo "  test-all                    Run every host-side test surface in CI order (pre-push gate)"
-	@echo "  test-lowered-corpus         Compare the shell lowered-IR corpus against checked-in goldens"
-	@echo "  update-lowered-corpus       Regenerate the shell lowered-IR corpus goldens"
-	@echo "  test-e2e                    Run e2e tests (requires root)"
-	@echo "  test-e2e-grpc               Run the parallel gRPC e2e test against a real bpfman serve daemon (requires root)"
-	@echo "  test-e2e-scripts            Run .bpfman e2e scripts under e2e/scripts/ via the Go test binary in e2e/scriptrunner (requires root)"
-	@echo "  test-e2e-scripts-matrix     Run .bpfman e2e scripts under both bpfman-shell dispatch backends (requires root)"
-	@echo "  test-e2e-published-images   Run published-image .bpfman scripts against quay.io (requires root and network)"
-	@echo "  test-e2e-scripts-stress     Run .bpfman e2e scripts with high repeat/parallel defaults (requires root)"
-	@echo "  test-e2e-scripts-timeline   Run .bpfman e2e scripts and render $(E2E_SCRIPTS_TIMELINE_TRACE) (requires root)"
-	@echo "  e2e-kmod-force-reload       Delete managed bpfman state, then rebuild and reload the e2e kmod (requires root)"
-	@echo "  test-examples               Run .bpfman scripts under examples/ (requires root)"
-	@echo "  test-nsenter                Run nsenter tests (native amd64)"
-	@echo "  test-nsenter-cross          Run nsenter tests on amd64/arm64/ppc64le/s390x"
-	@echo "  test-nsenter-{arch}         Run nsenter tests for a single architecture"
-	@echo "  lint                        Run golangci-lint"
-	@echo "  coverage                    Generate coverage profile and show total"
-	@echo "  coverage-func               Show coverage by function"
-	@echo "  coverage-html               Generate HTML coverage report"
-	@echo "  coverage-open               Generate and open HTML coverage report"
-	@echo "  clean-coverage              Remove coverage artifacts"
-	@echo "  go-test-timeline-build      Build go-test-timeline, a Go test JSON to Chrome trace converter"
-	@echo "  test-timeline               Run Go tests with JSON output and render $(GO_TEST_TIMELINE_TRACE)"
+	@printf "  %-31s %s\n" "test" "Run all tests"
+	@printf "  %-31s %s\n" "test-all" "Run every host-side test surface in CI order (pre-push gate)"
+	@printf "  %-31s %s\n" "test-lowered-corpus" "Compare the shell lowered-IR corpus against checked-in goldens"
+	@printf "  %-31s %s\n" "update-lowered-corpus" "Regenerate the shell lowered-IR corpus goldens"
+	@printf "  %-31s %s\n" "test-e2e" "Run e2e tests (requires root)"
+	@printf "  %-31s %s\n" "test-e2e-grpc" "Run the parallel gRPC e2e test against a real bpfman serve daemon (requires root)"
+	@printf "  %-31s %s\n" "test-e2e-scripts" "Run .bpfman e2e scripts under e2e/scripts/ via the Go test binary in e2e/scriptrunner (requires root)"
+	@printf "  %-31s %s\n" "test-e2e-scripts-file" "Run .bpfman e2e scripts in file-bytecode mode (requires root)"
+	@printf "  %-31s %s\n" "test-e2e-scripts-image" "Run .bpfman e2e scripts in image-bytecode mode (requires root)"
+	@printf "  %-31s %s\n" "test-e2e-scripts-matrix" "Run .bpfman e2e scripts under both bpfman-shell dispatch backends (requires root)"
+	@printf "  %-31s %s\n" "test-e2e-scripts-file-matrix" "Run file-bytecode .bpfman scripts under both dispatch backends (requires root)"
+	@printf "  %-31s %s\n" "test-e2e-scripts-image-matrix" "Run image-bytecode .bpfman scripts under both dispatch backends (requires root)"
+	@printf "  %-31s %s\n" "test-e2e-scripts-image-ci" "Run the CI-shaped image-bytecode script matrix (requires root)"
+	@printf "  %-31s %s\n" "test-e2e-published-images" "Run published-image .bpfman scripts against quay.io (requires root and network)"
+	@printf "  %-31s %s\n" "test-e2e-scripts-stress" "Run .bpfman e2e scripts with high repeat/parallel defaults (requires root)"
+	@printf "  %-31s %s\n" "test-e2e-scripts-timeline" "Run .bpfman e2e scripts and render $(E2E_SCRIPTS_TIMELINE_TRACE) (requires root)"
+	@printf "  %-31s %s\n" "e2e-kmod-force-reload" "Delete managed bpfman state, then rebuild and reload the e2e kmod (requires root)"
+	@printf "  %-31s %s\n" "test-examples" "Run .bpfman scripts under examples/ (requires root)"
+	@printf "  %-31s %s\n" "test-nsenter" "Run nsenter tests (native amd64)"
+	@printf "  %-31s %s\n" "test-nsenter-cross" "Run nsenter tests on amd64/arm64/ppc64le/s390x"
+	@printf "  %-31s %s\n" "test-nsenter-{arch}" "Run nsenter tests for a single architecture"
+	@printf "  %-31s %s\n" "lint" "Run golangci-lint"
+	@printf "  %-31s %s\n" "coverage" "Generate coverage profile and show total"
+	@printf "  %-31s %s\n" "coverage-func" "Show coverage by function"
+	@printf "  %-31s %s\n" "coverage-html" "Generate HTML coverage report"
+	@printf "  %-31s %s\n" "coverage-open" "Generate and open HTML coverage report"
+	@printf "  %-31s %s\n" "clean-coverage" "Remove coverage artifacts"
+	@printf "  %-31s %s\n" "go-test-timeline-build" "Build go-test-timeline, a Go test JSON to Chrome trace converter"
+	@printf "  %-31s %s\n" "test-timeline" "Run Go tests with JSON output and render $(GO_TEST_TIMELINE_TRACE)"
 	@echo ""
 	@echo "Local CI reproducer (Dockerfile.ci):"
 	@echo "  ci                          Run every ci-* target"
@@ -1018,6 +1023,12 @@ run-e2e-scripts:
 test-e2e-scripts: build-e2e-scripts e2e-kmod-reload
 	$(Q)$(MAKE) run-e2e-scripts
 
+test-e2e-scripts-file:
+	$(Q)$(MAKE) test-e2e-scripts BPFMAN_E2E_BYTECODE_SOURCE=
+
+test-e2e-scripts-image:
+	$(Q)$(MAKE) test-e2e-scripts BPFMAN_E2E_BYTECODE_SOURCE=image
+
 # Run the .bpfman corpus under both bpfman-shell dispatch backends,
 # mirroring the workflow's dispatch matrix. library and external must
 # produce byte-identical results; a one-backend failure (such as an
@@ -1027,6 +1038,15 @@ test-e2e-scripts: build-e2e-scripts e2e-kmod-reload
 test-e2e-scripts-matrix: build-e2e-scripts e2e-kmod-reload
 	$(Q)$(MAKE) run-e2e-scripts BPFMAN_DISPATCH=library
 	$(Q)$(MAKE) run-e2e-scripts BPFMAN_DISPATCH=external
+
+test-e2e-scripts-file-matrix:
+	$(Q)$(MAKE) test-e2e-scripts-matrix BPFMAN_E2E_BYTECODE_SOURCE=
+
+test-e2e-scripts-image-matrix:
+	$(Q)$(MAKE) test-e2e-scripts-matrix BPFMAN_E2E_BYTECODE_SOURCE=image
+
+test-e2e-scripts-image-ci:
+	$(Q)$(MAKE) test-e2e-scripts-image-matrix RACE=0 STRESS_COUNT=5
 
 test-e2e-scripts-stress:
 	$(Q)$(MAKE) test-e2e-scripts \
@@ -1737,5 +1757,5 @@ bpfman-test-grpc: build-image-dev
 .PHONY: coverage clean-coverage coverage-func coverage-html coverage-open
 .PHONY: doc doc-text
 .PHONY: print-fedora-version print-go-version print-golangci-lint-version
-.PHONY: build-e2e-grpc build-e2e-scripts $(BIN_DIR)/e2e.test $(BIN_DIR)/e2e-grpc.test $(BIN_DIR)/e2e-scripts.test run-e2e-grpc run-e2e-scripts run-e2e-scripts-timeline test test-timeline test-all test-lowered-corpus update-lowered-corpus test-e2e test-e2e-grpc test-e2e-scripts test-e2e-scripts-matrix test-e2e-published-images test-e2e-scripts-stress test-e2e-scripts-timeline test-examples
+.PHONY: build-e2e-grpc build-e2e-scripts $(BIN_DIR)/e2e.test $(BIN_DIR)/e2e-grpc.test $(BIN_DIR)/e2e-scripts.test run-e2e-grpc run-e2e-scripts run-e2e-scripts-timeline test test-timeline test-all test-lowered-corpus update-lowered-corpus test-e2e test-e2e-grpc test-e2e-scripts test-e2e-scripts-file test-e2e-scripts-image test-e2e-scripts-matrix test-e2e-scripts-file-matrix test-e2e-scripts-image-matrix test-e2e-scripts-image-ci test-e2e-published-images test-e2e-scripts-stress test-e2e-scripts-timeline test-examples
 .PHONY: test-nsenter test-nsenter-amd64 test-nsenter-arm64 test-nsenter-cross test-nsenter-ppc64le test-nsenter-s390x
