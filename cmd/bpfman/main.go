@@ -32,28 +32,7 @@ func RunNamespaceSwitcher() NamespaceSwitcherResult {
 	return NamespaceSwitcherResult{Ran: true, Err: runNamespaceHelper(inv)}
 }
 
-// rootExempt reports whether the argument vector indicates an
-// invocation that does not need root: "version" as a positional
-// (the version subcommand) or "help" / --help / -h (usage output).
-// Neither touches kernel, store, or filesystem state.
-func rootExempt(args []string) bool {
-	for _, a := range args {
-		switch a {
-		case "version", "help", "--help", "-h":
-			return true
-		}
-	}
-	return false
-}
-
 func main() {
-	// Allow version and help to run without root. Neither touches
-	// kernel, store, or filesystem state.
-	if os.Geteuid() != 0 && !rootExempt(os.Args[1:]) {
-		fmt.Fprintln(os.Stderr, "bpfman: error: must run as root")
-		os.Exit(1)
-	}
-
 	// Check if we're being invoked as the namespace helper subprocess.
 	// This is a completely different execution path with its own CLI.
 	switch r := RunNamespaceSwitcher(); {

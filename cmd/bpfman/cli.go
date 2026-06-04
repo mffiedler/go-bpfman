@@ -18,6 +18,10 @@ import (
 	"github.com/frobware/go-bpfman/internal/cliformat"
 )
 
+type rootlessCommand interface {
+	AllowRootless() bool
+}
+
 // CLI is the root command structure for bpfman. It embeds the
 // shared bpfmancli.CLI for global flags, output writers, and
 // runtime services; the Kong-tagged subcommand fields here are
@@ -97,6 +101,11 @@ func (c *CLI) Execute(ctx context.Context) error {
 	c.kctx.BindTo(ctx, (*context.Context)(nil))
 	c.kctx.Bind(&c.CLI)
 
+	if err := c.enforceRootRequirement(); err != nil {
+		_ = c.PrintErrf("bpfman: error: %v\n", err)
+		return err
+	}
+
 	if err := c.kctx.Run(c); err != nil {
 		// ErrSilent means the error was already communicated (e.g., via JSON)
 		if !errors.Is(err, ErrSilent) {
@@ -105,6 +114,22 @@ func (c *CLI) Execute(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+func (c *CLI) enforceRootRequirement() error {
+	if os.Geteuid() == 0 || selectedCommandAllowsRootless(c.kctx) {
+		return nil
+	}
+	return fmt.Errorf("must run as root")
+}
+
+func selectedCommandAllowsRootless(ctx *kong.Context) bool {
+	node := ctx.Selected()
+	if node == nil || !node.Target.IsValid() || !node.Target.CanAddr() {
+		return false
+	}
+	cmd, ok := node.Target.Addr().Interface().(rootlessCommand)
+	return ok && cmd.AllowRootless()
 }
 
 // KongOptions returns the Kong configuration options for the CLI.
