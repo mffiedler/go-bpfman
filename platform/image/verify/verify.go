@@ -213,7 +213,9 @@ func isNoSignaturesError(err error) bool {
 }
 
 func registryClientOpts(imageAuth *platform.ImageAuth) []cosignremote.Option {
-	if imageAuth == nil {
+	// Use basic auth only when both a username and a password are
+	// present; otherwise access the registry anonymously.
+	if imageAuth == nil || imageAuth.Username == "" || imageAuth.Password == "" {
 		return nil
 	}
 	return []cosignremote.Option{

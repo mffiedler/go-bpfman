@@ -189,3 +189,27 @@ func TestRegistryClientOptsDoNotConflictWithDefaultKeychain(t *testing.T) {
 		t.Fatalf("auth and default keychain conflict: %v", err)
 	}
 }
+
+func TestRegistryClientOptsRequireBothCredentials(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		auth *platform.ImageAuth
+		want bool
+	}{
+		{"nil", nil, false},
+		{"missing password", &platform.ImageAuth{Username: "u"}, false},
+		{"missing username", &platform.ImageAuth{Password: "p"}, false},
+		{"both present", &platform.ImageAuth{Username: "u", Password: "p"}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := len(registryClientOpts(tc.auth)) > 0
+			if got != tc.want {
+				t.Fatalf("registryClientOpts options present = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
