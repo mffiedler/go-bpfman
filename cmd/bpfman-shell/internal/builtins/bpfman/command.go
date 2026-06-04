@@ -3,7 +3,10 @@ package bpfmanbuiltin
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 
@@ -21,6 +24,7 @@ import (
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/platform"
+	"github.com/frobware/go-bpfman/platform/image/oci"
 )
 
 // Command is the sealed interface for typed command nodes produced by
@@ -64,6 +68,10 @@ func parseCommand(args []runtime.Arg) (Command, error) {
 		return parseDeleteProgram(args[2:])
 	case len(args) >= 3 && cmd == "show" && arg(1) == "program":
 		return parseShowProgram(args[2:])
+	case len(args) >= 2 && cmd == "image" && arg(1) == "inspect":
+		return parseImageInspect(args[2:])
+	case len(args) >= 2 && cmd == "image" && arg(1) == "build":
+		return parseImageBuild(args[2:])
 
 	// link commands
 	case len(args) >= 2 && cmd == "link" && arg(1) == "attach":
@@ -95,6 +103,8 @@ func parseCommand(args []runtime.Arg) (Command, error) {
 		return nil, fmt.Errorf("link: subcommand required (attach, detach, list, get, delete)")
 	case cmd == "dispatcher":
 		return nil, fmt.Errorf("dispatcher: subcommand required (list, get, delete)")
+	case cmd == "image":
+		return nil, fmt.Errorf("image: subcommand required (build, inspect)")
 	case cmd == "show":
 		return nil, fmt.Errorf("show: subcommand required (program)")
 
@@ -138,9 +148,90 @@ func execCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, 
 		return execDispatcherGet(ctx, cli, mgr, c)
 	case *DispatcherDeleteCommand:
 		return runtime.Value{}, execDispatcherDelete(ctx, cli, mgr, c)
+	case *ImageInspectCommand:
+		return execImageInspect(ctx, cli, c)
+	case *ImageBuildCommand:
+		return runtime.Value{}, execImageBuild(ctx, cli, c)
 	default:
 		return runtime.Value{}, fmt.Errorf("unhandled command type %T", cmd)
 	}
+}
+
+// ImageBuildCommand represents a parsed "image build" command.
+type ImageBuildCommand struct {
+	Args []string
+}
+
+func (*ImageBuildCommand) isCommand() {}
+
+func parseImageBuild(args []runtime.Arg) (*ImageBuildCommand, error) {
+	if len(args) == 0 {
+		return nil, fmt.Errorf("image build: requires an image reference")
+	}
+	argv := make([]string, 0, len(args))
+	for i, arg := range args {
+		text, err := argToCLIText(arg)
+		if err != nil {
+			return nil, fmt.Errorf("image build arg %d: %w", i+1, err)
+		}
+		argv = append(argv, text)
+	}
+	return &ImageBuildCommand{Args: argv}, nil
+}
+
+func execImageBuild(ctx context.Context, cli *bpfmancli.CLI, cmd *ImageBuildCommand) error {
+	bin := os.Getenv("BPFMAN_BIN")
+	if bin == "" {
+		bin = "bpfman"
+	}
+	argv := append([]string{"image", "build"}, cmd.Args...)
+	child := exec.CommandContext(ctx, bin, argv...)
+	output, err := child.CombinedOutput()
+	if len(output) > 0 {
+		if err := cli.PrintOut(string(output)); err != nil {
+			return err
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("image build: %w", err)
+	}
+	return nil
+}
+
+// ImageInspectCommand represents a parsed "image inspect" command.
+type ImageInspectCommand struct {
+	ImageURL string
+}
+
+func (*ImageInspectCommand) isCommand() {}
+
+func parseImageInspect(args []runtime.Arg) (*ImageInspectCommand, error) {
+	if len(args) == 0 {
+		return nil, fmt.Errorf("image inspect: requires an image reference")
+	}
+	if len(args) > 1 {
+		return nil, syntax.SpanErrorf(runtime.ArgSpan(args[1]), "image inspect: unexpected argument %q", driver.ArgText(args[1]))
+	}
+	return &ImageInspectCommand{ImageURL: driver.ArgText(args[0])}, nil
+}
+
+func execImageInspect(ctx context.Context, cli *bpfmancli.CLI, cmd *ImageInspectCommand) (runtime.Value, error) {
+	inspection, err := oci.InspectBytecodeImage(ctx, cmd.ImageURL)
+	if err != nil {
+		return runtime.Value{}, err
+	}
+	output, err := json.MarshalIndent(inspection, "", "  ")
+	if err != nil {
+		return runtime.Value{}, err
+	}
+	if err := cli.PrintOut(string(output) + "\n"); err != nil {
+		return runtime.Value{}, err
+	}
+	val, err := runtime.ValueFromStruct(inspection)
+	if err != nil {
+		return runtime.Value{}, err
+	}
+	return val, nil
 }
 
 // parseProgramIDArg resolves a single runtime.Arg directly to a

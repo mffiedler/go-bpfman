@@ -1,6 +1,7 @@
 package bpfmanbuiltin
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -9,6 +10,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/semantics"
+	"github.com/frobware/go-bpfman/internal/registryfixture"
 	"github.com/frobware/go-bpfman/kernel"
 )
 
@@ -35,6 +37,82 @@ func structuredLink(name string, linkID kernel.LinkID) runtime.Arg {
 }
 
 func word(s string) runtime.Arg { return runtime.WordArg{Text: s} }
+
+func TestParseImageInspect(t *testing.T) {
+	t.Parallel()
+
+	cmd, err := parseCommand([]runtime.Arg{
+		word("image"),
+		word("inspect"),
+		word("quay.io/bpfman-bytecode/go-xdp-counter:latest"),
+	})
+	require.NoError(t, err)
+	inspect, ok := cmd.(*ImageInspectCommand)
+	require.True(t, ok, "command type = %T", cmd)
+	assert.Equal(t, "quay.io/bpfman-bytecode/go-xdp-counter:latest", inspect.ImageURL)
+}
+
+func TestParseImageInspectResolvesE2EImageRef(t *testing.T) {
+	t.Setenv(registryfixture.RegistryEnv, "127.0.0.1:5000")
+
+	args, err := resolveE2EImageRefsInArgs([]runtime.Arg{
+		word("image"),
+		word("inspect"),
+		word(registryfixture.RegistryAlias + "/bpfman-e2e/xdp-pass:latest"),
+	})
+	require.NoError(t, err)
+	cmd, err := parseCommand(args)
+	require.NoError(t, err)
+	inspect, ok := cmd.(*ImageInspectCommand)
+	require.True(t, ok, "command type = %T", cmd)
+	assert.Equal(t, "127.0.0.1:5000/bpfman-e2e/xdp-pass:latest", inspect.ImageURL)
+}
+
+func TestResolveE2EImageRefStartsRegistry(t *testing.T) {
+	t.Setenv(registryfixture.RegistryEnv, "")
+	defer registryfixture.Close()
+
+	got, err := resolveE2EImageRef(registryfixture.RegistryAlias + "/bpfman-e2e/xdp-pass:latest")
+	require.NoError(t, err)
+	assert.NotContains(t, got, registryfixture.RegistryAlias)
+	assert.Contains(t, got, "/bpfman-e2e/xdp-pass:latest")
+	assert.Empty(t, os.Getenv(registryfixture.RegistryEnv))
+}
+
+func TestParseImageBuildResolvesE2ETag(t *testing.T) {
+	t.Setenv(registryfixture.RegistryEnv, "localhost:5000")
+
+	args, err := resolveE2EImageRefsInArgs([]runtime.Arg{
+		word("image"),
+		word("build"),
+		word(registryfixture.RegistryAlias + "/bpfman-e2e/xdp-pass:latest"),
+		word("e2e/testdata/bpf/xdp_pass.bpf.o"),
+	})
+	require.NoError(t, err)
+	cmd, err := parseCommand(args)
+	require.NoError(t, err)
+	build, ok := cmd.(*ImageBuildCommand)
+	require.True(t, ok, "command type = %T", cmd)
+	assert.Equal(t, []string{
+		"localhost:5000/bpfman-e2e/xdp-pass:latest",
+		"e2e/testdata/bpf/xdp_pass.bpf.o",
+	}, build.Args)
+}
+
+func TestCommandSupportsOutputSkipsImageBuild(t *testing.T) {
+	t.Parallel()
+
+	assert.False(t, commandSupportsOutput([]string{"image", "build"}))
+	assert.False(t, commandSupportsOutput([]string{"image", "inspect"}))
+	assert.True(t, commandSupportsOutput([]string{"program", "list"}))
+}
+
+func TestParseImageInspectRejectsMissingImage(t *testing.T) {
+	t.Parallel()
+
+	_, err := parseCommand([]runtime.Arg{word("image"), word("inspect")})
+	require.ErrorContains(t, err, "requires an image reference")
+}
 
 func TestParseShowProgram(t *testing.T) {
 	t.Parallel()

@@ -3,7 +3,6 @@
 package scriptrunner
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,6 +16,10 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	k8slabels "k8s.io/apimachinery/pkg/labels"
+
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/scriptmeta"
 )
 
 // TestBPFManScripts discovers every .bpfman script under
@@ -37,22 +40,21 @@ import (
 // cmd/bpfman-shell/internal/builtins/netpool.go) and are safe
 // to run concurrently by construction.
 //
-// Per-script serial lane: a `.bpfman` script can declare
-// itself serial by putting `# SERIAL` on a line within the
-// first scriptHeaderLines lines of the file. Such a script
-// still enters the Go parallel queue so registration can
-// complete and the parallel-eligible scripts can start, but
-// it takes a package-local serial mutex before executing. That
-// means SERIAL scripts run one-at-a-time with other SERIAL
-// scripts while parallel-eligible scripts continue to run
-// beside them.
+// Script labels: a `.bpfman` script can declare labels by putting
+// `#pragma labels={"external":"true","program":"xdp"}` in the same
+// header window.
+// `serial=true` puts the script through the serial lane: it
+// still enters the Go parallel queue so registration can complete
+// and parallel-eligible scripts can start, but it takes a
+// package-local serial mutex before executing. `exclusive=true`
+// scripts do not call t.Parallel, so they run during registration
+// while parallel subtests are still queued; use this only for
+// scripts that mutate global bpfman state, such as `bpfman program
+// delete --all`.
 //
-// Per-script exclusive lane: a `.bpfman` script can declare
-// itself exclusive by putting `# EXCLUSIVE` in the same header
-// window. Exclusive scripts do not call t.Parallel, so they run
-// during registration while parallel subtests are still queued.
-// Use this only for scripts that mutate global bpfman state,
-// such as `bpfman program delete --all`.
+// BPFMAN_E2E_SCRIPT_SELECTOR selects scripts with a Kubernetes-style
+// comma-separated label selector. The default selector is `!external`,
+// so public-registry pulls run only when explicitly selected.
 //
 // Subtest names are the script's path relative to e2e/, so
 // `go test -run 'TestBPFManScripts/scripts/Foo\.bpfman$'`
@@ -98,19 +100,24 @@ func TestBPFManScripts(t *testing.T) {
 		t.Fatalf("no .bpfman scripts found under %s/", absSub)
 	}
 	// Pre-scan once per pass so a script's header is read at
-	// most once even under stress repeats. The scan fails
-	// loudly on any read error -- a script the runner cannot
-	// open is not a script the harness can honestly run, so
-	// propagate the open error rather than silently treating
-	// the file as opt-in to parallel.
+	// most once even under stress repeats. Metadata errors are
+	// stored per script and reported inside that script's
+	// subtest, so one malformed pragma does not abort
+	// registration of the rest of the corpus.
+	selector := scriptLabelSelector(t)
 	serial := make(map[string]bool, len(matches))
 	exclusive := make(map[string]bool, len(matches))
+	metadata := make(map[string]scriptMetadata, len(matches))
 	for _, abs := range matches {
-		mode := scriptExecutionMode(t, abs)
-		if mode.serial {
+		meta := readScriptMetadata(abs)
+		metadata[abs] = meta
+		if meta.err != nil {
+			continue
+		}
+		if meta.mode.Labels.Get("serial") == "true" {
 			serial[abs] = true
 		}
-		if mode.exclusive {
+		if meta.mode.Labels.Get("exclusive") == "true" {
 			exclusive[abs] = true
 		}
 	}
@@ -118,8 +125,8 @@ func TestBPFManScripts(t *testing.T) {
 	// every script enters the dispatcher first, then r=1,
 	// and so on; the t.Parallel queue therefore holds
 	// [s1#0, s2#0, ..., sN#0, s1#1, ...] which preserves
-	// wave diversity across repeats. Scripts marked SERIAL
-	// skip the repeat: they are serialized with other SERIAL
+	// wave diversity across repeats. Scripts marked serial
+	// skip the repeat: they are serialized with other serial
 	// scripts by scriptSerialMu, so extra registrations only
 	// burn wall-clock time without tickling new race windows.
 	for r := 0; r < repeats; r++ {
@@ -130,10 +137,10 @@ func TestBPFManScripts(t *testing.T) {
 			rel := filepath.Join(sub, filepath.Base(abs))
 			// Suffix only when the script actually
 			// participates in the repeat cycle. A
-			// SERIAL script runs exactly once even under
+			// serial script runs exactly once even under
 			// stress, so it keeps its unsuffixed name;
 			// otherwise `-test.run 'Foo#3'` against a
-			// SERIAL script would silently match no
+			// serial script would silently match no
 			// subtests.
 			name := filepath.ToSlash(rel)
 			if repeats > 1 && !serial[abs] && !exclusive[abs] {
@@ -141,7 +148,18 @@ func TestBPFManScripts(t *testing.T) {
 			}
 			runSerial := serial[abs]
 			runExclusive := exclusive[abs]
+			meta := metadata[abs]
+			skipReason := ""
+			if meta.err == nil {
+				skipReason = scriptSelectorSkipReason(selector, meta.mode.Labels)
+			}
 			t.Run(name, func(t *testing.T) {
+				if meta.err != nil {
+					t.Fatalf("read script metadata: %v", meta.err)
+				}
+				if skipReason != "" {
+					t.Skip(skipReason)
+				}
 				if !runExclusive {
 					t.Parallel()
 				}
@@ -208,12 +226,14 @@ func e2ePackageDir(t *testing.T) string {
 // -test.parallel concurrency. Unset or N<=1 keeps the default
 // one-pass behaviour.
 const (
-	bpfmanShellTimeoutEnv     = "BPFMAN_E2E_SCRIPT_TIMEOUT"
-	bpfmanShellTimeoutDefault = 5 * time.Minute
-	bpfmanShellRepeatsEnv     = "BPFMAN_E2E_SCRIPT_REPEATS"
-	bpfmanShellRepeatsDefault = 1
-	bpfmanShellTimelineEnv    = "BPFMAN_E2E_SCRIPT_TIMELINE"
-	bpfmanShellTestPackage    = "github.com/frobware/go-bpfman/e2e/scriptrunner"
+	bpfmanShellTimeoutEnv         = "BPFMAN_E2E_SCRIPT_TIMEOUT"
+	bpfmanShellTimeoutDefault     = 5 * time.Minute
+	bpfmanShellRepeatsEnv         = "BPFMAN_E2E_SCRIPT_REPEATS"
+	bpfmanShellRepeatsDefault     = 1
+	bpfmanShellTimelineEnv        = "BPFMAN_E2E_SCRIPT_TIMELINE"
+	bpfmanShellSelectorEnv        = "BPFMAN_E2E_SCRIPT_SELECTOR"
+	bpfmanShellSelectorDefaultRaw = "!external"
+	bpfmanShellTestPackage        = "github.com/frobware/go-bpfman/e2e/scriptrunner"
 )
 
 var scriptTimelineMu sync.Mutex
@@ -275,54 +295,37 @@ func scriptRepeats() int {
 	return n
 }
 
-// scriptHeaderLines bounds the prescan window for the
-// # SERIAL marker so the helper does no more I/O than
-// reading a small script header. Any marker has to appear in
-// the file's first scriptHeaderLines lines; that keeps the
-// convention explicit (the script header is where the
-// constraint lives), avoids accidentally matching a comment
-// or shell-quoted occurrence deep inside the body, and caps
-// the per-script scan cost at a tiny bounded read.
-const (
-	scriptHeaderLines = 20
-	scriptSerial      = "# SERIAL"
-	scriptExclusive   = "# EXCLUSIVE"
-)
-
-type scriptMode struct {
-	serial    bool
-	exclusive bool
+type scriptMetadata struct {
+	mode scriptmeta.Mode
+	err  error
 }
 
-// scriptExecutionMode reports whether the script at path declares a
-// special execution mode in its header. Matches are prefixes on the
-// trimmed line so trailing rationale is allowed (e.g. "# SERIAL:
-// shares pinned-map state"). Any read error is fatal -- a script the
-// runner cannot even open is not a script the runner can run; better
-// to surface the read error here than to silently default the
-// missing-or-unreadable script into the parallel pool.
-func scriptExecutionMode(t *testing.T, path string) scriptMode {
-	t.Helper()
-	f, err := os.Open(path)
+func readScriptMetadata(path string) scriptMetadata {
+	mode, err := scriptmeta.Read(path)
 	if err != nil {
-		t.Fatalf("open script %s for mode-marker prescan: %v", path, err)
+		return scriptMetadata{err: err}
 	}
-	defer f.Close()
-	var mode scriptMode
-	scanner := bufio.NewScanner(f)
-	for i := 0; i < scriptHeaderLines && scanner.Scan(); i++ {
-		line := strings.TrimSpace(scanner.Text())
-		if strings.HasPrefix(line, scriptSerial) {
-			mode.serial = true
-		}
-		if strings.HasPrefix(line, scriptExclusive) {
-			mode.exclusive = true
-		}
+	return scriptMetadata{mode: mode}
+}
+
+func scriptLabelSelector(t *testing.T) k8slabels.Selector {
+	t.Helper()
+	raw, ok := os.LookupEnv(bpfmanShellSelectorEnv)
+	if !ok {
+		raw = bpfmanShellSelectorDefaultRaw
 	}
-	if err := scanner.Err(); err != nil {
-		t.Fatalf("read script %s for serial-marker prescan: %v", path, err)
+	selector, err := k8slabels.Parse(raw)
+	if err != nil {
+		t.Fatalf("parse %s=%q: %v", bpfmanShellSelectorEnv, raw, err)
 	}
-	return mode
+	return selector
+}
+
+func scriptSelectorSkipReason(selector k8slabels.Selector, labels k8slabels.Set) string {
+	if selector.Matches(labels) {
+		return ""
+	}
+	return fmt.Sprintf("script labels %s do not match %s=%s", labels.String(), bpfmanShellSelectorEnv, selector.String())
 }
 
 // runBPFManScript executes one .bpfman script under a per-script

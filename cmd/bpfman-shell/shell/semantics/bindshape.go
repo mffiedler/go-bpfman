@@ -29,6 +29,7 @@ var bindShapeRegistry = map[string]bindShapeFn{
 	"file":          staticBindShape(Shape{Sealed: false, Kind: OriginUnknown}),
 	"tempdir":       staticBindShape(Shape{Sealed: false, Kind: OriginUnknown}),
 	"uprobe-target": staticBindShape(Shape{Sealed: false, Kind: OriginUnknown}),
+	"registry":      staticBindShape(KindShape(OriginScalar)),
 	"net":           inferNetBindShape,
 	"uprobe":        inferUprobeBindShape,
 	"kfunc":         inferKfuncBindShape,

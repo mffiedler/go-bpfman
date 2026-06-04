@@ -6,18 +6,24 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/alecthomas/kong"
 
+	k8slabels "k8s.io/apimachinery/pkg/labels"
+
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/driver"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/internal/builtins"
 	bpfmanbuiltin "github.com/frobware/go-bpfman/cmd/bpfman-shell/internal/builtins/bpfman"
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/scriptmeta"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
 	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
+	"github.com/frobware/go-bpfman/internal/registryfixture"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/version"
 )
@@ -32,14 +38,16 @@ type CLI struct {
 
 	kctx *kong.Context `kong:"-"`
 
-	Script    string `arg:"" optional:"" name:"script" help:"Script file to run; '-' reads a whole program from stdin; omit to read a whole program from stdin."`
-	Directory string `name:"directory" short:"C" help:"Change to this directory before doing anything else, like make -C dir. The script path, imported libraries, spawned subprocesses, and external commands all see the new working directory."`
-	Check     bool   `name:"check" short:"c" help:"Parse input without evaluating; report syntax errors and exit."`
-	NoCheck   bool   `name:"no-check" help:"Skip the static-analysis pre-flight before script evaluation. Default is to run Check first and refuse on errors."`
-	AST       bool   `name:"ast" help:"Parse input and print the AST tree of the whole program to stdout; do not evaluate."`
-	Lowered   bool   `name:"lowered" help:"Parse input, lower it to the canonical IR, and print the lowered form to stdout; do not evaluate."`
-	Trace     bool   `name:"trace" short:"x" help:"Trace each statement to stderr with interpolations resolved, like bash -x. Equivalent to running 'trace on' at script start; toggle with 'trace on' / 'trace off' from within a session."`
-	Version   bool   `name:"version" short:"V" help:"Print version information and exit."`
+	Scripts     []string `arg:"" optional:"" name:"script" help:"Script file to run; '-' reads a whole program from stdin; omit to read a whole program from stdin. With --list-scripts, accepts files or directories."`
+	Directory   string   `name:"directory" short:"C" help:"Change to this directory before doing anything else, like make -C dir. The script path, imported libraries, spawned subprocesses, and external commands all see the new working directory."`
+	Check       bool     `name:"check" short:"c" help:"Parse input without evaluating; report syntax errors and exit."`
+	NoCheck     bool     `name:"no-check" help:"Skip the static-analysis pre-flight before script evaluation. Default is to run Check first and refuse on errors."`
+	AST         bool     `name:"ast" help:"Parse input and print the AST tree of the whole program to stdout; do not evaluate."`
+	Lowered     bool     `name:"lowered" help:"Parse input, lower it to the canonical IR, and print the lowered form to stdout; do not evaluate."`
+	ListScripts bool     `name:"list-scripts" help:"Print script paths whose header labels match --selector; does not run scripts or open bpfman state."`
+	Selector    string   `name:"selector" help:"Kubernetes-style label selector for --list-scripts, for example 'program in (tc,xdp),external'."`
+	Trace       bool     `name:"trace" short:"x" help:"Trace each statement to stderr with interpolations resolved, like bash -x. Equivalent to running 'trace on' at script start; toggle with 'trace on' / 'trace off' from within a session."`
+	Version     bool     `name:"version" short:"V" help:"Print version information and exit."`
 }
 
 // NewCLI creates and initialises a CLI instance by parsing
@@ -53,7 +61,7 @@ func NewCLI() (*CLI, error) {
 	// --lowered, and --version, which do no I/O against the
 	// manager and must be runnable without access to the system
 	// config file.
-	if !c.Check && !c.AST && !c.Lowered && !c.Version {
+	if !c.Check && !c.AST && !c.Lowered && !c.ListScripts && !c.Version {
 		if err := c.InitLogger(); err != nil {
 			return nil, fmt.Errorf("create logger: %w", err)
 		}
@@ -108,10 +116,11 @@ func KongOptions() []kong.Option {
 // parse-only modes: the positional script file, stdin via "-", or
 // stdin when no positional argument was supplied.
 func (c *CLI) openInputReader() (driver.LineReader, error) {
-	if c.Script == "" {
+	script := c.script()
+	if script == "" {
 		return driver.OpenScriptReader("-")
 	}
-	return driver.OpenScriptReader(c.Script)
+	return driver.OpenScriptReader(script)
 }
 
 // runCheck drives the --check pipeline: open the input source and
@@ -170,6 +179,12 @@ func (c *CLI) runLowered() error {
 // otherwise it opens the manager, builds a script-runner
 // config, and delegates to driver.Run.
 func (c *CLI) Run(ctx context.Context) error {
+	if c.ListScripts {
+		return c.runListScripts()
+	}
+	if len(c.Scripts) > 1 {
+		return fmt.Errorf("expected at most one script to run; use --list-scripts to inspect multiple scripts")
+	}
 	if c.Check {
 		return c.runCheck()
 	}
@@ -184,6 +199,7 @@ func (c *CLI) Run(ctx context.Context) error {
 		return fmt.Errorf("create manager: %w", err)
 	}
 	defer cleanup()
+	defer registryfixture.Close()
 
 	session := runtime.NewSession()
 	if c.Trace {
@@ -287,8 +303,76 @@ func runScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr
 }
 
 func (c *CLI) inputFileLabel() string {
-	if c.Script == "" || c.Script == "-" {
+	script := c.script()
+	if script == "" || script == "-" {
 		return "<stdin>"
 	}
-	return c.Script
+	return script
+}
+
+func (c *CLI) script() string {
+	if len(c.Scripts) == 0 {
+		return ""
+	}
+	return c.Scripts[0]
+}
+
+func (c *CLI) runListScripts() error {
+	selector := k8slabels.Everything()
+	if c.Selector != "" {
+		parsed, err := k8slabels.Parse(c.Selector)
+		if err != nil {
+			return fmt.Errorf("parse --selector=%q: %w", c.Selector, err)
+		}
+		selector = parsed
+	}
+
+	paths, err := expandScriptPaths(c.Scripts)
+	if err != nil {
+		return err
+	}
+	if len(paths) == 0 {
+		return fmt.Errorf("--list-scripts requires at least one script file or directory")
+	}
+
+	for _, path := range paths {
+		mode, err := scriptmeta.Read(path)
+		if err != nil {
+			return err
+		}
+		if selector.Matches(mode.Labels) {
+			if err := c.PrintOutf("%s\n", path); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func expandScriptPaths(inputs []string) ([]string, error) {
+	var paths []string
+	for _, input := range inputs {
+		info, err := os.Stat(input)
+		if err != nil {
+			return nil, err
+		}
+		if !info.IsDir() {
+			paths = append(paths, input)
+			continue
+		}
+		if err := filepath.WalkDir(input, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() || filepath.Ext(path) != ".bpfman" {
+				return nil
+			}
+			paths = append(paths, path)
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+	}
+	sort.Strings(paths)
+	return paths, nil
 }

@@ -15,6 +15,7 @@ func init() {
 		"jq",
 		"kill",
 		"print",
+		"registry",
 		"trace",
 		"reap",
 		"tempdir",

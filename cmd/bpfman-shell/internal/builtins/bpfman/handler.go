@@ -14,6 +14,7 @@ import (
 var topLevelNouns = map[string]bool{
 	"program":    true,
 	"show":       true,
+	"image":      true,
 	"link":       true,
 	"dispatcher": true,
 	"audit":      true,
@@ -29,6 +30,10 @@ const HelpDetail = `Subcommands:
     bpfman program unload <ids>                     Unload programs
     bpfman program delete (<ids> | --all) [-r]      Delete with cascading cleanup
     bpfman show program <id> [view] [-o]            Inspect (views: links, maps, paths)
+
+  Image management:
+    bpfman image build <image> <bytecode> [flags]   Build and publish a bytecode image
+    bpfman image inspect <image>                    Inspect bytecode image metadata
 
   Link management:
     bpfman link attach <type> [flags] <id>          Attach a program (assignable)
@@ -70,6 +75,15 @@ func Handle(c driver.Ctx) (runtime.Value, error) {
 }
 
 func dispatch(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, args []runtime.Arg) (runtime.Value, error) {
+	var err error
+	args, err = maybeBrokerLoadFileArgs(ctx, args)
+	if err != nil {
+		return runtime.Value{}, err
+	}
+	args, err = resolveE2EImageRefsInArgs(args)
+	if err != nil {
+		return runtime.Value{}, err
+	}
 	if bpfmanDispatchMode == dispatchExternal {
 		return dispatchCommandExternal(ctx, args)
 	}

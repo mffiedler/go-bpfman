@@ -29,6 +29,7 @@ import (
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/semantics"
 	"github.com/frobware/go-bpfman/platform"
+	"github.com/frobware/go-bpfman/platform/image/oci"
 )
 
 // dispatchMode selects between in-process library calls and
@@ -69,7 +70,7 @@ func dispatchCommandExternal(ctx context.Context, args []runtime.Arg) (runtime.V
 		}
 		argv = append(argv, text)
 	}
-	if !hasOutputFlag(argv) {
+	if commandSupportsOutput(argv) && !hasOutputFlag(argv) {
 		argv = append(argv, "-o", "json")
 	}
 
@@ -155,6 +156,13 @@ func hasOutputFlag(argv []string) bool {
 	return false
 }
 
+func commandSupportsOutput(argv []string) bool {
+	if len(argv) >= 2 && argv[0] == "image" && (argv[1] == "build" || argv[1] == "inspect") {
+		return false
+	}
+	return true
+}
+
 // decodeBpfmanResult unmarshals stdout into the Go domain type
 // that matches (noun, verb) and tags the resulting Value with
 // the same OriginKind the library backend uses. Commands whose
@@ -199,6 +207,17 @@ func decodeBpfmanResult(args []runtime.Arg, stdout []byte) (runtime.Value, error
 			return runtime.ValueFromStruct(result)
 		case "unload", "delete":
 			return runtime.Value{}, nil
+		}
+	case "image":
+		switch verb {
+		case "build":
+			return runtime.Value{}, nil
+		case "inspect":
+			var inspection oci.ImageInspection
+			if err := json.Unmarshal(stdout, &inspection); err != nil {
+				return runtime.Value{}, fmt.Errorf("decode ImageInspection: %w", err)
+			}
+			return runtime.ValueFromStruct(inspection)
 		}
 	case "link":
 		switch verb {

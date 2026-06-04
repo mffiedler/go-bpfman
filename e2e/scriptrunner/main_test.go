@@ -5,8 +5,11 @@ package scriptrunner
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"syscall"
 	"testing"
+
+	"github.com/frobware/go-bpfman/internal/registryfixture"
 )
 
 // e2eSuiteLockPath is the same system-wide flock the workload
@@ -28,6 +31,7 @@ const e2eSuiteLockPath = "/tmp/bpfman-e2e.lock"
 // the fd drops the lock. The OS releases everything on
 // process exit.
 var suiteLock *os.File
+var closeSharedRegistry func()
 
 func acquireSuiteLock() {
 	f, err := os.OpenFile(e2eSuiteLockPath, os.O_CREATE|os.O_RDWR, 0644)
@@ -53,17 +57,49 @@ func acquireSuiteLock() {
 // no stale-dir cleanup (the address-pool builtin and short
 // bpfman-shell lifetimes leave nothing of the kind the workload
 // suite accumulates), and no self-exec discovery. Two load-
-// bearing steps remain: refuse to run without root, and take
-// the suite-wide flock. PATH is the caller's responsibility:
-// bpfman-shell must be reachable via exec.LookPath when the
-// test starts. The make recipe arranges this via
-// `sudo env PATH=...`; direct invocations are expected to
-// match.
+// bearing steps remain: refuse to run without root, take the
+// suite-wide flock, and provision one shared anonymous image
+// registry for child bpfman-shell processes. PATH is the
+// caller's responsibility: bpfman-shell must be reachable via
+// exec.LookPath when the test starts. The make recipe arranges
+// this via `sudo env PATH=...`; direct invocations are expected
+// to match.
 func TestMain(m *testing.M) {
 	if os.Geteuid() != 0 {
 		fmt.Fprintln(os.Stderr, "scriptrunner: tests require root privileges")
 		os.Exit(1)
 	}
 	acquireSuiteLock()
-	os.Exit(m.Run())
+	if err := configureScriptEnvironment(); err != nil {
+		fmt.Fprintf(os.Stderr, "scriptrunner: configure script environment: %v\n", err)
+		os.Exit(1)
+	}
+	rc := m.Run()
+	if closeSharedRegistry != nil {
+		closeSharedRegistry()
+	}
+	os.Exit(rc)
+}
+
+func configureScriptEnvironment() error {
+	if os.Getenv(registryfixture.RegistryEnv) == "" {
+		host, closeFn, err := registryfixture.StartShared()
+		if err != nil {
+			return err
+		}
+		closeSharedRegistry = closeFn
+		if err := os.Setenv(registryfixture.RegistryEnv, host); err != nil {
+			closeFn()
+			closeSharedRegistry = nil
+			return err
+		}
+	}
+	e2eDir := os.Getenv("BPFMAN_E2E_DIR")
+	if e2eDir != "" {
+		repoRoot := filepath.Dir(e2eDir)
+		if err := os.Setenv("BPFMAN_E2E_REPO_ROOT", repoRoot); err != nil {
+			return err
+		}
+	}
+	return nil
 }
