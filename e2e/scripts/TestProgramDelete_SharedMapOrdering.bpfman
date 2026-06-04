@@ -1,6 +1,7 @@
 # -*- mode: bpfman -*-
-# EXCLUSIVE: exercises `bpfman program delete --all`, which mutates
-# global bpfman state and cannot run beside other scripts.
+#pragma labels={"exclusive":"true","operation":"delete","shared-map":"true"}
+# Exercises `bpfman program delete --all`, which mutates global bpfman
+# state and cannot run beside other scripts.
 # End-to-end proof that program delete orders a shared-map
 # owner/dependant set dependants-first, regardless of selection order,
 # of --recursive, and of --all.

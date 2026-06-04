@@ -1,0 +1,22 @@
+body entry=bb0
+
+bb0:
+  EnterDeferScope kind=program
+  BuildArgs t0 = [exec bpfman image generate-build-args testdata/bpf/xdp_pass.bpf.o -o json]
+  DispatchBind t1 = t0 policy=def-then-exec-bind lane=builtin(exec)
+  ApplyBind src=t1 argv=t0 primary=rc rc=_ guard=false
+  Assert $rc.ok
+  Eval t2 = $rc.stdout |> jq "fromjson | .platforms | length"
+  BindName platform_count = t2
+  Assert $platform_count == 0
+  Eval t3 = $rc.stdout |> jq "fromjson | .build_args.BYTECODE_FILE"
+  BindName bytecode = t3
+  Assert $bytecode == "testdata/bpf/xdp_pass.bpf.o"
+  Eval t4 = $rc.stdout |> jq "fromjson | .programs.pass"
+  BindName prog_type = t4
+  Assert $prog_type == xdp
+  Eval t5 = $rc.stdout |> jq "fromjson | .maps.xdp_pass_stats_map"
+  BindName map_type = t5
+  Assert $map_type == per_cpu_array
+  RunDefers policy=program
+  Stop

@@ -57,7 +57,7 @@ assert $prog matches exhaustive {
             attach_func:  $fn.name
             map_owner_id: null
             global_data:  empty
-            image_source: null
+            image_source: $prog.record.load.image_source
         }
         handles: matches exhaustive {
             pin_path:     $expect_prog_pin
@@ -148,7 +148,7 @@ assert $got matches exhaustive {
             attach_func:  $fn.name
             map_owner_id: $prog.record.load.map_owner_id
             global_data:  empty
-            image_source: null
+            image_source: $prog.record.load.image_source
         }
         handles: matches exhaustive {
             pin_path:     $prog.record.handles.pin_path

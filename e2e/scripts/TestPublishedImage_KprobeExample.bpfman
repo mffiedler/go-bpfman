@@ -1,0 +1,60 @@
+# -*- mode: bpfman -*-
+#pragma labels={"external":"true","image":"true","program":"kprobe","example":"kprobe"}
+# Load and attach the published kprobe bytecode example image.
+
+import ../lib.bpfman
+
+let image = "quay.io/bpfman-bytecode/go-kprobe-counter"
+
+guard published <- inspect_published_image $image kprobe_counter
+let (inspected manifest) = $published
+assert $manifest.programs.kprobe_counter == probe
+assert $manifest.maps.kprobe_stats_map == per_cpu_array
+
+guard fn <- kfunc acquire
+defer kfunc release $fn
+
+guard loaded <- bpfman program load image \
+    --image-url $image \
+    --pull-policy Always \
+    --programs kprobe:kprobe_counter
+let prog = $loaded.programs[0]
+let pid = $prog.record.program_id
+defer bpfman program unload $pid
+
+expect_program_load $prog kprobe kprobe kprobe_counter
+expect_loaded_image_source $prog $image $inspected
+
+guard link <- bpfman link attach kprobe --fn-name $fn.name $prog
+let linkID = $link.record.id
+assert $link.record.kind == kprobe
+assert $link.record.program_id == $pid
+assert $link.record.details.fn_name == $fn.name
+assert not $link.record.details.retprobe
+assert $link.status.kernel_seen
+
+let events = 5
+let mapID = $prog.status.maps[0].id
+let sumFilter = "fromjson | [.[].formatted.values[].value.counter | tonumber] | add"
+guard dumpBefore <- bpftool map dump id $mapID -j
+let before = $dumpBefore.stdout |> jq $sumFilter
+
+guard _ <- kfunc fire $fn $events
+
+guard dumpAfter <- bpftool map dump id $mapID -j
+let after = $dumpAfter.stdout |> jq $sumFilter
+let delta = $after - $before
+print "published kprobe image: events=${delta}"
+assert $delta >= $events
+
+bpfman link detach $link
+assert fail bpfman link get $linkID
+
+sleep 0.1
+guard dumpDetached <- bpftool map dump id $mapID -j
+let detached = $dumpDetached.stdout |> jq $sumFilter
+guard _ <- kfunc fire $fn $events
+guard dumpAfterDetach <- bpftool map dump id $mapID -j
+let afterDetach = $dumpAfterDetach.stdout |> jq $sumFilter
+print "published kprobe image after-detach=${afterDetach} want=${detached}"
+assert $afterDetach == $detached

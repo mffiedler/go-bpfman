@@ -1,0 +1,129 @@
+body entry=bb0
+
+bb0:
+  EnterDeferScope kind=program
+  BuildArgs t0 = [import ../lib.bpfman]
+  DispatchCommand argv=t0 policy=def-then-exec-command lane=builtin(import)
+  Eval t1 = "quay.io/bpfman-bytecode/go-uretprobe-counter"
+  BindName image = t1
+  BuildArgs t2 = [inspect_published_image $image uretprobe_counter]
+  DispatchBind t3 = t2 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t3 argv=t2 primary=published rc=_ guard=true fail=bb1
+  Eval t4 = $published
+  BindDestructure [inspected manifest] = t4
+  Assert $manifest.programs.uretprobe_counter == probe
+  Assert $manifest.maps.uretprobe_stats_map == per_cpu_array
+  BuildArgs t5 = [uprobe target]
+  DispatchBind t6 = t5 policy=def-then-exec-bind lane=builtin(uprobe)
+  ApplyBind src=t6 argv=t5 primary=target rc=_ guard=true fail=bb2
+  BuildArgs t7 = [bpfman program load image --image-url $image --pull-policy Always --programs uretprobe:uretprobe_counter]
+  DispatchBind t8 = t7 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t8 argv=t7 primary=loaded rc=_ guard=true fail=bb3
+  Eval t9 = $loaded.programs[0]
+  BindName prog = t9
+  Eval t10 = $prog.record.program_id
+  BindName pid = t10
+  BuildArgs t11 = [bpfman program unload $pid]
+  RegisterDefer argv=t11 policy=def-then-exec-bind lane=builtin(bpfman)
+  BuildArgs t12 = [expect_program_load $prog uretprobe kprobe uretprobe_counter]
+  DispatchCommand argv=t12 policy=def-then-exec-command lane=exec
+  BuildArgs t13 = [expect_loaded_image_source $prog $image $inspected]
+  DispatchCommand argv=t13 policy=def-then-exec-command lane=exec
+  BuildArgs t14 = [bpfman link attach uprobe --target $target.path --fn-name $target.symbol $prog]
+  DispatchBind t15 = t14 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t15 argv=t14 primary=link rc=_ guard=true fail=bb4
+  Eval t16 = $link.record.id
+  BindName linkID = t16
+  Assert $link.record.kind == uretprobe
+  Assert $link.record.program_id == $pid
+  Assert $link.record.details.target == $target.path
+  Assert $link.record.details.fn_name == $target.symbol
+  Assert $link.record.details.retprobe
+  Assert $link.status.kernel_seen
+  Eval t17 = 5
+  BindName events = t17
+  Eval t18 = $prog.status.maps[0].id
+  BindName mapID = t18
+  Eval t19 = "fromjson | [.[].formatted.values[].value | tonumber] | add"
+  BindName sumFilter = t19
+  BuildArgs t20 = [bpftool map dump id $mapID -j]
+  DispatchBind t21 = t20 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t21 argv=t20 primary=dumpBefore rc=_ guard=true fail=bb5
+  Eval t22 = $dumpBefore.stdout |> jq $sumFilter
+  BindName before = t22
+  BuildArgs t23 = [uprobe fire $events]
+  DispatchBind t24 = t23 policy=def-then-exec-bind lane=builtin(uprobe)
+  ApplyBind src=t24 argv=t23 primary=_ rc=_ guard=true fail=bb6
+  BuildArgs t25 = [bpftool map dump id $mapID -j]
+  DispatchBind t26 = t25 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t26 argv=t25 primary=dumpAfter rc=_ guard=true fail=bb7
+  Eval t27 = $dumpAfter.stdout |> jq $sumFilter
+  BindName after = t27
+  Eval t28 = $after - $before
+  BindName delta = t28
+  BuildArgs t29 = [print "published uretprobe image: events=${delta}"]
+  DispatchCommand argv=t29 policy=def-then-exec-command lane=builtin(print)
+  Assert $delta >= $events
+  BuildArgs t30 = [bpfman link detach $link]
+  DispatchCommand argv=t30 policy=def-then-exec-command lane=builtin(bpfman)
+  Assert fail bpfman link get $linkID
+  BuildArgs t31 = [sleep 0.1]
+  DispatchCommand argv=t31 policy=def-then-exec-command lane=exec
+  BuildArgs t32 = [bpftool map dump id $mapID -j]
+  DispatchBind t33 = t32 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t33 argv=t32 primary=dumpDetached rc=_ guard=true fail=bb8
+  Eval t34 = $dumpDetached.stdout |> jq $sumFilter
+  BindName detached = t34
+  BuildArgs t35 = [uprobe fire $events]
+  DispatchBind t36 = t35 policy=def-then-exec-bind lane=builtin(uprobe)
+  ApplyBind src=t36 argv=t35 primary=_ rc=_ guard=true fail=bb9
+  BuildArgs t37 = [bpftool map dump id $mapID -j]
+  DispatchBind t38 = t37 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t38 argv=t37 primary=dumpAfterDetach rc=_ guard=true fail=bb10
+  Eval t39 = $dumpAfterDetach.stdout |> jq $sumFilter
+  BindName afterDetach = t39
+  BuildArgs t40 = [print "published uretprobe image after-detach=${afterDetach} want=${detached}"]
+  DispatchCommand argv=t40 policy=def-then-exec-command lane=builtin(print)
+  Assert $afterDetach == $detached
+  RunDefers policy=program
+  Stop
+
+bb1:
+  RunDefers policy=program
+  PropagateError
+
+bb2:
+  RunDefers policy=program
+  PropagateError
+
+bb3:
+  RunDefers policy=program
+  PropagateError
+
+bb4:
+  RunDefers policy=program
+  PropagateError
+
+bb5:
+  RunDefers policy=program
+  PropagateError
+
+bb6:
+  RunDefers policy=program
+  PropagateError
+
+bb7:
+  RunDefers policy=program
+  PropagateError
+
+bb8:
+  RunDefers policy=program
+  PropagateError
+
+bb9:
+  RunDefers policy=program
+  PropagateError
+
+bb10:
+  RunDefers policy=program
+  PropagateError

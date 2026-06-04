@@ -1,0 +1,116 @@
+def main() entry=bb0
+
+bb0:
+  EnterFrame kind=def
+  EnterDeferScope kind=def
+  BuildArgs t0 = [registry ref explicit-xdp-pass]
+  DispatchBind t1 = t0 policy=def-then-exec-bind lane=builtin(registry)
+  ApplyBind src=t1 argv=t0 primary=image rc=_ guard=false
+  BuildArgs t2 = [print "image-build: minted image=${image}"]
+  DispatchCommand argv=t2 policy=def-then-exec-command lane=builtin(print)
+  BuildArgs t3 = [print "image-build: publishing ${image}"]
+  DispatchCommand argv=t3 policy=def-then-exec-command lane=builtin(print)
+  BuildArgs t4 = [bpfman image build $image testdata/bpf/xdp_pass.bpf.o]
+  DispatchBind t5 = t4 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t5 argv=t4 primary=build rc=_ guard=true fail=bb1
+  BuildArgs t6 = [print "image-build: published ${image}"]
+  DispatchCommand argv=t6 policy=def-then-exec-command lane=builtin(print)
+  BuildArgs t7 = [print "image-build: inspecting ${image}"]
+  DispatchCommand argv=t7 policy=def-then-exec-command lane=builtin(print)
+  BuildArgs t8 = [bpfman image inspect $image]
+  DispatchBind t9 = t8 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t9 argv=t8 primary=inspected rc=_ guard=true fail=bb2
+  BuildArgs t10 = [print "image-build: inspected reference=${inspected.reference} digest=${inspected.digest}"]
+  DispatchCommand argv=t10 policy=def-then-exec-command lane=builtin(print)
+  Assert $inspected.digest != ""
+  BuildArgs t11 = [print "image-build: loading ${image}"]
+  DispatchCommand argv=t11 policy=def-then-exec-command lane=builtin(print)
+  BuildArgs t12 = [bpfman program load image --image-url $image --pull-policy Always --programs xdp:pass]
+  DispatchBind t13 = t12 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t13 argv=t12 primary=loaded rc=_ guard=true fail=bb3
+  Eval t14 = $loaded.programs[0]
+  BindName prog = t14
+  Eval t15 = $prog.record.program_id
+  BindName pid = t15
+  BuildArgs t16 = [print "image-build: unloaded program pid=${pid}"]
+  RegisterDefer argv=t16 policy=def-then-exec-bind lane=builtin(print)
+  BuildArgs t17 = [bpfman program unload $pid]
+  RegisterDefer argv=t17 policy=def-then-exec-bind lane=builtin(bpfman)
+  BuildArgs t18 = [print "image-build: loaded program pid=${pid} source=${prog.record.load.image_source.url}"]
+  DispatchCommand argv=t18 policy=def-then-exec-command lane=builtin(print)
+  BuildArgs t19 = [expect_program_load $prog xdp extension pass]
+  DispatchCommand argv=t19 policy=def-then-exec-command lane=exec
+  Assert $prog.record.load.image_source.url == $inspected.reference
+  Assert $prog.record.load.image_source.digest == $inspected.digest
+  BuildArgs t20 = [print "image-build: creating veth pair"]
+  DispatchCommand argv=t20 policy=def-then-exec-command lane=builtin(print)
+  BuildArgs t21 = [net veth-pair]
+  DispatchBind t22 = t21 policy=def-then-exec-bind lane=builtin(net)
+  ApplyBind src=t22 argv=t21 primary=pair rc=_ guard=true fail=bb4
+  BuildArgs t23 = [print "image-build: released veth host=${pair.host_link}"]
+  RegisterDefer argv=t23 policy=def-then-exec-bind lane=builtin(print)
+  BuildArgs t24 = [net release $pair]
+  RegisterDefer argv=t24 policy=def-then-exec-bind lane=builtin(net)
+  BuildArgs t25 = [print "image-build: veth host=${pair.host_link} peer=${pair.peer_link}"]
+  DispatchCommand argv=t25 policy=def-then-exec-command lane=builtin(print)
+  BuildArgs t26 = [print "image-build: attaching xdp pid=${pid} iface=${pair.host_link}"]
+  DispatchCommand argv=t26 policy=def-then-exec-command lane=builtin(print)
+  BuildArgs t27 = [bpfman link attach xdp --iface $pair.host_link $prog]
+  DispatchBind t28 = t27 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t28 argv=t27 primary=link rc=_ guard=true fail=bb5
+  Eval t29 = $link.record.id
+  BindName linkID = t29
+  BuildArgs t30 = [print "image-build: attached link=${linkID}"]
+  DispatchCommand argv=t30 policy=def-then-exec-command lane=builtin(print)
+  Assert $link.record.kind == xdp
+  Assert $link.record.program_id == $pid
+  Assert $link.status.kernel_seen
+  BuildArgs t31 = [print "image-build: detaching link=${linkID}"]
+  DispatchCommand argv=t31 policy=def-then-exec-command lane=builtin(print)
+  BuildArgs t32 = [bpfman link detach $link]
+  DispatchCommand argv=t32 policy=def-then-exec-command lane=builtin(bpfman)
+  Assert fail bpfman link get $linkID
+  BuildArgs t33 = [print "image-build: detached link=${linkID}"]
+  DispatchCommand argv=t33 policy=def-then-exec-command lane=builtin(print)
+  Jump bb6
+
+bb1:
+  RunDefers policy=def-local
+  ExitFrame
+  PropagateError
+
+bb2:
+  RunDefers policy=def-local
+  ExitFrame
+  PropagateError
+
+bb3:
+  RunDefers policy=def-local
+  ExitFrame
+  PropagateError
+
+bb4:
+  RunDefers policy=def-local
+  ExitFrame
+  PropagateError
+
+bb5:
+  RunDefers policy=def-local
+  ExitFrame
+  PropagateError
+
+bb6:
+  RunDefers policy=def-local
+  ExitFrame
+  EmitBindResult rc=synthetic primary=nil
+
+body entry=bb0
+
+bb0:
+  EnterDeferScope kind=program
+  BuildArgs t0 = [import ../lib.bpfman]
+  DispatchCommand argv=t0 policy=def-then-exec-command lane=builtin(import)
+  BuildArgs t1 = [main]
+  DispatchCommand argv=t1 policy=def-then-exec-command lane=def(main)
+  RunDefers policy=program
+  Stop

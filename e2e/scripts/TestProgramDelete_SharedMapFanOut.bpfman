@@ -1,6 +1,7 @@
 # -*- mode: bpfman -*-
-# EXCLUSIVE: exercises `bpfman program delete --all`, which mutates
-# global bpfman state and cannot run beside other scripts.
+#pragma labels={"exclusive":"true","operation":"delete","shared-map":"true"}
+# Exercises `bpfman program delete --all`, which mutates global bpfman
+# state and cannot run beside other scripts.
 # End-to-end proof that program delete handles a one-owner /
 # many-dependant fan-out: several programs share a single owner's maps,
 # and the delete path must order all dependants before the owner for

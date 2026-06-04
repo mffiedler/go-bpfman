@@ -1,0 +1,121 @@
+body entry=bb0
+
+bb0:
+  EnterDeferScope kind=program
+  BuildArgs t0 = [import ../lib.bpfman]
+  DispatchCommand argv=t0 policy=def-then-exec-command lane=builtin(import)
+  Eval t1 = "quay.io/bpfman-bytecode/go-tracepoint-counter"
+  BindName image = t1
+  BuildArgs t2 = [inspect_published_image $image tracepoint_kill_recorder]
+  DispatchBind t3 = t2 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t3 argv=t2 primary=published rc=_ guard=true fail=bb1
+  Eval t4 = $published
+  BindDestructure [inspected manifest] = t4
+  Assert $manifest.programs.tracepoint_kill_recorder == tracepoint
+  Assert $manifest.maps.tracepoint_stats_map == per_cpu_array
+  BuildArgs t5 = [bpfman program load image --image-url $image --pull-policy Always --programs tracepoint:tracepoint_kill_recorder]
+  DispatchBind t6 = t5 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t6 argv=t5 primary=loaded rc=_ guard=true fail=bb2
+  Eval t7 = $loaded.programs[0]
+  BindName prog = t7
+  Eval t8 = $prog.record.program_id
+  BindName pid = t8
+  BuildArgs t9 = [bpfman program unload $pid]
+  RegisterDefer argv=t9 policy=def-then-exec-bind lane=builtin(bpfman)
+  BuildArgs t10 = [expect_program_load $prog tracepoint tracepoint tracepoint_kill_recorder]
+  DispatchCommand argv=t10 policy=def-then-exec-command lane=exec
+  BuildArgs t11 = [expect_loaded_image_source $prog $image $inspected]
+  DispatchCommand argv=t11 policy=def-then-exec-command lane=exec
+  BuildArgs t12 = [bpfman link attach tracepoint $prog syscalls/sys_enter_kill]
+  DispatchBind t13 = t12 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t13 argv=t12 primary=link rc=_ guard=true fail=bb3
+  Eval t14 = $link.record.id
+  BindName linkID = t14
+  Assert $link.record.kind == tracepoint
+  Assert $link.record.program_id == $pid
+  Assert $link.record.details.group == syscalls
+  Assert $link.record.details.name == sys_enter_kill
+  Assert $link.status.kernel_seen
+  Eval t15 = 5
+  BindName events = t15
+  Eval t16 = $prog.status.maps[0].id
+  BindName mapID = t16
+  Eval t17 = "fromjson | [.[].formatted.values[].value.calls | tonumber] | add"
+  BindName sumFilter = t17
+  BuildArgs t18 = [bpftool map dump id $mapID -j]
+  DispatchBind t19 = t18 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t19 argv=t18 primary=dumpBefore rc=_ guard=true fail=bb4
+  Eval t20 = $dumpBefore.stdout |> jq $sumFilter
+  BindName before = t20
+  BuildArgs t21 = [exec sh -c "i=0; trap \"\" USR1; while [ $i -lt \"$1\" ]; do kill -USR1 $$; i=$((i + 1)); done" sh $events]
+  DispatchBind t22 = t21 policy=def-then-exec-bind lane=builtin(exec)
+  ApplyBind src=t22 argv=t21 primary=_ rc=_ guard=true fail=bb5
+  BuildArgs t23 = [bpftool map dump id $mapID -j]
+  DispatchBind t24 = t23 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t24 argv=t23 primary=dumpAfter rc=_ guard=true fail=bb6
+  Eval t25 = $dumpAfter.stdout |> jq $sumFilter
+  BindName after = t25
+  Eval t26 = $after - $before
+  BindName delta = t26
+  BuildArgs t27 = [print "published tracepoint image: events=${delta}"]
+  DispatchCommand argv=t27 policy=def-then-exec-command lane=builtin(print)
+  Assert $delta >= $events
+  BuildArgs t28 = [bpfman link detach $link]
+  DispatchCommand argv=t28 policy=def-then-exec-command lane=builtin(bpfman)
+  Assert fail bpfman link get $linkID
+  BuildArgs t29 = [sleep 0.1]
+  DispatchCommand argv=t29 policy=def-then-exec-command lane=exec
+  BuildArgs t30 = [bpftool map dump id $mapID -j]
+  DispatchBind t31 = t30 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t31 argv=t30 primary=dumpDetached rc=_ guard=true fail=bb7
+  Eval t32 = $dumpDetached.stdout |> jq $sumFilter
+  BindName detached = t32
+  BuildArgs t33 = [exec sh -c "i=0; trap \"\" USR1; while [ $i -lt \"$1\" ]; do kill -USR1 $$; i=$((i + 1)); done" sh $events]
+  DispatchBind t34 = t33 policy=def-then-exec-bind lane=builtin(exec)
+  ApplyBind src=t34 argv=t33 primary=_ rc=_ guard=true fail=bb8
+  BuildArgs t35 = [bpftool map dump id $mapID -j]
+  DispatchBind t36 = t35 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t36 argv=t35 primary=dumpAfterDetach rc=_ guard=true fail=bb9
+  Eval t37 = $dumpAfterDetach.stdout |> jq $sumFilter
+  BindName afterDetach = t37
+  BuildArgs t38 = [print "published tracepoint image after-detach=${afterDetach} want=${detached}"]
+  DispatchCommand argv=t38 policy=def-then-exec-command lane=builtin(print)
+  Assert $afterDetach == $detached
+  RunDefers policy=program
+  Stop
+
+bb1:
+  RunDefers policy=program
+  PropagateError
+
+bb2:
+  RunDefers policy=program
+  PropagateError
+
+bb3:
+  RunDefers policy=program
+  PropagateError
+
+bb4:
+  RunDefers policy=program
+  PropagateError
+
+bb5:
+  RunDefers policy=program
+  PropagateError
+
+bb6:
+  RunDefers policy=program
+  PropagateError
+
+bb7:
+  RunDefers policy=program
+  PropagateError
+
+bb8:
+  RunDefers policy=program
+  PropagateError
+
+bb9:
+  RunDefers policy=program
+  PropagateError

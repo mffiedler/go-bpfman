@@ -1,0 +1,13 @@
+body entry=bb0
+
+bb0:
+  EnterDeferScope kind=program
+  BuildArgs t0 = [exec bpfman image generate-build-args testdata/bpf/xdp_pass.bpf.o]
+  DispatchBind t1 = t0 policy=def-then-exec-bind lane=builtin(exec)
+  ApplyBind src=t1 argv=t0 primary=rc rc=_ guard=false
+  Assert $rc.ok
+  Assert contains $rc.stdout "BYTECODE_FILE=testdata/bpf/xdp_pass.bpf.o"
+  Assert contains $rc.stdout "PROGRAMS={\"pass\":\"xdp\"}"
+  Assert contains $rc.stdout "MAPS={\"xdp_pass_stats_map\":\"per_cpu_array\"}"
+  RunDefers policy=program
+  Stop

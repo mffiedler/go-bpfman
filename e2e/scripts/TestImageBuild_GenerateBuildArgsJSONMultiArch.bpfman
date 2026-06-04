@@ -1,0 +1,25 @@
+# -*- mode: bpfman -*-
+#pragma labels={"area":"image-build","cli":"true"}
+# Multi-architecture inputs produce stable platform and build-arg
+# entries while deriving labels from the first inspected bytecode.
+
+let rc <- exec bpfman image generate-build-args \
+    linux/amd64=testdata/bpf/xdp_pass.bpf.o \
+    linux/arm64=testdata/bpf/xdp_pass.bpf.o \
+    -o json
+
+assert $rc.ok
+let platforms = $rc.stdout |> jq 'fromjson | .platforms | join(",")'
+assert $platforms == "linux/amd64,linux/arm64"
+
+let amd64 = $rc.stdout |> jq "fromjson | .build_args.BC_AMD64_EL"
+assert $amd64 == "testdata/bpf/xdp_pass.bpf.o"
+
+let arm64 = $rc.stdout |> jq "fromjson | .build_args.BC_ARM64_EL"
+assert $arm64 == "testdata/bpf/xdp_pass.bpf.o"
+
+let prog_type = $rc.stdout |> jq "fromjson | .programs.pass"
+assert $prog_type == xdp
+
+let map_type = $rc.stdout |> jq "fromjson | .maps.xdp_pass_stats_map"
+assert $map_type == per_cpu_array

@@ -8,9 +8,27 @@ bb0:
   BindName kernel_tp = t2
   BindName name = t3
   Assert $prog matches { record.load.program_type: $load_tp, status.kernel.program_type: $kernel_tp, record.meta.name: $name, status.kernel.id: $prog.record.program_id, status.kernel.name: not-empty, status.kernel.tag: not-empty, status.kernel.loaded_at: not-empty, record.handles.pin_path: not-empty }
-  Jump bb1
+  Eval t4 = not null $prog.record.load.image_source
+  Branch cond=t4 true=bb1 false=bb2
 
 bb1:
+  EnterFrame kind=if-branch
+  Assert $prog.record.load.image_source.url != ""
+  Assert $prog.record.load.image_source.digest != ""
+  Assert $prog.record.load.image_source.pull_policy == Always
+  ExitFrame
+  Jump bb3
+
+bb2:
+  EnterFrame kind=if-branch
+  Assert null $prog.record.load.image_source
+  ExitFrame
+  Jump bb3
+
+bb3:
+  Jump bb4
+
+bb4:
   RunDefers policy=def-local
   ExitFrame
   EmitBindResult rc=synthetic primary=nil
@@ -23,6 +41,60 @@ bb0:
   BindName got = t0
   BindName prog = t1
   Assert $got matches { status.kernel.id: $prog.status.kernel.id, status.kernel.program_type: $prog.status.kernel.program_type, status.kernel.name: $prog.status.kernel.name, status.kernel.tag: $prog.status.kernel.tag, record.meta.name: $prog.record.meta.name, record.handles.pin_path: $prog.record.handles.pin_path }
+  Jump bb1
+
+bb1:
+  RunDefers policy=def-local
+  ExitFrame
+  EmitBindResult rc=synthetic primary=nil
+
+def inspect_published_image(image program_name) entry=bb0
+
+bb0:
+  EnterFrame kind=def
+  EnterDeferScope kind=def
+  BindName image = t0
+  BindName program_name = t1
+  BuildArgs t2 = [bpfman image inspect $image]
+  DispatchBind t3 = t2 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t3 argv=t2 primary=inspected rc=_ guard=true fail=bb1
+  Assert $inspected matches { reference: not-empty, digest: not-empty }
+  Eval t4 = "if ((.manifests // []) | length) > 0 then [.manifests[] | select(.programs.${program_name} != null)][0] else . end"
+  BindName program_filter = t4
+  Eval t5 = $inspected |> jq $program_filter
+  BindName manifest = t5
+  Assert not null $manifest
+  Assert ($manifest.layers |> jq "length") >= 1
+  Eval t6 = [$inspected $manifest]
+  ReturnValue t6 to=bb3
+
+bb1:
+  RunDefers policy=def-local
+  ExitFrame
+  PropagateError
+
+bb2:
+  Jump bb3
+
+bb3:
+  RunDefers policy=def-local
+  ExitFrame
+  EmitBindResult rc=synthetic primary=nil
+
+def expect_loaded_image_source(prog image inspected) entry=bb0
+
+bb0:
+  EnterFrame kind=def
+  EnterDeferScope kind=def
+  BindName prog = t0
+  BindName image = t1
+  BindName inspected = t2
+  Assert $prog.record.load.image_source.url == $image
+  Eval t3 = $prog.record.load.image_source.digest
+  BindName digest = t3
+  Eval t4 = $inspected |> jq "if ((.manifests // []) | length) > 0 then [.manifests[].digest | select(. == "${digest}")] | length else if .digest == "${digest}" then 1 else 0 end end"
+  BindName matches = t4
+  Assert $matches == 1
   Jump bb1
 
 bb1:

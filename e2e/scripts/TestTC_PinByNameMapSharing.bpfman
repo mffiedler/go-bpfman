@@ -1,9 +1,8 @@
 # -*- mode: bpfman -*-
-# SERIAL: tc_stats_map is LIBBPF_PIN_BY_NAME, so concurrent
-# runs of this script would share a single kernel-global pin
-# and stomp on each other's counters. The scriptrunner test
-# harness greps the first 20 lines for `# SERIAL` and
-# runs matching scripts through its serial lane when it sees it.
+#pragma labels={"serial":"true","program":"tc","shared-map":"true"}
+# tc_stats_map is LIBBPF_PIN_BY_NAME, so concurrent runs of this
+# script would share a single kernel-global pin and stomp on each
+# other's counters.
 #
 # Translation experiment: e2e/TestTC_PinByNameMapSharing.
 #
