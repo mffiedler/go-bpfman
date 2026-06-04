@@ -1,7 +1,6 @@
 package builtins
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"testing"
@@ -18,13 +17,13 @@ import (
 // returns the (value, error) result. Tests use this for failures
 // that surface before any ip(8) invocation; the happy path
 // requires root and lives in the e2e corpus.
-func callNet(args ...string) (runtime.Value, error) {
+func callNet(t *testing.T, args ...string) (runtime.Value, error) {
 	wargs := make([]runtime.Arg, len(args))
 	for i, a := range args {
 		wargs[i] = runtime.WordArg{Text: a}
 	}
 	return handleNet(driver.Ctx{
-		Ctx:  context.Background(),
+		Ctx:  t.Context(),
 		Cmd:  "net",
 		Args: wargs,
 	})
@@ -51,14 +50,14 @@ func scalarPairArg() runtime.Arg {
 
 func TestHandleNet_NoSubcommand(t *testing.T) {
 	t.Parallel()
-	_, err := callNet()
+	_, err := callNet(t)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "subcommand required")
 }
 
 func TestHandleNet_UnknownSubcommand(t *testing.T) {
 	t.Parallel()
-	_, err := callNet("bridge")
+	_, err := callNet(t, "bridge")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `unknown subcommand "bridge"`)
 	assert.Contains(t, err.Error(), "exec, release, start, veth-pair")
@@ -279,7 +278,7 @@ func TestParseVethPairFlags_TrailingFlagWithoutValue(t *testing.T) {
 
 func TestHandleNetRelease_NoArgs(t *testing.T) {
 	t.Parallel()
-	_, err := callNet("release")
+	_, err := callNet(t, "release")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "exactly one $pair argument")
 }
@@ -287,7 +286,7 @@ func TestHandleNetRelease_NoArgs(t *testing.T) {
 func TestHandleNetRelease_NonPairArg(t *testing.T) {
 	t.Parallel()
 	_, err := handleNet(driver.Ctx{
-		Ctx:  context.Background(),
+		Ctx:  t.Context(),
 		Cmd:  "net",
 		Args: []runtime.Arg{runtime.WordArg{Text: "release"}, scalarPairArg()},
 	})
@@ -306,7 +305,7 @@ func TestHandleNetRelease_IdempotentOnAlreadyReleased(t *testing.T) {
 	}
 	pair.MarkReleased()
 	v, err := handleNet(driver.Ctx{
-		Ctx:  context.Background(),
+		Ctx:  t.Context(),
 		Cmd:  "net",
 		Args: []runtime.Arg{runtime.WordArg{Text: "release"}, pairArg(pair)},
 	})
@@ -320,7 +319,7 @@ func TestHandleNetRelease_IdempotentOnAlreadyReleased(t *testing.T) {
 
 func TestHandleNetExec_TooFewArgs(t *testing.T) {
 	t.Parallel()
-	_, err := callNet("exec")
+	_, err := callNet(t, "exec")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "$pair and a command")
 }
@@ -328,7 +327,7 @@ func TestHandleNetExec_TooFewArgs(t *testing.T) {
 func TestHandleNetExec_NonPairArg(t *testing.T) {
 	t.Parallel()
 	_, err := handleNet(driver.Ctx{
-		Ctx:  context.Background(),
+		Ctx:  t.Context(),
 		Cmd:  "net",
 		Args: []runtime.Arg{runtime.WordArg{Text: "exec"}, scalarPairArg(), runtime.WordArg{Text: "true"}},
 	})
@@ -341,7 +340,7 @@ func TestHandleNetExec_RejectsReleasedHandle(t *testing.T) {
 	pair := &runtime.NetPair{Ns: "ns0", HostLink: "h0", PeerLink: "p0", HostAddr: "1.2.3.4", PeerAddr: "1.2.3.5"}
 	pair.MarkReleased()
 	_, err := handleNet(driver.Ctx{
-		Ctx:  context.Background(),
+		Ctx:  t.Context(),
 		Cmd:  "net",
 		Args: []runtime.Arg{runtime.WordArg{Text: "exec"}, pairArg(pair), runtime.WordArg{Text: "true"}},
 	})
@@ -351,7 +350,7 @@ func TestHandleNetExec_RejectsReleasedHandle(t *testing.T) {
 
 func TestHandleNetStart_TooFewArgs(t *testing.T) {
 	t.Parallel()
-	_, err := callNet("start")
+	_, err := callNet(t, "start")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "$pair and a command")
 }
@@ -359,7 +358,7 @@ func TestHandleNetStart_TooFewArgs(t *testing.T) {
 func TestHandleNetStart_NonPairArg(t *testing.T) {
 	t.Parallel()
 	_, err := handleNet(driver.Ctx{
-		Ctx:  context.Background(),
+		Ctx:  t.Context(),
 		Cmd:  "net",
 		Args: []runtime.Arg{runtime.WordArg{Text: "start"}, scalarPairArg(), runtime.WordArg{Text: "sleep"}, runtime.WordArg{Text: "0"}},
 	})
@@ -372,7 +371,7 @@ func TestHandleNetStart_RejectsReleasedHandle(t *testing.T) {
 	pair := &runtime.NetPair{Ns: "ns0", HostLink: "h0", PeerLink: "p0", HostAddr: "1.2.3.4", PeerAddr: "1.2.3.5"}
 	pair.MarkReleased()
 	_, err := handleNet(driver.Ctx{
-		Ctx:  context.Background(),
+		Ctx:  t.Context(),
 		Cmd:  "net",
 		Args: []runtime.Arg{runtime.WordArg{Text: "start"}, pairArg(pair), runtime.WordArg{Text: "sleep"}, runtime.WordArg{Text: "0"}},
 	})
@@ -445,7 +444,7 @@ func TestHandleNetRelease_AutoModeReleasesLease(t *testing.T) {
 	}
 	rememberNetPairLease(pair, lease)
 	v, err := handleNet(driver.Ctx{
-		Ctx:  context.Background(),
+		Ctx:  t.Context(),
 		Cmd:  "net",
 		Args: []runtime.Arg{runtime.WordArg{Text: "release"}, pairArg(pair)},
 	})

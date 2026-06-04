@@ -1,7 +1,6 @@
 package builtins
 
 import (
-	"context"
 	"os"
 	"testing"
 
@@ -13,9 +12,9 @@ import (
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/semantics"
 )
 
-func callKfunc(args ...runtime.Arg) (runtime.Value, error) {
+func callKfunc(t *testing.T, args ...runtime.Arg) (runtime.Value, error) {
 	return handleKfunc(driver.Ctx{
-		Ctx:  context.Background(),
+		Ctx:  t.Context(),
 		Cmd:  "kfunc",
 		Args: args,
 	})
@@ -38,14 +37,14 @@ func kfuncArg(f *runtime.Kfunc) runtime.Arg {
 
 func TestHandleKfunc_NoSubcommand(t *testing.T) {
 	t.Parallel()
-	_, err := callKfunc()
+	_, err := callKfunc(t)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "subcommand required")
 }
 
 func TestHandleKfunc_UnknownSubcommand(t *testing.T) {
 	t.Parallel()
-	_, err := callKfunc(kfuncWords("probe")...)
+	_, err := callKfunc(t, kfuncWords("probe")...)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `unknown subcommand "probe"`)
 	assert.Contains(t, err.Error(), "acquire, fire, release")
@@ -60,11 +59,11 @@ func TestHandleKfunc_ReleaseIsIdempotent(t *testing.T) {
 		Count:   "/sys/kernel/debug/bpfman_e2e/count_007",
 	}
 
-	v, err := callKfunc(append(kfuncWords("release"), kfuncArg(fn))...)
+	v, err := callKfunc(t, append(kfuncWords("release"), kfuncArg(fn))...)
 	require.NoError(t, err)
 	assert.Equal(t, semantics.OriginEnvelope, v.Kind())
 
-	v, err = callKfunc(append(kfuncWords("release"), kfuncArg(fn))...)
+	v, err = callKfunc(t, append(kfuncWords("release"), kfuncArg(fn))...)
 	require.NoError(t, err)
 	assert.Equal(t, semantics.OriginEnvelope, v.Kind())
 }
@@ -74,7 +73,7 @@ func TestHandleKfunc_FireRejectsReleasedHandle(t *testing.T) {
 	fn := &runtime.Kfunc{Name: "bpfman_e2e_target_0"}
 	fn.MarkReleased()
 
-	_, err := callKfunc(append(kfuncWords("fire"), kfuncArg(fn), runtime.WordArg{Text: "1"})...)
+	_, err := callKfunc(t, append(kfuncWords("fire"), kfuncArg(fn), runtime.WordArg{Text: "1"})...)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "has been released")
 }
@@ -83,7 +82,7 @@ func TestHandleKfunc_ReleaseRejectsWrongValue(t *testing.T) {
 	t.Parallel()
 	arg := runtime.StructuredValueArg{Name: "x", Value: runtime.StringValue("not a kfunc")}
 
-	_, err := callKfunc(append(kfuncWords("release"), arg)...)
+	_, err := callKfunc(t, append(kfuncWords("release"), arg)...)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "expected a $fn argument")
 }

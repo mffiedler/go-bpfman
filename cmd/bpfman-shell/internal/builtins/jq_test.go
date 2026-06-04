@@ -1,7 +1,6 @@
 package builtins
 
 import (
-	"context"
 	"encoding/json"
 	"testing"
 
@@ -15,8 +14,8 @@ import (
 // jqCall invokes HandleJQ with the minimal driver.Ctx the handler
 // reads (just Args; Ctx is set for symmetry with other handlers
 // but jq does not consult it).
-func jqCall(args []runtime.Arg) (runtime.Value, error) {
-	return HandleJQ(driver.Ctx{Ctx: context.Background(), Args: args})
+func jqCall(t *testing.T, args []runtime.Arg) (runtime.Value, error) {
+	return HandleJQ(driver.Ctx{Ctx: t.Context(), Args: args})
 }
 
 // HandleJQ is the "jq FILTER VALUE" shell builtin. Scalars pass
@@ -26,7 +25,7 @@ func jqCall(args []runtime.Arg) (runtime.Value, error) {
 func TestJQ_IdentityOnJSONScalar(t *testing.T) {
 	t.Parallel()
 
-	v, err := jqCall([]runtime.Arg{
+	v, err := jqCall(t, []runtime.Arg{
 		runtime.WordArg{Text: "."},
 		runtime.QuotedArg{Text: `"hello"`},
 	})
@@ -39,7 +38,7 @@ func TestJQ_IdentityOnJSONScalar(t *testing.T) {
 func TestJQ_IdentityOnJSONNumber(t *testing.T) {
 	t.Parallel()
 
-	v, err := jqCall([]runtime.Arg{
+	v, err := jqCall(t, []runtime.Arg{
 		runtime.WordArg{Text: "."},
 		runtime.WordArg{Text: "42"},
 	})
@@ -52,7 +51,7 @@ func TestJQ_IdentityOnJSONNumber(t *testing.T) {
 func TestJQ_ScalarNotValidJSONIsError(t *testing.T) {
 	t.Parallel()
 
-	_, err := jqCall([]runtime.Arg{
+	_, err := jqCall(t, []runtime.Arg{
 		runtime.WordArg{Text: "."},
 		runtime.ScalarValueArg{Text: "hello"},
 	})
@@ -64,7 +63,7 @@ func TestJQ_PathOnStructured(t *testing.T) {
 	t.Parallel()
 
 	input := runtime.ValueFromMap(map[string]any{"a": "apple", "b": "banana"})
-	v, err := jqCall([]runtime.Arg{
+	v, err := jqCall(t, []runtime.Arg{
 		runtime.WordArg{Text: ".a"},
 		runtime.StructuredValueArg{Value: input},
 	})
@@ -84,7 +83,7 @@ func TestJQ_AggregateSum(t *testing.T) {
 			map[string]any{"v": json.Number("3")},
 		},
 	})
-	v, err := jqCall([]runtime.Arg{
+	v, err := jqCall(t, []runtime.Arg{
 		runtime.QuotedArg{Text: "[.items[].v] | add"},
 		runtime.StructuredValueArg{Value: input},
 	})
@@ -100,7 +99,7 @@ func TestJQ_Length(t *testing.T) {
 	input := runtime.ValueFromMap(map[string]any{
 		"items": []any{"a", "b", "c"},
 	})
-	v, err := jqCall([]runtime.Arg{
+	v, err := jqCall(t, []runtime.Arg{
 		runtime.QuotedArg{Text: ".items | length"},
 		runtime.StructuredValueArg{Value: input},
 	})
@@ -119,7 +118,7 @@ func TestJQ_Map(t *testing.T) {
 			map[string]any{"name": "bar"},
 		},
 	})
-	v, err := jqCall([]runtime.Arg{
+	v, err := jqCall(t, []runtime.Arg{
 		runtime.QuotedArg{Text: ".items | map(.name)"},
 		runtime.StructuredValueArg{Value: input},
 	})
@@ -136,7 +135,7 @@ func TestJQ_MultiResultCollected(t *testing.T) {
 	input := runtime.ValueFromMap(map[string]any{
 		"items": []any{"a", "b", "c"},
 	})
-	v, err := jqCall([]runtime.Arg{
+	v, err := jqCall(t, []runtime.Arg{
 		runtime.QuotedArg{Text: ".items[]"},
 		runtime.StructuredValueArg{Value: input},
 	})
@@ -151,7 +150,7 @@ func TestJQ_BooleanResultIsOriginBool(t *testing.T) {
 	t.Parallel()
 
 	input := runtime.ValueFromMap(map[string]any{"a": json.Number("5")})
-	v, err := jqCall([]runtime.Arg{
+	v, err := jqCall(t, []runtime.Arg{
 		runtime.QuotedArg{Text: ".a > 3"},
 		runtime.StructuredValueArg{Value: input},
 	})
@@ -165,7 +164,7 @@ func TestJQ_NullResultIsPresentNull(t *testing.T) {
 	t.Parallel()
 
 	input := runtime.ValueFromMap(map[string]any{"a": "apple"})
-	v, err := jqCall([]runtime.Arg{
+	v, err := jqCall(t, []runtime.Arg{
 		runtime.WordArg{Text: ".missing"},
 		runtime.StructuredValueArg{Value: input},
 	})
@@ -180,7 +179,7 @@ func TestJQ_NullResultIsPresentNull(t *testing.T) {
 func TestJQ_InvalidFilter(t *testing.T) {
 	t.Parallel()
 
-	_, err := jqCall([]runtime.Arg{
+	_, err := jqCall(t, []runtime.Arg{
 		runtime.QuotedArg{Text: "{{{ not valid"},
 		runtime.ScalarValueArg{Text: "x"},
 	})
@@ -191,11 +190,11 @@ func TestJQ_InvalidFilter(t *testing.T) {
 func TestJQ_WrongArgCount(t *testing.T) {
 	t.Parallel()
 
-	_, err := jqCall(nil)
+	_, err := jqCall(t, nil)
 	require.Error(t, err)
-	_, err = jqCall([]runtime.Arg{runtime.WordArg{Text: "."}})
+	_, err = jqCall(t, []runtime.Arg{runtime.WordArg{Text: "."}})
 	require.Error(t, err)
-	_, err = jqCall([]runtime.Arg{
+	_, err = jqCall(t, []runtime.Arg{
 		runtime.WordArg{Text: "."},
 		runtime.ScalarValueArg{Text: "x"},
 		runtime.ScalarValueArg{Text: "y"},
@@ -206,7 +205,7 @@ func TestJQ_WrongArgCount(t *testing.T) {
 func TestJQ_FlagArgGetsHint(t *testing.T) {
 	t.Parallel()
 
-	_, err := jqCall([]runtime.Arg{
+	_, err := jqCall(t, []runtime.Arg{
 		runtime.WordArg{Text: "-c"},
 		runtime.QuotedArg{Text: `"x"`},
 		runtime.QuotedArg{Text: `"y"`},

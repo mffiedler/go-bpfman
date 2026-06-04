@@ -1,7 +1,6 @@
 package builtins
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -12,8 +11,8 @@ import (
 )
 
 // zipCall wraps args in a minimal driver.Ctx for HandleZip.
-func zipCall(args []runtime.Arg) (runtime.Value, error) {
-	return HandleZip(driver.Ctx{Ctx: context.Background(), Args: args})
+func zipCall(t *testing.T, args []runtime.Arg) (runtime.Value, error) {
+	return HandleZip(driver.Ctx{Ctx: t.Context(), Args: args})
 }
 
 // listArg wraps a []any as a StructuredValueArg suitable for
@@ -25,7 +24,7 @@ func listArg(name string, elems []any) runtime.Arg {
 
 func TestZip_EmptyLists(t *testing.T) {
 	t.Parallel()
-	v, err := zipCall([]runtime.Arg{listArg("a", []any{}), listArg("b", []any{})})
+	v, err := zipCall(t, []runtime.Arg{listArg("a", []any{}), listArg("b", []any{})})
 	require.NoError(t, err)
 	raw, ok := v.Raw().([]any)
 	require.True(t, ok, "zip result should be []any, got %T", v.Raw())
@@ -36,7 +35,7 @@ func TestZip_EqualLengthLists(t *testing.T) {
 	t.Parallel()
 	a := listArg("a", []any{"x", "y", "z"})
 	b := listArg("b", []any{"1", "2", "3"})
-	v, err := zipCall([]runtime.Arg{a, b})
+	v, err := zipCall(t, []runtime.Arg{a, b})
 	require.NoError(t, err)
 	raw, ok := v.Raw().([]any)
 	require.True(t, ok)
@@ -56,14 +55,14 @@ func TestZip_LengthMismatchIsError(t *testing.T) {
 	t.Parallel()
 	a := listArg("a", []any{"x", "y", "z"})
 	b := listArg("b", []any{"1", "2"})
-	_, err := zipCall([]runtime.Arg{a, b})
+	_, err := zipCall(t, []runtime.Arg{a, b})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "length mismatch")
 }
 
 func TestZip_FirstArgNotListIsError(t *testing.T) {
 	t.Parallel()
-	_, err := zipCall([]runtime.Arg{
+	_, err := zipCall(t, []runtime.Arg{
 		runtime.WordArg{Text: "not-a-list"},
 		listArg("b", []any{"1"}),
 	})
@@ -73,7 +72,7 @@ func TestZip_FirstArgNotListIsError(t *testing.T) {
 
 func TestZip_SecondArgNotListIsError(t *testing.T) {
 	t.Parallel()
-	_, err := zipCall([]runtime.Arg{
+	_, err := zipCall(t, []runtime.Arg{
 		listArg("a", []any{"x"}),
 		runtime.ScalarValueArg{Text: "scalar"},
 	})
@@ -83,15 +82,15 @@ func TestZip_SecondArgNotListIsError(t *testing.T) {
 
 func TestZip_WrongArityIsError(t *testing.T) {
 	t.Parallel()
-	_, err := zipCall(nil)
+	_, err := zipCall(t, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "expected exactly 2")
 
-	_, err = zipCall([]runtime.Arg{listArg("a", []any{"x"})})
+	_, err = zipCall(t, []runtime.Arg{listArg("a", []any{"x"})})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "expected exactly 2")
 
-	_, err = zipCall([]runtime.Arg{
+	_, err = zipCall(t, []runtime.Arg{
 		listArg("a", []any{"x"}),
 		listArg("b", []any{"1"}),
 		listArg("c", []any{"!"}),
@@ -104,7 +103,7 @@ func TestZip_PairElementsAreReadableAsLists(t *testing.T) {
 	t.Parallel()
 	a := listArg("a", []any{"p1", "p2"})
 	b := listArg("b", []any{"q1", "q2"})
-	v, err := zipCall([]runtime.Arg{a, b})
+	v, err := zipCall(t, []runtime.Arg{a, b})
 	require.NoError(t, err)
 
 	first := v.IndexValue(0)

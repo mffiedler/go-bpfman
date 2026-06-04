@@ -1,7 +1,6 @@
 package builtins
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -12,14 +11,14 @@ import (
 	"github.com/frobware/go-bpfman/internal/registryfixture"
 )
 
-func registryCtx(args ...runtime.Arg) driver.Ctx {
-	return driver.Ctx{Ctx: context.Background(), Args: args}
+func registryCtx(t *testing.T, args ...runtime.Arg) driver.Ctx {
+	return driver.Ctx{Ctx: t.Context(), Args: args}
 }
 
 func TestHandleRegistryRefReturnsAliasReference(t *testing.T) {
 	t.Parallel()
 
-	v, err := handleRegistry(registryCtx(
+	v, err := handleRegistry(registryCtx(t,
 		runtime.WordArg{Text: "ref"},
 		runtime.WordArg{Text: "Explicit XDP Pass"},
 	))
@@ -33,7 +32,7 @@ func TestHandleRegistryRefReturnsAliasReference(t *testing.T) {
 func TestHandleRegistryHostUsesEnvOverride(t *testing.T) {
 	t.Setenv(registryfixture.RegistryEnv, "127.0.0.1:5000")
 
-	v, err := handleRegistry(registryCtx(runtime.WordArg{Text: "host"}))
+	v, err := handleRegistry(registryCtx(t, runtime.WordArg{Text: "host"}))
 	require.NoError(t, err)
 	host, err := v.Scalar()
 	require.NoError(t, err)
@@ -44,7 +43,7 @@ func TestHandleRegistryHostUsesEnvOverride(t *testing.T) {
 func TestHandleRegistryURLUsesLoopbackHTTP(t *testing.T) {
 	t.Setenv(registryfixture.RegistryEnv, "127.0.0.1:5000")
 
-	v, err := handleRegistry(registryCtx(runtime.WordArg{Text: "url"}))
+	v, err := handleRegistry(registryCtx(t, runtime.WordArg{Text: "url"}))
 	require.NoError(t, err)
 	url, err := v.Scalar()
 	require.NoError(t, err)

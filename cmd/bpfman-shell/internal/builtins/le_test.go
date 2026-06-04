@@ -1,7 +1,6 @@
 package builtins
 
 import (
-	"context"
 	"testing"
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/driver"
@@ -17,8 +16,8 @@ func litArg(s string) runtime.Arg {
 // leCtx wraps args in a minimal driver.Ctx for the LE-hex
 // handlers. Only Args is consulted; Ctx is set for symmetry with
 // other handlers.
-func leCtx(args []runtime.Arg) driver.Ctx {
-	return driver.Ctx{Ctx: context.Background(), Args: args}
+func leCtx(t *testing.T, args []runtime.Arg) driver.Ctx {
+	return driver.Ctx{Ctx: t.Context(), Args: args}
 }
 
 func TestU32LE_FormatsLittleEndian(t *testing.T) {
@@ -39,7 +38,7 @@ func TestU32LE_FormatsLittleEndian(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.in, func(t *testing.T) {
 			t.Parallel()
-			v, err := HandleU32LE(leCtx([]runtime.Arg{litArg(c.in)}))
+			v, err := HandleU32LE(leCtx(t, []runtime.Arg{litArg(c.in)}))
 			if err != nil {
 				t.Fatalf("u32le %s: %v", c.in, err)
 			}
@@ -66,7 +65,7 @@ func TestU64LE_FormatsLittleEndian(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.in, func(t *testing.T) {
 			t.Parallel()
-			v, err := HandleU64LE(leCtx([]runtime.Arg{litArg(c.in)}))
+			v, err := HandleU64LE(leCtx(t, []runtime.Arg{litArg(c.in)}))
 			if err != nil {
 				t.Fatalf("u64le %s: %v", c.in, err)
 			}
@@ -94,7 +93,7 @@ func TestU32LE_Rejects(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			if _, err := HandleU32LE(leCtx(c.args)); err == nil {
+			if _, err := HandleU32LE(leCtx(t, c.args)); err == nil {
 				t.Fatalf("u32le %v: expected error, got nil", c.args)
 			}
 		})
@@ -115,7 +114,7 @@ func TestU64LE_Rejects(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			if _, err := HandleU64LE(leCtx(c.args)); err == nil {
+			if _, err := HandleU64LE(leCtx(t, c.args)); err == nil {
 				t.Fatalf("u64le %v: expected error, got nil", c.args)
 			}
 		})

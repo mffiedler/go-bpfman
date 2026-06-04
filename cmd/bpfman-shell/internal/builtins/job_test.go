@@ -22,8 +22,8 @@ import (
 // boundary, so Ctx is the only context field they need; Env is
 // left nil because none of these tests register the spawned job
 // in a scope.
-func startCall(args []runtime.Arg) (runtime.Value, error) {
-	return startCallContext(context.Background(), args)
+func startCall(t *testing.T, args []runtime.Arg) (runtime.Value, error) {
+	return startCallContext(t.Context(), args)
 }
 
 func startCallContext(ctx context.Context, args []runtime.Arg) (runtime.Value, error) {
@@ -70,7 +70,7 @@ func waitForFile(t *testing.T, path string) {
 func TestJobStart_SpawnsAndCapturesStdout(t *testing.T) {
 	t.Parallel()
 
-	val, err := startCall([]runtime.Arg{
+	val, err := startCall(t, []runtime.Arg{
 		runtime.WordArg{Text: "sh"},
 		runtime.WordArg{Text: "-c"},
 		runtime.WordArg{Text: "echo hello"},
@@ -95,7 +95,7 @@ func TestJobStart_SpawnsAndCapturesStdout(t *testing.T) {
 func TestJobStart_NonZeroExitCodeCaptured(t *testing.T) {
 	t.Parallel()
 
-	val, err := startCall([]runtime.Arg{
+	val, err := startCall(t, []runtime.Arg{
 		runtime.WordArg{Text: "sh"},
 		runtime.WordArg{Text: "-c"},
 		runtime.WordArg{Text: "echo boom 1>&2; exit 7"},
@@ -115,7 +115,7 @@ func TestJobStart_NonZeroExitCodeCaptured(t *testing.T) {
 func TestJobStart_NoArgsIsError(t *testing.T) {
 	t.Parallel()
 
-	_, err := startCall(nil)
+	_, err := startCall(t, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "start requires at least one argument")
 }
@@ -126,7 +126,7 @@ func TestJobStart_StructuredArgRejected(t *testing.T) {
 	// A program-typed Value cannot flatten into argv text, the
 	// same constraint exec applies via driver.RunExternal.
 	prog := runtime.ValueFromMap(map[string]any{"id": "42"}).WithKind(semantics.OriginProgram)
-	_, err := startCall([]runtime.Arg{
+	_, err := startCall(t, []runtime.Arg{
 		runtime.WordArg{Text: "echo"},
 		runtime.StructuredValueArg{Name: "prog", Value: prog},
 	})
@@ -141,7 +141,7 @@ func TestJobStart_LaunchFailureIsStructuralError(t *testing.T) {
 	// process runs. The error path produces no Job: this is
 	// 'structural failure' and propagates back to halt the bind
 	// rather than landing in a not-ok envelope.
-	_, err := startCall([]runtime.Arg{
+	_, err := startCall(t, []runtime.Arg{
 		runtime.WordArg{Text: "__definitely_not_a_real_command_2026__"},
 	})
 	require.Error(t, err)
@@ -151,7 +151,7 @@ func TestJobStart_LaunchFailureIsStructuralError(t *testing.T) {
 func TestJobWait_BlocksAndCapturesEnvelope(t *testing.T) {
 	t.Parallel()
 
-	val, err := startCall([]runtime.Arg{
+	val, err := startCall(t, []runtime.Arg{
 		runtime.WordArg{Text: "sh"},
 		runtime.WordArg{Text: "-c"},
 		runtime.WordArg{Text: "echo hello; sleep 0.05; echo bye"},
@@ -159,7 +159,7 @@ func TestJobWait_BlocksAndCapturesEnvelope(t *testing.T) {
 	require.NoError(t, err)
 	job := val.Origin().(*runtime.Job)
 
-	env, err := WaitEnvelope(context.Background(), []runtime.Arg{
+	env, err := WaitEnvelope(t.Context(), []runtime.Arg{
 		runtime.StructuredValueArg{Name: "job", Value: val},
 	})
 	require.NoError(t, err)
@@ -175,7 +175,7 @@ func TestJobWait_AfterAlreadyCompleted(t *testing.T) {
 
 	// 'start ls /run' may exit before this goroutine reaches
 	// WaitEnvelope. The cached envelope must still be returned.
-	val, err := startCall([]runtime.Arg{
+	val, err := startCall(t, []runtime.Arg{
 		runtime.WordArg{Text: "sh"},
 		runtime.WordArg{Text: "-c"},
 		runtime.WordArg{Text: "echo done"},
@@ -190,7 +190,7 @@ func TestJobWait_AfterAlreadyCompleted(t *testing.T) {
 	waitForJob(t, job)
 	require.False(t, job.IsManaged())
 
-	env, err := WaitEnvelope(context.Background(), []runtime.Arg{
+	env, err := WaitEnvelope(t.Context(), []runtime.Arg{
 		runtime.StructuredValueArg{Name: "job", Value: val},
 	})
 	require.NoError(t, err)
@@ -202,14 +202,14 @@ func TestJobWait_AfterAlreadyCompleted(t *testing.T) {
 func TestJobWait_NonZeroExitProducesNotOk(t *testing.T) {
 	t.Parallel()
 
-	val, err := startCall([]runtime.Arg{
+	val, err := startCall(t, []runtime.Arg{
 		runtime.WordArg{Text: "sh"},
 		runtime.WordArg{Text: "-c"},
 		runtime.WordArg{Text: "exit 7"},
 	})
 	require.NoError(t, err)
 
-	env, err := WaitEnvelope(context.Background(), []runtime.Arg{
+	env, err := WaitEnvelope(t.Context(), []runtime.Arg{
 		runtime.StructuredValueArg{Name: "job", Value: val},
 	})
 	require.NoError(t, err)
@@ -220,7 +220,7 @@ func TestJobWait_NonZeroExitProducesNotOk(t *testing.T) {
 func TestJobWait_ContextCancelReturnsNotOk(t *testing.T) {
 	t.Parallel()
 
-	val, err := startCall([]runtime.Arg{
+	val, err := startCall(t, []runtime.Arg{
 		runtime.WordArg{Text: "sh"},
 		runtime.WordArg{Text: "-c"},
 		runtime.WordArg{Text: "sleep 60"},
@@ -234,7 +234,7 @@ func TestJobWait_ContextCancelReturnsNotOk(t *testing.T) {
 	// underlying process keeps running until syscall.Kill or
 	// the start ctx ends; tests clean up by killing
 	// directly.
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	env, err := WaitEnvelope(ctx, []runtime.Arg{
 		runtime.StructuredValueArg{Name: "job", Value: val},
@@ -325,7 +325,7 @@ func TestJobWait_RejectsNonJobArg(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := WaitEnvelope(context.Background(), []runtime.Arg{tc.arg})
+			_, err := WaitEnvelope(t.Context(), []runtime.Arg{tc.arg})
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "$job")
 		})
@@ -335,7 +335,7 @@ func TestJobWait_RejectsNonJobArg(t *testing.T) {
 func TestJobWait_NoArgsIsError(t *testing.T) {
 	t.Parallel()
 
-	_, err := WaitEnvelope(context.Background(), nil)
+	_, err := WaitEnvelope(t.Context(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "exactly one argument")
 }
@@ -343,7 +343,7 @@ func TestJobWait_NoArgsIsError(t *testing.T) {
 func TestJobKill_TerminatesAndMarksManaged(t *testing.T) {
 	t.Parallel()
 
-	val, err := startCall([]runtime.Arg{
+	val, err := startCall(t, []runtime.Arg{
 		runtime.WordArg{Text: "sh"},
 		runtime.WordArg{Text: "-c"},
 		runtime.WordArg{Text: "sleep 60"},
@@ -351,7 +351,7 @@ func TestJobKill_TerminatesAndMarksManaged(t *testing.T) {
 	require.NoError(t, err)
 	job := val.Origin().(*runtime.Job)
 
-	env, err := KillEnvelope(context.Background(), []runtime.Arg{
+	env, err := KillEnvelope(t.Context(), []runtime.Arg{
 		runtime.StructuredValueArg{Name: "job", Value: val},
 	})
 	require.NoError(t, err)
@@ -371,19 +371,19 @@ func TestJobKill_KilledThenWaitReportsLifecycle(t *testing.T) {
 	// not return zero reports !ok. The lifecycle facts are
 	// carried by 'killed' and 'signal', and 'code' uses the
 	// shell convention 128+signum for a SIGTERM kill.
-	val, err := startCall([]runtime.Arg{
+	val, err := startCall(t, []runtime.Arg{
 		runtime.WordArg{Text: "sh"},
 		runtime.WordArg{Text: "-c"},
 		runtime.WordArg{Text: "sleep 60"},
 	})
 	require.NoError(t, err)
 
-	_, err = KillEnvelope(context.Background(), []runtime.Arg{
+	_, err = KillEnvelope(t.Context(), []runtime.Arg{
 		runtime.StructuredValueArg{Name: "job", Value: val},
 	})
 	require.NoError(t, err)
 
-	env, err := WaitEnvelope(context.Background(), []runtime.Arg{
+	env, err := WaitEnvelope(t.Context(), []runtime.Arg{
 		runtime.StructuredValueArg{Name: "job", Value: val},
 	})
 	require.NoError(t, err)
@@ -398,7 +398,7 @@ func TestJobKill_AlreadyExitedIsOk(t *testing.T) {
 
 	// 'kill' is best-effort: if the process exited on its
 	// own before kill landed, ESRCH is treated as success.
-	val, err := startCall([]runtime.Arg{
+	val, err := startCall(t, []runtime.Arg{
 		runtime.WordArg{Text: "sh"},
 		runtime.WordArg{Text: "-c"},
 		runtime.WordArg{Text: "exit 0"},
@@ -407,7 +407,7 @@ func TestJobKill_AlreadyExitedIsOk(t *testing.T) {
 	job := val.Origin().(*runtime.Job)
 	waitForJob(t, job)
 
-	env, err := KillEnvelope(context.Background(), []runtime.Arg{
+	env, err := KillEnvelope(t.Context(), []runtime.Arg{
 		runtime.StructuredValueArg{Name: "job", Value: val},
 	})
 	require.NoError(t, err)
@@ -424,7 +424,7 @@ func TestJobKill_SignalFlag(t *testing.T) {
 	// because the signal was successfully delivered (kill
 	// itself is "did the signal go through?", not "did the
 	// target terminate cleanly?").
-	val, err := startCall([]runtime.Arg{
+	val, err := startCall(t, []runtime.Arg{
 		runtime.WordArg{Text: "sh"},
 		runtime.WordArg{Text: "-c"},
 		runtime.WordArg{Text: "trap 'exit 42' USR1; sleep 60"},
@@ -437,7 +437,7 @@ func TestJobKill_SignalFlag(t *testing.T) {
 	// initialising and the trap has no effect.
 	time.Sleep(50 * time.Millisecond)
 
-	env, err := KillEnvelope(context.Background(), []runtime.Arg{
+	env, err := KillEnvelope(t.Context(), []runtime.Arg{
 		runtime.WordArg{Text: "--signal=USR1"},
 		runtime.StructuredValueArg{Name: "job", Value: val},
 	})
@@ -459,7 +459,7 @@ func TestJobKill_DefaultPathBlocksUntilReaped(t *testing.T) {
 	// reaper has closed Done. Even on a process that exits
 	// immediately on SIGTERM (no escalation needed), the call
 	// must not return earlier than the Done close.
-	val, err := startCall([]runtime.Arg{
+	val, err := startCall(t, []runtime.Arg{
 		runtime.WordArg{Text: "sh"},
 		runtime.WordArg{Text: "-c"},
 		runtime.WordArg{Text: "sleep 30"},
@@ -467,7 +467,7 @@ func TestJobKill_DefaultPathBlocksUntilReaped(t *testing.T) {
 	require.NoError(t, err)
 	job := val.Origin().(*runtime.Job)
 
-	env, err := KillEnvelope(context.Background(), []runtime.Arg{
+	env, err := KillEnvelope(t.Context(), []runtime.Arg{
 		runtime.StructuredValueArg{Name: "job", Value: val},
 	})
 	require.NoError(t, err)
@@ -489,7 +489,7 @@ func TestJobKill_GraceZeroSendsKillImmediately(t *testing.T) {
 	// --grace=0 skips the wait between SIGTERM and SIGKILL.
 	// The job's Signal field, set by the escalation path,
 	// reflects KILL once kill returns.
-	val, err := startCall([]runtime.Arg{
+	val, err := startCall(t, []runtime.Arg{
 		runtime.WordArg{Text: "sh"},
 		runtime.WordArg{Text: "-c"},
 		runtime.WordArg{Text: "sleep 30"},
@@ -497,7 +497,7 @@ func TestJobKill_GraceZeroSendsKillImmediately(t *testing.T) {
 	require.NoError(t, err)
 	job := val.Origin().(*runtime.Job)
 
-	env, err := KillEnvelope(context.Background(), []runtime.Arg{
+	env, err := KillEnvelope(t.Context(), []runtime.Arg{
 		runtime.WordArg{Text: "--grace=0"},
 		runtime.StructuredValueArg{Name: "job", Value: val},
 	})
@@ -539,7 +539,7 @@ func TestJobKill_CustomSignalSkipsEscalation(t *testing.T) {
 			"touch %s\n"+
 			"wait\n",
 		ready)
-	val, err := startCall([]runtime.Arg{
+	val, err := startCall(t, []runtime.Arg{
 		runtime.WordArg{Text: "sh"},
 		runtime.WordArg{Text: "-c"},
 		runtime.WordArg{Text: script},
@@ -549,7 +549,7 @@ func TestJobKill_CustomSignalSkipsEscalation(t *testing.T) {
 
 	waitForFile(t, ready)
 
-	env, err := KillEnvelope(context.Background(), []runtime.Arg{
+	env, err := KillEnvelope(t.Context(), []runtime.Arg{
 		runtime.WordArg{Text: "--signal=USR1"},
 		runtime.StructuredValueArg{Name: "job", Value: val},
 	})
@@ -568,7 +568,7 @@ func TestJobKill_CustomSignalSkipsEscalation(t *testing.T) {
 func TestJobKill_NegativeGraceIsError(t *testing.T) {
 	t.Parallel()
 
-	_, err := KillEnvelope(context.Background(), []runtime.Arg{
+	_, err := KillEnvelope(t.Context(), []runtime.Arg{
 		runtime.WordArg{Text: "--grace=-1s"},
 	})
 	require.Error(t, err)
@@ -578,7 +578,7 @@ func TestJobKill_NegativeGraceIsError(t *testing.T) {
 func TestJobKill_MalformedGraceIsError(t *testing.T) {
 	t.Parallel()
 
-	_, err := KillEnvelope(context.Background(), []runtime.Arg{
+	_, err := KillEnvelope(t.Context(), []runtime.Arg{
 		runtime.WordArg{Text: "--grace=banana"},
 	})
 	require.Error(t, err)
@@ -588,7 +588,7 @@ func TestJobKill_MalformedGraceIsError(t *testing.T) {
 func TestJobKill_UnknownSignalIsError(t *testing.T) {
 	t.Parallel()
 
-	_, err := KillEnvelope(context.Background(), []runtime.Arg{
+	_, err := KillEnvelope(t.Context(), []runtime.Arg{
 		runtime.WordArg{Text: "--signal=NOSUCHSIG"},
 	})
 	require.Error(t, err)
@@ -598,7 +598,7 @@ func TestJobKill_UnknownSignalIsError(t *testing.T) {
 func TestJobKill_RejectsNonJobArg(t *testing.T) {
 	t.Parallel()
 
-	_, err := KillEnvelope(context.Background(), []runtime.Arg{
+	_, err := KillEnvelope(t.Context(), []runtime.Arg{
 		runtime.WordArg{Text: "not-a-job"},
 	})
 	require.Error(t, err)
@@ -608,7 +608,7 @@ func TestJobKill_RejectsNonJobArg(t *testing.T) {
 func TestJobKill_NoArgsIsError(t *testing.T) {
 	t.Parallel()
 
-	_, err := KillEnvelope(context.Background(), nil)
+	_, err := KillEnvelope(t.Context(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "kill requires a $job argument")
 }
@@ -619,7 +619,7 @@ func TestJobStart_ProcessGroupIsSet(t *testing.T) {
 	// The child runs in its own process group so 'kill' can
 	// later signal the whole group. Verify by reading
 	// /proc/<pid>/stat which exposes pgid as the fifth field.
-	val, err := startCall([]runtime.Arg{
+	val, err := startCall(t, []runtime.Arg{
 		runtime.WordArg{Text: "sh"},
 		runtime.WordArg{Text: "-c"},
 		runtime.WordArg{Text: "sleep 0.1"},

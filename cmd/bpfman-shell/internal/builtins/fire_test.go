@@ -1,7 +1,6 @@
 package builtins
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -17,13 +16,13 @@ import (
 // failures that fail before any spawn: a successful spawn from
 // the test binary is not possible because the test binary's main
 // is the go test runner, not bpfman-shell's fixturemode dispatcher.
-func callFire(args ...string) (runtime.Value, error) {
+func callFire(t *testing.T, args ...string) (runtime.Value, error) {
 	wargs := make([]runtime.Arg, len(args))
 	for i, a := range args {
 		wargs[i] = runtime.WordArg{Text: a}
 	}
 	return handleFire(driver.Ctx{
-		Ctx:  context.Background(),
+		Ctx:  t.Context(),
 		Cmd:  "fire",
 		Args: wargs,
 	})
@@ -31,7 +30,7 @@ func callFire(args ...string) (runtime.Value, error) {
 
 func TestHandleFire_UnknownKind(t *testing.T) {
 	t.Parallel()
-	_, err := callFire("nosuch", "/tmp/s", "/tmp/a", "--count=1")
+	_, err := callFire(t, "nosuch", "/tmp/s", "/tmp/a", "--count=1")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `unknown kind "nosuch"`)
 	assert.Contains(t, err.Error(), "registered:")
@@ -39,56 +38,56 @@ func TestHandleFire_UnknownKind(t *testing.T) {
 
 func TestHandleFire_TooFewPositionals(t *testing.T) {
 	t.Parallel()
-	_, err := callFire("unlinkat", "/tmp/s", "--count=1")
+	_, err := callFire(t, "unlinkat", "/tmp/s", "--count=1")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "expected 3 positional arguments")
 }
 
 func TestHandleFire_TooManyPositionals(t *testing.T) {
 	t.Parallel()
-	_, err := callFire("unlinkat", "/tmp/s", "/tmp/a", "/tmp/extra", "--count=1")
+	_, err := callFire(t, "unlinkat", "/tmp/s", "/tmp/a", "/tmp/extra", "--count=1")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "expected 3 positional arguments")
 }
 
 func TestHandleFire_MissingCount(t *testing.T) {
 	t.Parallel()
-	_, err := callFire("unlinkat", "/tmp/s", "/tmp/a")
+	_, err := callFire(t, "unlinkat", "/tmp/s", "/tmp/a")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--count is required")
 }
 
 func TestHandleFire_BadCount(t *testing.T) {
 	t.Parallel()
-	_, err := callFire("unlinkat", "/tmp/s", "/tmp/a", "--count=abc")
+	_, err := callFire(t, "unlinkat", "/tmp/s", "/tmp/a", "--count=abc")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--count")
 }
 
 func TestHandleFire_NegativeCount(t *testing.T) {
 	t.Parallel()
-	_, err := callFire("unlinkat", "/tmp/s", "/tmp/a", "--count=-1")
+	_, err := callFire(t, "unlinkat", "/tmp/s", "/tmp/a", "--count=-1")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--count must not be negative")
 }
 
 func TestHandleFire_BadWaves(t *testing.T) {
 	t.Parallel()
-	_, err := callFire("unlinkat", "/tmp/s", "/tmp/a", "--count=1", "--waves=xyz")
+	_, err := callFire(t, "unlinkat", "/tmp/s", "/tmp/a", "--count=1", "--waves=xyz")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--waves")
 }
 
 func TestHandleFire_ZeroWaves(t *testing.T) {
 	t.Parallel()
-	_, err := callFire("unlinkat", "/tmp/s", "/tmp/a", "--count=1", "--waves=0")
+	_, err := callFire(t, "unlinkat", "/tmp/s", "/tmp/a", "--count=1", "--waves=0")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--waves must be at least 1")
 }
 
 func TestHandleFire_UnknownFlag(t *testing.T) {
 	t.Parallel()
-	_, err := callFire("unlinkat", "/tmp/s", "/tmp/a", "--count=1", "--bogus=x")
+	_, err := callFire(t, "unlinkat", "/tmp/s", "/tmp/a", "--count=1", "--bogus=x")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `unknown flag "--bogus=x"`)
 }

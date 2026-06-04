@@ -1,7 +1,6 @@
 package builtins
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -58,7 +57,7 @@ func arityIssues(issues []check.Issue) []string {
 func TestBuiltinArity_CheckerAndRuntimeAgree(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	arg := runtime.WordArg{Text: "x"}
 
 	// jobArg is a real $job value. The "too many" cases must pass

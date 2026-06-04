@@ -126,7 +126,7 @@ printf '{"programs":[]}'
 	t.Setenv("BPFMAN_CONFIG", configPath)
 	t.Setenv("BPFMAN_CONFIG_SEEN", seen)
 
-	_, err := dispatchCommandExternal(context.Background(), []runtime.Arg{
+	_, err := dispatchCommandExternal(t.Context(), []runtime.Arg{
 		word("program"),
 		word("list"),
 	})
