@@ -49,6 +49,29 @@ func TestSelectedCommandRequiresRootByDefault(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // mutates os.Args and process environment.
+func TestNewCLIReadsConfigFromEnv(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "bpfman.toml")
+	if err := os.WriteFile(configPath, nil, 0o644); err != nil {
+		t.Fatalf("write test config: %v", err)
+	}
+	t.Setenv("BPFMAN_CONFIG", configPath)
+
+	oldArgs := os.Args
+	os.Args = []string{"bpfman", "version"}
+	t.Cleanup(func() {
+		os.Args = oldArgs
+	})
+
+	cli, err := NewCLI()
+	if err != nil {
+		t.Fatalf("NewCLI: %v", err)
+	}
+	if cli.Config != configPath {
+		t.Fatalf("Config = %q, want %q", cli.Config, configPath)
+	}
+}
+
 func newCLIForArgs(t *testing.T, args []string) *CLI {
 	t.Helper()
 

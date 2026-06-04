@@ -944,12 +944,24 @@ test-e2e-grpc: build-e2e-grpc
 
 E2E_SCRIPTS_TEST_BIN := $(BIN_DIR)/e2e-scripts.test
 E2E_SCRIPTS_TEST_PKG := github.com/frobware/go-bpfman/e2e/scriptrunner
+E2E_IMAGE_NO_VERIFY_CONFIG := $(abspath e2e/config/no-signature-verification.toml)
+BPFMAN_CONFIG ?=
+
+ifeq ($(BPFMAN_E2E_BYTECODE_SOURCE),image)
+ifeq ($(BPFMAN_CONFIG),)
+BPFMAN_CONFIG := $(E2E_IMAGE_NO_VERIFY_CONFIG)
+endif
+endif
 
 # Env vars forwarded into the sudo'd test process.
 # The script runner hosts a throwaway anonymous local registry for
 # image build/load scripts. BPFMAN_E2E_BYTECODE_SOURCE=image also has
 # bpfman-shell broker each `program load file` through
 # `bpfman image build` plus `program load image`.
+# Image-mode scripts use BPFMAN_CONFIG to disable signature
+# verification for unsigned throwaway fixture images. Production
+# verification policy is still tested separately and remains governed
+# by the normal config file.
 # BPFMAN_E2E_IMAGE_REGISTRY overrides the throwaway registry for
 # explicit external-registry checks.
 # BPFMAN_E2E_SCRIPT_TIMEOUT widens the per-script deadline;
@@ -965,6 +977,7 @@ E2E_SCRIPTS_TEST_PKG := github.com/frobware/go-bpfman/e2e/scriptrunner
 # BIN_DIR is passed explicitly below rather than via this list
 # because the value gets abspath'd at the call site.
 E2E_SCRIPTS_FORWARD_VARS := \
+	BPFMAN_CONFIG \
 	BPFMAN_DISPATCH \
 	BPFMAN_E2E_BYTECODE_SOURCE \
 	BPFMAN_E2E_IMAGE_REGISTRY \

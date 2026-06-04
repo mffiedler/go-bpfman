@@ -31,7 +31,7 @@ import (
 type CLI struct {
 	RuntimeDir    string        `name:"runtime-dir" placeholder:"DIR" group:"global" help:"Root directory for runtime files." default:"${default_runtime_dir}"`
 	ImageCacheDir string        `name:"image-cache-dir" placeholder:"DIR" group:"global" help:"Root directory for OCI image cache." default:"${default_image_cache_dir}"`
-	Config        string        `name:"config" placeholder:"FILE" group:"global" help:"Config file path (default: /etc/bpfman/bpfman.toml)."`
+	Config        string        `name:"config" placeholder:"FILE" group:"global" help:"Config file path (default: /etc/bpfman/bpfman.toml)." env:"BPFMAN_CONFIG"`
 	Log           string        `name:"log" placeholder:"SPEC" group:"global" help:"Log spec (e.g., 'info,manager=debug')." env:"BPFMAN_LOG"`
 	LockTimeout   time.Duration `name:"lock-timeout" placeholder:"DURATION" group:"global" help:"Timeout for acquiring the global writer lock (0 for indefinite)." default:"30s" env:"BPFMAN_LOCK_TIMEOUT"`
 

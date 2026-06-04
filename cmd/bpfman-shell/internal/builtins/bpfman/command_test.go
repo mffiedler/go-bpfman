@@ -1,7 +1,9 @@
 package bpfmanbuiltin
 
 import (
+	"context"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -105,6 +107,32 @@ func TestCommandSupportsOutputSkipsImageBuild(t *testing.T) {
 	assert.False(t, commandSupportsOutput([]string{"image", "build"}))
 	assert.False(t, commandSupportsOutput([]string{"image", "inspect"}))
 	assert.True(t, commandSupportsOutput([]string{"program", "list"}))
+}
+
+func TestDispatchCommandExternalInheritsBPFMANConfig(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bpfman")
+	seen := filepath.Join(dir, "seen-config")
+	configPath := filepath.Join(dir, "no-signature-verification.toml")
+	script := `#!/bin/sh
+printf '%s' "$BPFMAN_CONFIG" > "$BPFMAN_CONFIG_SEEN"
+printf '{"programs":[]}'
+`
+	require.NoError(t, os.WriteFile(bin, []byte(script), 0o755))
+
+	t.Setenv("BPFMAN_BIN", bin)
+	t.Setenv("BPFMAN_CONFIG", configPath)
+	t.Setenv("BPFMAN_CONFIG_SEEN", seen)
+
+	_, err := dispatchCommandExternal(context.Background(), []runtime.Arg{
+		word("program"),
+		word("list"),
+	})
+	require.NoError(t, err)
+
+	got, err := os.ReadFile(seen)
+	require.NoError(t, err)
+	assert.Equal(t, configPath, string(got))
 }
 
 func TestParseImageInspectRejectsMissingImage(t *testing.T) {

@@ -1,0 +1,3 @@
+[signing]
+verify_enabled = false
+allow_unsigned = true
