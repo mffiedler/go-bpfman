@@ -1151,6 +1151,56 @@ print $q.field`
 	assert.Contains(t, issues[0].Msg, "q has kind scalar")
 }
 
+func TestCheck_ListExprShape_HomogeneousScalarElementsAreChecked(t *testing.T) {
+	t.Parallel()
+
+	src := `let xs = [1 2]
+print $xs[0].field`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "xs has kind scalar")
+}
+
+func TestCheck_ListExprShape_HomogeneousProgramElementsAreChecked(t *testing.T) {
+	t.Parallel()
+
+	src := `let p1 <- bpfman program get 1
+let p2 <- bpfman program get 2
+let xs = [$p1 $p2]
+print $xs[0].record.program_idd`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, `"program_idd"`)
+	assert.Contains(t, issues[0].Msg, `"program_id"`)
+}
+
+func TestCheck_ListExprShape_DefReturnedHomogeneousListIsChecked(t *testing.T) {
+	t.Parallel()
+
+	src := `def progs() {
+    let p1 <- bpfman program get 1
+    let p2 <- bpfman program get 2
+    return [$p1 $p2]
+}
+let xs <- progs
+print $xs[0].record.program_idd`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, `"program_idd"`)
+	assert.Contains(t, issues[0].Msg, `"program_id"`)
+}
+
+func TestCheck_ListExprShape_MixedElementsStayOpen(t *testing.T) {
+	t.Parallel()
+
+	src := `let p <- bpfman program get 1
+let r <- exec true
+let xs = [$p $r]
+print $xs[0].record.program_idd`
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
 func TestCheck_DefReturnShape_ProgramFieldTypoRejected(t *testing.T) {
 	t.Parallel()
 

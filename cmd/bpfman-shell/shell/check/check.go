@@ -418,6 +418,26 @@ func (c *checker) inferExprShape(e syntax.Expr) semantics.Shape {
 			shape = child
 		}
 		return shape
+	case *syntax.ListExpr:
+		if len(v.Elems) == 0 {
+			return openShape()
+		}
+		elem := c.inferExprShape(v.Elems[0])
+		if isOpenShape(elem) {
+			return openShape()
+		}
+		for _, e := range v.Elems[1:] {
+			next := c.inferExprShape(e)
+			if isOpenShape(next) || !sameShape(elem, next) {
+				return openShape()
+			}
+		}
+		elem = semantics.CloneShape(elem)
+		return semantics.Shape{
+			Sealed: false,
+			Kind:   semantics.OriginUnknown,
+			Elem:   &elem,
+		}
 	case *syntax.BinaryExpr:
 		switch v.Op {
 		case "+", "-", "*", "/", "%":
