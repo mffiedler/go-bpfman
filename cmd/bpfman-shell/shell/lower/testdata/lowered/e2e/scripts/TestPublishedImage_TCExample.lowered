@@ -9,81 +9,79 @@ bb0:
   BuildArgs t2 = [inspect_published_image $image stats]
   DispatchBind t3 = t2 policy=def-then-exec-bind lane=exec
   ApplyBind src=t3 argv=t2 primary=published rc=_ guard=true fail=bb1
-  Eval t4 = $published
-  BindDestructure [inspected manifest] = t4
-  Assert $manifest.programs.stats == tc
-  Assert $manifest.maps.tc_stats_map == per_cpu_array
-  BuildArgs t5 = [net veth-pair]
-  DispatchBind t6 = t5 policy=def-then-exec-bind lane=builtin(net)
-  ApplyBind src=t6 argv=t5 primary=pair rc=_ guard=true fail=bb2
-  BuildArgs t7 = [net release $pair]
-  RegisterDefer argv=t7 policy=def-then-exec-bind lane=builtin(net)
-  BuildArgs t8 = [bpfman program load image --image-url $image --pull-policy Always --programs tc:stats]
-  DispatchBind t9 = t8 policy=def-then-exec-bind lane=builtin(bpfman)
-  ApplyBind src=t9 argv=t8 primary=loaded rc=_ guard=true fail=bb3
-  Eval t10 = $loaded.programs[0]
-  BindName prog = t10
-  Eval t11 = $prog.record.program_id
-  BindName pid = t11
-  BuildArgs t12 = [bpfman program unload $pid]
-  RegisterDefer argv=t12 policy=def-then-exec-bind lane=builtin(bpfman)
-  BuildArgs t13 = [expect_program_load $prog tc extension stats]
+  Assert $published.manifest.programs.stats == tc
+  Assert $published.manifest.maps.tc_stats_map == per_cpu_array
+  BuildArgs t4 = [net veth-pair]
+  DispatchBind t5 = t4 policy=def-then-exec-bind lane=builtin(net)
+  ApplyBind src=t5 argv=t4 primary=pair rc=_ guard=true fail=bb2
+  BuildArgs t6 = [net release $pair]
+  RegisterDefer argv=t6 policy=def-then-exec-bind lane=builtin(net)
+  BuildArgs t7 = [bpfman program load image --image-url $image --pull-policy Always --programs tc:stats]
+  DispatchBind t8 = t7 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t8 argv=t7 primary=loaded rc=_ guard=true fail=bb3
+  Eval t9 = $loaded.programs[0]
+  BindName prog = t9
+  Eval t10 = $prog.record.program_id
+  BindName pid = t10
+  BuildArgs t11 = [bpfman program unload $pid]
+  RegisterDefer argv=t11 policy=def-then-exec-bind lane=builtin(bpfman)
+  BuildArgs t12 = [expect_program_load $prog tc extension stats]
+  DispatchCommand argv=t12 policy=def-then-exec-command lane=exec
+  BuildArgs t13 = [expect_loaded_image_source $prog $image $published.inspected]
   DispatchCommand argv=t13 policy=def-then-exec-command lane=exec
-  BuildArgs t14 = [expect_loaded_image_source $prog $image $inspected]
-  DispatchCommand argv=t14 policy=def-then-exec-command lane=exec
-  BuildArgs t15 = [bpfman link attach tc --iface $pair.host_link --direction ingress --priority 50 $prog]
-  DispatchBind t16 = t15 policy=def-then-exec-bind lane=builtin(bpfman)
-  ApplyBind src=t16 argv=t15 primary=link rc=_ guard=true fail=bb4
-  Eval t17 = $link.record.id
-  BindName linkID = t17
+  BuildArgs t14 = [bpfman link attach tc --iface $pair.host_link --direction ingress --priority 50 $prog]
+  DispatchBind t15 = t14 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t15 argv=t14 primary=link rc=_ guard=true fail=bb4
+  Eval t16 = $link.record.id
+  BindName linkID = t16
   Assert $link.record.kind == tc
   Assert $link.record.program_id == $pid
   Assert $link.record.details.interface == $pair.host_link
   Assert $link.record.details.direction == ingress
   Assert $link.record.details.priority == 50
   Assert $link.status.kernel_seen
-  Eval t18 = $prog.status.maps[0].id
-  BindName mapID = t18
-  Eval t19 = "fromjson | [.[] | select(.formatted.key == 0) | .formatted.values[].value.rx_packets | tonumber] | add"
-  BindName sumFilter = t19
-  BuildArgs t20 = [bpftool map dump id $mapID -j]
-  DispatchBind t21 = t20 policy=def-then-exec-bind lane=exec
-  ApplyBind src=t21 argv=t20 primary=dumpBefore rc=_ guard=true fail=bb5
-  Eval t22 = $dumpBefore.stdout |> jq $sumFilter
-  BindName before = t22
-  BuildArgs t23 = [net exec $pair ping -c 5 -i 0.05 -W 1 $pair.host_addr]
-  DispatchBind t24 = t23 policy=def-then-exec-bind lane=builtin(net)
-  ApplyBind src=t24 argv=t23 primary=_ rc=_ guard=true fail=bb6
-  BuildArgs t25 = [bpftool map dump id $mapID -j]
-  DispatchBind t26 = t25 policy=def-then-exec-bind lane=exec
-  ApplyBind src=t26 argv=t25 primary=dumpAfter rc=_ guard=true fail=bb7
-  Eval t27 = $dumpAfter.stdout |> jq $sumFilter
-  BindName after = t27
-  Eval t28 = $after - $before
-  BindName delta = t28
-  BuildArgs t29 = [print "published tc image: packets=${delta}"]
-  DispatchCommand argv=t29 policy=def-then-exec-command lane=builtin(print)
+  Eval t17 = $prog.status.maps[0].id
+  BindName mapID = t17
+  Eval t18 = "fromjson | [.[] | select(.formatted.key == 0) | .formatted.values[].value.rx_packets | tonumber] | add"
+  BindName sumFilter = t18
+  BuildArgs t19 = [bpftool map dump id $mapID -j]
+  DispatchBind t20 = t19 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t20 argv=t19 primary=dumpBefore rc=_ guard=true fail=bb5
+  Eval t21 = $dumpBefore.stdout |> jq $sumFilter
+  BindName before = t21
+  BuildArgs t22 = [net exec $pair ping -c 5 -i 0.05 -W 1 $pair.host_addr]
+  DispatchBind t23 = t22 policy=def-then-exec-bind lane=builtin(net)
+  ApplyBind src=t23 argv=t22 primary=_ rc=_ guard=true fail=bb6
+  BuildArgs t24 = [bpftool map dump id $mapID -j]
+  DispatchBind t25 = t24 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t25 argv=t24 primary=dumpAfter rc=_ guard=true fail=bb7
+  Eval t26 = $dumpAfter.stdout |> jq $sumFilter
+  BindName after = t26
+  Eval t27 = $after - $before
+  BindName delta = t27
+  BuildArgs t28 = [print "published tc image: packets=${delta}"]
+  DispatchCommand argv=t28 policy=def-then-exec-command lane=builtin(print)
   Assert $delta >= 5
-  BuildArgs t30 = [bpfman link detach $link]
-  DispatchCommand argv=t30 policy=def-then-exec-command lane=builtin(bpfman)
+  BuildArgs t29 = [bpfman link detach $link]
+  DispatchCommand argv=t29 policy=def-then-exec-command lane=builtin(bpfman)
   Assert fail bpfman link get $linkID
-  BuildArgs t31 = [sleep 0.1]
-  DispatchCommand argv=t31 policy=def-then-exec-command lane=exec
-  BuildArgs t32 = [bpftool map dump id $mapID -j]
-  DispatchBind t33 = t32 policy=def-then-exec-bind lane=exec
-  ApplyBind src=t33 argv=t32 primary=dumpDetached rc=_ guard=true fail=bb8
-  Eval t34 = $dumpDetached.stdout |> jq $sumFilter
-  BindName detached = t34
-  BuildArgs t35 = [net exec $pair ping -c 5 -i 0.05 -W 1 $pair.host_addr]
-  DispatchBind t36 = t35 policy=def-then-exec-bind lane=builtin(net)
-  ApplyBind src=t36 argv=t35 primary=_ rc=_ guard=true fail=bb9
-  BuildArgs t37 = [bpftool map dump id $mapID -j]
-  DispatchBind t38 = t37 policy=def-then-exec-bind lane=exec
-  ApplyBind src=t38 argv=t37 primary=dumpAfterDetach rc=_ guard=true fail=bb10
-  Eval t39 = $dumpAfterDetach.stdout |> jq $sumFilter
-  BindName afterDetach = t39
-  BuildArgs t40 = [print "published tc image after-detach=${afterDetach} want=${detached}"]
-  DispatchCommand argv=t40 policy=def-then-exec-command lane=builtin(print)
+  BuildArgs t30 = [sleep 0.1]
+  DispatchCommand argv=t30 policy=def-then-exec-command lane=exec
+  BuildArgs t31 = [bpftool map dump id $mapID -j]
+  DispatchBind t32 = t31 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t32 argv=t31 primary=dumpDetached rc=_ guard=true fail=bb8
+  Eval t33 = $dumpDetached.stdout |> jq $sumFilter
+  BindName detached = t33
+  BuildArgs t34 = [net exec $pair ping -c 5 -i 0.05 -W 1 $pair.host_addr]
+  DispatchBind t35 = t34 policy=def-then-exec-bind lane=builtin(net)
+  ApplyBind src=t35 argv=t34 primary=_ rc=_ guard=true fail=bb9
+  BuildArgs t36 = [bpftool map dump id $mapID -j]
+  DispatchBind t37 = t36 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t37 argv=t36 primary=dumpAfterDetach rc=_ guard=true fail=bb10
+  Eval t38 = $dumpAfterDetach.stdout |> jq $sumFilter
+  BindName afterDetach = t38
+  BuildArgs t39 = [print "published tc image after-detach=${afterDetach} want=${detached}"]
+  DispatchCommand argv=t39 policy=def-then-exec-command lane=builtin(print)
   Assert $afterDetach == $detached
   RunDefers policy=program
   Stop

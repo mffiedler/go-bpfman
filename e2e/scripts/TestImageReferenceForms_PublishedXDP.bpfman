@@ -8,9 +8,8 @@ import ../lib.bpfman
 def expect_xdp_ref(image) {
     print "image-ref: inspecting ${image}"
     guard published <- inspect_published_image $image xdp_stats
-    let (inspected manifest) = $published
-    assert $manifest.programs.xdp_stats == xdp
-    assert $manifest.maps.xdp_stats_map == per_cpu_array
+    assert $published.manifest.programs.xdp_stats == xdp
+    assert $published.manifest.maps.xdp_stats_map == per_cpu_array
 
     print "image-ref: loading ${image}"
     guard loaded <- bpfman program load image \
@@ -23,10 +22,10 @@ def expect_xdp_ref(image) {
     defer bpfman program unload $pid
 
     expect_program_load $prog xdp extension xdp_stats
-    expect_loaded_image_source $prog $image $inspected
+    expect_loaded_image_source $prog $image $published.inspected
     print "image-ref: loaded ${image} digest=${prog.record.load.image_source.digest}"
 
-    return $inspected
+    return $published.inspected
 }
 
 let bare = "quay.io/bpfman-bytecode/go-xdp-counter"

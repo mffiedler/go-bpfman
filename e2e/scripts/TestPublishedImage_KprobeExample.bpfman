@@ -7,9 +7,8 @@ import ../lib.bpfman
 let image = "quay.io/bpfman-bytecode/go-kprobe-counter"
 
 guard published <- inspect_published_image $image kprobe_counter
-let (inspected manifest) = $published
-assert $manifest.programs.kprobe_counter == probe
-assert $manifest.maps.kprobe_stats_map == per_cpu_array
+assert $published.manifest.programs.kprobe_counter == probe
+assert $published.manifest.maps.kprobe_stats_map == per_cpu_array
 
 guard fn <- kfunc acquire
 defer kfunc release $fn
@@ -23,7 +22,7 @@ let pid = $prog.record.program_id
 defer bpfman program unload $pid
 
 expect_program_load $prog kprobe kprobe kprobe_counter
-expect_loaded_image_source $prog $image $inspected
+expect_loaded_image_source $prog $image $published.inspected
 
 guard link <- bpfman link attach kprobe --fn-name $fn.name $prog
 let linkID = $link.record.id

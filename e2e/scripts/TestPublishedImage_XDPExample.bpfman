@@ -7,9 +7,8 @@ import ../lib.bpfman
 let image = "quay.io/bpfman-bytecode/go-xdp-counter"
 
 guard published <- inspect_published_image $image xdp_stats
-let (inspected manifest) = $published
-assert $manifest.programs.xdp_stats == xdp
-assert $manifest.maps.xdp_stats_map == per_cpu_array
+assert $published.manifest.programs.xdp_stats == xdp
+assert $published.manifest.maps.xdp_stats_map == per_cpu_array
 
 guard pair <- net veth-pair
 defer net release $pair
@@ -23,7 +22,7 @@ let pid = $prog.record.program_id
 defer bpfman program unload $pid
 
 expect_program_load $prog xdp extension xdp_stats
-expect_loaded_image_source $prog $image $inspected
+expect_loaded_image_source $prog $image $published.inspected
 
 guard link <- bpfman link attach xdp --iface $pair.host_link $prog
 let linkID = $link.record.id

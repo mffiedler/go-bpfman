@@ -61,11 +61,11 @@ bb0:
   Assert $inspected matches { reference: not-empty, digest: not-empty }
   Eval t4 = "if ((.manifests // []) | length) > 0 then [.manifests[] | select(.programs.${program_name} != null)][0] else . end"
   BindName program_filter = t4
-  Eval t5 = $inspected |> jq $program_filter
-  BindName manifest = t5
-  Assert not null $manifest
-  Assert ($manifest.layers |> jq "length") >= 1
-  Eval t6 = [$inspected $manifest]
+  Eval t5 = $inspected |> jq "{inspected: ., manifest: (${program_filter})}"
+  BindName bundle = t5
+  Assert not null $bundle.manifest
+  Assert ($bundle.manifest.layers |> jq "length") >= 1
+  Eval t6 = $bundle
   ReturnValue t6 to=bb3
 
 bb1:

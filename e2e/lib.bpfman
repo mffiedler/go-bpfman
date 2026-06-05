@@ -60,9 +60,10 @@ def expect_program_round_trip(got prog) {
     }
 }
 
-# Inspect a published bytecode image and return the top-level
-# inspection plus the manifest-shaped metadata that advertises the
-# requested program name.
+# Inspect a published bytecode image and return a named
+# {inspected, manifest} object: the top-level inspection plus the
+# manifest-shaped metadata that advertises the requested program
+# name. Callers read $x.inspected and $x.manifest.
 def inspect_published_image(image program_name) {
     guard inspected <- bpfman image inspect $image
     assert $inspected matches {
@@ -76,11 +77,11 @@ def inspect_published_image(image program_name) {
     # check below separately verifies that the loaded digest belongs
     # to the inspected object.
     let program_filter = "if ((.manifests // []) | length) > 0 then [.manifests[] | select(.programs.${program_name} != null)][0] else . end"
-    let manifest = $inspected |> jq $program_filter
-    assert not (null $manifest)
-    assert ($manifest.layers |> jq "length") >= 1
+    let bundle = $inspected |> jq "{inspected: ., manifest: (${program_filter})}"
+    assert not (null $bundle.manifest)
+    assert ($bundle.manifest.layers |> jq "length") >= 1
 
-    return [$inspected $manifest]
+    return $bundle
 }
 
 # Assert that a loaded image program records the same registry

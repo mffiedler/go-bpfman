@@ -7,9 +7,8 @@ import ../lib.bpfman
 let image = "quay.io/bpfman-bytecode/go-tracepoint-counter"
 
 guard published <- inspect_published_image $image tracepoint_kill_recorder
-let (inspected manifest) = $published
-assert $manifest.programs.tracepoint_kill_recorder == tracepoint
-assert $manifest.maps.tracepoint_stats_map == per_cpu_array
+assert $published.manifest.programs.tracepoint_kill_recorder == tracepoint
+assert $published.manifest.maps.tracepoint_stats_map == per_cpu_array
 
 guard loaded <- bpfman program load image \
     --image-url $image \
@@ -20,7 +19,7 @@ let pid = $prog.record.program_id
 defer bpfman program unload $pid
 
 expect_program_load $prog tracepoint tracepoint tracepoint_kill_recorder
-expect_loaded_image_source $prog $image $inspected
+expect_loaded_image_source $prog $image $published.inspected
 
 guard link <- bpfman link attach tracepoint $prog syscalls/sys_enter_kill
 let linkID = $link.record.id

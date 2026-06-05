@@ -9,31 +9,29 @@ bb0:
   BuildArgs t2 = [inspect_published_image $image xdp_stats]
   DispatchBind t3 = t2 policy=def-then-exec-bind lane=exec
   ApplyBind src=t3 argv=t2 primary=published rc=_ guard=true fail=bb1
-  Eval t4 = $published
-  BindDestructure [inspected manifest] = t4
-  Assert $manifest.programs.xdp_stats == xdp
-  Assert $manifest.maps.xdp_stats_map == per_cpu_array
-  BuildArgs t5 = [print "image-ref: loading ${image}"]
-  DispatchCommand argv=t5 policy=def-then-exec-command lane=builtin(print)
-  BuildArgs t6 = [bpfman program load image --image-url $image --pull-policy Always --programs xdp:xdp_stats]
-  DispatchBind t7 = t6 policy=def-then-exec-bind lane=builtin(bpfman)
-  ApplyBind src=t7 argv=t6 primary=loaded rc=_ guard=true fail=bb2
-  Eval t8 = $loaded.programs[0]
-  BindName prog = t8
-  Eval t9 = $prog.record.program_id
-  BindName pid = t9
-  BuildArgs t10 = [print "image-ref: unloaded ${image} pid=${pid}"]
-  RegisterDefer argv=t10 policy=def-then-exec-bind lane=builtin(print)
-  BuildArgs t11 = [bpfman program unload $pid]
-  RegisterDefer argv=t11 policy=def-then-exec-bind lane=builtin(bpfman)
-  BuildArgs t12 = [expect_program_load $prog xdp extension xdp_stats]
+  Assert $published.manifest.programs.xdp_stats == xdp
+  Assert $published.manifest.maps.xdp_stats_map == per_cpu_array
+  BuildArgs t4 = [print "image-ref: loading ${image}"]
+  DispatchCommand argv=t4 policy=def-then-exec-command lane=builtin(print)
+  BuildArgs t5 = [bpfman program load image --image-url $image --pull-policy Always --programs xdp:xdp_stats]
+  DispatchBind t6 = t5 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t6 argv=t5 primary=loaded rc=_ guard=true fail=bb2
+  Eval t7 = $loaded.programs[0]
+  BindName prog = t7
+  Eval t8 = $prog.record.program_id
+  BindName pid = t8
+  BuildArgs t9 = [print "image-ref: unloaded ${image} pid=${pid}"]
+  RegisterDefer argv=t9 policy=def-then-exec-bind lane=builtin(print)
+  BuildArgs t10 = [bpfman program unload $pid]
+  RegisterDefer argv=t10 policy=def-then-exec-bind lane=builtin(bpfman)
+  BuildArgs t11 = [expect_program_load $prog xdp extension xdp_stats]
+  DispatchCommand argv=t11 policy=def-then-exec-command lane=exec
+  BuildArgs t12 = [expect_loaded_image_source $prog $image $published.inspected]
   DispatchCommand argv=t12 policy=def-then-exec-command lane=exec
-  BuildArgs t13 = [expect_loaded_image_source $prog $image $inspected]
-  DispatchCommand argv=t13 policy=def-then-exec-command lane=exec
-  BuildArgs t14 = [print "image-ref: loaded ${image} digest=${prog.record.load.image_source.digest}"]
-  DispatchCommand argv=t14 policy=def-then-exec-command lane=builtin(print)
-  Eval t15 = $inspected
-  ReturnValue t15 to=bb4
+  BuildArgs t13 = [print "image-ref: loaded ${image} digest=${prog.record.load.image_source.digest}"]
+  DispatchCommand argv=t13 policy=def-then-exec-command lane=builtin(print)
+  Eval t14 = $published.inspected
+  ReturnValue t14 to=bb4
 
 bb1:
   RunDefers policy=def-local

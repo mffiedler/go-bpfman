@@ -7,9 +7,8 @@ import ../lib.bpfman
 let image = "quay.io/bpfman-bytecode/go-tcx-counter"
 
 guard published <- inspect_published_image $image tcx_stats
-let (inspected manifest) = $published
-assert $manifest.programs.tcx_stats == tc
-assert $manifest.maps.tcx_stats_map == per_cpu_array
+assert $published.manifest.programs.tcx_stats == tc
+assert $published.manifest.maps.tcx_stats_map == per_cpu_array
 
 guard pair <- net veth-pair
 defer net release $pair
@@ -23,7 +22,7 @@ let pid = $prog.record.program_id
 defer bpfman program unload $pid
 
 expect_program_load $prog tcx schedcls tcx_stats
-expect_loaded_image_source $prog $image $inspected
+expect_loaded_image_source $prog $image $published.inspected
 
 guard link <- bpfman link attach tcx --iface $pair.host_link --direction ingress --priority 50 $prog
 let linkID = $link.record.id

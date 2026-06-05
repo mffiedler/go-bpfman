@@ -7,9 +7,8 @@ import ../lib.bpfman
 let image = "quay.io/bpfman-bytecode/go-uretprobe-counter"
 
 guard published <- inspect_published_image $image uretprobe_counter
-let (inspected manifest) = $published
-assert $manifest.programs.uretprobe_counter == probe
-assert $manifest.maps.uretprobe_stats_map == per_cpu_array
+assert $published.manifest.programs.uretprobe_counter == probe
+assert $published.manifest.maps.uretprobe_stats_map == per_cpu_array
 
 guard target <- uprobe target
 
@@ -22,7 +21,7 @@ let pid = $prog.record.program_id
 defer bpfman program unload $pid
 
 expect_program_load $prog uretprobe kprobe uretprobe_counter
-expect_loaded_image_source $prog $image $inspected
+expect_loaded_image_source $prog $image $published.inspected
 
 guard link <- bpfman link attach uprobe --target $target.path --fn-name $target.symbol $prog
 let linkID = $link.record.id
