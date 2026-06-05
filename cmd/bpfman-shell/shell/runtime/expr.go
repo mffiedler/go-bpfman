@@ -84,10 +84,10 @@ type Env struct {
 	// exit. The driver renders the diagnostic ('[job] FAIL at
 	// file:line: argv') and is responsible for any cleanup
 	// signal (typically SIGKILL so a leaked background process
-	// does not survive the script). The shell layer increments
-	// Session.RecordJobLeak regardless of whether HandleJobLeak
-	// is set, so the exit code reflects the leak even with a
-	// nil callback.
+	// does not survive the script). The handler owns counting
+	// policy too: strict drivers call Session.RecordJobLeak, while
+	// embedders with a nil handler deliberately let leaks pass
+	// silently.
 	HandleJobLeak func(*Job)
 
 	// defers is the active defer scope's stack. evalDeferStmt
