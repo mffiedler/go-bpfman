@@ -50,6 +50,13 @@ E2E_SCRIPTS_TIMELINE_TRACE ?= $(COVERAGE_DIR)/e2e-scripts-timeline.trace.json
 BPFMAN_PROTO_DIR := proto
 BPFMAN_PB_DIR := server/pb
 DOC_PORT ?= 6060
+E2E_SCRIPT_SOURCES := $(wildcard e2e/scripts/*.bpfman)
+E2E_SCRIPT_LOWER_DEPS := e2e/lib.bpfman
+LOWERED_CORPUS_DIR := e2e/testdata/lowered
+LOWERED_CORPUS_E2E_SCRIPT_OUTPUTS := $(patsubst e2e/scripts/%.bpfman,$(LOWERED_CORPUS_DIR)/scripts/%.lowered,$(E2E_SCRIPT_SOURCES))
+LOWERED_CORPUS_E2E_LIB_OUTPUT := $(LOWERED_CORPUS_DIR)/lib/lib.lowered
+LOWERED_CORPUS_OUTPUTS := $(LOWERED_CORPUS_E2E_SCRIPT_OUTPUTS) $(LOWERED_CORPUS_E2E_LIB_OUTPUT)
+BPFMAN_SHELL_GO_SOURCES := $(shell find . -path ./vendor -prune -o -name '*.go' ! -name '*_test.go' -print)
 
 # ---------------------------------------------------------------------------
 # Image-building tool (docker / podman). Mirrors the bpfman-operator
@@ -634,8 +641,6 @@ help:
 	@echo "Testing:"
 	@printf "  %-31s %s\n" "test" "Run all tests"
 	@printf "  %-31s %s\n" "test-all" "Run every host-side test surface in CI order (pre-push gate)"
-	@printf "  %-31s %s\n" "test-lowered-corpus" "Compare the shell lowered-IR corpus against checked-in goldens"
-	@printf "  %-31s %s\n" "update-lowered-corpus" "Regenerate the shell lowered-IR corpus goldens"
 	@printf "  %-31s %s\n" "test-e2e" "Run e2e tests (requires root)"
 	@printf "  %-31s %s\n" "test-e2e-grpc" "Run the parallel gRPC e2e test against a real bpfman serve daemon (requires root)"
 	@printf "  %-31s %s\n" "test-e2e-scripts" "Run .bpfman e2e scripts under e2e/scripts/ via the Go test binary in e2e/scriptrunner (requires root)"
@@ -820,19 +825,17 @@ test-timeline: go-test-timeline-compile $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF
 # `make -j`, mirroring the test-e2e-scripts ordering shape.
 test-all:
 	$(Q)$(MAKE) test
-	$(Q)$(MAKE) test-lowered-corpus
 	$(Q)$(MAKE) lint-go
 	$(Q)$(MAKE) lint-make
 	$(Q)$(MAKE) test-e2e-scripts-matrix
 	$(Q)$(MAKE) test-e2e
 	$(Q)$(MAKE) test-e2e-grpc
 
-test-lowered-corpus:
-	$(strip go test $(if $(RACE),-race,) $(strip $(EXTRA_GOFLAGS) -run=TestLoweredCorpus) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") ./cmd/bpfman-shell/shell/lower)
-
-update-lowered-corpus:
-	$(strip GOLDIE_UPDATE=true go test $(if $(RACE),-race,) $(strip $(EXTRA_GOFLAGS) -count=1 -run=TestLoweredCorpus) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") ./cmd/bpfman-shell/shell/lower)
-	@echo "Regenerated lowered corpus goldens. Inspect 'git diff' before committing."
+# The lowered corpus is checked in deliberately: it is a reviewable
+# snapshot of the canonical IR for the e2e .bpfman scripts. The
+# checked-in .lowered files are ordinary Make outputs below: changing
+# a script, e2e/lib.bpfman, or bin/bpfman-shell refreshes the relevant
+# snapshot when a target depends on $(LOWERED_CORPUS_OUTPUTS).
 
 # nsenter cross-architecture tests
 #
@@ -998,7 +1001,18 @@ E2E_SCRIPTS_FORWARD_VARS := \
 $(BIN_DIR)/e2e-scripts.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) | $(BIN_DIR)
 	$(strip go test -c $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(E2E_TAGS),-tags=$(E2E_TAGS)) $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") -o $(BIN_DIR)/e2e-scripts.test ./e2e/scriptrunner)
 
-build-e2e-scripts: bpfman-compile bpfman-shell-compile $(E2E_SCRIPTS_TEST_BIN)
+$(LOWERED_CORPUS_DIR)/scripts/%.lowered: e2e/scripts/%.bpfman $(E2E_SCRIPT_LOWER_DEPS) $(BIN_DIR)/bpfman-shell | $(LOWERED_CORPUS_DIR)/scripts
+	$(call quiet_cmd,LOWERED,$@)
+	$(Q)$(BIN_DIR)/bpfman-shell --lowered $< > $@
+
+$(LOWERED_CORPUS_E2E_LIB_OUTPUT): e2e/lib.bpfman $(BIN_DIR)/bpfman-shell | $(LOWERED_CORPUS_DIR)/lib
+	$(call quiet_cmd,LOWERED,$@)
+	$(Q)$(BIN_DIR)/bpfman-shell --lowered $< > $@
+
+$(LOWERED_CORPUS_DIR)/scripts $(LOWERED_CORPUS_DIR)/lib:
+	@mkdir -p $@
+
+build-e2e-scripts: bpfman-compile bpfman-shell-compile $(E2E_SCRIPTS_TEST_BIN) $(LOWERED_CORPUS_OUTPUTS)
 
 # PATH is arranged via `sudo env PATH=...` so the script test
 # binary can resolve bpfman-shell regardless of how sudo's
@@ -1305,8 +1319,14 @@ clean-bpfman:
 # bin/bpfman; bin/bpfman-shell is intended for dev and CI.
 bpfman-shell-build: bpfman-fmt bpfman-shell-compile
 
-bpfman-shell-compile: | $(BIN_DIR)
+# Depends on the dispatcher and platform/ebpf BPF embeds because the
+# shell transitively imports both packages and their go:embed
+# directives need the .bpf.o objects present at compile time. Make's
+# pattern rules build them on demand if missing or out of date.
+$(BIN_DIR)/bpfman-shell: $(BPFMAN_SHELL_GO_SOURCES) $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS) | $(BIN_DIR)
 	$(strip go build $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(BUILD_TAGS),-tags '$(BUILD_TAGS)') $(if $(BIN_LDFLAGS),-ldflags "$(BIN_LDFLAGS)") -o $(BIN_DIR)/bpfman-shell ./cmd/bpfman-shell)
+
+bpfman-shell-compile: $(BIN_DIR)/bpfman-shell
 
 clean-bpfman-shell:
 	$(RM) $(BIN_DIR)/bpfman-shell
@@ -1653,13 +1673,16 @@ ci-check-goimports:
 	$(MAKE) bpfman-goimports
 	git diff --exit-code
 
-# Reproduce the workflow's check-goldens job locally. Runs every
-# generated-golden refresh target, then verifies the tree is still
-# clean. This catches commits that edit .bpfman scripts, the lowerer,
-# or corpus inputs without also committing the regenerated lowered IR
-# goldens.
-ci-check-goldens:
-	$(MAKE) update-lowered-corpus
+# Reproduce the workflow's check-goldens job locally. Regenerates the
+# generated golden files inside the CI container -- the lowered corpus
+# rules build bpfman-shell, which embeds the dispatcher and
+# platform/ebpf BPF objects, so it needs clang, libbpf, and the kernel
+# headers the container provides -- then verifies the tree is still
+# clean on the host. This catches commits that edit .bpfman scripts,
+# the lowerer, or corpus inputs without also committing the
+# regenerated lowered IR goldens.
+ci-check-goldens: ci-image
+	$(CI_RUN) make $(LOWERED_CORPUS_OUTPUTS)
 	git diff --exit-code
 
 # Reproduce the workflow's lint job locally. Runs the full
@@ -1784,5 +1807,5 @@ bpfman-test-grpc: build-image-dev
 .PHONY: coverage clean-coverage coverage-func coverage-html coverage-open
 .PHONY: doc doc-text
 .PHONY: print-fedora-version print-go-version print-golangci-lint-version
-.PHONY: build-e2e-grpc build-e2e-scripts $(BIN_DIR)/e2e.test $(BIN_DIR)/e2e-grpc.test $(BIN_DIR)/e2e-scripts.test run-e2e-grpc run-e2e-scripts run-e2e-scripts-timeline test test-timeline test-all test-lowered-corpus update-lowered-corpus test-e2e test-e2e-grpc test-e2e-scripts test-e2e-scripts-file test-e2e-scripts-image test-e2e-scripts-matrix test-e2e-scripts-file-matrix test-e2e-scripts-image-matrix test-e2e-scripts-image-ci test-e2e-published-images test-e2e-scripts-stress test-e2e-scripts-timeline test-examples
+.PHONY: build-e2e-grpc build-e2e-scripts $(BIN_DIR)/e2e.test $(BIN_DIR)/e2e-grpc.test $(BIN_DIR)/e2e-scripts.test run-e2e-grpc run-e2e-scripts run-e2e-scripts-timeline test test-timeline test-all test-e2e test-e2e-grpc test-e2e-scripts test-e2e-scripts-file test-e2e-scripts-image test-e2e-scripts-matrix test-e2e-scripts-file-matrix test-e2e-scripts-image-matrix test-e2e-scripts-image-ci test-e2e-published-images test-e2e-scripts-stress test-e2e-scripts-timeline test-examples
 .PHONY: test-nsenter test-nsenter-amd64 test-nsenter-arm64 test-nsenter-cross test-nsenter-ppc64le test-nsenter-s390x

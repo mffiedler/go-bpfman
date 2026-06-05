@@ -1,0 +1,289 @@
+def expect_program_load(prog load_tp kernel_tp name) entry=bb0
+
+bb0:
+  EnterFrame kind=def
+  EnterDeferScope kind=def
+  BindName prog = t0
+  BindName load_tp = t1
+  BindName kernel_tp = t2
+  BindName name = t3
+  Assert $prog matches { record.load.program_type: $load_tp, status.kernel.program_type: $kernel_tp, record.meta.name: $name, status.kernel.id: $prog.record.program_id, status.kernel.name: not-empty, status.kernel.tag: not-empty, status.kernel.loaded_at: not-empty, record.handles.pin_path: not-empty }
+  Eval t4 = not null $prog.record.load.image_source
+  Branch cond=t4 true=bb1 false=bb2
+
+bb1:
+  EnterFrame kind=if-branch
+  Assert $prog.record.load.image_source.url != ""
+  Assert $prog.record.load.image_source.digest != ""
+  Assert $prog.record.load.image_source.pull_policy == Always
+  ExitFrame
+  Jump bb3
+
+bb2:
+  EnterFrame kind=if-branch
+  Assert null $prog.record.load.image_source
+  ExitFrame
+  Jump bb3
+
+bb3:
+  Jump bb4
+
+bb4:
+  RunDefers policy=def-local
+  ExitFrame
+  EmitBindResult rc=synthetic primary=nil
+
+def expect_program_round_trip(got prog) entry=bb0
+
+bb0:
+  EnterFrame kind=def
+  EnterDeferScope kind=def
+  BindName got = t0
+  BindName prog = t1
+  Assert $got matches { status.kernel.id: $prog.status.kernel.id, status.kernel.program_type: $prog.status.kernel.program_type, status.kernel.name: $prog.status.kernel.name, status.kernel.tag: $prog.status.kernel.tag, record.meta.name: $prog.record.meta.name, record.handles.pin_path: $prog.record.handles.pin_path }
+  Jump bb1
+
+bb1:
+  RunDefers policy=def-local
+  ExitFrame
+  EmitBindResult rc=synthetic primary=nil
+
+def inspect_published_image(image program_name) entry=bb0
+
+bb0:
+  EnterFrame kind=def
+  EnterDeferScope kind=def
+  BindName image = t0
+  BindName program_name = t1
+  BuildArgs t2 = [bpfman image inspect $image]
+  DispatchBind t3 = t2 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t3 argv=t2 primary=inspected rc=_ guard=true fail=bb1
+  Assert $inspected matches { reference: not-empty, digest: not-empty }
+  Eval t4 = "if ((.manifests // []) | length) > 0 then [.manifests[] | select(.programs.${program_name} != null)][0] else . end"
+  BindName program_filter = t4
+  Eval t5 = $inspected |> jq "{inspected: ., manifest: (${program_filter})}"
+  BindName bundle = t5
+  Assert not null $bundle.manifest
+  Assert ($bundle.manifest.layers |> jq "length") >= 1
+  Eval t6 = $bundle
+  ReturnValue t6 to=bb3
+
+bb1:
+  RunDefers policy=def-local
+  ExitFrame
+  PropagateError
+
+bb2:
+  Jump bb3
+
+bb3:
+  RunDefers policy=def-local
+  ExitFrame
+  EmitBindResult rc=synthetic primary=nil
+
+def expect_loaded_image_source(prog image inspected) entry=bb0
+
+bb0:
+  EnterFrame kind=def
+  EnterDeferScope kind=def
+  BindName prog = t0
+  BindName image = t1
+  BindName inspected = t2
+  Assert $prog.record.load.image_source.url == $image
+  Eval t3 = $prog.record.load.image_source.digest
+  BindName digest = t3
+  Eval t4 = $inspected |> jq "if ((.manifests // []) | length) > 0 then [.manifests[].digest | select(. == "${digest}")] | length else if .digest == "${digest}" then 1 else 0 end end"
+  BindName matches = t4
+  Assert $matches == 1
+  Jump bb1
+
+bb1:
+  RunDefers policy=def-local
+  ExitFrame
+  EmitBindResult rc=synthetic primary=nil
+
+def await_wave_completion(ack n) entry=bb0
+
+bb0:
+  EnterFrame kind=def
+  EnterDeferScope kind=def
+  BindName ack = t0
+  BindName n = t1
+  Eval t2 = path-exists "${ack}.${n}"
+  Branch cond=t2 true=bb1 false=bb2
+
+bb1:
+  Jump bb4
+
+bb2:
+  Eval t3 = "waiting for ack.${n}"
+  RunDefers policy=attempt-fatal
+  ExitFrame
+  RetryPoll message=t3
+
+bb3:
+
+bb4:
+  RunDefers policy=def-local
+  ExitFrame
+  EmitBindResult rc=synthetic primary=nil
+
+def assert_link_absent(listed linkID) entry=bb0
+
+bb0:
+  EnterFrame kind=def
+  EnterDeferScope kind=def
+  BindName listed = t0
+  BindName linkID = t1
+  Eval t2 = $listed |> jq "[.links[] | select(.id == ${linkID})] | length"
+  BindName count = t2
+  Assert $count == 0
+  Jump bb1
+
+bb1:
+  RunDefers policy=def-local
+  ExitFrame
+  EmitBindResult rc=synthetic primary=nil
+
+body entry=bb0
+
+bb0:
+  EnterDeferScope kind=program
+  Eval t0 = 5
+  BindName n = t0
+  Eval t1 = 41
+  BindName weight_a = t1
+  Eval t2 = 42
+  BindName weight_b = t2
+  Eval t3 = 43
+  BindName weight_c = t3
+  BuildArgs t4 = [uprobe target]
+  DispatchBind t5 = t4 policy=def-then-exec-bind lane=builtin(uprobe)
+  ApplyBind src=t5 argv=t4 primary=target rc=_ guard=true fail=bb1
+  BuildArgs t6 = [bpfman program load file --path testdata/bpf/multi_prog_uprobe_counter.bpf.o --programs uretprobe:mup_a,uretprobe:mup_b,uretprobe:mup_c -g "expected_pid=0x${u32le $target.pid}" -g "weight_a=0x${u64le $weight_a}" -g "weight_b=0x${u64le $weight_b}" -g "weight_c=0x${u64le $weight_c}"]
+  DispatchBind t7 = t6 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t7 argv=t6 primary=loaded rc=_ guard=true fail=bb2
+  Eval t8 = [$loaded.programs[0] $loaded.programs[0].record.program_id]
+  BindDestructure [prog_a pid_a] = t8
+  Eval t9 = [$loaded.programs[1] $loaded.programs[1].record.program_id]
+  BindDestructure [prog_b pid_b] = t9
+  Eval t10 = [$loaded.programs[2] $loaded.programs[2].record.program_id]
+  BindDestructure [prog_c pid_c] = t10
+  BuildArgs t11 = [bpfman program unload $pid_a]
+  RegisterDefer argv=t11 policy=def-then-exec-bind lane=builtin(bpfman)
+  BuildArgs t12 = [bpfman program unload $pid_b]
+  RegisterDefer argv=t12 policy=def-then-exec-bind lane=builtin(bpfman)
+  BuildArgs t13 = [bpfman program unload $pid_c]
+  RegisterDefer argv=t13 policy=def-then-exec-bind lane=builtin(bpfman)
+  Eval t14 = $prog_a |> jq "[.status.maps[] | select(.name == \"mup_a_count\") | .id][0]"
+  BindName mapID_a = t14
+  Eval t15 = $prog_b |> jq "[.status.maps[] | select(.name == \"mup_b_count\") | .id][0]"
+  BindName mapID_b = t15
+  Eval t16 = $prog_c |> jq "[.status.maps[] | select(.name == \"mup_c_count\") | .id][0]"
+  BindName mapID_c = t16
+  BuildArgs t17 = [bpfman link attach uprobe --target $target.path -f $target.symbol $pid_a]
+  DispatchBind t18 = t17 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t18 argv=t17 primary=link_a rc=_ guard=true fail=bb3
+  BuildArgs t19 = [bpfman link attach uprobe --target $target.path -f $target.symbol $pid_b]
+  DispatchBind t20 = t19 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t20 argv=t19 primary=link_b rc=_ guard=true fail=bb4
+  BuildArgs t21 = [bpfman link attach uprobe --target $target.path -f $target.symbol $pid_c]
+  DispatchBind t22 = t21 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t22 argv=t21 primary=link_c rc=_ guard=true fail=bb5
+  Eval t23 = "fromjson | .[0].formatted.value | tonumber"
+  BindName counter_filter = t23
+  BuildArgs t24 = [uprobe fire $n]
+  DispatchBind t25 = t24 policy=def-then-exec-bind lane=builtin(uprobe)
+  ApplyBind src=t25 argv=t24 primary=_ rc=_ guard=true fail=bb6
+  BuildArgs t26 = [bpfman link detach $link_c]
+  DispatchCommand argv=t26 policy=def-then-exec-command lane=builtin(bpfman)
+  BuildArgs t27 = [sleep 0.1]
+  DispatchCommand argv=t27 policy=def-then-exec-command lane=exec
+  BuildArgs t28 = [uprobe fire $n]
+  DispatchBind t29 = t28 policy=def-then-exec-bind lane=builtin(uprobe)
+  ApplyBind src=t29 argv=t28 primary=_ rc=_ guard=true fail=bb7
+  BuildArgs t30 = [bpfman link detach $link_b]
+  DispatchCommand argv=t30 policy=def-then-exec-command lane=builtin(bpfman)
+  BuildArgs t31 = [sleep 0.1]
+  DispatchCommand argv=t31 policy=def-then-exec-command lane=exec
+  BuildArgs t32 = [uprobe fire $n]
+  DispatchBind t33 = t32 policy=def-then-exec-bind lane=builtin(uprobe)
+  ApplyBind src=t33 argv=t32 primary=_ rc=_ guard=true fail=bb8
+  BuildArgs t34 = [bpftool map dump id $mapID_a -j]
+  DispatchBind t35 = t34 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t35 argv=t34 primary=dump_a rc=_ guard=true fail=bb9
+  BuildArgs t36 = [bpftool map dump id $mapID_b -j]
+  DispatchBind t37 = t36 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t37 argv=t36 primary=dump_b rc=_ guard=true fail=bb10
+  BuildArgs t38 = [bpftool map dump id $mapID_c -j]
+  DispatchBind t39 = t38 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t39 argv=t38 primary=dump_c rc=_ guard=true fail=bb11
+  Eval t40 = $dump_a.stdout |> jq $counter_filter
+  BindName count_a = t40
+  Eval t41 = $dump_b.stdout |> jq $counter_filter
+  BindName count_b = t41
+  Eval t42 = $dump_c.stdout |> jq $counter_filter
+  BindName count_c = t42
+  Eval t43 = (3 * $n) * $weight_a
+  BindName want_a = t43
+  Eval t44 = (2 * $n) * $weight_b
+  BindName want_b = t44
+  Eval t45 = (1 * $n) * $weight_c
+  BindName want_c = t45
+  BuildArgs t46 = [print "a: got=${count_a} want=${want_a}"]
+  DispatchCommand argv=t46 policy=def-then-exec-command lane=builtin(print)
+  BuildArgs t47 = [print "b: got=${count_b} want=${want_b}"]
+  DispatchCommand argv=t47 policy=def-then-exec-command lane=builtin(print)
+  BuildArgs t48 = [print "c: got=${count_c} want=${want_c}"]
+  DispatchCommand argv=t48 policy=def-then-exec-command lane=builtin(print)
+  Assert $count_a == $want_a
+  Assert $count_b == $want_b
+  Assert $count_c == $want_c
+  BuildArgs t49 = [bpfman link detach $link_a]
+  DispatchCommand argv=t49 policy=def-then-exec-command lane=builtin(bpfman)
+  RunDefers policy=program
+  Stop
+
+bb1:
+  RunDefers policy=program
+  PropagateError
+
+bb2:
+  RunDefers policy=program
+  PropagateError
+
+bb3:
+  RunDefers policy=program
+  PropagateError
+
+bb4:
+  RunDefers policy=program
+  PropagateError
+
+bb5:
+  RunDefers policy=program
+  PropagateError
+
+bb6:
+  RunDefers policy=program
+  PropagateError
+
+bb7:
+  RunDefers policy=program
+  PropagateError
+
+bb8:
+  RunDefers policy=program
+  PropagateError
+
+bb9:
+  RunDefers policy=program
+  PropagateError
+
+bb10:
+  RunDefers policy=program
+  PropagateError
+
+bb11:
+  RunDefers policy=program
+  PropagateError
