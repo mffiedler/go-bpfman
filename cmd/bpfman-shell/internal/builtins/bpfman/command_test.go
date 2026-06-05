@@ -42,6 +42,18 @@ func structuredLink(name string, linkID kernel.LinkID) runtime.Arg {
 
 func word(s string) runtime.Arg { return runtime.WordArg{Text: s} }
 
+func TestDispatchCommandLibrary_NilManagerIsRejected(t *testing.T) {
+	t.Parallel()
+
+	_, err := dispatchCommandLibrary(t.Context(), nil, nil, []runtime.Arg{
+		word("program"),
+		word("list"),
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "requires a manager")
+}
+
 func TestParseImageInspect(t *testing.T) {
 	t.Parallel()
 

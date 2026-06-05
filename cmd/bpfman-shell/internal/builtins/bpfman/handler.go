@@ -91,6 +91,9 @@ func dispatch(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, arg
 }
 
 func dispatchCommandLibrary(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, args []runtime.Arg) (runtime.Value, error) {
+	if mgr == nil {
+		return runtime.Value{}, fmt.Errorf("bpfman library dispatch requires a manager")
+	}
 	cmd, err := parseCommand(args)
 	if err != nil {
 		return runtime.Value{}, err
