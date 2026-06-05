@@ -30,21 +30,20 @@ guard loaded <- bpfman program load file \
     --path testdata/bpf/tc_counter.bpf.o \
     --programs tc:stats
 let prog = $loaded.programs[0]
-let pid = $prog.record.program_id
-defer bpfman program unload $pid
+defer bpfman program unload $prog
 
 # Three members on A (priorities 100, 200, 300).
-guard a_100 <- bpfman link attach tc -i $pair_a.host_link -d ingress -p 100 $pid
-guard a_200 <- bpfman link attach tc -i $pair_a.host_link -d ingress -p 200 $pid
-guard a_300 <- bpfman link attach tc -i $pair_a.host_link -d ingress -p 300 $pid
+guard a_100 <- bpfman link attach tc -i $pair_a.host_link -d ingress -p 100 $prog
+guard a_200 <- bpfman link attach tc -i $pair_a.host_link -d ingress -p 200 $prog
+guard a_300 <- bpfman link attach tc -i $pair_a.host_link -d ingress -p 300 $prog
 defer bpfman link detach $a_100
 defer bpfman link detach $a_200
 defer bpfman link detach $a_300
 
 # Two members on B (priorities 100, 200). No defers: the script
 # detaches them mid-test as the operation under test.
-guard b_100 <- bpfman link attach tc -i $pair_b.host_link -d ingress -p 100 $pid
-guard b_200 <- bpfman link attach tc -i $pair_b.host_link -d ingress -p 200 $pid
+guard b_100 <- bpfman link attach tc -i $pair_b.host_link -d ingress -p 100 $prog
+guard b_200 <- bpfman link attach tc -i $pair_b.host_link -d ingress -p 200 $prog
 
 guard snap_a <- bpfman dispatcher get tc-ingress $pair_a.host_nsid $pair_a.host_ifindex
 let count_a = $snap_a |> jq ".members | length"

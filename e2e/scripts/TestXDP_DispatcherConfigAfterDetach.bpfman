@@ -24,8 +24,7 @@ guard loaded <- bpfman program load file \
     --path testdata/bpf/xdp_pass.bpf.o \
     --programs xdp:pass
 let prog = $loaded.programs[0]
-let pid = $prog.record.program_id
-defer bpfman program unload $pid
+defer bpfman program unload $prog
 
 # Fill all ten slots from a single program. The attaches differ
 # only by ordinal, so range + bind-collect captures the set
@@ -34,7 +33,7 @@ defer bpfman program unload $pid
 # changes; there is no index-by-variable in path lookups today,
 # so each step is spelled out.
 guard links <- foreach _ in (range 10) {
-    bpfman link attach xdp -i $pair.host_link $pid
+    bpfman link attach xdp -i $pair.host_link $prog
 }
 
 # $links[0] .. $links[8] are detached explicitly mid-script;

@@ -29,12 +29,11 @@ guard loaded <- bpfman program load file \
     --path testdata/bpf/xdp_counter.bpf.o \
     --programs xdp:xdp_stats
 let prog = $loaded.programs[0]
-let pid = $prog.record.program_id
-defer bpfman program unload $pid
+defer bpfman program unload $prog
 
-guard l_25 <- bpfman link attach xdp -i $pair.host_link -p 25 $pid
-guard l_0  <- bpfman link attach xdp -i $pair.host_link -p 0  $pid
-guard l_75 <- bpfman link attach xdp -i $pair.host_link -p 75 $pid
+guard l_25 <- bpfman link attach xdp -i $pair.host_link -p 25 $prog
+guard l_0  <- bpfman link attach xdp -i $pair.host_link -p 0  $prog
+guard l_75 <- bpfman link attach xdp -i $pair.host_link -p 75 $prog
 
 defer bpfman link detach $l_25
 defer bpfman link detach $l_0

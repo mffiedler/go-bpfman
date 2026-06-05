@@ -42,8 +42,7 @@ guard loaded <- bpfman program load file \
     --path testdata/bpf/tc_counter.bpf.o \
     --programs tc:stats
 let prog = $loaded.programs[0]
-let pid = $prog.record.program_id
-defer bpfman program unload $pid
+defer bpfman program unload $prog
 
 # Scrambled priorities. The expected position for each link is the
 # rank of its priority in ascending sort:
@@ -56,7 +55,7 @@ defer bpfman program unload $pid
 let priorities = [500 100 800 300 900 200 700 400 600 50]
 
 guard links <- foreach prio in $priorities {
-    bpfman link attach tc -i $pair.host_link -d ingress -p $prio $pid
+    bpfman link attach tc -i $pair.host_link -d ingress -p $prio $prog
 }
 
 foreach l in $links {

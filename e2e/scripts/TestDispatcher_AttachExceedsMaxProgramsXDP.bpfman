@@ -24,14 +24,13 @@ guard loaded <- bpfman program load file \
     --path testdata/bpf/xdp_counter.bpf.o \
     --programs xdp:xdp_stats
 let prog = $loaded.programs[0]
-let pid = $prog.record.program_id
-defer bpfman program unload $pid
+defer bpfman program unload $prog
 
 # Fill all ten slots at ascending priorities 100..1000.
 let priorities = [100 200 300 400 500 600 700 800 900 1000]
 
 guard links <- foreach prio in $priorities {
-    bpfman link attach xdp -i $pair.host_link -p $prio $pid
+    bpfman link attach xdp -i $pair.host_link -p $prio $prog
 }
 
 foreach l in $links {
@@ -40,6 +39,6 @@ foreach l in $links {
 
 # Eleventh attach must fail. The bind's Rc carries the envelope;
 # Primary stays empty because the attach never produced a Link.
-let (rc _) <- bpfman link attach xdp -i $pair.host_link -p 1100 $pid
+let (rc _) <- bpfman link attach xdp -i $pair.host_link -p 1100 $prog
 assert not $rc.ok
 assert contains $rc.stderr "no free dispatcher slots"

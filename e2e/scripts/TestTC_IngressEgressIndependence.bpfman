@@ -27,13 +27,12 @@ guard loaded <- bpfman program load file \
     --path testdata/bpf/tc_counter.bpf.o \
     --programs tc:stats
 let prog = $loaded.programs[0]
-let pid = $prog.record.program_id
-defer bpfman program unload $pid
+defer bpfman program unload $prog
 
 # Three members on ingress.
-guard in_0   <- bpfman link attach tc -i $pair.host_link -d ingress -p 0   $pid
-guard in_100 <- bpfman link attach tc -i $pair.host_link -d ingress -p 100 $pid
-guard in_200 <- bpfman link attach tc -i $pair.host_link -d ingress -p 200 $pid
+guard in_0   <- bpfman link attach tc -i $pair.host_link -d ingress -p 0   $prog
+guard in_100 <- bpfman link attach tc -i $pair.host_link -d ingress -p 100 $prog
+guard in_200 <- bpfman link attach tc -i $pair.host_link -d ingress -p 200 $prog
 defer bpfman link detach $in_0
 defer bpfman link detach $in_100
 defer bpfman link detach $in_200
@@ -43,8 +42,8 @@ assert ($snap_in_before |> jq ".members | length") == 3
 
 # Two members on egress. No defers: the script detaches them
 # mid-test as the operation under test.
-guard eg_0   <- bpfman link attach tc -i $pair.host_link -d egress -p 0   $pid
-guard eg_100 <- bpfman link attach tc -i $pair.host_link -d egress -p 100 $pid
+guard eg_0   <- bpfman link attach tc -i $pair.host_link -d egress -p 0   $prog
+guard eg_100 <- bpfman link attach tc -i $pair.host_link -d egress -p 100 $prog
 
 guard snap_eg <- bpfman dispatcher get tc-egress $pair.host_nsid $pair.host_ifindex
 assert ($snap_eg |> jq ".members | length") == 2
