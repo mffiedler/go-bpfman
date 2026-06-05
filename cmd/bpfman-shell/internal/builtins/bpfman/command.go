@@ -234,10 +234,13 @@ func execImageInspect(ctx context.Context, cli *bpfmancli.CLI, cmd *ImageInspect
 // parseProgramIDArg resolves a single runtime.Arg directly to a
 // kernel.ProgramID, combining argument extraction and ID parsing
 // into one step. For text-bearing args the text is parsed as a
-// program ID. For StructuredValueArg with an origin, the
-// HasProgramID capability interface is used to extract the ID
-// directly. For origin-less structured values, path lookup
-// (.record.program_id) is the fallback.
+// program ID. A StructuredValueArg must carry a program origin
+// satisfying HasKernelProgramID, and the ID is read from that
+// capability. There is no path-lookup fallback: an origin-less
+// structured value (such as a jq-constructed object, whose origin
+// is stripped) carries no such capability and is rejected, so a
+// program handle cannot be laundered through jq and reused as a
+// command argument.
 func parseProgramIDArg(a runtime.Arg) (kernel.ProgramID, error) {
 	switch v := a.(type) {
 	case runtime.WordArg:
@@ -290,9 +293,11 @@ func parseProgramIDText(s string) (kernel.ProgramID, error) {
 // parseLinkIDArg resolves a single runtime.Arg directly to a
 // kernel.LinkID, combining argument extraction and ID parsing into
 // one step. For text-bearing args the text is parsed as a link ID.
-// For StructuredValueArg with an origin, the HasLinkID capability
-// interface is used to extract the ID directly. For origin-less
-// structured values, path lookup (.record.id) is the fallback.
+// A StructuredValueArg must carry a link origin satisfying
+// HasKernelLinkID, and the ID is read from that capability. There
+// is no path-lookup fallback: an origin-less structured value
+// (such as a jq-constructed object, whose origin is stripped)
+// carries no such capability and is rejected.
 func parseLinkIDArg(a runtime.Arg) (kernel.LinkID, error) {
 	switch v := a.(type) {
 	case runtime.WordArg:
