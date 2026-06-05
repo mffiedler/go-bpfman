@@ -53,9 +53,9 @@ type fixtureWorkflowCase struct {
 	wantErrNotContains []string
 	wantErrText        string
 	wantErrIs          error
-	wantAssertFails    int
-	wantDeferFails     int
-	wantJobLeaks       int
+	wantAssertFails    *int
+	wantDeferFails     *int
+	wantJobLeaks       *int
 	normaliseStdout    func(string) string
 	normaliseStderr    func(string) string
 	validate           func(*testing.T, string, fixtureWorkflowRun)
@@ -159,6 +159,28 @@ func TestFixtureExpectationRejectsConflictingErrorFields(t *testing.T) {
 	assert.Contains(t, err.Error(), "err_text and err_is are mutually exclusive")
 }
 
+func TestApplyFixtureExpectation_KeepsGoSideCounterOverrides(t *testing.T) {
+	t.Parallel()
+
+	override := 7
+	tc := applyFixtureExpectation(t, fixtureWorkflowCase{
+		fixture:         "assertions/predicate-failure-keeps-script-running",
+		wantAssertFails: &override,
+	})
+
+	assert.Equal(t, override, wantCounter(tc.wantAssertFails))
+}
+
+func TestApplyFixtureExpectation_LoadsCounterDefaultsFromYAML(t *testing.T) {
+	t.Parallel()
+
+	tc := applyFixtureExpectation(t, fixtureWorkflowCase{
+		fixture: "assertions/predicate-failure-keeps-script-running",
+	})
+
+	assert.Equal(t, 1, wantCounter(tc.wantAssertFails))
+}
+
 func readFixtureExpectationDir(root string) (*fixtureExpectation, error) {
 	path := filepath.Join(root, "expect.yaml")
 	data, err := os.ReadFile(path)
@@ -256,14 +278,14 @@ func applyFixtureExpectation(t *testing.T, tc fixtureWorkflowCase) fixtureWorkfl
 	if tc.wantErrIs == nil && exp.ErrIs != "" {
 		tc.wantErrIs = workflowFixtureErrorSentinel(t, exp.ErrIs)
 	}
-	if exp.AssertFailures != nil {
-		tc.wantAssertFails = *exp.AssertFailures
+	if tc.wantAssertFails == nil && exp.AssertFailures != nil {
+		tc.wantAssertFails = exp.AssertFailures
 	}
-	if exp.DeferFailures != nil {
-		tc.wantDeferFails = *exp.DeferFailures
+	if tc.wantDeferFails == nil && exp.DeferFailures != nil {
+		tc.wantDeferFails = exp.DeferFailures
 	}
-	if exp.JobLeaks != nil {
-		tc.wantJobLeaks = *exp.JobLeaks
+	if tc.wantJobLeaks == nil && exp.JobLeaks != nil {
+		tc.wantJobLeaks = exp.JobLeaks
 	}
 	if tc.normaliseStdout == nil && exp.NormaliseStdout != "" {
 		tc.normaliseStdout = workflowFixtureNormalizer(t, "stdout", exp.NormaliseStdout, workflowStdoutNormalizers)
@@ -336,12 +358,19 @@ func assertFixtureWorkflowOutcome(t *testing.T, tc fixtureWorkflowCase, run fixt
 	if tc.wantErrText == "" && tc.wantErrIs == nil && len(tc.wantErrContains) == 0 && tc.normaliseStderr == nil {
 		assert.Empty(t, errOut, "successful fixtures must not write unexpected stderr; declare stderr_contains for expected stderr")
 	}
-	assert.Equal(t, tc.wantAssertFails, run.session.AssertFailures(), "assert counter mismatch")
-	assert.Equal(t, tc.wantDeferFails, run.session.DeferFailures(), "defer counter mismatch")
-	assert.Equal(t, tc.wantJobLeaks, run.session.JobLeaks(), "job leak counter mismatch")
+	assert.Equal(t, wantCounter(tc.wantAssertFails), run.session.AssertFailures(), "assert counter mismatch")
+	assert.Equal(t, wantCounter(tc.wantDeferFails), run.session.DeferFailures(), "defer counter mismatch")
+	assert.Equal(t, wantCounter(tc.wantJobLeaks), run.session.JobLeaks(), "job leak counter mismatch")
 	if tc.validate != nil {
 		tc.validate(t, workflowFixtureDir(tc.fixture), run)
 	}
+}
+
+func wantCounter(v *int) int {
+	if v == nil {
+		return 0
+	}
+	return *v
 }
 
 func assertFixtureWorkflowMatrix(t *testing.T, tc fixtureWorkflowCase) {
