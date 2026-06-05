@@ -48,23 +48,23 @@ guard loaded <- bpfman program load file \
     -g verdict_b=0x02000000 \
     -g verdict_c=0x01000000
 
-let (prog_a pid_a) = [$loaded.programs[0] $loaded.programs[0].record.program_id]
-let (prog_b pid_b) = [$loaded.programs[1] $loaded.programs[1].record.program_id]
-let (prog_c pid_c) = [$loaded.programs[2] $loaded.programs[2].record.program_id]
+let a = $loaded.programs[0]
+let b = $loaded.programs[1]
+let c = $loaded.programs[2]
 
-defer bpfman program unload $pid_a
-defer bpfman program unload $pid_b
-defer bpfman program unload $pid_c
+defer bpfman program unload $a
+defer bpfman program unload $b
+defer bpfman program unload $c
 
-let mapID_a = $prog_a |> jq '[.status.maps[] | select(.name == "mxdv_a_count") | .id][0]'
-let mapID_b = $prog_b |> jq '[.status.maps[] | select(.name == "mxdv_b_count") | .id][0]'
-let mapID_c = $prog_c |> jq '[.status.maps[] | select(.name == "mxdv_c_count") | .id][0]'
+let mapID_a = $a |> jq '[.status.maps[] | select(.name == "mxdv_a_count") | .id][0]'
+let mapID_b = $b |> jq '[.status.maps[] | select(.name == "mxdv_b_count") | .id][0]'
+let mapID_c = $c |> jq '[.status.maps[] | select(.name == "mxdv_c_count") | .id][0]'
 
 # Custom proceed-on includes DROP (so the chain continues past
 # a's DROP) and excludes PASS (so the chain stops at b's PASS).
-guard link_a <- bpfman link attach xdp -i $pair.host_link -p 50 --proceed-on drop,dispatcher_return $pid_a
-guard link_b <- bpfman link attach xdp -i $pair.host_link -p 60 --proceed-on drop,dispatcher_return $pid_b
-guard link_c <- bpfman link attach xdp -i $pair.host_link -p 70 --proceed-on drop,dispatcher_return $pid_c
+guard link_a <- bpfman link attach xdp -i $pair.host_link -p 50 --proceed-on drop,dispatcher_return $a
+guard link_b <- bpfman link attach xdp -i $pair.host_link -p 60 --proceed-on drop,dispatcher_return $b
+guard link_c <- bpfman link attach xdp -i $pair.host_link -p 70 --proceed-on drop,dispatcher_return $c
 
 let counter_filter = "fromjson | .[0].formatted.value | tonumber"
 

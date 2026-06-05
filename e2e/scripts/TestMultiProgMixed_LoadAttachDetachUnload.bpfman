@@ -55,21 +55,21 @@ guard loaded <- bpfman program load file \
     -g "weight_kp=0x${u64le $weight_kp}" \
     -g "weight_krp=0x${u64le $weight_krp}"
 
-let (prog_tp  pid_tp)  = [$loaded.programs[0] $loaded.programs[0].record.program_id]
-let (prog_kp  pid_kp)  = [$loaded.programs[1] $loaded.programs[1].record.program_id]
-let (prog_krp pid_krp) = [$loaded.programs[2] $loaded.programs[2].record.program_id]
+let tp = $loaded.programs[0]
+let kp = $loaded.programs[1]
+let krp = $loaded.programs[2]
 
-defer bpfman program unload $pid_tp
-defer bpfman program unload $pid_kp
-defer bpfman program unload $pid_krp
+defer bpfman program unload $tp
+defer bpfman program unload $kp
+defer bpfman program unload $krp
 
-let mapID_tp  = $prog_tp  |> jq '[.status.maps[] | select(.name == "mtp_count")  | .id][0]'
-let mapID_kp  = $prog_kp  |> jq '[.status.maps[] | select(.name == "mkp_count")  | .id][0]'
-let mapID_krp = $prog_krp |> jq '[.status.maps[] | select(.name == "mkrp_count") | .id][0]'
+let mapID_tp  = $tp |> jq '[.status.maps[] | select(.name == "mtp_count")  | .id][0]'
+let mapID_kp  = $kp |> jq '[.status.maps[] | select(.name == "mkp_count")  | .id][0]'
+let mapID_krp = $krp |> jq '[.status.maps[] | select(.name == "mkrp_count") | .id][0]'
 
-guard link_tp  <- bpfman link attach tracepoint $pid_tp  bpfman_e2e/bpfman_e2e_ping
-guard link_kp  <- bpfman link attach kprobe --fn-name $fn.name $pid_kp
-guard link_krp <- bpfman link attach kprobe --fn-name $fn.name $pid_krp
+guard link_tp  <- bpfman link attach tracepoint $tp bpfman_e2e/bpfman_e2e_ping
+guard link_kp  <- bpfman link attach kprobe --fn-name $fn.name $kp
+guard link_krp <- bpfman link attach kprobe --fn-name $fn.name $krp
 
 let counter_filter = "fromjson | .[0].formatted.value | tonumber"
 
@@ -105,8 +105,8 @@ print "tp:  got=${count_tp}  want=${want_tp}"
 print "kp:  got=${count_kp}  want=${want_kp}"
 print "krp: got=${count_krp} want=${want_krp}"
 
-assert $count_tp  == $want_tp
-assert $count_kp  == $want_kp
+assert $count_tp == $want_tp
+assert $count_kp == $want_kp
 assert $count_krp == $want_krp
 
 # tp is still attached on the happy path; detach explicitly
