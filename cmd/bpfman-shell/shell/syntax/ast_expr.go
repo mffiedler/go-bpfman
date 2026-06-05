@@ -90,6 +90,17 @@ type ListExpr struct {
 	source.Span
 }
 
+type RecordField struct {
+	Name string
+	Expr Expr
+	source.Span
+}
+
+type RecordExpr struct {
+	Fields []RecordField
+	source.Span
+}
+
 func (*LiteralExpr) exprNode()      {}
 func (*VarRefExpr) exprNode()       {}
 func (*AdapterExpr) exprNode()      {}
@@ -103,3 +114,4 @@ func (*NegateExpr) exprNode()       {}
 func (*PureCallExpr) exprNode()     {}
 func (*MatchesExpr) exprNode()      {}
 func (*ListExpr) exprNode()         {}
+func (*RecordExpr) exprNode()       {}

@@ -40,6 +40,16 @@ func evalExpr(expr ir.Expr, env *Env) (Value, error) {
 			list = list.withOrigin(origins, semantics.OriginUnknown)
 		}
 		return list, nil
+	case *ir.RecordExpr:
+		fields := make(map[string]Value, len(e.Fields))
+		for _, field := range e.Fields {
+			v, err := evalExpr(field.Expr, env)
+			if err != nil {
+				return Value{}, err
+			}
+			fields[field.Name] = v
+		}
+		return ValueFromRecord(fields), nil
 	case *ir.InterpStringExpr:
 		var b strings.Builder
 		for _, seg := range e.Segments {
@@ -316,6 +326,8 @@ func irExprSpan(expr ir.Expr) source.Span {
 	case *ir.AdapterExpr:
 		return e.Span
 	case *ir.ListExpr:
+		return e.Span
+	case *ir.RecordExpr:
 		return e.Span
 	case *ir.InterpStringExpr:
 		return e.Span

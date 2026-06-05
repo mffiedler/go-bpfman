@@ -21,6 +21,16 @@ func lowerIRExpr(expr syntax.Expr) ir.Expr {
 			elems[i] = lowerIRExpr(elem)
 		}
 		return &ir.ListExpr{Elems: elems, Span: e.Span}
+	case *syntax.RecordExpr:
+		fields := make([]ir.RecordField, len(e.Fields))
+		for i, field := range e.Fields {
+			fields[i] = ir.RecordField{
+				Name: field.Name,
+				Expr: lowerIRExpr(field.Expr),
+				Span: field.Span,
+			}
+		}
+		return &ir.RecordExpr{Fields: fields, Span: e.Span}
 	case *syntax.InterpStringExpr:
 		segs := make([]ir.InterpStringSegment, len(e.Segments))
 		for i, seg := range e.Segments {

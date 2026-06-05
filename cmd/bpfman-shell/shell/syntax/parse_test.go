@@ -158,6 +158,64 @@ func TestParse_MultilineListLiteral(t *testing.T) {
 	})
 }
 
+func TestParse_RecordLiteral(t *testing.T) {
+	t.Parallel()
+
+	prog, err := parseSource(t, `let r = record {
+    prog: $p
+    link: $l
+}`)
+	require.NoError(t, err)
+	let, ok := firstStmt(t, prog).(*LetStmt)
+	require.True(t, ok, "stmt should be a LetStmt, got %T", prog.Stmts[0])
+	rec, ok := let.RHS.(*RecordExpr)
+	require.True(t, ok, "RHS should be a RecordExpr, got %T", let.RHS)
+	require.Len(t, rec.Fields, 2)
+	assert.Equal(t, "prog", rec.Fields[0].Name)
+	assert.Equal(t, "link", rec.Fields[1].Name)
+	_, ok = rec.Fields[0].Expr.(*VarRefExpr)
+	assert.True(t, ok, "field prog should be a VarRefExpr, got %T", rec.Fields[0].Expr)
+}
+
+func TestParse_RecordLiteralErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string
+	}{
+		{
+			name:    "missing_open_brace",
+			src:     `let r = record prog: $p }`,
+			wantErr: "record literal requires '{'",
+		},
+		{
+			name:    "duplicate_field",
+			src:     `let r = record { prog: $p prog: $q }`,
+			wantErr: `duplicate record field "prog"`,
+		},
+		{
+			name:    "invalid_field_name",
+			src:     `let r = record { 1prog: $p }`,
+			wantErr: `invalid record field name "1prog"`,
+		},
+		{
+			name:    "comma_separator",
+			src:     `let r = record { prog: $p, link: $l }`,
+			wantErr: "record fields are whitespace-separated",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := parseSource(t, tt.src)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+}
+
 func TestParse_LetAssignment_Literal(t *testing.T) {
 	t.Parallel()
 

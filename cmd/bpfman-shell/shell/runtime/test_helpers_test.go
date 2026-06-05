@@ -90,6 +90,16 @@ func astExprFromIR(expr ir.Expr) syntax.Expr {
 			elems[i] = astExprFromIR(elem)
 		}
 		return &syntax.ListExpr{Elems: elems, Span: e.Span}
+	case *ir.RecordExpr:
+		fields := make([]syntax.RecordField, len(e.Fields))
+		for i, field := range e.Fields {
+			fields[i] = syntax.RecordField{
+				Name: field.Name,
+				Expr: astExprFromIR(field.Expr),
+				Span: field.Span,
+			}
+		}
+		return &syntax.RecordExpr{Fields: fields, Span: e.Span}
 	case *ir.InterpStringExpr:
 		segs := make([]syntax.InterpStringSegment, len(e.Segments))
 		for i, seg := range e.Segments {

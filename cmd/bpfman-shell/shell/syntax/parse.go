@@ -243,6 +243,14 @@ func (p *parser) parseAssertClause(keywordTok Token) (AssertClause, error) {
 				p.pos++
 				continue
 			}
+			if t.Text == "{" && recordLiteralTail(buf) {
+				var err error
+				buf, err = p.appendRecordBlockTokens(buf)
+				if err != nil {
+					return nil, err
+				}
+				continue
+			}
 			if t.Text == "{" && matchesBlockTail(buf) {
 				var err error
 				buf, err = p.appendMatchesBlockTokens(buf)
@@ -783,6 +791,14 @@ func (p *parser) takeStmtTokens(rejectAssign bool) ([]Token, error) {
 				p.pos++
 				continue
 			}
+			if t.Text == "{" && recordLiteralTail(buf) {
+				var err error
+				buf, err = p.appendRecordBlockTokens(buf)
+				if err != nil {
+					return nil, err
+				}
+				continue
+			}
 			if t.Text == "{" && matchesBlockTail(buf) {
 				var err error
 				buf, err = p.appendMatchesBlockTokens(buf)
@@ -1286,6 +1302,14 @@ func (p *parser) takeUntilOpenBrace() ([]Token, error) {
 				p.pos++
 				continue
 			}
+			if recordLiteralTail(buf) {
+				var err error
+				buf, err = p.appendRecordBlockTokens(buf)
+				if err != nil {
+					return nil, err
+				}
+				continue
+			}
 			if matchesBlockTail(buf) {
 				var err error
 				buf, err = p.appendMatchesBlockTokens(buf)
@@ -1390,6 +1414,14 @@ func (p *parser) parseCondition() (Expr, error) {
 			if depth > 0 {
 				buf = append(buf, t)
 				p.pos++
+				continue
+			}
+			if recordLiteralTail(buf) {
+				var err error
+				buf, err = p.appendRecordBlockTokens(buf)
+				if err != nil {
+					return nil, err
+				}
 				continue
 			}
 			if matchesBlockTail(buf) {
@@ -2004,6 +2036,9 @@ func (p *exprParser) parseTerm() (Expr, error) {
 	if t.Kind == TokenWord && t.Text == "[" {
 		return p.parseListLiteral()
 	}
+	if t.Kind == TokenWord && t.Text == "record" {
+		return p.parseRecordLiteral()
+	}
 	if t.Kind == TokenWord {
 		if pb, ok := lookupPureBuiltin(t.Text); ok {
 			// `null` is both a value literal and a unary predicate.
@@ -2046,6 +2081,63 @@ func canStartPureCallArgToken(t Token) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// parseRecordLiteral consumes a 'record' '{' NAME: EXPR ... '}'
+// literal. Fields are whitespace-separated and each value parses as
+// one primary expression via parseTerm; compound values use
+// parentheses, matching list literal elements.
+func (p *exprParser) parseRecordLiteral() (Expr, error) {
+	recordTok := p.advance() // record
+	for !p.eof() && p.peek().Kind == TokenSep {
+		p.advance()
+	}
+	if p.eof() || !(p.peek().Kind == TokenWord && p.peek().Text == "{") {
+		return nil, spanErrorf(recordTok.Span, "record literal requires '{'")
+	}
+	openTok := p.advance() // '{'
+	var fields []RecordField
+	seen := make(map[string]bool)
+	for {
+		for !p.eof() && p.peek().Kind == TokenSep {
+			p.advance()
+		}
+		if p.eof() {
+			return nil, spanErrorf(openTok.Span, "missing '}' to close record literal")
+		}
+		t := p.peek()
+		if t.Kind == TokenWord && t.Text == "}" {
+			p.advance()
+			return &RecordExpr{Fields: fields, Span: p.spanFrom(recordTok.Pos)}, nil
+		}
+		if t.Kind == TokenWord && strings.ContainsRune(t.Text, ',') {
+			return nil, spanErrorf(t.Span, "record fields are whitespace-separated; commas are not record separators")
+		}
+		if t.Kind != TokenWord || !strings.HasSuffix(t.Text, ":") {
+			return nil, spanErrorf(t.Span, "record field must be written as name:")
+		}
+		name := strings.TrimSuffix(t.Text, ":")
+		if !isIdent(name) {
+			return nil, spanErrorf(t.Span, "invalid record field name %q", name)
+		}
+		if seen[name] {
+			return nil, spanErrorf(t.Span, "duplicate record field %q", name)
+		}
+		seen[name] = true
+		nameTok := p.advance()
+		if p.eof() {
+			return nil, spanErrorf(nameTok.Span, "record field %q requires a value", name)
+		}
+		value, err := p.parseTerm()
+		if err != nil {
+			return nil, err
+		}
+		fields = append(fields, RecordField{
+			Name: name,
+			Expr: value,
+			Span: p.spanFrom(nameTok.Pos),
+		})
 	}
 }
 
@@ -2417,6 +2509,34 @@ func matchesBlockTail(buf []Token) bool {
 	default:
 		return false
 	}
+}
+
+func recordLiteralTail(buf []Token) bool {
+	return len(buf) >= 1 &&
+		buf[len(buf)-1].Kind == TokenWord &&
+		buf[len(buf)-1].Text == "record"
+}
+
+func (p *parser) appendRecordBlockTokens(buf []Token) ([]Token, error) {
+	openTok := p.peek()
+	depth := 0
+	for !p.atEOF() {
+		t := p.advance()
+		buf = append(buf, t)
+		if t.Kind != TokenWord {
+			continue
+		}
+		switch t.Text {
+		case "{":
+			depth++
+		case "}":
+			depth--
+			if depth == 0 {
+				return buf, nil
+			}
+		}
+	}
+	return nil, spanErrorf(openTok.Span, "missing '}' to close record literal")
 }
 
 func (p *parser) appendMatchesBlockTokens(buf []Token) ([]Token, error) {

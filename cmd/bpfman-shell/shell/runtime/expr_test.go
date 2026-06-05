@@ -122,6 +122,65 @@ func TestEvalExpr_VarRef_Path(t *testing.T) {
 	assert.Equal(t, "42", got)
 }
 
+func TestEvalExpr_RecordLiteral_FieldAccessPreservesOrigin(t *testing.T) {
+	t.Parallel()
+
+	origin := struct{ ID int }{ID: 42}
+	prog := ValueFromMap(map[string]any{
+		"record": map[string]any{"program_id": "42"},
+	}).withOrigin(origin, semantics.OriginProgram)
+
+	s := NewSession()
+	s.Set("p", prog)
+	v, err := evalLoweredExpr(&syntax.RecordExpr{
+		Fields: []syntax.RecordField{
+			{Name: "prog", Expr: &syntax.VarRefExpr{Name: "p"}},
+			{Name: "name", Expr: &syntax.LiteralExpr{Text: "loaded", Quoted: true}},
+		},
+	}, evalEnv(s))
+	require.NoError(t, err)
+
+	field, err := v.LookupValue("r", "prog")
+	require.NoError(t, err)
+	assert.Equal(t, semantics.OriginProgram, field.Kind())
+	assert.Equal(t, origin, field.Origin())
+
+	name, err := v.LookupValue("r", "name")
+	require.NoError(t, err)
+	got, err := name.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "loaded", got)
+}
+
+func TestEvalArgs_RecordFieldStructuredValuePreservesOrigin(t *testing.T) {
+	t.Parallel()
+
+	origin := struct{ ID int }{ID: 42}
+	prog := ValueFromMap(map[string]any{
+		"record": map[string]any{"program_id": "42"},
+	}).withOrigin(origin, semantics.OriginProgram)
+
+	s := NewSession()
+	s.Set("p", prog)
+	record, err := evalLoweredExpr(&syntax.RecordExpr{
+		Fields: []syntax.RecordField{
+			{Name: "prog", Expr: &syntax.VarRefExpr{Name: "p"}},
+		},
+	}, evalEnv(s))
+	require.NoError(t, err)
+	s.Set("r", record)
+
+	args, err := evalLoweredArgs([]syntax.Expr{
+		&syntax.VarRefExpr{Name: "r", Path: "prog"},
+	}, evalEnv(s))
+	require.NoError(t, err)
+	require.Len(t, args, 1)
+	structured, ok := args[0].(StructuredValueArg)
+	require.True(t, ok, "arg should be StructuredValueArg, got %T", args[0])
+	assert.Equal(t, semantics.OriginProgram, structured.Value.Kind())
+	assert.Equal(t, origin, structured.Value.Origin())
+}
+
 func TestEvalExpr_VarRef_Undefined(t *testing.T) {
 	t.Parallel()
 

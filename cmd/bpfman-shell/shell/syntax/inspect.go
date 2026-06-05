@@ -71,6 +71,7 @@ func (*NegateExpr) astNode()       {}
 func (*PureCallExpr) astNode()     {}
 func (*MatchesExpr) astNode()      {}
 func (*ListExpr) astNode()         {}
+func (*RecordExpr) astNode()       {}
 func (*MatchesBlockExpr) astNode() {}
 
 // Inspect traverses node in pre-order, calling f on every
@@ -226,6 +227,10 @@ func walk(node Node, f func(Node) bool) {
 	case *ListExpr:
 		for _, elem := range n.Elems {
 			walk(elem, f)
+		}
+	case *RecordExpr:
+		for _, field := range n.Fields {
+			walk(field.Expr, f)
 		}
 	case *MatchesBlockExpr:
 		// Each entry's Pattern is a regular Expr and SubBlock

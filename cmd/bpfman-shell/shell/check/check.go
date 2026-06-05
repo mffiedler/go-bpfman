@@ -438,6 +438,16 @@ func (c *checker) inferExprShape(e syntax.Expr) semantics.Shape {
 			Kind:   semantics.OriginUnknown,
 			Elem:   &elem,
 		}
+	case *syntax.RecordExpr:
+		fields := make(map[string]semantics.Shape, len(v.Fields))
+		for _, field := range v.Fields {
+			fields[field.Name] = c.inferExprShape(field.Expr)
+		}
+		return semantics.Shape{
+			Sealed: true,
+			Kind:   semantics.OriginUnknown,
+			Fields: fields,
+		}
 	case *syntax.BinaryExpr:
 		switch v.Op {
 		case "+", "-", "*", "/", "%":

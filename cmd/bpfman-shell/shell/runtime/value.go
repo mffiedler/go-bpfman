@@ -71,14 +71,29 @@ func (p Presence) IsPresent() bool { return p.state != presenceMissing }
 // as a wildcard for origin-less values (e.g. JSON parsed without
 // explicit tagging, map literals, path-lookup results).
 type Value struct {
-	v      any                  // JSON-decoded tree (map[string]any, etc.)
-	origin any                  // original Go value, nil for non-struct values
-	kind   semantics.OriginKind // declared origin kind, semantics.OriginUnknown by default
+	v            any                  // JSON-decoded tree (map[string]any, etc.)
+	origin       any                  // original Go value, nil for non-struct values
+	kind         semantics.OriginKind // declared origin kind, semantics.OriginUnknown by default
+	recordFields map[string]Value     // field values for records, preserving per-field origin
 }
 
 // ValueFromMap wraps an existing map as a Value.
 func ValueFromMap(data map[string]any) Value {
 	return Value{v: data}
+}
+
+// ValueFromRecord wraps named field Values as a structured record.
+// The raw map is the JSON-facing representation; recordFields is
+// the origin-preserving side table that lets $r.prog return the
+// original typed Program value rather than an origin-less object.
+func ValueFromRecord(fields map[string]Value) Value {
+	raw := make(map[string]any, len(fields))
+	copied := make(map[string]Value, len(fields))
+	for name, v := range fields {
+		raw[name] = v.Raw()
+		copied[name] = v
+	}
+	return Value{v: raw, recordFields: copied}
 }
 
 // ValueFromAny wraps an arbitrary JSON-compatible value as a
@@ -208,6 +223,76 @@ func (v Value) IndexValue(i int) Value {
 	return out
 }
 
+func (v Value) stepValue(varName, traversed string, step syntax.PathStep) (Value, string, error) {
+	if step.IsIndex {
+		arr, ok := v.v.([]any)
+		if !ok {
+			return Value{}, traversed, fmt.Errorf("cannot index non-array in variable %s", traversed)
+		}
+		if step.Index < 0 || step.Index >= len(arr) {
+			return Value{}, traversed, fmt.Errorf("index %d out of range for variable %s (length %d)", step.Index, traversed, len(arr))
+		}
+		return v.IndexValue(step.Index), fmt.Sprintf("%s[%d]", traversed, step.Index), nil
+	}
+
+	if v.recordFields != nil {
+		field, exists := v.recordFields[step.Field]
+		if !exists {
+			return Value{}, traversed, fmt.Errorf("field %s not found in variable %s: %w", step.Field, traversed, ErrFieldMissing)
+		}
+		return field, appendFieldPath(varName, traversed, step.Field), nil
+	}
+
+	m, ok := v.v.(map[string]any)
+	if !ok {
+		if v.v == nil {
+			return Value{}, traversed, fmt.Errorf("variable %s is null", traversed)
+		}
+		return Value{}, traversed, fmt.Errorf("cannot access field %s on non-object in variable %s", step.Field, traversed)
+	}
+	raw, exists := m[step.Field]
+	if !exists {
+		return Value{}, traversed, fmt.Errorf("field %s not found in variable %s: %w", step.Field, traversed, ErrFieldMissing)
+	}
+	out := Value{v: raw}
+	if raw == nil {
+		out.kind = semantics.OriginNull
+	}
+	if v.origin != nil {
+		if origin, kind := semantics.WalkSuborigin(v.origin, []syntax.PathStep{step}); origin != nil {
+			out.origin = origin
+			out.kind = kind
+		}
+	}
+	return out, appendFieldPath(varName, traversed, step.Field), nil
+}
+
+func appendFieldPath(varName, traversed, field string) string {
+	if traversed == varName {
+		return varName + "." + field
+	}
+	return traversed + "." + field
+}
+
+func (v Value) lookupPath(varName, path string) (Value, string, error) {
+	if path == "" {
+		return v, varName, nil
+	}
+	steps, err := syntax.ParsePath(path)
+	if err != nil {
+		return Value{}, varName, err
+	}
+	current := v
+	traversed := varName
+	for _, step := range steps {
+		current, traversed, err = current.stepValue(varName, traversed, step)
+		if err != nil {
+			return Value{}, traversed, err
+		}
+	}
+	return current, traversed, nil
+}
+
 // StringValue wraps a plain string as a Value with semantics.OriginScalar.
 func StringValue(s string) Value {
 	return Value{v: s, kind: semantics.OriginScalar}
@@ -318,98 +403,14 @@ func (v Value) Scalar() (string, error) {
 	}
 }
 
-// walkPath walks the parsed path steps into the raw value, returning
-// the value at the end of the path and the human-readable traversed
-// path for error messages. varName seeds the traversed path.
-func walkPath(raw any, varName string, steps []syntax.PathStep) (any, string, error) {
-	current := raw
-	traversed := varName
-
-	for _, step := range steps {
-		if step.IsIndex {
-			arr, ok := current.([]any)
-			if !ok {
-				return nil, traversed, fmt.Errorf("cannot index non-array in variable %s", traversed)
-			}
-			if step.Index < 0 || step.Index >= len(arr) {
-				return nil, traversed, fmt.Errorf("index %d out of range for variable %s (length %d)", step.Index, traversed, len(arr))
-			}
-			current = arr[step.Index]
-			traversed = fmt.Sprintf("%s[%d]", traversed, step.Index)
-			continue
-		}
-
-		m, ok := current.(map[string]any)
-		if !ok {
-			if current == nil {
-				return nil, traversed, fmt.Errorf("variable %s is null", traversed)
-			}
-			return nil, traversed, fmt.Errorf("cannot access field %s on non-object in variable %s", step.Field, traversed)
-		}
-		val, exists := m[step.Field]
-		if !exists {
-			return nil, traversed, fmt.Errorf("field %s not found in variable %s: %w", step.Field, traversed, ErrFieldMissing)
-		}
-		current = val
-		if traversed == varName {
-			traversed = varName + "." + step.Field
-		} else {
-			traversed = traversed + "." + step.Field
-		}
-	}
-
-	return current, traversed, nil
-}
-
 // LookupValue walks a dotted field path (with optional [n] indexing)
 // into the value and returns whatever is found, including structured
 // types and nil. The varName parameter is used only for error
 // messages. An empty path returns the value itself.
 func (v Value) LookupValue(varName, path string) (Value, error) {
-	if path == "" {
-		return v, nil
-	}
-
-	steps, err := syntax.ParsePath(path)
+	out, _, err := v.lookupPath(varName, path)
 	if err != nil {
 		return Value{}, err
-	}
-
-	current, _, err := walkPath(v.v, varName, steps)
-	if err != nil {
-		return Value{}, err
-	}
-
-	// Walk the origin Go value in parallel through the same
-	// steps so that path-extracted sub-values keep the
-	// underlying typed object available. Capability dispatch
-	// (HasKernelLinkID, HasKernelProgramID) downstream relies
-	// on the origin being present; without this, every
-	// $loaded.programs[0] would be origin-less and the
-	// type-driven extraction would degrade to ad-hoc path
-	// lookups in the caller.
-	//
-	// origin == nil is the common case for Values constructed
-	// from JSON or maps; WalkSuborigin short-circuits there and
-	// the result remains origin-less, matching today's
-	// behaviour for non-struct-backed Values.
-	out := Value{v: current}
-	// Preserve the explicit-null vs absent distinction: a
-	// terminal JSON null is a value (IsNull true, IsNil false),
-	// not the bare Value{} sentinel reserved for absence. The
-	// downstream predicate idiom `IsNil() || IsNull()` catches
-	// either way, but matches blocks (`field: null`) and the
-	// present/missing/strict-null shape tests need IsNull to
-	// fire on a path-landed null. An origin walk that happens
-	// to bind a more specific kind below still wins.
-	if current == nil {
-		out.kind = semantics.OriginNull
-	}
-	if v.origin != nil {
-		if origin, kind := semantics.WalkSuborigin(v.origin, steps); origin != nil {
-			out.origin = origin
-			out.kind = kind
-		}
 	}
 	return out, nil
 }
@@ -422,34 +423,17 @@ func (v Value) LookupValue(varName, path string) (Value, error) {
 // non-traversable intermediate such as indexing into a non-array,
 // or an out-of-range list index).
 func (v Value) LookupPresence(varName, path string) (Presence, error) {
-	if path == "" {
-		if v.IsNil() || v.IsNull() {
-			return Presence{value: v, state: presenceNull}, nil
-		}
-		return Presence{value: v, state: presenceValue}, nil
-	}
-	steps, err := syntax.ParsePath(path)
-	if err != nil {
-		return Presence{}, err
-	}
-	current, _, err := walkPath(v.v, varName, steps)
+	current, _, err := v.lookupPath(varName, path)
 	if err != nil {
 		if errors.Is(err, ErrFieldMissing) {
 			return Presence{state: presenceMissing}, nil
 		}
 		return Presence{}, err
 	}
-	if current == nil {
-		return Presence{value: Value{v: nil}, state: presenceNull}, nil
+	if current.IsNil() || current.IsNull() {
+		return Presence{value: current, state: presenceNull}, nil
 	}
-	out := Value{v: current}
-	if v.origin != nil {
-		if origin, kind := semantics.WalkSuborigin(v.origin, steps); origin != nil {
-			out.origin = origin
-			out.kind = kind
-		}
-	}
-	return Presence{value: out, state: presenceValue}, nil
+	return Presence{value: current, state: presenceValue}, nil
 }
 
 // Lookup walks a dotted field path (with optional [n] indexing) into
@@ -460,29 +444,23 @@ func (v Value) Lookup(varName, path string) (Value, error) {
 	if path == "" {
 		return v, nil
 	}
-
-	steps, err := syntax.ParsePath(path)
+	current, traversed, err := v.lookupPath(varName, path)
 	if err != nil {
 		return Value{}, err
 	}
 
-	current, traversed, err := walkPath(v.v, varName, steps)
-	if err != nil {
-		return Value{}, err
-	}
-
-	if current == nil {
+	if current.IsNil() || current.IsNull() {
 		return Value{}, fmt.Errorf("variable %s is null", traversed)
 	}
 
-	switch current.(type) {
+	switch current.Raw().(type) {
 	case map[string]any:
 		return Value{}, fmt.Errorf("variable %s is an object; use field access to reach a scalar value", traversed)
 	case []any:
 		return Value{}, fmt.Errorf("variable %s is an array; use indexing to reach a scalar value", traversed)
 	}
 
-	return Value{v: current}, nil
+	return current, nil
 }
 
 // RenderValue produces the byte representation of a Value suitable

@@ -35,6 +35,17 @@ type ListExpr struct {
 	source.Span
 }
 
+type RecordField struct {
+	Name string
+	Expr Expr
+	source.Span
+}
+
+type RecordExpr struct {
+	Fields []RecordField
+	source.Span
+}
+
 type InterpStringExpr struct {
 	Segments []InterpStringSegment
 	source.Span
@@ -111,6 +122,7 @@ func (*LiteralExpr) irExprNode()      {}
 func (*VarRefExpr) irExprNode()       {}
 func (*AdapterExpr) irExprNode()      {}
 func (*ListExpr) irExprNode()         {}
+func (*RecordExpr) irExprNode()       {}
 func (*InterpStringExpr) irExprNode() {}
 func (*ThreadExpr) irExprNode()       {}
 func (*BinaryExpr) irExprNode()       {}

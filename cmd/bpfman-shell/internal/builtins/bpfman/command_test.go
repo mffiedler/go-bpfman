@@ -1165,6 +1165,32 @@ func TestParseLinkDetach(t *testing.T) {
 	}
 }
 
+func TestParseLinkIDArg_RecordFieldRequiredForTypedHandle(t *testing.T) {
+	t.Parallel()
+
+	linkArg := structuredLink("link", 77).(runtime.StructuredValueArg)
+	record := runtime.ValueFromRecord(map[string]runtime.Value{
+		"link": linkArg.Value,
+	})
+
+	_, err := parseLinkIDArg(runtime.StructuredValueArg{
+		Name:  "loaded",
+		Value: record,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "$loaded is structured but carries no kernel ID capability")
+
+	field, err := record.LookupValue("loaded", "link")
+	require.NoError(t, err)
+
+	id, err := parseLinkIDArg(runtime.StructuredValueArg{
+		Name:  "loaded.link",
+		Value: field,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, kernel.LinkID(77), id)
+}
+
 func TestParseGetProgram(t *testing.T) {
 	t.Parallel()
 

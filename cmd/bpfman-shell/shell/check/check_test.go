@@ -1201,6 +1201,67 @@ print $xs[0].record.program_idd`
 	assert.Empty(t, issues)
 }
 
+func TestCheck_RecordExprShape_FieldTypoRejected(t *testing.T) {
+	t.Parallel()
+
+	src := `let p <- bpfman program get 42
+let r = record {
+    prog: $p
+}
+print $r.prgo`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "r has no field")
+	assert.Contains(t, issues[0].Msg, `"prgo"`)
+	assert.Contains(t, issues[0].Msg, `"prog"`)
+}
+
+func TestCheck_RecordExprShape_NestedTypedFieldTypoRejected(t *testing.T) {
+	t.Parallel()
+
+	src := `let p <- bpfman program get 42
+let r = record {
+    prog: $p
+}
+print $r.prog.record.program_idd`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, `"program_idd"`)
+	assert.Contains(t, issues[0].Msg, `"program_id"`)
+}
+
+func TestCheck_RecordExprShape_DefReturnedRecordIsChecked(t *testing.T) {
+	t.Parallel()
+
+	src := `def loaded() {
+    let p <- bpfman program get 42
+    return record {
+        prog: $p
+    }
+}
+let r <- loaded
+print $r.prog.record.program_idd`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, `"program_idd"`)
+	assert.Contains(t, issues[0].Msg, `"program_id"`)
+}
+
+func TestCheck_RecordExprShape_ParamFieldStaysOpen(t *testing.T) {
+	t.Parallel()
+
+	src := `def box(x) {
+    return record {
+        item: $x
+    }
+}
+let p <- bpfman program get 42
+let r <- box $p
+print $r.item.record.program_idd`
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
 func TestCheck_DefReturnShape_ProgramFieldTypoRejected(t *testing.T) {
 	t.Parallel()
 

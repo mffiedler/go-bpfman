@@ -137,6 +137,17 @@ func writeExprSource(b *strings.Builder, e Expr) {
 			writeExprSource(b, elem)
 		}
 		b.WriteByte(']')
+	case *RecordExpr:
+		b.WriteString("record {")
+		for i, field := range v.Fields {
+			if i > 0 {
+				b.WriteByte(' ')
+			}
+			b.WriteString(field.Name)
+			b.WriteString(": ")
+			writeExprSource(b, field.Expr)
+		}
+		b.WriteByte('}')
 	default:
 		t := fmt.Sprintf("%T", e)
 		if i := strings.LastIndex(t, "."); i >= 0 {
