@@ -50,9 +50,10 @@ type Issue struct {
 // (for example, imported libraries checked in the context of
 // defs already made visible by the importing script).
 type DefStaticInfo struct {
-	Arity     int
-	DeclPos   source.Pos
-	HasReturn bool
+	Arity       int
+	DeclPos     source.Pos
+	HasReturn   bool
+	ReturnShape semantics.Shape
 }
 
 // Error renders the issue as 'line:col: message' so the
@@ -145,6 +146,11 @@ type checker struct {
 	// duplicate-def diagnostics cite it so the user sees the
 	// declaration that won admission to the visible def set.
 	defDeclPos map[string]source.Pos
+	// defDecls[name] records the actual top-level def node for
+	// return-shape inference. Imported/visible defs from an outer
+	// context may have metadata without a local declaration; those
+	// are represented in defReturnShape instead.
+	defDecls map[string]*syntax.DefStmt
 
 	// nonTopLevelDepth tracks how many enclosing constructs put
 	// us below module top level. Non-zero means a syntax.DefStmt is
@@ -163,14 +169,32 @@ type checker struct {
 	// contains at least one syntax.ReturnStmt anywhere in its tree.
 	// The bind site uses the flag to keep the original sealed
 	// envelope shape for no-return defs (so accessing a non-envelope
-	// field surfaces at preflight) and the semantics.OriginUnknown open
-	// shape only for defs that actually publish a value. The flag is
+	// field surfaces at preflight) and to trigger monomorphic
+	// return-shape inference for defs that actually publish a value. The flag is
 	// not flow-sensitive -- a `return` in one branch is enough --
 	// because the runtime contract is "primary is the returned value
 	// when a return fires, otherwise the envelope mirror", and the
 	// open shape is the conservative choice when either is possible.
 	defHasReturn map[string]bool
+	// defReturnShape caches the monomorphic return shape inferred
+	// for each top-level def. Plain open OriginUnknown means "shape
+	// not provable"; no-return defs are still handled through
+	// defHasReturn and bind to the result-envelope shape.
+	defReturnShape map[string]semantics.Shape
+	// defReturnState tracks on-demand inference so composed helpers
+	// can ask for each other's shapes without becoming declaration
+	// order sensitive. Encountering a visiting def is recursion and
+	// conservatively returns open.
+	defReturnState map[string]defReturnInferState
 }
+
+type defReturnInferState int
+
+const (
+	defReturnUnseen defReturnInferState = iota
+	defReturnVisiting
+	defReturnDone
+)
 
 // checkFrame is one entry on the checker's frame stack. defined
 // carries the names introduced in this frame; shapes carries
@@ -186,11 +210,14 @@ type checkFrame struct {
 
 func newChecker() *checker {
 	return &checker{
-		frames:       []checkFrame{newCheckFrame()},
-		defs:         map[string]bool{},
-		defArity:     map[string]int{},
-		defDeclPos:   map[string]source.Pos{},
-		defHasReturn: map[string]bool{},
+		frames:         []checkFrame{newCheckFrame()},
+		defs:           map[string]bool{},
+		defArity:       map[string]int{},
+		defDeclPos:     map[string]source.Pos{},
+		defDecls:       map[string]*syntax.DefStmt{},
+		defHasReturn:   map[string]bool{},
+		defReturnShape: map[string]semantics.Shape{},
+		defReturnState: map[string]defReturnInferState{},
 	}
 }
 
@@ -200,6 +227,10 @@ func seedVisibleDefs(c *checker, visibleDefs map[string]DefStaticInfo) {
 		c.defArity[name] = info.Arity
 		c.defDeclPos[name] = info.DeclPos
 		c.defHasReturn[name] = info.HasReturn
+		if info.HasReturn {
+			c.defReturnShape[name] = semantics.CloneShape(info.ReturnShape)
+			c.defReturnState[name] = defReturnDone
+		}
 	}
 }
 
@@ -232,6 +263,7 @@ func (c *checker) prescanTopLevelDefs(stmts []syntax.Stmt) {
 		c.defs[def.Name] = true
 		c.defArity[def.Name] = len(def.Params)
 		c.defDeclPos[def.Name] = def.Pos
+		c.defDecls[def.Name] = def
 		c.defHasReturn[def.Name] = bodyHasReturn(def.Body)
 	}
 }
@@ -458,6 +490,253 @@ func (c *checker) inferBindShape(cmd *syntax.CommandStmt) semantics.Shape {
 	// subprocess via runExternalAsBind, which always returns
 	// a result.
 	return semantics.KindShape(semantics.OriginEnvelope)
+}
+
+func openShape() semantics.Shape {
+	return semantics.Shape{Sealed: false, Kind: semantics.OriginUnknown}
+}
+
+func isOpenShape(s semantics.Shape) bool {
+	return !s.Sealed && s.Kind == semantics.OriginUnknown && s.Elem == nil && len(s.Fields) == 0
+}
+
+func sameShape(a, b semantics.Shape) bool {
+	if a.Sealed != b.Sealed || a.Kind != b.Kind {
+		return false
+	}
+	if (a.Elem == nil) != (b.Elem == nil) {
+		return false
+	}
+	if a.Elem != nil && !sameShape(*a.Elem, *b.Elem) {
+		return false
+	}
+	if len(a.Fields) != len(b.Fields) {
+		return false
+	}
+	for name, aChild := range a.Fields {
+		bChild, ok := b.Fields[name]
+		if !ok || !sameShape(aChild, bChild) {
+			return false
+		}
+	}
+	return true
+}
+
+func joinReturnShapes(a, b semantics.Shape) semantics.Shape {
+	if isOpenShape(a) || isOpenShape(b) {
+		return openShape()
+	}
+	if !sameShape(a, b) {
+		return openShape()
+	}
+	return semantics.CloneShape(a)
+}
+
+func (c *checker) defPrimaryShape(name string) semantics.Shape {
+	if !c.defHasReturn[name] {
+		return semantics.KindShape(semantics.OriginEnvelope)
+	}
+	return c.inferDefReturnShape(name)
+}
+
+func (c *checker) bindPrimaryShape(cmd *syntax.CommandStmt, headIsDef bool) semantics.Shape {
+	if headIsDef {
+		return c.defPrimaryShape(bindHeadDefName(cmd))
+	}
+	return c.inferBindShape(cmd)
+}
+
+type returnSummary struct {
+	has    bool
+	always bool
+	shape  semantics.Shape
+}
+
+func noReturnSummary() returnSummary {
+	return returnSummary{}
+}
+
+func possibleReturn(shape semantics.Shape, always bool) returnSummary {
+	return returnSummary{has: true, always: always, shape: semantics.CloneShape(shape)}
+}
+
+// mergeReturnSummaries joins the shapes of two possible return
+// sites. Control-flow exhaustiveness is owned by the caller
+// (inferBlockReturn / inferIfReturn), so the merged summary is
+// deliberately not marked always-returning here.
+func mergeReturnSummaries(a, b returnSummary) returnSummary {
+	if !a.has {
+		return b
+	}
+	if !b.has {
+		return a
+	}
+	return returnSummary{
+		has:    true,
+		always: false,
+		shape:  joinReturnShapes(a.shape, b.shape),
+	}
+}
+
+func (c *checker) inferDefReturnShape(name string) semantics.Shape {
+	switch c.defReturnState[name] {
+	case defReturnDone:
+		return semantics.CloneShape(c.defReturnShape[name])
+	case defReturnVisiting:
+		return openShape()
+	}
+
+	def, ok := c.defDecls[name]
+	if !ok {
+		if shape, ok := c.defReturnShape[name]; ok {
+			return semantics.CloneShape(shape)
+		}
+		return openShape()
+	}
+	if !c.defHasReturn[name] {
+		return semantics.KindShape(semantics.OriginEnvelope)
+	}
+
+	c.defReturnState[name] = defReturnVisiting
+	var summary returnSummary
+	outerFrames := c.frames
+	c.frames = []checkFrame{newCheckFrame()}
+	defer func() {
+		c.frames = outerFrames
+	}()
+	c.withFrame(func() {
+		for _, p := range def.Params {
+			c.define(p, openShape(), nil)
+		}
+		summary = c.inferBlockReturn(def.Body)
+	})
+
+	shape := openShape()
+	if summary.has && summary.always {
+		shape = semantics.CloneShape(summary.shape)
+	}
+	c.defReturnShape[name] = shape
+	c.defReturnState[name] = defReturnDone
+	return semantics.CloneShape(shape)
+}
+
+func (c *checker) inferBlockReturn(stmts []syntax.Stmt) returnSummary {
+	out := noReturnSummary()
+	for _, st := range stmts {
+		summary := c.inferStmtReturn(st)
+		if summary.has {
+			out = mergeReturnSummaries(out, summary)
+		}
+		if summary.always {
+			out.always = true
+			return out
+		}
+	}
+	return out
+}
+
+func (c *checker) inferStmtReturn(st syntax.Stmt) returnSummary {
+	switch n := st.(type) {
+	case *syntax.LetStmt:
+		var lit *syntax.LiteralExpr
+		if l, ok := n.RHS.(*syntax.LiteralExpr); ok {
+			lit = l
+		}
+		c.define(n.Name, c.inferExprShape(n.RHS), lit)
+		return noReturnSummary()
+
+	case *syntax.LetDestructureStmt:
+		for _, name := range n.Names {
+			c.define(name, openShape(), nil)
+		}
+		return noReturnSummary()
+
+	case *syntax.BindStmt:
+		if n.Collect != nil {
+			return c.inferBindCollectReturn(n)
+		}
+		headIsDef := c.bindHeadDef(n.Cmd)
+		if n.Rc != "" {
+			c.define(n.Primary, c.bindPrimaryShape(n.Cmd, headIsDef), nil)
+			c.define(n.Rc, semantics.KindShape(semantics.OriginEnvelope), nil)
+			return noReturnSummary()
+		}
+		c.define(n.Primary, c.bindPrimaryShape(n.Cmd, headIsDef), nil)
+		return noReturnSummary()
+
+	case *syntax.ReturnStmt:
+		if n.Expr == nil {
+			return possibleReturn(openShape(), true)
+		}
+		return possibleReturn(c.inferExprShape(n.Expr), true)
+
+	case *syntax.IfStmt:
+		return c.inferIfReturn(n)
+
+	case *syntax.ForEachStmt:
+		return c.inferLoopBodyReturn(n.Names, n.Body)
+
+	case *syntax.PollStmt:
+		return c.inferLoopBodyReturn(nil, n.Body)
+
+	case *syntax.DefStmt:
+		// Nested defs are rejected elsewhere and their returns
+		// belong to that def, not this body.
+		return noReturnSummary()
+
+	default:
+		return noReturnSummary()
+	}
+}
+
+func (c *checker) inferBindCollectReturn(n *syntax.BindStmt) returnSummary {
+	return c.inferLoopBodyReturn(n.Collect.Names, n.Collect.Body)
+}
+
+func (c *checker) inferLoopBodyReturn(names []string, body []syntax.Stmt) returnSummary {
+	var summary returnSummary
+	c.withFrame(func() {
+		for _, name := range names {
+			c.define(name, openShape(), nil)
+		}
+		summary = c.inferBlockReturn(body)
+	})
+	if summary.has {
+		summary.always = false
+	}
+	return summary
+}
+
+func (c *checker) inferIfReturn(n *syntax.IfStmt) returnSummary {
+	out := noReturnSummary()
+	allBranchesAlways := true
+	branchCount := 0
+
+	mergeBranch := func(stmts []syntax.Stmt) {
+		branchCount++
+		var summary returnSummary
+		c.withFrame(func() {
+			summary = c.inferBlockReturn(stmts)
+		})
+		if summary.has {
+			out = mergeReturnSummaries(out, summary)
+		}
+		if !summary.always {
+			allBranchesAlways = false
+		}
+	}
+
+	mergeBranch(n.Then)
+	for _, br := range n.Elifs {
+		mergeBranch(br.Body)
+	}
+	if len(n.Else) > 0 {
+		mergeBranch(n.Else)
+	} else {
+		allBranchesAlways = false
+	}
+	out.always = branchCount > 0 && allBranchesAlways && out.has
+	return out
 }
 
 // bindHeadPureBuiltin reports whether cmd's first word is a
@@ -784,33 +1063,12 @@ func (c *checker) walkStmt(s syntax.Stmt) {
 			})
 			c.nonTopLevelDepth--
 		}
-		// A def-bound primary takes one of two shapes. When the
-		// def's body contains at least one syntax.ReturnStmt, the
-		// publishable value is dynamic and the checker has no
-		// way to infer it without flow analysis the language
-		// does not need; semantics.OriginUnknown matches what destructure
-		// binding does for the same reason and unblocks field
-		// access on def-returned structured values. When the
-		// body has NO return at all, the runtime contract is
-		// "Primary = ValueFromEnvelope(Rc)" -- the envelope
-		// mirror, exactly the no-payload command-bind family --
-		// so the sealed envelope shape is the right preflight
-		// stand-in. A user binding a side-effect helper with
-		// `let v <- f; print $v.id` then trips the envelope's
-		// field check at static time, where the diagnostic is
-		// useful, rather than seeing a runtime "field id not
-		// found" later.
-		var primaryShape semantics.Shape
-		if headIsDef {
-			headName := bindHeadDefName(n.Cmd)
-			if c.defHasReturn[headName] {
-				primaryShape = semantics.Shape{Sealed: false, Kind: semantics.OriginUnknown}
-			} else {
-				primaryShape = semantics.KindShape(semantics.OriginEnvelope)
-			}
-		} else {
-			primaryShape = c.inferBindShape(n.Cmd)
-		}
+		// A def-bound primary is shaped from the def's
+		// monomorphic return shape when one can be inferred.
+		// Recursive, fall-through, parameter-dependent, or
+		// disagreeing returns stay open; no-return defs keep the
+		// sealed result-envelope shape they publish at runtime.
+		primaryShape := c.bindPrimaryShape(n.Cmd, headIsDef)
 		c.define(n.Primary, primaryShape, nil)
 		c.define(n.Rc, semantics.KindShape(semantics.OriginEnvelope), nil)
 

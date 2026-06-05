@@ -464,6 +464,28 @@ def outer(x) {
 	assert.Empty(t, issues, "visible imported defs should resolve bind heads during library checking")
 }
 
+func TestCheckImportLibraryWithDefs_VisibleDefReturnShapeIsUsed(t *testing.T) {
+	t.Parallel()
+
+	prog := parseProgram(t, `
+def outer() {
+  let p <- inner
+  print $p.record.program_idd
+}
+`)
+	issues := CheckImportLibraryWithDefs(prog, map[string]DefStaticInfo{
+		"inner": {
+			Arity:       0,
+			DeclPos:     source.Pos{Line: 1, Col: 1},
+			HasReturn:   true,
+			ReturnShape: semantics.KindShape(semantics.OriginProgram),
+		},
+	})
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "p.record has no field")
+	assert.Contains(t, issues[0].Msg, `"program_idd"`)
+}
+
 func TestCheckImportLibraryWithDefs_RejectsDuplicateVisibleDef(t *testing.T) {
 	t.Parallel()
 
@@ -1127,6 +1149,179 @@ print $q.field`
 	issues := checkSource(t, src)
 	require.Len(t, issues, 1)
 	assert.Contains(t, issues[0].Msg, "q has kind scalar")
+}
+
+func TestCheck_DefReturnShape_ProgramFieldTypoRejected(t *testing.T) {
+	t.Parallel()
+
+	src := `def get_prog() {
+    let p <- bpfman program get 42
+    return $p
+}
+let p <- get_prog
+print $p.record.program_idd`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "p.record has no field")
+	assert.Contains(t, issues[0].Msg, `"program_idd"`)
+	assert.Contains(t, issues[0].Msg, `"program_id"`)
+}
+
+func TestCheck_DefReturnShape_ComposedHelperUsesCalleeShape(t *testing.T) {
+	t.Parallel()
+
+	src := `def inner() {
+    let p <- bpfman program get 42
+    return $p
+}
+def outer() {
+    let p <- inner
+    return $p
+}
+let p <- outer
+print $p.record.program_idd`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "p.record has no field")
+	assert.Contains(t, issues[0].Msg, `"program_idd"`)
+}
+
+func TestCheck_DefReturnShape_ForwardHelperUsesCalleeShape(t *testing.T) {
+	t.Parallel()
+
+	src := `def outer() {
+    let p <- inner
+    return $p
+}
+def inner() {
+    let p <- bpfman program get 42
+    return $p
+}
+let p <- outer
+print $p.record.program_idd`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "p.record has no field")
+	assert.Contains(t, issues[0].Msg, `"program_idd"`)
+}
+
+func TestCheck_DefReturnShape_ParamPassthroughStaysOpen(t *testing.T) {
+	t.Parallel()
+
+	src := `def id(x) {
+    return $x
+}
+let p <- bpfman program get 42
+let q <- id $p
+print $q.record.program_idd`
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
+func TestCheck_DefReturnShape_DoesNotCaptureCallerFrame(t *testing.T) {
+	t.Parallel()
+
+	src := `let x <- bpfman program get 42
+def get_x() {
+    return $x
+}
+let q <- get_x
+print $q.record.program_idd`
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
+func TestCheck_DefReturnShape_ScalarFieldAccessRejected(t *testing.T) {
+	t.Parallel()
+
+	src := `def seven() {
+    return 7
+}
+let n <- seven
+print $n.field`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "n has kind scalar")
+}
+
+func TestCheck_DefReturnShape_FullIfElseSameShapeRejected(t *testing.T) {
+	t.Parallel()
+
+	src := `def choose(flag) {
+    if $flag {
+        let p <- bpfman program get 1
+        return $p
+    } else {
+        let p <- bpfman program get 2
+        return $p
+    }
+}
+let p <- choose true
+print $p.record.program_idd`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "p.record has no field")
+	assert.Contains(t, issues[0].Msg, `"program_idd"`)
+}
+
+func TestCheck_DefReturnShape_PartialIfReturnStaysOpen(t *testing.T) {
+	t.Parallel()
+
+	src := `def choose(flag) {
+    if $flag {
+        let p <- bpfman program get 1
+        return $p
+    }
+}
+let p <- choose true
+print $p.record.program_idd`
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
+func TestCheck_DefReturnShape_MixedReturnShapesStayOpen(t *testing.T) {
+	t.Parallel()
+
+	src := `def choose(flag) {
+    if $flag {
+        let p <- bpfman program get 1
+        return $p
+    } else {
+        let r <- exec true
+        return $r
+    }
+}
+let p <- choose true
+print $p.record.program_idd`
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
+func TestCheck_DefReturnShape_RecursiveReturnStaysOpen(t *testing.T) {
+	t.Parallel()
+
+	src := `def self() {
+    let p <- self
+    return $p
+}
+let p <- self
+print $p.record.program_idd`
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
+func TestCheck_DefReturnShape_NoReturnDefStillEnvelope(t *testing.T) {
+	t.Parallel()
+
+	src := `def warmup() {
+    exec true
+}
+let r <- warmup
+print $r.exit_code`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "r has kind result")
+	assert.Contains(t, issues[0].Msg, `"exit_code"`)
 }
 
 func TestCheck_KindFieldAccess_UnknownBindIsPermissive(t *testing.T) {

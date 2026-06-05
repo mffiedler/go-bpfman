@@ -1101,23 +1101,21 @@ func TestExecSource_Return_CallSiteAtEmbeddedTopLevel(t *testing.T) {
 	assert.Contains(t, msg, "called at 2:", "call site at line 2 must be cited")
 }
 
-// Regression: the static checker must treat a def call on the
-// right of '<-' as an open-shape source (the def's return value
-// is dynamic), not as a result envelope. The Envelope shape is
-// sealed -- its fields are ok/code/stdout/stderr/... -- so a
-// field name like `.id` that does not exist there gets
-// rejected at preflight when the primary is mis-shaped as an
-// envelope. The fix is to mark def-bound primaries as
-// semantics.OriginUnknown (open) so dynamic field access passes the
-// preflight, matching what happens at runtime when the def
-// returns a structured value.
+// Regression: the static checker must treat a parameter-dependent
+// def return as an open-shape source, not as a result envelope.
+// The Envelope shape is sealed -- its fields are
+// ok/code/stdout/stderr/... -- so a field name like `.id` that
+// does not exist there gets rejected at preflight when the
+// primary is mis-shaped as an envelope. Parameter passthrough is
+// still dynamic under monomorphic return-shape inference, so the
+// primary remains open and field access passes preflight.
 func TestCheck_Return_BindFromDef_UnknownShapeAllowsFieldAccess(t *testing.T) {
 	t.Parallel()
 	src := `
-def load_prog() {
-  return "hello"
+def load_prog(x) {
+  return $x
 }
-let p <- load_prog
+let p <- load_prog hello
 print $p.id
 `
 	issues := checkSource(t, src)

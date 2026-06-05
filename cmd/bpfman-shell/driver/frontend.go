@@ -123,6 +123,11 @@ func recordTopLevelDefInfo(dst map[string]check.DefStaticInfo, stmts []syntax.St
 		if _, exists := dst[def.Name]; exists {
 			continue
 		}
+		// ReturnShape is intentionally left open here for now:
+		// the expanded-program check sees local def declarations
+		// and infers their return shapes directly. Exporting
+		// inferred shapes through pre-expansion import metadata is
+		// a separate follow-up.
 		dst[def.Name] = check.DefStaticInfo{
 			Arity:     len(def.Params),
 			DeclPos:   def.Pos,
