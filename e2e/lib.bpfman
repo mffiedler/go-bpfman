@@ -34,12 +34,14 @@ def expect_program_load(prog load_tp kernel_tp name) {
         status.kernel.loaded_at:     not-empty
         record.handles.pin_path:     not-empty
     }
+    # image_source is populated only for image-backed loads, including
+    # file loads brokered to images under BPFMAN_E2E_BYTECODE_SOURCE=image;
+    # a bare file load has none, so there is nothing to assert here -- no
+    # else (asserting it is null would just restate the branch condition).
     if not null $prog.record.load.image_source {
         assert $prog.record.load.image_source.url != ""
         assert $prog.record.load.image_source.digest != ""
         assert $prog.record.load.image_source.pull_policy == Always
-    } else {
-        assert null $prog.record.load.image_source
     }
 }
 

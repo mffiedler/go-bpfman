@@ -20,9 +20,6 @@ bb1:
   Jump bb3
 
 bb2:
-  EnterFrame kind=if-branch
-  Assert null $prog.record.load.image_source
-  ExitFrame
   Jump bb3
 
 bb3:
