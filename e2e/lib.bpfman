@@ -34,7 +34,7 @@ def expect_program_load(prog load_tp kernel_tp name) {
         status.kernel.loaded_at:     not-empty
         record.handles.pin_path:     not-empty
     }
-    if not (null $prog.record.load.image_source) {
+    if not null $prog.record.load.image_source {
         assert $prog.record.load.image_source.url != ""
         assert $prog.record.load.image_source.digest != ""
         assert $prog.record.load.image_source.pull_policy == Always
@@ -78,7 +78,7 @@ def inspect_published_image(image program_name) {
     # to the inspected object.
     let program_filter = "if ((.manifests // []) | length) > 0 then [.manifests[] | select(.programs.${program_name} != null)][0] else . end"
     let bundle = $inspected |> jq "{inspected: ., manifest: (${program_filter})}"
-    assert not (null $bundle.manifest)
+    assert not null $bundle.manifest
     assert ($bundle.manifest.layers |> jq "length") >= 1
 
     return $bundle
