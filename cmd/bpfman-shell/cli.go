@@ -43,6 +43,8 @@ type CLI struct {
 	Check       bool     `name:"check" short:"c" help:"Parse input without evaluating; report syntax errors and exit."`
 	NoCheck     bool     `name:"no-check" help:"Skip the static-analysis pre-flight before script evaluation. Default is to run Check first and refuse on errors."`
 	AST         bool     `name:"ast" help:"Parse input and print the AST tree of the whole program to stdout; do not evaluate."`
+	Fmt         bool     `name:"fmt" help:"Format input as canonical bpfman-shell source and print it to stdout; do not evaluate."`
+	FmtWrite    bool     `name:"write" short:"w" help:"Write formatted output back to the script file when used with fmt."`
 	Lowered     bool     `name:"lowered" help:"Parse input, lower it to the canonical IR, and print the lowered form to stdout; do not evaluate."`
 	ListScripts bool     `name:"list-scripts" help:"Print script paths whose header labels match --selector; does not run scripts or open bpfman state."`
 	Selector    string   `name:"selector" help:"Kubernetes-style label selector for --list-scripts, for example 'program in (tc,xdp),external'."`
@@ -53,6 +55,8 @@ type CLI struct {
 // NewCLI creates and initialises a CLI instance by parsing
 // command-line arguments.
 func NewCLI() (*CLI, error) {
+	rewriteFmtSubcommand()
+
 	var c CLI
 	c.kctx = kong.Parse(&c, KongOptions()...)
 	c.DefaultWriters()
@@ -61,13 +65,19 @@ func NewCLI() (*CLI, error) {
 	// --lowered, and --version, which do no I/O against the
 	// manager and must be runnable without access to the system
 	// config file.
-	if !c.Check && !c.AST && !c.Lowered && !c.ListScripts && !c.Version {
+	if !c.Check && !c.AST && !c.Fmt && !c.FmtWrite && !c.Lowered && !c.ListScripts && !c.Version {
 		if err := c.InitLogger(); err != nil {
 			return nil, fmt.Errorf("create logger: %w", err)
 		}
 	}
 
 	return &c, nil
+}
+
+func rewriteFmtSubcommand() {
+	if len(os.Args) >= 2 && os.Args[1] == "fmt" {
+		os.Args = append([]string{os.Args[0], "--fmt"}, os.Args[2:]...)
+	}
 }
 
 // Execute runs the parsed command.
@@ -174,6 +184,43 @@ func (c *CLI) runLowered() error {
 	return nil
 }
 
+// runFmt drives the fmt pipeline: parse one input file (or stdin),
+// render the canonical source form, and either print it or write it
+// back to the named script.
+func (c *CLI) runFmt() error {
+	if c.FmtWrite {
+		script := c.script()
+		if script == "" || script == "-" {
+			return fmt.Errorf("fmt -w requires a script file")
+		}
+		reader, err := driver.OpenScriptReader(script)
+		if err != nil {
+			return err
+		}
+		defer reader.Close()
+		formatted, hadIssue := driver.FormatInputString(reader, c.Err, c.inputFileLabel())
+		if hadIssue {
+			return driver.ErrSilent
+		}
+		if err := os.WriteFile(script, []byte(formatted), 0o644); err != nil {
+			return fmt.Errorf("write formatted script: %w", err)
+		}
+		return nil
+	}
+
+	reader, err := c.openInputReader()
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+
+	file := c.inputFileLabel()
+	if driver.FormatInput(reader, c.Out, c.Err, file) {
+		return driver.ErrSilent
+	}
+	return nil
+}
+
 // Run is the CLI's top-level entry. With --check / --ast /
 // --lowered it short-circuits to those parse-only pipelines;
 // otherwise it opens the manager, builds a script-runner
@@ -185,11 +232,17 @@ func (c *CLI) Run(ctx context.Context) error {
 	if len(c.Scripts) > 1 {
 		return fmt.Errorf("expected at most one script to run; use --list-scripts to inspect multiple scripts")
 	}
+	if c.FmtWrite && !c.Fmt {
+		return fmt.Errorf("-w/--write is only valid with fmt")
+	}
 	if c.Check {
 		return c.runCheck()
 	}
 	if c.AST {
 		return c.runAST()
+	}
+	if c.Fmt {
+		return c.runFmt()
 	}
 	if c.Lowered {
 		return c.runLowered()

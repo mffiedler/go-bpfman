@@ -12,6 +12,15 @@ func FormatExprSource(expr Expr) string {
 	return dumpExprSource(expr)
 }
 
+func FormatExprSourceIndented(expr Expr, indent int) string {
+	if expr == nil {
+		return "nil"
+	}
+	var b strings.Builder
+	writeExprSourceIndented(&b, expr, indent)
+	return b.String()
+}
+
 // FormatAssertClauseSource renders one assertion clause in the shell's
 // compact source-like form.
 func FormatAssertClauseSource(clause AssertClause) string {
@@ -40,49 +49,37 @@ func writeExprSource(b *strings.Builder, e Expr) {
 	switch v := e.(type) {
 	case *LiteralExpr:
 		if v.Quoted {
-			fmt.Fprintf(b, "%q", v.Text)
+			writeQuotedLiteralSource(b, v.Text)
 			return
 		}
 		b.WriteString(v.Text)
 	case *VarRefExpr:
 		b.WriteByte('$')
 		b.WriteString(v.Name)
-		if v.Path != "" {
-			b.WriteByte('.')
-			b.WriteString(v.Path)
-		}
+		writeVarPathSource(b, v.Path)
 	case *AdapterExpr:
 		b.WriteString(v.Adapter)
 		b.WriteByte(':')
 		b.WriteByte('$')
 		b.WriteString(v.Name)
-		if v.Path != "" {
-			b.WriteByte('.')
-			b.WriteString(v.Path)
-		}
+		writeVarPathSource(b, v.Path)
 	case *InterpStringExpr:
 		b.WriteByte('"')
 		for _, seg := range v.Segments {
 			if seg.Expr == nil {
-				b.WriteString(seg.Literal)
+				writeDoubleQuotedContent(b, seg.Literal)
 				continue
 			}
 			b.WriteString("${")
 			switch sub := seg.Expr.(type) {
 			case *VarRefExpr:
 				b.WriteString(sub.Name)
-				if sub.Path != "" {
-					b.WriteByte('.')
-					b.WriteString(sub.Path)
-				}
+				writeVarPathSource(b, sub.Path)
 			case *AdapterExpr:
 				b.WriteString(sub.Adapter)
 				b.WriteByte(':')
 				b.WriteString(sub.Name)
-				if sub.Path != "" {
-					b.WriteByte('.')
-					b.WriteString(sub.Path)
-				}
+				writeVarPathSource(b, sub.Path)
 			default:
 				writeExprSource(b, seg.Expr)
 			}
@@ -122,7 +119,7 @@ func writeExprSource(b *strings.Builder, e Expr) {
 		b.WriteString(v.Name)
 		for _, a := range v.Args {
 			b.WriteByte(' ')
-			writeExprSource(b, a)
+			writePureCallArgSource(b, a)
 		}
 	case *MatchesExpr:
 		writeExprAtomSource(b, v.Target)
@@ -134,7 +131,7 @@ func writeExprSource(b *strings.Builder, e Expr) {
 			if i > 0 {
 				b.WriteByte(' ')
 			}
-			writeExprSource(b, elem)
+			writeListElemSource(b, elem)
 		}
 		b.WriteByte(']')
 	case *RecordExpr:
@@ -154,6 +151,63 @@ func writeExprSource(b *strings.Builder, e Expr) {
 			t = t[i+1:]
 		}
 		fmt.Fprintf(b, "<%s>", t)
+	}
+}
+
+func writeExprSourceIndented(b *strings.Builder, e Expr, indent int) {
+	switch v := e.(type) {
+	case *MatchesExpr:
+		writeExprAtomSource(b, v.Target)
+		b.WriteByte(' ')
+		writeMatchesBlockSourceIndented(b, v.Block, indent)
+	default:
+		writeExprSource(b, e)
+	}
+}
+
+func writeVarPathSource(b *strings.Builder, path string) {
+	if path == "" {
+		return
+	}
+	if strings.HasPrefix(path, "[") {
+		b.WriteString(path)
+		return
+	}
+	b.WriteByte('.')
+	b.WriteString(path)
+}
+
+func writeQuotedLiteralSource(b *strings.Builder, text string) {
+	if strings.ContainsAny(text, "\"$") && !strings.Contains(text, "'") &&
+		!strings.ContainsAny(text, "\n\t\r") {
+		b.WriteByte('\'')
+		b.WriteString(text)
+		b.WriteByte('\'')
+		return
+	}
+	b.WriteByte('"')
+	writeDoubleQuotedContent(b, text)
+	b.WriteByte('"')
+}
+
+func writeDoubleQuotedContent(b *strings.Builder, text string) {
+	for _, r := range text {
+		switch r {
+		case '\n':
+			b.WriteString(`\n`)
+		case '\t':
+			b.WriteString(`\t`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\\':
+			b.WriteString(`\\`)
+		case '"':
+			b.WriteString(`\"`)
+		case '$':
+			b.WriteString(`\$`)
+		default:
+			b.WriteRune(r)
+		}
 	}
 }
 
@@ -190,6 +244,28 @@ func writeExprAtomSource(b *strings.Builder, e Expr) {
 	}
 }
 
+func writePureCallArgSource(b *strings.Builder, e Expr) {
+	switch e.(type) {
+	case *LiteralExpr, *VarRefExpr, *AdapterExpr, *InterpStringExpr, *ListExpr, *RecordExpr:
+		writeExprSource(b, e)
+	default:
+		b.WriteByte('(')
+		writeExprSource(b, e)
+		b.WriteByte(')')
+	}
+}
+
+func writeListElemSource(b *strings.Builder, e Expr) {
+	switch e.(type) {
+	case *LiteralExpr, *VarRefExpr, *AdapterExpr, *InterpStringExpr, *ListExpr, *RecordExpr, *PureCallExpr:
+		writeExprSource(b, e)
+	default:
+		b.WriteByte('(')
+		writeExprSource(b, e)
+		b.WriteByte(')')
+	}
+}
+
 func writeMatchesBlockSource(b *strings.Builder, m *MatchesBlockExpr) {
 	b.WriteString("matches")
 	if m.Exhaustive {
@@ -223,4 +299,57 @@ func writeMatchesBlockSource(b *strings.Builder, m *MatchesBlockExpr) {
 		b.WriteByte(' ')
 	}
 	b.WriteByte('}')
+}
+
+func writeMatchesBlockSourceIndented(b *strings.Builder, m *MatchesBlockExpr, indent int) {
+	b.WriteString("matches")
+	if m.Exhaustive {
+		b.WriteString(" exhaustive")
+	}
+	if len(m.Entries) == 0 {
+		b.WriteString(" { }")
+		return
+	}
+	b.WriteString(" {\n")
+	width := matchesPathWidth(m)
+	for _, ent := range m.Entries {
+		writeSourceIndent(b, indent+1)
+		b.WriteString(ent.Path)
+		b.WriteString(": ")
+		switch {
+		case ent.Predicate != "":
+			writeMatchesValuePadding(b, ent, width)
+			b.WriteString(ent.Predicate)
+		case ent.SubBlock != nil:
+			writeMatchesBlockSourceIndented(b, ent.SubBlock, indent+1)
+		default:
+			writeMatchesValuePadding(b, ent, width)
+			writeExprSource(b, ent.Pattern)
+		}
+		b.WriteByte('\n')
+	}
+	writeSourceIndent(b, indent)
+	b.WriteByte('}')
+}
+
+func writeMatchesValuePadding(b *strings.Builder, ent MatchEntry, width int) {
+	for i := len(ent.Path); i < width; i++ {
+		b.WriteByte(' ')
+	}
+}
+
+func matchesPathWidth(m *MatchesBlockExpr) int {
+	width := 0
+	for _, ent := range m.Entries {
+		if len(ent.Path) > width {
+			width = len(ent.Path)
+		}
+	}
+	return width
+}
+
+func writeSourceIndent(b *strings.Builder, indent int) {
+	for i := 0; i < indent; i++ {
+		b.WriteString("    ")
+	}
 }
