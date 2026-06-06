@@ -12,14 +12,12 @@ bb0:
   ApplyBind src=t4 argv=t3 primary=loaded rc=_ guard=true fail=bb2
   Eval t5 = $loaded.programs[0]
   BindName prog = t5
-  Eval t6 = $prog.record.program_id
-  BindName pid = t6
-  BuildArgs t7 = [bpfman program unload $pid]
-  RegisterDefer argv=t7 policy=def-then-exec-bind lane=builtin(bpfman)
-  Eval t8 = [100 200 300 400 500 600 700 800 900 1000]
-  BindName priorities = t8
-  Eval t9 = $priorities
-  ForEachCollect list=t9 names=[prio] primary=links rc=_ guard=true body=bb3 exit=bb4
+  BuildArgs t6 = [bpfman program unload $prog]
+  RegisterDefer argv=t6 policy=def-then-exec-bind lane=builtin(bpfman)
+  Eval t7 = [100 200 300 400 500 600 700 800 900 1000]
+  BindName priorities = t7
+  Eval t8 = $priorities
+  ForEachCollect list=t8 names=[prio] primary=links rc=_ guard=true body=bb3 exit=bb4
 
 bb1:
   RunDefers policy=program
@@ -30,23 +28,23 @@ bb2:
   PropagateError
 
 bb3:
-  BuildArgs t10 = [bpfman link attach xdp -i $pair.host_link -p $prio $pid]
-  DispatchBind t11 = t10 policy=def-then-exec-bind lane=builtin(bpfman)
-  CollectProduce t11
+  BuildArgs t9 = [bpfman link attach xdp -i $pair.host_link -p $prio $prog]
+  DispatchBind t10 = t9 policy=def-then-exec-bind lane=builtin(bpfman)
+  CollectProduce t10
 
 bb4:
-  Eval t12 = $links
-  ForEach list=t12 names=[l] body=bb5 exit=bb6
+  Eval t11 = $links
+  ForEach list=t11 names=[l] body=bb5 exit=bb6
 
 bb5:
-  BuildArgs t13 = [bpfman link detach $l]
-  RegisterDefer argv=t13 policy=def-then-exec-bind lane=builtin(bpfman)
+  BuildArgs t12 = [bpfman link detach $l]
+  RegisterDefer argv=t12 policy=def-then-exec-bind lane=builtin(bpfman)
   ForEachContinue
 
 bb6:
-  BuildArgs t14 = [bpfman link attach xdp -i $pair.host_link -p 1100 $pid]
-  DispatchBind t15 = t14 policy=def-then-exec-bind lane=builtin(bpfman)
-  ApplyBind src=t15 argv=t14 primary=_ rc=rc guard=false
+  BuildArgs t13 = [bpfman link attach xdp -i $pair.host_link -p 1100 $prog]
+  DispatchBind t14 = t13 policy=def-then-exec-bind lane=builtin(bpfman)
+  ApplyBind src=t14 argv=t13 primary=_ rc=rc guard=false
   Assert not $rc.ok
   Assert contains $rc.stderr "no free dispatcher slots"
   RunDefers policy=program

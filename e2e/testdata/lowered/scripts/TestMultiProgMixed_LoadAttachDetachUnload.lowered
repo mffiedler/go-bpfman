@@ -165,31 +165,31 @@ bb0:
   BuildArgs t7 = [bpfman program load file --path testdata/bpf/multi_prog_mixed_counter_script.bpf.o --programs tracepoint:mixed_tp,kprobe:mixed_kp,kretprobe:mixed_krp -g "expected_slot=0x${u32le $fn.index}" -g "weight_tp=0x${u64le $weight_tp}" -g "weight_kp=0x${u64le $weight_kp}" -g "weight_krp=0x${u64le $weight_krp}"]
   DispatchBind t8 = t7 policy=def-then-exec-bind lane=builtin(bpfman)
   ApplyBind src=t8 argv=t7 primary=loaded rc=_ guard=true fail=bb2
-  Eval t9 = [$loaded.programs[0] $loaded.programs[0].record.program_id]
-  BindDestructure [prog_tp pid_tp] = t9
-  Eval t10 = [$loaded.programs[1] $loaded.programs[1].record.program_id]
-  BindDestructure [prog_kp pid_kp] = t10
-  Eval t11 = [$loaded.programs[2] $loaded.programs[2].record.program_id]
-  BindDestructure [prog_krp pid_krp] = t11
-  BuildArgs t12 = [bpfman program unload $pid_tp]
+  Eval t9 = $loaded.programs[0]
+  BindName tp = t9
+  Eval t10 = $loaded.programs[1]
+  BindName kp = t10
+  Eval t11 = $loaded.programs[2]
+  BindName krp = t11
+  BuildArgs t12 = [bpfman program unload $tp]
   RegisterDefer argv=t12 policy=def-then-exec-bind lane=builtin(bpfman)
-  BuildArgs t13 = [bpfman program unload $pid_kp]
+  BuildArgs t13 = [bpfman program unload $kp]
   RegisterDefer argv=t13 policy=def-then-exec-bind lane=builtin(bpfman)
-  BuildArgs t14 = [bpfman program unload $pid_krp]
+  BuildArgs t14 = [bpfman program unload $krp]
   RegisterDefer argv=t14 policy=def-then-exec-bind lane=builtin(bpfman)
-  Eval t15 = $prog_tp |> jq "[.status.maps[] | select(.name == \"mtp_count\")  | .id][0]"
+  Eval t15 = $tp |> jq "[.status.maps[] | select(.name == \"mtp_count\")  | .id][0]"
   BindName mapID_tp = t15
-  Eval t16 = $prog_kp |> jq "[.status.maps[] | select(.name == \"mkp_count\")  | .id][0]"
+  Eval t16 = $kp |> jq "[.status.maps[] | select(.name == \"mkp_count\")  | .id][0]"
   BindName mapID_kp = t16
-  Eval t17 = $prog_krp |> jq "[.status.maps[] | select(.name == \"mkrp_count\") | .id][0]"
+  Eval t17 = $krp |> jq "[.status.maps[] | select(.name == \"mkrp_count\") | .id][0]"
   BindName mapID_krp = t17
-  BuildArgs t18 = [bpfman link attach tracepoint $pid_tp bpfman_e2e/bpfman_e2e_ping]
+  BuildArgs t18 = [bpfman link attach tracepoint $tp bpfman_e2e/bpfman_e2e_ping]
   DispatchBind t19 = t18 policy=def-then-exec-bind lane=builtin(bpfman)
   ApplyBind src=t19 argv=t18 primary=link_tp rc=_ guard=true fail=bb3
-  BuildArgs t20 = [bpfman link attach kprobe --fn-name $fn.name $pid_kp]
+  BuildArgs t20 = [bpfman link attach kprobe --fn-name $fn.name $kp]
   DispatchBind t21 = t20 policy=def-then-exec-bind lane=builtin(bpfman)
   ApplyBind src=t21 argv=t20 primary=link_kp rc=_ guard=true fail=bb4
-  BuildArgs t22 = [bpfman link attach kprobe --fn-name $fn.name $pid_krp]
+  BuildArgs t22 = [bpfman link attach kprobe --fn-name $fn.name $krp]
   DispatchBind t23 = t22 policy=def-then-exec-bind lane=builtin(bpfman)
   ApplyBind src=t23 argv=t22 primary=link_krp rc=_ guard=true fail=bb5
   Eval t24 = "fromjson | .[0].formatted.value | tonumber"

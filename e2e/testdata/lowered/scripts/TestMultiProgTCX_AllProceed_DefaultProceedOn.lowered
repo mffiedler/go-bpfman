@@ -18,31 +18,31 @@ bb0:
   BuildArgs t7 = [bpfman program load file --path testdata/bpf/multi_prog_tcx_counter.bpf.o --programs tcx:mtcx_a,tcx:mtcx_b,tcx:mtcx_c -g "weight_a=0x${u64le $weight_a}" -g "weight_b=0x${u64le $weight_b}" -g "weight_c=0x${u64le $weight_c}"]
   DispatchBind t8 = t7 policy=def-then-exec-bind lane=builtin(bpfman)
   ApplyBind src=t8 argv=t7 primary=loaded rc=_ guard=true fail=bb2
-  Eval t9 = [$loaded.programs[0] $loaded.programs[0].record.program_id]
-  BindDestructure [prog_a pid_a] = t9
-  Eval t10 = [$loaded.programs[1] $loaded.programs[1].record.program_id]
-  BindDestructure [prog_b pid_b] = t10
-  Eval t11 = [$loaded.programs[2] $loaded.programs[2].record.program_id]
-  BindDestructure [prog_c pid_c] = t11
-  BuildArgs t12 = [bpfman program unload $pid_a]
+  Eval t9 = $loaded.programs[0]
+  BindName a = t9
+  Eval t10 = $loaded.programs[1]
+  BindName b = t10
+  Eval t11 = $loaded.programs[2]
+  BindName c = t11
+  BuildArgs t12 = [bpfman program unload $a]
   RegisterDefer argv=t12 policy=def-then-exec-bind lane=builtin(bpfman)
-  BuildArgs t13 = [bpfman program unload $pid_b]
+  BuildArgs t13 = [bpfman program unload $b]
   RegisterDefer argv=t13 policy=def-then-exec-bind lane=builtin(bpfman)
-  BuildArgs t14 = [bpfman program unload $pid_c]
+  BuildArgs t14 = [bpfman program unload $c]
   RegisterDefer argv=t14 policy=def-then-exec-bind lane=builtin(bpfman)
-  Eval t15 = $prog_a |> jq "[.status.maps[] | select(.name == \"mtcx_a_count\") | .id][0]"
+  Eval t15 = $a |> jq "[.status.maps[] | select(.name == \"mtcx_a_count\") | .id][0]"
   BindName mapID_a = t15
-  Eval t16 = $prog_b |> jq "[.status.maps[] | select(.name == \"mtcx_b_count\") | .id][0]"
+  Eval t16 = $b |> jq "[.status.maps[] | select(.name == \"mtcx_b_count\") | .id][0]"
   BindName mapID_b = t16
-  Eval t17 = $prog_c |> jq "[.status.maps[] | select(.name == \"mtcx_c_count\") | .id][0]"
+  Eval t17 = $c |> jq "[.status.maps[] | select(.name == \"mtcx_c_count\") | .id][0]"
   BindName mapID_c = t17
-  BuildArgs t18 = [bpfman link attach tcx -i $pair.host_link -d ingress -p 50 $pid_a]
+  BuildArgs t18 = [bpfman link attach tcx -i $pair.host_link -d ingress -p 50 $a]
   DispatchBind t19 = t18 policy=def-then-exec-bind lane=builtin(bpfman)
   ApplyBind src=t19 argv=t18 primary=link_a rc=_ guard=true fail=bb3
-  BuildArgs t20 = [bpfman link attach tcx -i $pair.host_link -d ingress -p 60 $pid_b]
+  BuildArgs t20 = [bpfman link attach tcx -i $pair.host_link -d ingress -p 60 $b]
   DispatchBind t21 = t20 policy=def-then-exec-bind lane=builtin(bpfman)
   ApplyBind src=t21 argv=t20 primary=link_b rc=_ guard=true fail=bb4
-  BuildArgs t22 = [bpfman link attach tcx -i $pair.host_link -d ingress -p 70 $pid_c]
+  BuildArgs t22 = [bpfman link attach tcx -i $pair.host_link -d ingress -p 70 $c]
   DispatchBind t23 = t22 policy=def-then-exec-bind lane=builtin(bpfman)
   ApplyBind src=t23 argv=t22 primary=link_c rc=_ guard=true fail=bb5
   Eval t24 = "fromjson | .[0].formatted.value | tonumber"
