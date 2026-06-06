@@ -43,10 +43,10 @@ defer net release $pair
 # Position 2 (priority 300) is the breaker: proceed-on excludes
 # OK, so its return verdict (OK from tc_counter.bpf.o) stops
 # the chain.
-let priorities  = [100 200 300 400 500]
+let priorities = [100 200 300 400 500]
 let proceed_ons = ["ok,pipe,dispatcher_return" "ok,pipe,dispatcher_return" "shot" "ok,pipe,dispatcher_return" "ok,pipe,dispatcher_return"]
 
-guard links <- foreach (prio po) in (zip $priorities $proceed_ons) {
+guard links <- foreach (prio po) in zip $priorities $proceed_ons {
     guard loaded <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
     let prog = $loaded.programs[0]
     defer bpfman program unload $prog

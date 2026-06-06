@@ -30,12 +30,12 @@ guard loaded_alpha <- bpfman program load file \
     --path testdata/bpf/tc_pass.bpf.o \
     --programs tc:alpha
 
-let prog_beta  = $loaded_beta.programs[0]
+let prog_beta = $loaded_beta.programs[0]
 let prog_alpha = $loaded_alpha.programs[0]
 defer bpfman program unload $prog_beta
 defer bpfman program unload $prog_alpha
 
-guard l_beta  <- bpfman link attach tc -i $pair.host_link -d ingress -p 100 $prog_beta
+guard l_beta <- bpfman link attach tc -i $pair.host_link -d ingress -p 100 $prog_beta
 guard l_alpha <- bpfman link attach tc -i $pair.host_link -d ingress -p 100 $prog_alpha
 defer bpfman link detach $l_beta
 defer bpfman link detach $l_alpha
@@ -43,8 +43,8 @@ defer bpfman link detach $l_alpha
 # Re-query each link so position reflects the dispatcher's
 # steady-state ordering after both attaches have committed.
 guard g_alpha <- bpfman link get $l_alpha
-guard g_beta  <- bpfman link get $l_beta
+guard g_beta <- bpfman link get $l_beta
 
 assert $g_alpha.record.details.priority == 100
-assert $g_beta.record.details.priority  == 100
+assert $g_beta.record.details.priority == 100
 assert $g_alpha.record.details.position < $g_beta.record.details.position

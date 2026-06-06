@@ -5,6 +5,9 @@ import (
 	"strings"
 )
 
+// indentUnit is one level of indentation in canonical source output.
+const indentUnit = "    "
+
 // FormatExprSource renders expr in the shell's compact source-like form.
 // Used by diagnostics and traces that need the original expression shape
 // without reimplementing the expression formatter.
@@ -349,7 +352,7 @@ func matchesPathWidth(m *MatchesBlockExpr) int {
 }
 
 func writeSourceIndent(b *strings.Builder, indent int) {
-	for i := 0; i < indent; i++ {
-		b.WriteString("    ")
+	for range indent {
+		b.WriteString(indentUnit)
 	}
 }

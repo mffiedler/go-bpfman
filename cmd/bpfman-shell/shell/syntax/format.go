@@ -497,8 +497,8 @@ func (f *sourceFormatter) writeCommandArg(expr Expr) {
 }
 
 func (f *sourceFormatter) writeIndent(indent int) {
-	for i := 0; i < indent; i++ {
-		f.b.WriteString("    ")
+	for range indent {
+		f.b.WriteString(indentUnit)
 	}
 }
 

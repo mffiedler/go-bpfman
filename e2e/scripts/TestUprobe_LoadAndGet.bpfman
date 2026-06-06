@@ -28,13 +28,13 @@ guard loaded <- bpfman program load file \
 let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 
-let runtime_base        = $prog.record.handles.pin_path |> jq 'split("/fs/")[0]'
-let expect_prog_pin     = "${runtime_base}/fs/prog_${pid}"
-let expect_map_dir      = "${runtime_base}/fs/maps/${pid}"
-let expect_link_dir     = "${runtime_base}/fs/links/${pid}"
-let expect_bytecode     = "${runtime_base}/programs/${pid}/bytecode.o"
-let expect_map_ids      = $prog.status.maps |> jq "[.[].id]"
-let expect_map_id       = $prog.status.kernel.map_ids[0]
+let runtime_base = $prog.record.handles.pin_path |> jq 'split("/fs/")[0]'
+let expect_prog_pin = "${runtime_base}/fs/prog_${pid}"
+let expect_map_dir = "${runtime_base}/fs/maps/${pid}"
+let expect_link_dir = "${runtime_base}/fs/links/${pid}"
+let expect_bytecode = "${runtime_base}/programs/${pid}/bytecode.o"
+let expect_map_ids = $prog.status.maps |> jq "[.[].id]"
+let expect_map_id = $prog.status.kernel.map_ids[0]
 
 expect_program_load $prog uprobe kprobe uprobe_counter
 
@@ -44,12 +44,12 @@ assert $prog matches exhaustive {
         license:        "Dual BSD/GPL"
         gpl_compatible: true
         created_at:     not-empty
-        updated_at: null
+        updated_at:     null
         load: matches exhaustive {
             object_path:  $expect_bytecode
             program_name: uprobe_counter
             program_type: uprobe
-            attach_func: null
+            attach_func:  null
             map_owner_id: null
             global_data:  empty
             image_source: $prog.record.load.image_source
@@ -89,7 +89,7 @@ assert $prog matches exhaustive {
             has_memlock:    true
             restricted:     false
         }
-        stats: null
+        stats:    null
         prog_pin: $expect_prog_pin
         map_dir:  $expect_map_dir
         link_dir: $expect_link_dir
@@ -135,7 +135,7 @@ assert $got matches exhaustive {
         license:        $prog.record.license
         gpl_compatible: $prog.record.gpl_compatible
         created_at:     $prog.record.created_at
-        updated_at: null
+        updated_at:     null
         load: matches exhaustive {
             object_path:  $prog.record.load.object_path
             program_name: $prog.record.load.program_name

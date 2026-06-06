@@ -35,7 +35,7 @@ defer net release $pair
 # load gets its own xdp_stats_map. The fused load+attach inside
 # the bind-collect body keeps each program's lifecycle paired
 # with its slot.
-guard links <- foreach _ in (range 10) {
+guard links <- foreach _ in range 10 {
     guard loaded <- bpfman program load file --path testdata/bpf/xdp_counter.bpf.o --programs xdp:xdp_stats
     let prog = $loaded.programs[0]
     defer bpfman program unload $prog

@@ -25,7 +25,7 @@
 
 import ../lib.bpfman
 
-let n      = 5
+let n = 5
 let weight_a = 41
 let weight_b = 42
 let weight_c = 43

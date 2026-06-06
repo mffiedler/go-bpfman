@@ -34,9 +34,9 @@
 
 import ../lib.bpfman
 
-let n          = 5
-let weight_tp  = 41
-let weight_kp  = 42
+let n = 5
+let weight_tp = 41
+let weight_kp = 42
 let weight_krp = 43
 
 guard fn <- kfunc acquire
@@ -63,12 +63,12 @@ defer bpfman program unload $tp
 defer bpfman program unload $kp
 defer bpfman program unload $krp
 
-let mapID_tp  = $tp |> jq '[.status.maps[] | select(.name == "mtp_count")  | .id][0]'
-let mapID_kp  = $kp |> jq '[.status.maps[] | select(.name == "mkp_count")  | .id][0]'
+let mapID_tp = $tp |> jq '[.status.maps[] | select(.name == "mtp_count")  | .id][0]'
+let mapID_kp = $kp |> jq '[.status.maps[] | select(.name == "mkp_count")  | .id][0]'
 let mapID_krp = $krp |> jq '[.status.maps[] | select(.name == "mkrp_count") | .id][0]'
 
-guard link_tp  <- bpfman link attach tracepoint $tp bpfman_e2e/bpfman_e2e_ping
-guard link_kp  <- bpfman link attach kprobe --fn-name $fn.name $kp
+guard link_tp <- bpfman link attach tracepoint $tp bpfman_e2e/bpfman_e2e_ping
+guard link_kp <- bpfman link attach kprobe --fn-name $fn.name $kp
 guard link_krp <- bpfman link attach kprobe --fn-name $fn.name $krp
 
 let counter_filter = "fromjson | .[0].formatted.value | tonumber"
@@ -89,17 +89,17 @@ sleep 0.1
 # --- Wave 3: only tp attached ---
 guard _ <- kfunc fire $fn $n
 
-guard dump_tp  <- bpftool map dump id $mapID_tp -j
-guard dump_kp  <- bpftool map dump id $mapID_kp -j
+guard dump_tp <- bpftool map dump id $mapID_tp -j
+guard dump_kp <- bpftool map dump id $mapID_kp -j
 guard dump_krp <- bpftool map dump id $mapID_krp -j
 
-let count_tp  = $dump_tp.stdout  |> jq $counter_filter
-let count_kp  = $dump_kp.stdout  |> jq $counter_filter
+let count_tp = $dump_tp.stdout |> jq $counter_filter
+let count_kp = $dump_kp.stdout |> jq $counter_filter
 let count_krp = $dump_krp.stdout |> jq $counter_filter
 
-let want_tp  = 3 * $n * $weight_tp
-let want_kp  = 2 * $n * $weight_kp
-let want_krp = 1 * $n * $weight_krp
+let want_tp = (3 * $n) * $weight_tp
+let want_kp = (2 * $n) * $weight_kp
+let want_krp = (1 * $n) * $weight_krp
 
 print "tp:  got=${count_tp}  want=${want_tp}"
 print "kp:  got=${count_kp}  want=${want_kp}"

@@ -37,7 +37,7 @@ let prog = $loaded.programs[0]
 defer bpfman program unload $prog
 
 guard l_25 <- bpfman link attach tc -i $pair.host_link -d ingress -p 25 $prog
-guard l_0  <- bpfman link attach tc -i $pair.host_link -d ingress -p 0  $prog
+guard l_0 <- bpfman link attach tc -i $pair.host_link -d ingress -p 0 $prog
 guard l_75 <- bpfman link attach tc -i $pair.host_link -d ingress -p 75 $prog
 
 defer bpfman link detach $l_25
@@ -45,17 +45,17 @@ defer bpfman link detach $l_0
 defer bpfman link detach $l_75
 
 guard g_25 <- bpfman link get $l_25
-guard g_0  <- bpfman link get $l_0
+guard g_0 <- bpfman link get $l_0
 guard g_75 <- bpfman link get $l_75
 
 # Stored priority is verbatim: 0 is preserved, not rewritten to
 # the effective-ordering value 50.
 assert $g_25.record.details.priority == 25
-assert $g_0.record.details.priority  == 0
+assert $g_0.record.details.priority == 0
 assert $g_75.record.details.priority == 75
 
 # Effective ordering treats 0 as 50, so the zero-priority link
 # lands between 25 and 75 rather than ahead of either.
 assert $g_25.record.details.position == 0
-assert $g_0.record.details.position  == 1
+assert $g_0.record.details.position == 1
 assert $g_75.record.details.position == 2

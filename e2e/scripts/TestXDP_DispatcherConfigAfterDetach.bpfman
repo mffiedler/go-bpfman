@@ -32,7 +32,7 @@ defer bpfman program unload $prog
 # access into $links because the per-iteration expected count
 # changes; there is no index-by-variable in path lookups today,
 # so each step is spelled out.
-guard links <- foreach _ in (range 10) {
+guard links <- foreach _ in range 10 {
     bpfman link attach xdp -i $pair.host_link $prog
 }
 

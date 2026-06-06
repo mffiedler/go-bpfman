@@ -61,7 +61,7 @@ let sumFilter = "fromjson | [.[].formatted.values[].value.rx_packets | tonumber]
 # Peak 0: load + attach ten programs at priorities 0..900.
 # ============================================================
 
-guard ld_0   <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_0 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
 guard ld_100 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
 guard ld_200 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
 guard ld_300 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
@@ -72,7 +72,7 @@ guard ld_700 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --
 guard ld_800 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
 guard ld_900 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
 
-let p_0   = $ld_0.programs[0]
+let p_0 = $ld_0.programs[0]
 let p_100 = $ld_100.programs[0]
 let p_200 = $ld_200.programs[0]
 let p_300 = $ld_300.programs[0]
@@ -94,7 +94,7 @@ defer bpfman program unload $p_700
 defer bpfman program unload $p_800
 defer bpfman program unload $p_900
 
-let m_0   = $p_0   |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let m_0 = $p_0 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 let m_100 = $p_100 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 let m_200 = $p_200 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 let m_300 = $p_300 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
@@ -105,7 +105,7 @@ let m_700 = $p_700 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .i
 let m_800 = $p_800 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 let m_900 = $p_900 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 
-guard l_0   <- bpfman link attach tc -i $pair.host_link -d ingress -p 0   --proceed-on ok,pipe,dispatcher_return $p_0
+guard l_0 <- bpfman link attach tc -i $pair.host_link -d ingress -p 0 --proceed-on ok,pipe,dispatcher_return $p_0
 guard l_100 <- bpfman link attach tc -i $pair.host_link -d ingress -p 100 --proceed-on ok,pipe,dispatcher_return $p_100
 guard l_200 <- bpfman link attach tc -i $pair.host_link -d ingress -p 200 --proceed-on ok,pipe,dispatcher_return $p_200
 guard l_300 <- bpfman link attach tc -i $pair.host_link -d ingress -p 300 --proceed-on ok,pipe,dispatcher_return $p_300
@@ -127,7 +127,7 @@ assert ($snap_p0 |> jq ".members | length") == 10
 
 # Verify traffic at peak 0: every active program's rx_packets
 # strictly increases after a ping burst.
-guard d_p0_b_0   <- bpftool map dump id $m_0   -j
+guard d_p0_b_0 <- bpftool map dump id $m_0 -j
 guard d_p0_b_100 <- bpftool map dump id $m_100 -j
 guard d_p0_b_200 <- bpftool map dump id $m_200 -j
 guard d_p0_b_300 <- bpftool map dump id $m_300 -j
@@ -137,7 +137,7 @@ guard d_p0_b_600 <- bpftool map dump id $m_600 -j
 guard d_p0_b_700 <- bpftool map dump id $m_700 -j
 guard d_p0_b_800 <- bpftool map dump id $m_800 -j
 guard d_p0_b_900 <- bpftool map dump id $m_900 -j
-let b_p0_0   = $d_p0_b_0.stdout   |> jq $sumFilter
+let b_p0_0 = $d_p0_b_0.stdout |> jq $sumFilter
 let b_p0_100 = $d_p0_b_100.stdout |> jq $sumFilter
 let b_p0_200 = $d_p0_b_200.stdout |> jq $sumFilter
 let b_p0_300 = $d_p0_b_300.stdout |> jq $sumFilter
@@ -150,7 +150,7 @@ let b_p0_900 = $d_p0_b_900.stdout |> jq $sumFilter
 
 guard _ <- net exec $pair ping -c 20 -i 0.05 -W 1 $pair.host_addr
 
-guard d_p0_a_0   <- bpftool map dump id $m_0   -j
+guard d_p0_a_0 <- bpftool map dump id $m_0 -j
 guard d_p0_a_100 <- bpftool map dump id $m_100 -j
 guard d_p0_a_200 <- bpftool map dump id $m_200 -j
 guard d_p0_a_300 <- bpftool map dump id $m_300 -j
@@ -160,7 +160,7 @@ guard d_p0_a_600 <- bpftool map dump id $m_600 -j
 guard d_p0_a_700 <- bpftool map dump id $m_700 -j
 guard d_p0_a_800 <- bpftool map dump id $m_800 -j
 guard d_p0_a_900 <- bpftool map dump id $m_900 -j
-let a_p0_0   = $d_p0_a_0.stdout   |> jq $sumFilter
+let a_p0_0 = $d_p0_a_0.stdout |> jq $sumFilter
 let a_p0_100 = $d_p0_a_100.stdout |> jq $sumFilter
 let a_p0_200 = $d_p0_a_200.stdout |> jq $sumFilter
 let a_p0_300 = $d_p0_a_300.stdout |> jq $sumFilter
@@ -171,7 +171,7 @@ let a_p0_700 = $d_p0_a_700.stdout |> jq $sumFilter
 let a_p0_800 = $d_p0_a_800.stdout |> jq $sumFilter
 let a_p0_900 = $d_p0_a_900.stdout |> jq $sumFilter
 
-assert $a_p0_0   > $b_p0_0
+assert $a_p0_0 > $b_p0_0
 assert $a_p0_100 > $b_p0_100
 assert $a_p0_200 > $b_p0_200
 assert $a_p0_300 > $b_p0_300
@@ -321,7 +321,7 @@ assert ($snap_t2 |> jq ".members | length") == 3
 # Peak 2: refill seven slots with priorities 25 125 225 325 425 525 625.
 # ============================================================
 
-guard ld_25  <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_25 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
 guard ld_125 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
 guard ld_225 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
 guard ld_325 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
@@ -329,7 +329,7 @@ guard ld_425 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --
 guard ld_525 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
 guard ld_625 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
 
-let p_25  = $ld_25.programs[0]
+let p_25 = $ld_25.programs[0]
 let p_125 = $ld_125.programs[0]
 let p_225 = $ld_225.programs[0]
 let p_325 = $ld_325.programs[0]
@@ -345,7 +345,7 @@ defer bpfman program unload $p_425
 defer bpfman program unload $p_525
 defer bpfman program unload $p_625
 
-let m_25  = $p_25  |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let m_25 = $p_25 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 let m_125 = $p_125 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 let m_225 = $p_225 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 let m_325 = $p_325 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
@@ -353,7 +353,7 @@ let m_425 = $p_425 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .i
 let m_525 = $p_525 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 let m_625 = $p_625 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 
-guard l_25  <- bpfman link attach tc -i $pair.host_link -d ingress -p 25  --proceed-on ok,pipe,dispatcher_return $p_25
+guard l_25 <- bpfman link attach tc -i $pair.host_link -d ingress -p 25 --proceed-on ok,pipe,dispatcher_return $p_25
 guard l_125 <- bpfman link attach tc -i $pair.host_link -d ingress -p 125 --proceed-on ok,pipe,dispatcher_return $p_125
 guard l_225 <- bpfman link attach tc -i $pair.host_link -d ingress -p 225 --proceed-on ok,pipe,dispatcher_return $p_225
 guard l_325 <- bpfman link attach tc -i $pair.host_link -d ingress -p 325 --proceed-on ok,pipe,dispatcher_return $p_325
@@ -370,7 +370,7 @@ assert ($snap_p2 |> jq ".members | length") == 10
 
 # Verify traffic at peak 2.
 # Active set: 25 125 225 325 425 525 625 (new) + 950 850 750 (survivors).
-guard d_p2_b_25  <- bpftool map dump id $m_25  -j
+guard d_p2_b_25 <- bpftool map dump id $m_25 -j
 guard d_p2_b_125 <- bpftool map dump id $m_125 -j
 guard d_p2_b_225 <- bpftool map dump id $m_225 -j
 guard d_p2_b_325 <- bpftool map dump id $m_325 -j
@@ -380,7 +380,7 @@ guard d_p2_b_625 <- bpftool map dump id $m_625 -j
 guard d_p2_b_950 <- bpftool map dump id $m_950 -j
 guard d_p2_b_850 <- bpftool map dump id $m_850 -j
 guard d_p2_b_750 <- bpftool map dump id $m_750 -j
-let b_p2_25  = $d_p2_b_25.stdout  |> jq $sumFilter
+let b_p2_25 = $d_p2_b_25.stdout |> jq $sumFilter
 let b_p2_125 = $d_p2_b_125.stdout |> jq $sumFilter
 let b_p2_225 = $d_p2_b_225.stdout |> jq $sumFilter
 let b_p2_325 = $d_p2_b_325.stdout |> jq $sumFilter
@@ -393,7 +393,7 @@ let b_p2_750 = $d_p2_b_750.stdout |> jq $sumFilter
 
 guard _ <- net exec $pair ping -c 20 -i 0.05 -W 1 $pair.host_addr
 
-guard d_p2_a_25  <- bpftool map dump id $m_25  -j
+guard d_p2_a_25 <- bpftool map dump id $m_25 -j
 guard d_p2_a_125 <- bpftool map dump id $m_125 -j
 guard d_p2_a_225 <- bpftool map dump id $m_225 -j
 guard d_p2_a_325 <- bpftool map dump id $m_325 -j
@@ -403,7 +403,7 @@ guard d_p2_a_625 <- bpftool map dump id $m_625 -j
 guard d_p2_a_950 <- bpftool map dump id $m_950 -j
 guard d_p2_a_850 <- bpftool map dump id $m_850 -j
 guard d_p2_a_750 <- bpftool map dump id $m_750 -j
-let a_p2_25  = $d_p2_a_25.stdout  |> jq $sumFilter
+let a_p2_25 = $d_p2_a_25.stdout |> jq $sumFilter
 let a_p2_125 = $d_p2_a_125.stdout |> jq $sumFilter
 let a_p2_225 = $d_p2_a_225.stdout |> jq $sumFilter
 let a_p2_325 = $d_p2_a_325.stdout |> jq $sumFilter
@@ -414,7 +414,7 @@ let a_p2_950 = $d_p2_a_950.stdout |> jq $sumFilter
 let a_p2_850 = $d_p2_a_850.stdout |> jq $sumFilter
 let a_p2_750 = $d_p2_a_750.stdout |> jq $sumFilter
 
-assert $a_p2_25  > $b_p2_25
+assert $a_p2_25 > $b_p2_25
 assert $a_p2_125 > $b_p2_125
 assert $a_p2_225 > $b_p2_225
 assert $a_p2_325 > $b_p2_325
@@ -448,7 +448,7 @@ assert ($snap_t3 |> jq ".members | length") == 2
 # All eight survive to script exit.
 # ============================================================
 
-guard ld_62  <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_62 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
 guard ld_162 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
 guard ld_262 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
 guard ld_362 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
@@ -457,7 +457,7 @@ guard ld_562 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --
 guard ld_662 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
 guard ld_762 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
 
-let p_62  = $ld_62.programs[0]
+let p_62 = $ld_62.programs[0]
 let p_162 = $ld_162.programs[0]
 let p_262 = $ld_262.programs[0]
 let p_362 = $ld_362.programs[0]
@@ -475,7 +475,7 @@ defer bpfman program unload $p_562
 defer bpfman program unload $p_662
 defer bpfman program unload $p_762
 
-let m_62  = $p_62  |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let m_62 = $p_62 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 let m_162 = $p_162 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 let m_262 = $p_262 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 let m_362 = $p_362 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
@@ -484,7 +484,7 @@ let m_562 = $p_562 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .i
 let m_662 = $p_662 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 let m_762 = $p_762 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 
-guard l_62  <- bpfman link attach tc -i $pair.host_link -d ingress -p 62  --proceed-on ok,pipe,dispatcher_return $p_62
+guard l_62 <- bpfman link attach tc -i $pair.host_link -d ingress -p 62 --proceed-on ok,pipe,dispatcher_return $p_62
 guard l_162 <- bpfman link attach tc -i $pair.host_link -d ingress -p 162 --proceed-on ok,pipe,dispatcher_return $p_162
 guard l_262 <- bpfman link attach tc -i $pair.host_link -d ingress -p 262 --proceed-on ok,pipe,dispatcher_return $p_262
 guard l_362 <- bpfman link attach tc -i $pair.host_link -d ingress -p 362 --proceed-on ok,pipe,dispatcher_return $p_362
@@ -507,7 +507,7 @@ assert ($snap_p3 |> jq ".members | length") == 10
 
 # Verify traffic at peak 3.
 # Active set: 62 162 262 362 462 562 662 762 (new) + 525 625 (survivors).
-guard d_p3_b_62  <- bpftool map dump id $m_62  -j
+guard d_p3_b_62 <- bpftool map dump id $m_62 -j
 guard d_p3_b_162 <- bpftool map dump id $m_162 -j
 guard d_p3_b_262 <- bpftool map dump id $m_262 -j
 guard d_p3_b_362 <- bpftool map dump id $m_362 -j
@@ -517,7 +517,7 @@ guard d_p3_b_662 <- bpftool map dump id $m_662 -j
 guard d_p3_b_762 <- bpftool map dump id $m_762 -j
 guard d_p3_b_525 <- bpftool map dump id $m_525 -j
 guard d_p3_b_625 <- bpftool map dump id $m_625 -j
-let b_p3_62  = $d_p3_b_62.stdout  |> jq $sumFilter
+let b_p3_62 = $d_p3_b_62.stdout |> jq $sumFilter
 let b_p3_162 = $d_p3_b_162.stdout |> jq $sumFilter
 let b_p3_262 = $d_p3_b_262.stdout |> jq $sumFilter
 let b_p3_362 = $d_p3_b_362.stdout |> jq $sumFilter
@@ -530,7 +530,7 @@ let b_p3_625 = $d_p3_b_625.stdout |> jq $sumFilter
 
 guard _ <- net exec $pair ping -c 20 -i 0.05 -W 1 $pair.host_addr
 
-guard d_p3_a_62  <- bpftool map dump id $m_62  -j
+guard d_p3_a_62 <- bpftool map dump id $m_62 -j
 guard d_p3_a_162 <- bpftool map dump id $m_162 -j
 guard d_p3_a_262 <- bpftool map dump id $m_262 -j
 guard d_p3_a_362 <- bpftool map dump id $m_362 -j
@@ -540,7 +540,7 @@ guard d_p3_a_662 <- bpftool map dump id $m_662 -j
 guard d_p3_a_762 <- bpftool map dump id $m_762 -j
 guard d_p3_a_525 <- bpftool map dump id $m_525 -j
 guard d_p3_a_625 <- bpftool map dump id $m_625 -j
-let a_p3_62  = $d_p3_a_62.stdout  |> jq $sumFilter
+let a_p3_62 = $d_p3_a_62.stdout |> jq $sumFilter
 let a_p3_162 = $d_p3_a_162.stdout |> jq $sumFilter
 let a_p3_262 = $d_p3_a_262.stdout |> jq $sumFilter
 let a_p3_362 = $d_p3_a_362.stdout |> jq $sumFilter
@@ -551,7 +551,7 @@ let a_p3_762 = $d_p3_a_762.stdout |> jq $sumFilter
 let a_p3_525 = $d_p3_a_525.stdout |> jq $sumFilter
 let a_p3_625 = $d_p3_a_625.stdout |> jq $sumFilter
 
-assert $a_p3_62  > $b_p3_62
+assert $a_p3_62 > $b_p3_62
 assert $a_p3_162 > $b_p3_162
 assert $a_p3_262 > $b_p3_262
 assert $a_p3_362 > $b_p3_362

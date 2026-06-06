@@ -30,7 +30,7 @@
 
 import ../lib.bpfman
 
-let n      = 5
+let n = 5
 let weight_a = 41
 let weight_b = 42
 let weight_c = 43
@@ -89,9 +89,9 @@ let count_a = $dump_a.stdout |> jq $counter_filter
 let count_b = $dump_b.stdout |> jq $counter_filter
 let count_c = $dump_c.stdout |> jq $counter_filter
 
-let want_a = 3 * $n * $weight_a
-let want_b = 2 * $n * $weight_b
-let want_c = 1 * $n * $weight_c
+let want_a = (3 * $n) * $weight_a
+let want_b = (2 * $n) * $weight_b
+let want_c = (1 * $n) * $weight_c
 
 print "a: got=${count_a} want=${want_a}"
 print "b: got=${count_b} want=${want_b}"
