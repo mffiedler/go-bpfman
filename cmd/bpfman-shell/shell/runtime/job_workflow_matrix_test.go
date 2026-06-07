@@ -27,51 +27,52 @@ func TestJobs_WorkflowMatrix(t *testing.T) {
 	}{
 		{
 			name: "inline_wait",
-			src: "let p <- start sleep 60\n" +
+			src: "guard p <- start sleep 60\n" +
 				"let rc <- wait $p\n" +
 				"print $p.pid\n" +
 				"print $rc.ok\n" +
-				"print $rc.code\n",
+				"print $rc.exit_code\n",
 			names: []string{"p", "rc"},
 			assert: func(t *testing.T, env *Env) {
 				assert.Equal(t, 0, env.Session.JobLeaks())
 				rc := mustBindingMap(t, env, "rc")
 				assert.Equal(t, true, rc["ok"])
-				assert.Equal(t, 0, mustReadInt(t, rc["code"]))
+				assert.Equal(t, 0, mustReadInt(t, rc["exit_code"]))
 				assert.Equal(t, false, rc["killed"])
 			},
 		},
 		{
 			name: "helper_return_wait",
 			src: "def spawn() {\n" +
-				"  let p <- start sleep 60\n" +
+				"  guard p <- start sleep 60\n" +
 				"  return $p\n" +
 				"}\n" +
-				"let p <- spawn\n" +
+				"guard p <- spawn\n" +
 				"let rc <- wait $p\n" +
 				"print $p.pid\n" +
 				"print $rc.ok\n" +
-				"print $rc.code\n",
+				"print $rc.exit_code\n",
 			names: []string{"p", "rc"},
 			assert: func(t *testing.T, env *Env) {
 				assert.Equal(t, 0, env.Session.JobLeaks())
 				rc := mustBindingMap(t, env, "rc")
 				assert.Equal(t, true, rc["ok"])
-				assert.Equal(t, 0, mustReadInt(t, rc["code"]))
+				assert.Equal(t, 0, mustReadInt(t, rc["exit_code"]))
 			},
 		},
 		{
 			name: "helper_defer_kill_then_wait",
 			src: "def spawn() {\n" +
-				"  let p <- start sleep 60\n" +
+				"  guard p <- start sleep 60\n" +
 				"  defer kill $p\n" +
 				"  return $p\n" +
 				"}\n" +
-				"let p <- spawn\n" +
+				"let result <- spawn\n" +
+				"let p = $result.value\n" +
 				"let rc <- wait $p\n" +
 				"print $rc.killed\n" +
 				"print $rc.signal\n" +
-				"print $rc.code\n",
+				"print $rc.exit_code\n",
 			names: []string{"p", "rc"},
 			assert: func(t *testing.T, env *Env) {
 				assert.Equal(t, 0, env.Session.JobLeaks())
@@ -79,17 +80,17 @@ func TestJobs_WorkflowMatrix(t *testing.T) {
 				assert.Equal(t, false, rc["ok"])
 				assert.Equal(t, true, rc["killed"])
 				assert.Equal(t, "TERM", rc["signal"])
-				assert.Equal(t, 143, mustReadInt(t, rc["code"]))
+				assert.Equal(t, 143, mustReadInt(t, rc["exit_code"]))
 			},
 		},
 		{
 			name: "jobs_reap_preserves_running",
-			src: "let p <- start sleep 60\n" +
-				"let q <- start sleep 60\n" +
+			src: "guard p <- start sleep 60\n" +
+				"guard q <- start sleep 60\n" +
 				"let done <- wait $p\n" +
-				"let live_before <- jobs\n" +
+				"guard live_before <- jobs\n" +
 				"let _ <- reap\n" +
-				"let live_after <- jobs\n" +
+				"guard live_after <- jobs\n" +
 				"let _ <- kill $q\n",
 			names: []string{"p", "q", "done", "live_before", "live_after"},
 			assert: func(t *testing.T, env *Env) {
@@ -105,7 +106,7 @@ func TestJobs_WorkflowMatrix(t *testing.T) {
 		},
 		{
 			name: "kill_then_wait",
-			src: "let p <- start sleep 60\n" +
+			src: "guard p <- start sleep 60\n" +
 				"let killrc <- kill $p\n" +
 				"let waitrc <- wait $p\n" +
 				"print $killrc.killed\n" +
@@ -117,16 +118,16 @@ func TestJobs_WorkflowMatrix(t *testing.T) {
 				waitrc := mustBindingMap(t, env, "waitrc")
 				assert.Equal(t, true, killrc["killed"])
 				assert.Equal(t, true, waitrc["killed"])
-				assert.Equal(t, 143, mustReadInt(t, waitrc["code"]))
+				assert.Equal(t, 143, mustReadInt(t, waitrc["exit_code"]))
 			},
 		},
 		{
 			name: "helper_leak",
 			src: "def spawn() {\n" +
-				"  let p <- start sleep 60\n" +
+				"  guard p <- start sleep 60\n" +
 				"  return $p\n" +
 				"}\n" +
-				"let p <- spawn\n" +
+				"guard p <- spawn\n" +
 				"print $p.pid\n",
 			names: []string{"p"},
 			assert: func(t *testing.T, env *Env) {
@@ -202,14 +203,13 @@ func (rt *fakeJobRuntime) exec(env *Env, args []Arg, span source.Span) (BindResu
 			close(job.Done)
 		}
 		rc := Envelope{
-			OK:     !job.Killed && job.ExitCode == 0,
-			Code:   job.ExitCode,
-			Stdout: job.Stdout,
-			Stderr: job.Stderr,
-			Killed: job.Killed,
-			Signal: job.Signal,
-			HasPID: true,
-			PID:    job.PID,
+			ExitCode: job.ExitCode,
+			Stdout:   job.Stdout,
+			Stderr:   job.Stderr,
+			Killed:   job.Killed,
+			Signal:   job.Signal,
+			HasPID:   true,
+			PID:      job.PID,
 		}
 		return BindResult{Rc: rc, Primary: ValueFromEnvelope(rc)}, nil
 	case "kill":
@@ -225,12 +225,11 @@ func (rt *fakeJobRuntime) exec(env *Env, args []Arg, span source.Span) (BindResu
 			close(job.Done)
 		}
 		rc := Envelope{
-			OK:     false,
-			Code:   143,
-			Killed: true,
-			Signal: "TERM",
-			HasPID: true,
-			PID:    job.PID,
+			ExitCode: 143,
+			Killed:   true,
+			Signal:   "TERM",
+			HasPID:   true,
+			PID:      job.PID,
 		}
 		return BindResult{Rc: rc, Primary: ValueFromEnvelope(rc)}, nil
 	case "jobs":

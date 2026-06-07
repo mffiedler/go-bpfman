@@ -52,38 +52,31 @@ type LetDestructureStmt struct {
 	source.Span
 }
 
-// BindStmt runs Cmd and binds its primary result, and optionally
-// its result envelope. Two surface forms parse here:
+// BindStmt runs Cmd and binds either its operation outcome (`let`)
+// or its unwrapped declared value (`guard`). Two surface forms parse
+// here:
 //
-//	let NAME <- CMD              => Primary=NAME, Rc=""
-//	let (RC NAME) <- CMD         => Primary=NAME, Rc=RC
-//	guard NAME <- CMD            => same shape, Guard=true
-//	guard (RC NAME) <- CMD       => same shape, Guard=true
+//	let NAME <- CMD
+//	guard NAME <- CMD
 //
-// A third surface form, bind-collect, sets Collect instead of Cmd:
+// Bind-collect sets Collect instead of Cmd:
 //
 //	let NAME <- foreach X in LIST { BODY }
-//	let (RC NAME) <- foreach X in LIST { BODY }
 //	guard NAME <- foreach X in LIST { BODY }
-//	guard (RC NAME) <- foreach X in LIST { BODY }
 //
 // BODY is iterated once per element of LIST; the body's last
 // statement must be a CommandStmt and is executed as the bind's
-// producer. The producer's primary value (and rc envelope, when
-// the tuple form is used) is accumulated into a list per
-// iteration. continue skips a particular iteration's
-// accumulation; break terminates iteration and binds the
-// partial collection. Guard semantics carry: if the outer bind
-// is a guard, a non-ok envelope on any iteration halts the
-// whole collect via GuardFailure with no binding.
+// producer. For guard collect, every producer must succeed and
+// Target receives the collected declared values. For let collect,
+// Target receives the aggregate outcome with per-iteration
+// results and successful values. continue skips a particular
+// iteration's accumulation; break terminates iteration and binds
+// the partial collection.
 //
-// Exactly one of Cmd and Collect is non-nil. "_"
-// as a target name discards that slot. Single-name binding
-// always names the primary; tuple binding names rc then primary,
-// matching section 6.2 of the design.
+// Exactly one of Cmd and Collect is non-nil. "_" as a target name
+// discards the bind result.
 type BindStmt struct {
-	Primary Ident
-	Rc      Ident
+	Target  Ident
 	Cmd     *CommandStmt
 	Collect *ForEachStmt
 	Guard   bool

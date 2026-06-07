@@ -78,7 +78,7 @@ func init() {
 		Category: driver.CategoryJobs,
 		Usage:    "wait $job",
 		Summary:  "Block until the job exits; primary is the captured result (assignable).",
-		Detail: "The result carries ok, code, stdout, stderr, killed, signal. " +
+		Detail: "The result carries ok, exit_code, stdout, stderr, killed, signal. " +
 			"A killed job that the script asked to terminate reports killed=true " +
 			"with signal set; the script distinguishes 'I asked for this' from " +
 			"'real failure' via $r.killed rather than $r.ok. " +
@@ -344,7 +344,7 @@ func removeTempFiles(paths []string) {
 // explicitly kills its own background work is performing a
 // clean cleanup, not signalling failure. A non-zero exit on a
 // job the script did not kill is a failure the consumer can
-// act on through guard or by inspecting $rc.code.
+// act on through guard or by inspecting $rc.exit_code.
 func WaitEnvelope(ctx context.Context, args []runtime.Arg) (runtime.Envelope, error) {
 	if len(args) != 1 {
 		return runtime.Envelope{}, fmt.Errorf("wait requires exactly one argument: a $job")
@@ -357,9 +357,8 @@ func WaitEnvelope(ctx context.Context, args []runtime.Arg) (runtime.Envelope, er
 	case <-job.Done:
 	case <-ctx.Done():
 		return runtime.Envelope{
-			OK:     false,
-			Code:   -1,
-			Stderr: ctx.Err().Error(),
+			ExitCode: -1,
+			Stderr:   ctx.Err().Error(),
 		}, nil
 	}
 	job.MarkManaged()
@@ -374,17 +373,16 @@ func WaitEnvelope(ctx context.Context, args []runtime.Arg) (runtime.Envelope, er
 
 	// ok stays tied to "exit code 0" so the field reads
 	// consistently across synchronous and asynchronous
-	// commands. A killed job is typically !ok with code=143
+	// commands. A killed job is typically !ok with exit_code=143
 	// (SIGTERM convention) plus killed=true and signal="TERM";
 	// the script distinguishes "expected termination" from
 	// "real failure" via $r.killed, not by overloading $r.ok.
 	return runtime.Envelope{
-		OK:     exitCode == 0,
-		Code:   exitCode,
-		Stdout: stdout,
-		Stderr: stderr,
-		Killed: killed,
-		Signal: signal,
+		ExitCode: exitCode,
+		Stdout:   stdout,
+		Stderr:   stderr,
+		Killed:   killed,
+		Signal:   signal,
 	}, nil
 }
 
@@ -480,7 +478,7 @@ func KillEnvelope(ctx context.Context, args []runtime.Arg) (runtime.Envelope, er
 	select {
 	case <-job.Done:
 		job.MarkManaged()
-		return runtime.Envelope{OK: true, Code: 0}, nil
+		return runtime.Envelope{ExitCode: 0}, nil
 	default:
 	}
 
@@ -500,12 +498,11 @@ func KillEnvelope(ctx context.Context, args []runtime.Arg) (runtime.Envelope, er
 			job.Signal = prevSignal
 			job.Mu.Unlock()
 			job.MarkManaged()
-			return runtime.Envelope{OK: true, Code: 0}, nil
+			return runtime.Envelope{ExitCode: 0}, nil
 		}
 		return runtime.Envelope{
-			OK:     false,
-			Code:   1,
-			Stderr: fmt.Sprintf("kill -%d -%d: %v", int(sig), job.PID, err),
+			ExitCode: 1,
+			Stderr:   fmt.Sprintf("kill -%d -%d: %v", int(sig), job.PID, err),
 		}, nil
 	}
 	job.MarkManaged()
@@ -514,7 +511,7 @@ func KillEnvelope(ctx context.Context, args []runtime.Arg) (runtime.Envelope, er
 	// return. Escalation applies only when the user accepted
 	// the default (no --signal flag).
 	if explicitSignal {
-		return runtime.Envelope{OK: true, Code: 0}, nil
+		return runtime.Envelope{ExitCode: 0}, nil
 	}
 
 	// Default path: wait up to grace for the process to exit,
@@ -535,13 +532,13 @@ func KillEnvelope(ctx context.Context, args []runtime.Arg) (runtime.Envelope, er
 	// KILL depending on scheduler timing.
 	if grace > 0 {
 		if waitForDone(ctx, job, grace) {
-			return runtime.Envelope{OK: true, Code: 0}, nil
+			return runtime.Envelope{ExitCode: 0}, nil
 		}
 		// Race: the process might have exited at the boundary
 		// of the grace window. Re-check before escalating.
 		select {
 		case <-job.Done:
-			return runtime.Envelope{OK: true, Code: 0}, nil
+			return runtime.Envelope{ExitCode: 0}, nil
 		default:
 		}
 	}
@@ -550,16 +547,15 @@ func KillEnvelope(ctx context.Context, args []runtime.Arg) (runtime.Envelope, er
 	job.Mu.Unlock()
 	if err := syscall.Kill(-job.PID, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
 		return runtime.Envelope{
-			OK:     false,
-			Code:   1,
-			Stderr: fmt.Sprintf("kill -KILL -%d: %v", job.PID, err),
+			ExitCode: 1,
+			Stderr:   fmt.Sprintf("kill -KILL -%d: %v", job.PID, err),
 		}, nil
 	}
 	// SIGKILL is uncatchable; the reaper will close Done
 	// almost immediately. Block on it (respecting ctx) so we
 	// return only after the kernel has reaped the process.
 	waitForDoneIndefinitely(ctx, job)
-	return runtime.Envelope{OK: true, Code: 0}, nil
+	return runtime.Envelope{ExitCode: 0}, nil
 }
 
 // waitForDone blocks until job.Done closes, ctx is cancelled,

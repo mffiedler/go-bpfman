@@ -544,10 +544,9 @@ func runExternalAsBind(ctx context.Context, args []runtime.Arg, span source.Span
 		return runtime.BindResult{}, err
 	}
 	rc := runtime.Envelope{
-		OK:     cap.ExitCode == 0,
-		Code:   cap.ExitCode,
-		Stdout: cap.Stdout,
-		Stderr: cap.Stderr,
+		ExitCode: cap.ExitCode,
+		Stdout:   cap.Stdout,
+		Stderr:   cap.Stderr,
 	}
 	return runtime.BindResult{Rc: rc, Primary: runtime.ValueFromEnvelope(rc)}, nil
 }

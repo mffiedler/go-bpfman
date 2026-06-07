@@ -16,7 +16,7 @@ func TestSymbols_ExtractsLocatedBindings(t *testing.T) {
   let out <- print $iface
   return $link
 }
-let (rc loaded) <- bpfman load
+let loaded <- bpfman load
 foreach item in $loaded {
   let (name value) = $item
   guard done <- print $name
@@ -60,13 +60,7 @@ foreach item in $loaded {
 		{
 			Name:  "loaded",
 			Kind:  SymbolBind,
-			Def:   pos(6, 9),
-			Scope: span(1, 1, 10, 2),
-		},
-		{
-			Name:  "rc",
-			Kind:  SymbolBindRC,
-			Def:   pos(6, 6),
+			Def:   pos(6, 5),
 			Scope: span(1, 1, 10, 2),
 		},
 		{
@@ -100,13 +94,13 @@ foreach item in $loaded {
 func TestSymbols_SkipsDiscards(t *testing.T) {
 	t.Parallel()
 
-	prog, err := parseSource(t, "let (_ value) = $pair\nguard (_ result) <- print ok\nforeach (_ item) in $items {\n  print $item\n}\n")
+	prog, err := parseSource(t, "let (_ value) = $pair\nguard result <- print ok\nforeach (_ item) in $items {\n  print $item\n}\n")
 	require.NoError(t, err)
 
 	got := Symbols(prog)
 	want := []Symbol{
 		{Name: "value", Kind: SymbolDestructure, Def: pos(1, 8), Scope: span(1, 1, 5, 2)},
-		{Name: "result", Kind: SymbolBind, Def: pos(2, 10), Scope: span(1, 1, 5, 2)},
+		{Name: "result", Kind: SymbolBind, Def: pos(2, 7), Scope: span(1, 1, 5, 2)},
 		{Name: "item", Kind: SymbolForEach, Def: pos(3, 12), Scope: span(3, 1, 5, 2)},
 	}
 	require.Equal(t, want, got)

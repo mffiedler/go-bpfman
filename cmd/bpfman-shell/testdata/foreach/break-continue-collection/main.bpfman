@@ -1,5 +1,5 @@
 import ./lib.bpfman
-let files <- foreach n in [1 2 3 4] {
+guard files <- foreach n in [1 2 3 4] {
   if $n == 2 { continue }
   if $n == 4 { break }
   mk $n

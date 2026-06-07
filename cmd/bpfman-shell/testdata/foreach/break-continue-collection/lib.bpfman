@@ -1,4 +1,4 @@
 def mk(n) {
-  let f <- file temp $n
+  guard f <- file temp $n
   return $f
 }

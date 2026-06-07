@@ -74,7 +74,7 @@ func RenderEnvelopeFailure(cli *bpfmancli.CLI, verb string, fallbackFile string,
 	if argv := ArgTexts(args); len(argv) > 0 {
 		fmt.Fprintf(&b, "  %s\n", strings.Join(argv, " "))
 	}
-	fmt.Fprintf(&b, "exit:\n  %d\n", env.Code)
+	fmt.Fprintf(&b, "exit:\n  %d\n", env.ExitCode)
 	b.WriteString("stdout:\n")
 	writeIndented(&b, env.Stdout)
 	b.WriteString("stderr:\n")

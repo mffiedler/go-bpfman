@@ -37,14 +37,14 @@ func TestBindShape_LinkAttachKindSpecialisesDetails(t *testing.T) {
 	// concrete LinkDetails implementer; a typo against a real
 	// TCDetails field must surface, and a legitimate field must
 	// stay clean.
-	bogus := `let l <- bpfman link attach tc -i v -d ingress -p 100 1
+	bogus := `guard l <- bpfman link attach tc -i v -d ingress -p 100 1
 print $l.record.details.priroity`
 	issues := checkSource(t, bogus)
 	require.Len(t, issues, 1)
 	assert.Contains(t, issues[0].Msg, `"priroity"`)
 	assert.Contains(t, issues[0].Msg, "priority")
 
-	ok := `let l <- bpfman link attach tc -i v -d ingress -p 100 1
+	ok := `guard l <- bpfman link attach tc -i v -d ingress -p 100 1
 print $l.record.details.priority
 print $l.record.details.position`
 	assert.Empty(t, checkSource(t, ok))
@@ -62,7 +62,7 @@ func TestBindShape_LinkAttachAcrossEveryRegisteredKind(t *testing.T) {
 	for _, kind := range bpfman.LinkAttachKinds() {
 		t.Run(kind, func(t *testing.T) {
 			t.Parallel()
-			src := "let l <- bpfman link attach " + kind +
+			src := "guard l <- bpfman link attach " + kind +
 				" arg arg arg\nprint $l.record.details.nonsense_field"
 			issues := checkSource(t, src)
 			require.NotEmpty(t, issues, "kind %s must seal record.details", kind)
@@ -80,11 +80,11 @@ func TestBindShape_LinkAttachUnknownKindFallsBackToGenericLink(t *testing.T) {
 	// it passes without complaint. The top-level Link fields
 	// still validate, so a typo on `record` or `status` is
 	// caught the same way it always was.
-	clean := `let l <- bpfman link attach mystery_kind 1
+	clean := `guard l <- bpfman link attach mystery_kind 1
 print $l.record.details.anything.goes.here`
 	assert.Empty(t, checkSource(t, clean))
 
-	bad := `let l <- bpfman link attach mystery_kind 1
+	bad := `guard l <- bpfman link attach mystery_kind 1
 print $l.tortoise`
 	issues := checkSource(t, bad)
 	require.Len(t, issues, 1)

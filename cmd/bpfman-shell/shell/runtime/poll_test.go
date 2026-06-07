@@ -15,7 +15,7 @@ func TestPoll_RetriesUntilReady(t *testing.T) {
 
 	src := `
 poll timeout 100ms every 1ms {
-  let state <- probe
+  guard state <- probe
   retry "waiting for ready" unless $state == ready
 }
 print after
@@ -141,9 +141,9 @@ poll timeout 50ms every 1ms {
 	r := &recorder{
 		rc: func(args []Arg) Envelope {
 			if argText0(recordedCall{args: args}) == "cleanup" {
-				return Envelope{OK: false, Code: 2, Stderr: "broken"}
+				return Envelope{ExitCode: 2, Stderr: "broken"}
 			}
-			return Envelope{OK: true}
+			return Envelope{}
 		},
 	}
 	env := &Env{

@@ -1,5 +1,5 @@
 import ./lib.bpfman
-let files <- foreach name in ["one" "two" "three"] {
+guard files <- foreach name in ["one" "two" "three"] {
   mk $name
 }
 foreach path in $files {

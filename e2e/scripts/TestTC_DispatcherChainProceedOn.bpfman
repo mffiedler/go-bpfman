@@ -64,7 +64,7 @@ guard progs <- foreach l in $links {
 }
 
 let mapFilter = '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
-let mapIDs <- foreach p in $progs {
+guard mapIDs <- foreach p in $progs {
     jq $mapFilter $p
 }
 
@@ -76,7 +76,7 @@ guard dumps <- foreach m in $mapIDs {
     bpftool map dump id $m -j
 }
 
-let counts <- foreach d in $dumps {
+guard counts <- foreach d in $dumps {
     jq $sumFilter $d.stdout
 }
 

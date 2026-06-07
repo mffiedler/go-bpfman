@@ -23,11 +23,12 @@ let (a b c) = $nums
 # Record literal: named fields, a compound value in parentheses.
 let rec = record {id: $first label: "demo" total: ($sum + 1)}
 
-# Command capture: bind, tuple bind, guard, and a call to an imported
-# def in bind position.
-let doubled <- lib_double 21
+# Command capture: outcome bind, guard unwrap, and a call to an
+# imported def in bind position.
+let doubled_result <- lib_double 21
+let doubled = $doubled_result.value
 let greeting <- echo hello
-let (rc out) <- echo world
+let echoed <- echo world
 guard ok <- echo ready
 
 # Def with params and a return; called as a command head.
@@ -36,7 +37,7 @@ def describe(label value) {
     return $value
 }
 
-let described <- describe count $sum
+guard described <- describe count $sum
 
 # Deferred cleanup.
 defer echo cleanup
@@ -62,9 +63,10 @@ foreach n in $nums {
 }
 
 # Bind-collect: a foreach whose per-iteration result is collected.
-let collected <- foreach n in $nums {
+let collected_result <- foreach n in $nums {
     echo $n
 }
+let collected = $collected_result.values
 
 # Poll with a guarded retry carrying a message.
 poll timeout 5s every 1s {

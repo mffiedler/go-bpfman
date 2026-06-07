@@ -1,5 +1,5 @@
-let p <- start sh -c "printf done"
-let q <- start sleep 60
+guard p <- start sh -c "printf done"
+guard q <- start sleep 60
 let _ <- wait $p
 jobs
 print ---

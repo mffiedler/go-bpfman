@@ -260,6 +260,6 @@ func decodeBpfmanResult(args []runtime.Arg, stdout []byte) (runtime.Value, error
 	}
 	// Anything else (audit, show, ...) has no typed primary slot
 	// today. The envelope from the caller's bind already carries
-	// stdout/stderr/code.
+	// stdout/stderr/exit_code.
 	return runtime.Value{}, nil
 }

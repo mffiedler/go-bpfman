@@ -94,7 +94,7 @@ reinterpretations of Word tokens. Concrete consequences worth
 knowing:
 
 - Commas are not a separator at any binding site. The grammar
-  uses whitespace between names (`def f(a b)`, `let (rc x) <-`,
+  uses whitespace between names (`def f(a b)`, `let (a b) =`,
   `foreach (a b) in ...`). Because the lexer does not split on
   `,`, an old-style `def f(a, b)` would lex as `Word("a,")
   Word("b")`; every binding-site parser (`parseBindTargetName`,
@@ -518,15 +518,6 @@ definition is in the CommandStmt section. `Name` is the shared
 binding-site name production; its definition is in the Binding
 sites section.
 
-The tuple target accepts exactly two names, separated by
-whitespace; there is no comma form. The first target receives the
-result envelope; the second receives the primary value. Arities
-other than two are rejected at parse time. `_` is an accepted
-name at either slot, but `(_ _)` is rejected at parse time as
-"tuple bind cannot discard both slots". A token whose text
-contains `,` (which the lexer does not split on its own) is
-rejected explicitly with "comma is not a separator".
-
 The `BindRHS` has three shapes:
 
 1. **Command form.** The default path. `parseBindRHS` reads the
@@ -543,16 +534,19 @@ The `BindRHS` has three shapes:
 2. **Bind-collect form.** When the RHS begins with the keyword
    `foreach`, the parser delegates to `parseForEachStmt`. The
    foreach body must end with a CommandStmt; that command's
-   primary value is collected into a list bound to the BindStmt
-   target. An empty body or a non-CommandStmt last statement is
-   rejected at parse time.
+   primary value is collected through the same result model:
+   `guard xs <- foreach ...` unwraps the successful value list,
+   while `let r <- foreach ...` binds an aggregate outcome with
+   per-iteration results and filtered successful values. An empty
+   body or a non-CommandStmt last statement is rejected at parse
+   time.
 
 Examples:
 
-    let pid <- bpfman program load file --path foo.o
+    let result <- bpfman program load file --path foo.o
+    require $result.ok
+    let loaded = $result.value
     guard pid <- bpfman program load file --path foo.o
-    let (rc p) <- bpfman program get $pid
-    let (_ p) <- bpfman program get $pid
     guard _ <- touch "${sentinel}.1"
 
     guard links <- foreach prio in $priorities {
@@ -754,12 +748,13 @@ At a def's call site:
           do-the-work
       }
 
-- **Bind-position** invocation (`let p <- my_def args`,
-  `guard p <- my_def args`, `let (rc p) <- my_def args`) -- the
-  evaluated value becomes the BindResult's Primary. A def that
-  runs to completion without `return` produces Primary equal to
-  `ValueFromEnvelope(Rc)`, matching the no-payload command-bind
-  family (exec, bpftool, wait).
+- **Bind-position** invocation (`let r <- my_def args`,
+  `guard p <- my_def args`) -- the evaluated value becomes the
+  BindResult's Primary. A def that runs to completion without
+  `return` produces Primary equal to `ValueFromEnvelope(Rc)`,
+  matching the no-payload command-bind family (exec, bpftool,
+  wait). `let` binds the inspectable outcome; `guard` requires
+  success and binds the primary directly.
 
 Defer interaction:
 
@@ -773,12 +768,11 @@ Defer interaction:
    caller, or discard at command-form position.
 
 A defer that fires during step 3 and reports a non-ok envelope
-flips Rc.OK to false on the bind-position path even when
-`return EXPR` itself evaluated cleanly. The single-name bind
-family (`let p <- f`) discards the envelope; `let (rc p) <- f`
-exposes the cleanup outcome through `$rc.ok`; `guard p <- f`
-halts via GuardFailure when cleanup failed. Defs are not a
-special case; this is the existing bind family contract.
+marks Rc failed on the bind-position path even when
+`return EXPR` itself evaluated cleanly. `let r <- f` exposes that
+cleanup outcome through `$r.ok`; `guard p <- f` halts via
+GuardFailure when cleanup failed. Defs are not a special case;
+this is the existing bind family contract.
 
 The call sites for value-returning defs uniformly compose with
 the existing bind-target shapes. Multiple values fall out of
@@ -810,11 +804,11 @@ registers unload first and detach second so detach runs
 before unload at scope exit.
 Explicit caller-side `defer` remains the baseline.
 
-The single-name bind form intentionally discards the envelope,
-matching the existing command-bind family. Scripts that require
-successful cleanup should call the def via `guard` or via the
-tuple bind and inspect `$rc.ok`; value-returning defs get no
-special exemption.
+`guard x <- load_xdp ...` is the success path: it propagates a
+non-ok outcome and binds the returned value directly. `let r <-
+load_xdp ...` is the inspection path: it binds the outcome so the
+caller can test `$r.ok` and, on success, read the conditional
+payload through `$r.value`.
 
 ### BreakStmt and ContinueStmt
 
@@ -1313,9 +1307,7 @@ covered by the ordinary identifier and duplicate-name rules.
     let (a b) = EXPR
     let (a _ c) = EXPR
     let x <- CMD
-    let (rc x) <- CMD
     guard x <- CMD
-    guard (rc x) <- CMD
 
     foreach x in LIST { BODY }
     foreach (a b) in LIST { BODY }
@@ -1324,10 +1316,10 @@ covered by the ordinary identifier and duplicate-name rules.
     def f(a) { BODY }
     def f(a b c) { BODY }
 
-The bind tuple form (`let (rc x) <-` and `guard (rc x) <-`)
-accepts exactly two names, whitespace-separated. The
-let-destructure form (`let (a b ...) = EXPR`) accepts two or
-more whitespace-separated names. The foreach multi-var form
+The let-destructure form (`let (a b ...) = EXPR`) accepts two or
+more whitespace-separated names. Parenthesised names after `<-`
+are rejected; command capture binds a single name and exposes
+named fields on the outcome. The foreach multi-var form
 (`foreach (a b) in xs`) accepts two or more whitespace-separated
 names; the parens are required so that `foreach a b in xs` does
 not read as a command-shaped name list. The def parameter list
@@ -1342,15 +1334,14 @@ Accepted positions:
 - Single bind target (`let _ <- cmd`, `guard _ <- cmd`). Used in
   the corpus when the command is run for its side effect and the
   primary value is not needed.
-- Tuple-bind slots (`let (_ x) <- cmd`, `let (a _) <- cmd`).
 - Let-destructure slots (`let (_ b) = $pair`, `let (a _ c) = $triple`).
 - ForEach name list (single-var `foreach _ in xs` and any slot
   in multi-var `foreach (_ b) in pairs`).
 
 Rejected:
 
-- Tuple bind where both slots are `_`: `let (_ _) <- cmd` is
-  rejected as "tuple bind cannot discard both slots".
+- Tuple bind after `<-`: `let (_ x) <- cmd` is rejected as
+  "tuple bind after '<-' is no longer supported".
 - Let-destructure where every slot is `_`: `let (_ _) = $pair`
   is rejected as "all destructure slots are '_'; at least one
   must bind".

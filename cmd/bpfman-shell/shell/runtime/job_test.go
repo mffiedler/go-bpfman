@@ -43,7 +43,7 @@ func TestValueFromJob_AbsentFieldsErrorRatherThanReturnEmpty(t *testing.T) {
 	// string; an empty string could flow into a downstream
 	// `--target ""` undetected.
 	v := ValueFromJob(&Job{PID: 99})
-	for _, field := range []string{"stdout", "stderr", "code", "exit_code", "killed", "target_binary"} {
+	for _, field := range []string{"stdout", "stderr", "exit_code", "killed", "target_binary"} {
 		t.Run(field, func(t *testing.T) {
 			t.Parallel()
 			_, err := v.LookupValue("$job", field)

@@ -1,2 +1,2 @@
-let (rc rc) <- exec true
+let (rc value) <- exec true
 print unreachable

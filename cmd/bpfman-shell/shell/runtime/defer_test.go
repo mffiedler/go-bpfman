@@ -29,7 +29,7 @@ type recorder struct {
 }
 
 func (r *recorder) execBind(args []Arg, _ source.Span) (BindResult, error) {
-	rc := Envelope{OK: true}
+	rc := Envelope{}
 	if r.rc != nil {
 		rc = r.rc(args)
 	}
@@ -109,10 +109,10 @@ func TestExecSource_Defer_StdoutFlushedThroughRenderDeferOutput(t *testing.T) {
 		head := argText0(recordedCall{args: args})
 		if head == "say" && len(args) > 1 {
 			if w, ok := args[1].(WordArg); ok {
-				return Envelope{OK: true, Stdout: w.Text}
+				return Envelope{Stdout: w.Text}
 			}
 		}
-		return Envelope{OK: true}
+		return Envelope{}
 	}}
 	var flushed []string
 	env := &Env{
@@ -153,13 +153,13 @@ func TestExecSource_Defer_LifecyclePair(t *testing.T) {
 		rc: func(args []Arg) Envelope {
 			head := argText0(recordedCall{args: args})
 			if head == "fail-now" {
-				return Envelope{OK: false, Code: 1, Stderr: "boom"}
+				return Envelope{ExitCode: 1, Stderr: "boom"}
 			}
 			if head == "make-resource" {
 				guards++
-				return Envelope{OK: true}
+				return Envelope{}
 			}
-			return Envelope{OK: true}
+			return Envelope{}
 		},
 	}
 	env := &Env{Session: NewSession(), ExecBind: r.execBind}
@@ -218,9 +218,9 @@ func TestExecSource_Defer_ShadowRebindingDoesNotLeak(t *testing.T) {
 		rc: func(args []Arg) Envelope {
 			head := argText0(recordedCall{args: args})
 			if head == "fetch-third" {
-				return Envelope{OK: true}
+				return Envelope{}
 			}
-			return Envelope{OK: true}
+			return Envelope{}
 		},
 	}
 	env := &Env{Session: NewSession(), ExecBind: r.execBind}
@@ -255,9 +255,9 @@ func TestExecSource_Defer_FailureRendersAndCounts(t *testing.T) {
 	r := &recorder{
 		rc: func(args []Arg) Envelope {
 			if argText0(recordedCall{args: args}) == "broken-cleanup" {
-				return Envelope{OK: false, Code: 2, Stderr: "broken"}
+				return Envelope{ExitCode: 2, Stderr: "broken"}
 			}
-			return Envelope{OK: true}
+			return Envelope{}
 		},
 	}
 	session := NewSession()
@@ -287,9 +287,9 @@ func TestExecSource_Defer_RunsOnGuardHalt(t *testing.T) {
 	r := &recorder{
 		rc: func(args []Arg) Envelope {
 			if argText0(recordedCall{args: args}) == "fail-now" {
-				return Envelope{OK: false, Code: 1}
+				return Envelope{ExitCode: 1}
 			}
-			return Envelope{OK: true}
+			return Envelope{}
 		},
 	}
 	env := &Env{Session: NewSession(), ExecBind: r.execBind}

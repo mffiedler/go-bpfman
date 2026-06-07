@@ -2,5 +2,5 @@ def range() {
   return shadowed
 }
 
-let v <- range
+guard v <- range
 print $v

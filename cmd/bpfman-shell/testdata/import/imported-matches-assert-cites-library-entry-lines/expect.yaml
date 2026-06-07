@@ -4,7 +4,7 @@ stdout_lines:
 stderr_contains:
   - "[assert] FAIL: matches: 2 mismatches"
   - "{lib}:3:5: ok:"
-  - "{lib}:4:5: code:"
+  - "{lib}:4:5: exit_code:"
 stderr_not_contains:
   - "{main}:2:"
   - "{main}:3:"

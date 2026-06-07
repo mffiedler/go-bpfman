@@ -293,7 +293,7 @@ func TestExec_DefCommandPosition(t *testing.T) {
 // interpolated.
 func TestExec_DefBindPosition(t *testing.T) {
 	t.Parallel()
-	src := "def f(x) { return $x }\nlet y <- f 42\necho $y"
+	src := "def f(x) { return $x }\nguard y <- f 42\necho $y"
 	assertCalls(t, runOnLowered(t, src), []execCall{{Lane: "command", Argv: "echo 42"}})
 }
 
@@ -321,7 +321,7 @@ func TestExec_DefLocalDefer(t *testing.T) {
 // command using the returned value.
 func TestExec_ReturnAfterDefer(t *testing.T) {
 	t.Parallel()
-	src := "def f() { defer echo cleanup ; return 7 }\nlet x <- f\necho got $x"
+	src := "def f() { defer echo cleanup ; return 7 }\nguard x <- f\necho got $x"
 	assertCalls(t, runOnLowered(t, src), []execCall{
 		{Lane: "bind", Argv: "echo cleanup"},
 		{Lane: "command", Argv: "echo got 7"},
@@ -388,7 +388,7 @@ func TestExec_FinalBindingsAcrossLetSequence(t *testing.T) {
 // result behaves the same downstream.
 func TestExec_DefReturnsStructuredValue(t *testing.T) {
 	t.Parallel()
-	src := "def make() { return [1 2 3] }\nlet xs <- make"
+	src := "def make() { return [1 2 3] }\nguard xs <- make"
 	env := runForBindings(t, src)
 	assertBindingRaw(t, env, "xs", "[1 2 3]")
 }
@@ -481,7 +481,7 @@ foreach v in $xs {
     let acc = $v
 }
 def f(x) { return $x }
-let r <- f $acc
+guard r <- f $acc
 assert 1 == 1
 `
 	env := runForBindings(t, src)

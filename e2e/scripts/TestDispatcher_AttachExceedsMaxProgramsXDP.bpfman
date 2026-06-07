@@ -37,8 +37,8 @@ foreach l in $links {
     defer bpfman link detach $l
 }
 
-# Eleventh attach must fail. The bind's Rc carries the envelope;
-# Primary stays empty because the attach never produced a Link.
-let (rc _) <- bpfman link attach xdp -i $pair.host_link -p 1100 $prog
+# Eleventh attach must fail. `let <-` keeps the outcome inspectable
+# even though the attach never produced a Link.
+let rc <- bpfman link attach xdp -i $pair.host_link -p 1100 $prog
 assert not $rc.ok
 assert contains $rc.stderr "no free dispatcher slots"

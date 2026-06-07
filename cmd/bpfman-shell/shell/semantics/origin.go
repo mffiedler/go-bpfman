@@ -28,7 +28,7 @@ const (
 	OriginMap
 	// OriginEnvelope tags a Value that wraps a captured-result
 	// Envelope: the structured shape every command form returns,
-	// carrying ok, code, stdout, stderr, the typed payload value,
+	// carrying ok, exit_code, stdout, stderr, the typed payload value,
 	// and an optional pid. Field access walks the standard path
 	// machinery; the original Go Envelope is recoverable via
 	// Origin() so consumers reach the typed payload Value without
@@ -134,7 +134,7 @@ type Shape struct {
 	Sealed bool
 	// Kind is the OriginKind tag this Shape implies. Used by
 	// the checker so a path traversal can produce a leaf kind
-	// for downstream inference (let q = $r.code -> q has kind
+	// for downstream inference (let q = $r.exit_code -> q has kind
 	// Scalar).
 	Kind OriginKind
 	// Fields maps a field name to its child Shape. Only
@@ -181,13 +181,13 @@ var (
 			Sealed: true,
 			Kind:   OriginEnvelope,
 			Fields: map[string]Shape{
-				"ok":     {Sealed: true, Kind: OriginBool},
-				"code":   {Sealed: true, Kind: OriginScalar},
-				"stdout": {Sealed: true, Kind: OriginScalar},
-				"stderr": {Sealed: true, Kind: OriginScalar},
-				"killed": {Sealed: true, Kind: OriginBool},
-				"signal": {Sealed: true, Kind: OriginScalar},
-				"pid":    {Sealed: true, Kind: OriginScalar},
+				"ok":        {Sealed: true, Kind: OriginBool},
+				"exit_code": {Sealed: true, Kind: OriginScalar},
+				"stdout":    {Sealed: true, Kind: OriginScalar},
+				"stderr":    {Sealed: true, Kind: OriginScalar},
+				"killed":    {Sealed: true, Kind: OriginBool},
+				"signal":    {Sealed: true, Kind: OriginScalar},
+				"pid":       {Sealed: true, Kind: OriginScalar},
 			},
 		},
 		OriginNetPair: {

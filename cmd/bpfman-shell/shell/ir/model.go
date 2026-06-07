@@ -224,12 +224,11 @@ type DispatchCommand struct {
 	source.Span
 }
 
-// ApplyBind consumes the result of a DispatchBind and binds
-// the named slots into the current frame. An empty Primary or
-// Rc name means discard. When Guard is true the instruction
-// branches to OnFail on a non-ok envelope instead of binding;
-// non-guard binds always bind (the failure surfaces through Rc
-// if named). OnFail is nil for non-guard binds.
+// ApplyBind consumes the result of a DispatchBind and binds it into
+// the current frame. An empty Target means discard. When Guard is
+// true the instruction branches to OnFail on a non-ok envelope and
+// otherwise binds the unwrapped primary value. Non-guard binds always
+// bind the operation outcome so failure can be inspected as data.
 //
 // Argv references the same temp DispatchBind read so a guard
 // failure raised in OnFail can carry the original argv to the
@@ -237,12 +236,11 @@ type DispatchCommand struct {
 // no Args slot to populate and the engines drift on the error
 // payload even when they agree on the halt decision.
 type ApplyBind struct {
-	Src     Temp
-	Argv    Temp
-	Primary string
-	Rc      string
-	Guard   bool
-	OnFail  *BasicBlock
+	Src    Temp
+	Argv   Temp
+	Target string
+	Guard  bool
+	OnFail *BasicBlock
 	source.Span
 }
 
@@ -273,10 +271,9 @@ type BindDestructure struct {
 // fields. Used by lowering-time surfaces that need a concrete
 // envelope to feed into EmitBindResult.
 type BuildEnvelope struct {
-	Dst  Temp
-	Ok   bool
-	Code int
-	Err  string
+	Dst      Temp
+	ExitCode int
+	Err      string
 	source.Span
 }
 
@@ -358,17 +355,17 @@ type PropagateError struct {
 // PropagateGuardFailure raises a synthetic GuardFailure without
 // going through DispatchBind / ApplyBind.
 type PropagateGuardFailure struct {
-	Primary string
-	Head    string
-	ArgSpan source.Span
-	OK      bool
-	Code    int
-	Stdout  string
-	Stderr  string
-	Killed  bool
-	Signal  string
-	HasPID  bool
-	PID     int
+	Primary  string
+	Head     string
+	ArgSpan  source.Span
+	OK       bool
+	ExitCode int
+	Stdout   string
+	Stderr   string
+	Killed   bool
+	Signal   string
+	HasPID   bool
+	PID      int
 	source.Span
 }
 
@@ -462,21 +459,17 @@ type RegisterDef struct {
 // ForEachCollect is the structured pseudo-terminator for a
 // bind-collect: `let X <- foreach Y in $list { ... }`. The
 // body executes once per element; its trailing CommandStmt
-// dispatches in bind position and the result is collected
-// into per-iteration accumulators for Primary and (optionally)
-// Rc. Guard makes a non-ok envelope halt iteration and either
-// publish the partial collection or unwind. On natural or
-// guarded completion control transfers to Exit, where the
-// interpreter performs the final BindName calls against the
-// accumulated values.
+// dispatches in bind position and the result is collected.
+// Guard collect binds the collected declared values after all
+// iterations succeed. Let collect binds an aggregate outcome with
+// per-iteration results and successful values.
 type ForEachCollect struct {
-	List    Temp
-	Names   []string
-	Primary string
-	Rc      string
-	Guard   bool
-	Body    *BasicBlock
-	Exit    *BasicBlock
+	List   Temp
+	Names  []string
+	Target string
+	Guard  bool
+	Body   *BasicBlock
+	Exit   *BasicBlock
 	source.Span
 }
 

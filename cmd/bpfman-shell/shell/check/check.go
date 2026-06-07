@@ -395,7 +395,7 @@ func (c *checker) inferExprShape(e syntax.Expr) semantics.Shape {
 			return shape
 		}
 		// Walk the semantics.Shape tree to find the leaf so a chained
-		// let inherits the right shape. 'let q = $r.code'
+		// let inherits the right shape. 'let q = $r.exit_code'
 		// gives q a Scalar shape; 'let head = $progs[0]'
 		// gives head a syntax.Program shape (via the list's Elem).
 		// An unsealed step returns Unknown, which still
@@ -500,8 +500,8 @@ func (c *checker) inferExprKind(e syntax.Expr) semantics.OriginKind {
 //  3. Everything else falls through to an external-subprocess
 //     result envelope.
 //
-// The rc slot of a tuple bind is always result and is set by
-// the caller.
+// A non-guard bind wraps this primary shape in an outcome shape;
+// a guard bind exposes the primary shape directly.
 func (c *checker) inferBindShape(cmd *syntax.CommandStmt) semantics.Shape {
 	if cmd == nil || len(cmd.Args) == 0 {
 		return semantics.Shape{Sealed: false, Kind: semantics.OriginUnknown}
@@ -575,6 +575,61 @@ func (c *checker) bindPrimaryShape(cmd *syntax.CommandStmt, headIsDef bool) sema
 		return c.defPrimaryShape(bindHeadDefName(cmd))
 	}
 	return c.inferBindShape(cmd)
+}
+
+func (c *checker) bindOutcomeShape(cmd *syntax.CommandStmt, headIsDef bool) semantics.Shape {
+	return outcomeShape(c.bindPrimaryShape(cmd, headIsDef))
+}
+
+func (c *checker) bindCollectTargetShape(n *syntax.BindStmt) semantics.Shape {
+	producerShape := openShape()
+	if n.Collect != nil && len(n.Collect.Body) > 0 {
+		if last, ok := n.Collect.Body[len(n.Collect.Body)-1].(*syntax.CommandStmt); ok {
+			producerShape = c.bindPrimaryShape(last, c.bindHeadDef(last))
+		}
+	}
+	elem := semantics.CloneShape(producerShape)
+	values := semantics.Shape{
+		Sealed: false,
+		Kind:   semantics.OriginUnknown,
+		Elem:   &elem,
+	}
+	if n.Guard {
+		return values
+	}
+	return collectOutcomeShape(producerShape)
+}
+
+func outcomeShape(primary semantics.Shape) semantics.Shape {
+	out := semantics.CloneShape(semantics.KindShape(semantics.OriginEnvelope))
+	if primary.Kind != semantics.OriginEnvelope {
+		if out.Fields == nil {
+			out.Fields = map[string]semantics.Shape{}
+		}
+		out.Fields["value"] = semantics.CloneShape(primary)
+	}
+	return out
+}
+
+func collectOutcomeShape(value semantics.Shape) semantics.Shape {
+	result := outcomeShape(value)
+	values := semantics.Shape{Sealed: false, Kind: semantics.OriginUnknown}
+	if value.Kind != semantics.OriginEnvelope {
+		elem := semantics.CloneShape(value)
+		values.Elem = &elem
+	} else {
+		elem := semantics.CloneShape(semantics.KindShape(semantics.OriginEnvelope))
+		values.Elem = &elem
+	}
+	return semantics.Shape{
+		Sealed: true,
+		Kind:   semantics.OriginEnvelope,
+		Fields: map[string]semantics.Shape{
+			"ok":      semantics.KindShape(semantics.OriginBool),
+			"results": {Sealed: false, Kind: semantics.OriginUnknown, Elem: &result},
+			"values":  values,
+		},
+	}
 }
 
 type returnSummary struct {
@@ -687,12 +742,11 @@ func (c *checker) inferStmtReturn(st syntax.Stmt) returnSummary {
 			return c.inferBindCollectReturn(n)
 		}
 		headIsDef := c.bindHeadDef(n.Cmd)
-		if n.Rc.Text != "" {
-			c.define(n.Primary.Text, c.bindPrimaryShape(n.Cmd, headIsDef), nil)
-			c.define(n.Rc.Text, semantics.KindShape(semantics.OriginEnvelope), nil)
-			return noReturnSummary()
+		if n.Guard {
+			c.define(n.Target.Text, c.bindPrimaryShape(n.Cmd, headIsDef), nil)
+		} else {
+			c.define(n.Target.Text, c.bindOutcomeShape(n.Cmd, headIsDef), nil)
 		}
-		c.define(n.Primary.Text, c.bindPrimaryShape(n.Cmd, headIsDef), nil)
 		return noReturnSummary()
 
 	case *syntax.ReturnStmt:
@@ -952,14 +1006,10 @@ func (c *checker) checkDefArity(cmd *syntax.CommandStmt) {
 // otherwise a generic "x" reads cleanly in the rewritten form
 // the hint suggests.
 func primaryNameForHint(n *syntax.BindStmt) string {
-	switch {
-	case n.Primary.Text != "" && n.Primary.Text != "_":
-		return n.Primary.Text
-	case n.Rc.Text != "" && n.Rc.Text != "_":
-		return n.Rc.Text
-	default:
-		return "x"
+	if n.Target.Text != "" && n.Target.Text != "_" {
+		return n.Target.Text
 	}
+	return "x"
 }
 
 // walkStmts walks a statement list in source order. Defining
@@ -1053,24 +1103,6 @@ func (c *checker) walkStmt(s syntax.Stmt) {
 				c.suggestDefForUnknownBindHead(n.Cmd)
 			}
 		}
-		// Tuple-bind on a bind-collect whose producer is a pure
-		// builtin is rejected for the same reason: pure builtins
-		// have no result envelope, so the rc slot would silently
-		// collect synthetic OK envelopes. Single-bind is the
-		// correct shape because it discards the rc list and
-		// carries only the producer's value list. The same def-
-		// precedence rule applies: a def producer routes through
-		// callDefAsBind and is not a pure builtin even when its
-		// name shadows one.
-		if n.Collect != nil && n.Rc.Text != "" && n.Rc.Text != "_" && len(n.Collect.Body) > 0 {
-			if last, ok := n.Collect.Body[len(n.Collect.Body)-1].(*syntax.CommandStmt); ok {
-				if !c.bindHeadDef(last) {
-					if name, ok := bindHeadPureBuiltin(last); ok {
-						c.addIssue(last.Span, "%s is a pure builtin; tuple bind '(%s, %s)' is invalid in bind-collect because pure builtins produce no rc envelope; use single-bind 'let %s <- foreach ... { %s ... }' instead", name, n.Rc.Text, primaryNameForHint(n), primaryNameForHint(n), name)
-					}
-				}
-			}
-		}
 		// Walk the bind-collect's foreach list expression and
 		// body the same way a free-standing ForEachStmt does: the
 		// list is a regular expression that may reference
@@ -1099,9 +1131,16 @@ func (c *checker) walkStmt(s syntax.Stmt) {
 		// Recursive, fall-through, parameter-dependent, or
 		// disagreeing returns stay open; no-return defs keep the
 		// sealed result-envelope shape they publish at runtime.
-		primaryShape := c.bindPrimaryShape(n.Cmd, headIsDef)
-		c.define(n.Primary.Text, primaryShape, nil)
-		c.define(n.Rc.Text, semantics.KindShape(semantics.OriginEnvelope), nil)
+		if n.Collect != nil {
+			shape := c.bindCollectTargetShape(n)
+			c.define(n.Target.Text, shape, nil)
+			return
+		}
+		if n.Guard {
+			c.define(n.Target.Text, c.bindPrimaryShape(n.Cmd, headIsDef), nil)
+		} else {
+			c.define(n.Target.Text, c.bindOutcomeShape(n.Cmd, headIsDef), nil)
+		}
 
 	case *syntax.ForEachStmt:
 		c.checkExpr(n.List)
@@ -1210,6 +1249,7 @@ func (c *checker) walkStmt(s syntax.Stmt) {
 				c.checkExpr(a)
 			}
 			c.checkDefArity(n.Cmd)
+			c.checkJobArgShape(n.Cmd)
 		}
 
 	case *syntax.PollStmt:
@@ -1258,6 +1298,7 @@ func (c *checker) walkStmt(s syntax.Stmt) {
 			c.checkExpr(a)
 		}
 		c.checkDefArity(n)
+		c.checkJobArgShape(n)
 		if head, ok := commandHeadLiteral(n); ok && head == "import" && c.nonTopLevelDepth != 0 {
 			c.addIssue(n.Span, "import must be declared at top level")
 		}
@@ -1265,6 +1306,18 @@ func (c *checker) walkStmt(s syntax.Stmt) {
 	case *syntax.BreakStmt, *syntax.ContinueStmt:
 		// Leaves; nothing to check today.
 	}
+}
+
+func (c *checker) checkJobArgShape(cmd *syntax.CommandStmt) {
+	target := c.jobReferenceExpr(cmd)
+	if target == nil {
+		return
+	}
+	shape, ok := c.lookupShape(target.Name)
+	if !ok || shape.Kind == semantics.OriginUnknown || shape.Kind == semantics.OriginJob {
+		return
+	}
+	c.addIssue(target.Span, "expected a $job argument, got a %s value", shape.Kind)
 }
 
 func (c *checker) checkAssertClause(clause syntax.AssertClause) {
@@ -1521,8 +1574,8 @@ func (c *checker) checkJobLeaksInBody(stmts []syntax.Stmt) {
 		for _, st := range stmts {
 			switch s := st.(type) {
 			case *syntax.BindStmt:
-				if c.isStartCommand(s.Cmd) && s.Primary.Text != "" && s.Primary.Text != "_" {
-					started = append(started, jobBinding{Name: s.Primary.Text, Span: s.Primary.Span})
+				if s.Guard && c.isStartCommand(s.Cmd) && s.Target.Text != "" && s.Target.Text != "_" {
+					started = append(started, jobBinding{Name: s.Target.Text, Span: s.Target.Span})
 				}
 				if name := c.jobReferenceTarget(s.Cmd); name != "" {
 					managed[name] = true
@@ -2032,12 +2085,20 @@ func nonFlagArgCount(args []syntax.Expr) int {
 // Flag args (--signal=NAME, --grace=DUR) are skipped so 'kill
 // --signal=USR1 $job' still picks up $job as the target.
 func (c *checker) jobReferenceTarget(cmd *syntax.CommandStmt) string {
-	if cmd == nil || len(cmd.Args) == 0 {
+	target := c.jobReferenceExpr(cmd)
+	if target == nil {
 		return ""
+	}
+	return target.Name
+}
+
+func (c *checker) jobReferenceExpr(cmd *syntax.CommandStmt) *syntax.VarRefExpr {
+	if cmd == nil || len(cmd.Args) == 0 {
+		return nil
 	}
 	lit, ok := cmd.Args[0].(*syntax.LiteralExpr)
 	if !ok || (lit.Text != "kill" && lit.Text != "wait") {
-		return ""
+		return nil
 	}
 	// A user `def kill(...)` or `def wait(...)` resolves first
 	// at runtime and does not consume a job. Returning a managed
@@ -2046,7 +2107,7 @@ func (c *checker) jobReferenceTarget(cmd *syntax.CommandStmt) string {
 	// def; defer to the def's own semantics by skipping the
 	// builtin-shape recognition.
 	if c.defs[lit.Text] {
-		return ""
+		return nil
 	}
 	for _, arg := range cmd.Args[1:] {
 		// Skip flag args; the target is the first non-flag.
@@ -2054,8 +2115,8 @@ func (c *checker) jobReferenceTarget(cmd *syntax.CommandStmt) string {
 			continue
 		}
 		if v, ok := arg.(*syntax.VarRefExpr); ok {
-			return v.Name
+			return v
 		}
 	}
-	return ""
+	return nil
 }

@@ -2,5 +2,5 @@ import ./helpers.bpfman
 def inner(x) {
   return $x
 }
-let v <- outer hi
+guard v <- outer hi
 print $v

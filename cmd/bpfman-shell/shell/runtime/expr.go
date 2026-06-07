@@ -38,8 +38,8 @@ type Env struct {
 	// span is the bind statement's source extent. The returned
 	// BindResult carries the result envelope (Rc) and the
 	// provider's primary result (Primary). Command failure
-	// (non-zero exit, in-process error) is encoded on Rc as OK:
-	// false with code, stdout, and stderr set, not as a Go
+	// (non-zero exit, in-process error) is encoded on Rc as a
+	// non-zero code with stdout and stderr set, not as a Go
 	// error. A Go error is reserved for structural failures
 	// (empty argv, malformed adapter, no provider for this
 	// hook). Set by the shell runner; nil makes any syntax.BindStmt a
@@ -231,10 +231,9 @@ func callDef(def *defValue, args []Arg, callLoc source.Pos, env *Env) error {
 // Primary; a body that runs to completion without `return`
 // produces Primary = ValueFromEnvelope(Rc), matching the
 // no-payload command-bind family (exec, bpftool, wait). The Rc
-// is OK by default; a failure from a defer registered in THIS
-// def's body flips Rc.OK to false so a `guard p <- f` halts and
-// a tuple bind `let (rc p) <- f` lets the caller see the
-// cleanup outcome.
+// is successful by default; a failure from a defer registered in THIS
+// def's body marks Rc failed so a `guard p <- f` halts and
+// a `let r <- f` lets the caller inspect the cleanup outcome.
 //
 // The local-cleanup view is load-bearing: a nested helper
 // invoked at command form during the body has already run its
@@ -393,7 +392,7 @@ type deferEntry struct {
 // of this function, so their failures land on the session
 // counter (global view, used for exit-code accounting) but never
 // in the local count returned here. callDefAsBind uses the local
-// count to decide whether to flip the bind-position Rc.OK, so
+// count to decide whether to mark the bind-position Rc failed, so
 // the def-local cleanup contract does not silently broaden into "anything
 // that failed during this call's dynamic extent".
 func runDefers(env *Env, stack []deferEntry) int {
@@ -440,10 +439,10 @@ func runDefers(env *Env, stack []deferEntry) int {
 		// defer's output is included in the failure block below
 		// so the success-output hook only carries the
 		// non-failure case.
-		if result.Rc.OK && env.RenderDeferOutput != nil {
+		if result.Rc.OK() && env.RenderDeferOutput != nil {
 			env.RenderDeferOutput(entry.Args, result.Rc)
 		}
-		if !result.Rc.OK {
+		if !result.Rc.OK() {
 			if env.RenderDeferFailure != nil {
 				env.RenderDeferFailure(entry.Pos, entry.Args, result.Rc)
 			}
@@ -690,9 +689,9 @@ func (e *GuardFailure) Error() string {
 	}
 	if e.Envelope.Stderr != "" {
 		return fmt.Sprintf("guard %s: command failed (exit %d): %s",
-			target, e.Envelope.Code, e.Envelope.Stderr)
+			target, e.Envelope.ExitCode, e.Envelope.Stderr)
 	}
-	return fmt.Sprintf("guard %s: command failed (exit %d)", target, e.Envelope.Code)
+	return fmt.Sprintf("guard %s: command failed (exit %d)", target, e.Envelope.ExitCode)
 }
 
 // CommandFailure is the error type a syntax.CommandStmt produces when a
@@ -710,9 +709,9 @@ type CommandFailure struct {
 func (e *CommandFailure) Error() string {
 	if e.Envelope.Stderr != "" {
 		return fmt.Sprintf("command failed (exit %d): %s",
-			e.Envelope.Code, e.Envelope.Stderr)
+			e.Envelope.ExitCode, e.Envelope.Stderr)
 	}
-	return fmt.Sprintf("command failed (exit %d)", e.Envelope.Code)
+	return fmt.Sprintf("command failed (exit %d)", e.Envelope.ExitCode)
 }
 
 // AssertFailure is the typed-error form of an assertion whose

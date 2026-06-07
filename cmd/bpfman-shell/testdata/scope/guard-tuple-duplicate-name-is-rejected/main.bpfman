@@ -1,2 +1,2 @@
-guard (x x) <- exec true
+guard (rc value) <- exec true
 print unreachable

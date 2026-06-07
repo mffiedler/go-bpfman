@@ -1,4 +1,4 @@
-let d <- tempdir poll-let-bind-helper
+guard d <- tempdir poll-let-bind-helper
 defer exec rm -rf $d.path
 let marker = "${d.path}/marker"
 

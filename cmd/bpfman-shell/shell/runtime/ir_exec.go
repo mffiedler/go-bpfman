@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/ir"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/semantics"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
 )
@@ -89,7 +88,7 @@ func execInScope(lp *ir.Program, env *Env) error {
 // syntax.ReturnStmt fired; hasReturn=false means the body fell
 // through without returning. localDeferFailures counts
 // failures observed by ir.RunDefers with policy=def-local in
-// THIS call only, so callDefAsBind can flip Rc.OK on a
+// THIS call only, so callDefAsBind can mark Rc failed on a
 // failed def-local cleanup without folding in failures from
 // nested calls.
 func runLoweredDefCall(def *defValue, args []Arg, env *Env) (Value, bool, int, error) {
@@ -224,19 +223,16 @@ type loopState struct {
 
 	// Collect-only fields. Populated for bind-collect loops
 	// (ir.ForEachCollect); zero values otherwise. The accumulators
-	// preserve the documented list result shape: each element's
-	// Raw() is appended into PrimaryAcc / RcAcc, and Primary's
-	// per-element origin (when present) lands in PrimaryOriginAcc
-	// so IndexValue on the bound list can reconstruct the typed
-	// Value at later access sites.
-	Collect          bool
-	Primary          string
-	Rc               string
-	Guard            bool
-	PrimaryAcc       []any
-	RcAcc            []any
-	PrimaryOriginAcc []any
-	HasOrigin        bool
+	// preserve the documented list result shape: Results holds one
+	// outcome per produced iteration, Values holds successful
+	// unwrapped values, and CollectOK is true iff every produced
+	// iteration succeeded.
+	Collect   bool
+	Primary   string
+	Guard     bool
+	Results   []Value
+	Values    []Value
+	CollectOK bool
 }
 
 func newExecutor(env *Env, numTemps int) *executor {
@@ -603,7 +599,7 @@ func (ex *executor) execInstr(ins ir.Instr) (*ir.BasicBlock, bool, error) {
 		if !ok {
 			return nil, false, syntax.SpanErrorf(v.Span, "exec: t%d expected BindResult, got %T", v.Src, ex.temps[v.Src])
 		}
-		if v.Guard && !res.Rc.OK {
+		if v.Guard && !res.Rc.OK() {
 			if v.OnFail == nil {
 				return nil, false, syntax.SpanErrorf(v.Span, "exec: guard fail has no OnFail block")
 			}
@@ -616,17 +612,18 @@ func (ex *executor) execInstr(ins ir.Instr) (*ir.BasicBlock, bool, error) {
 			args, _ := ex.temps[v.Argv].([]Arg)
 			ex.pendingGuardFail = &pendingGuardFail{
 				Envelope: res.Rc,
-				Primary:  v.Primary,
+				Primary:  v.Target,
 				Args:     args,
 				Span:     v.Span,
 			}
 			return v.OnFail, false, nil
 		}
-		if v.Rc != "" && v.Rc != "_" {
-			ex.env.Session.Set(v.Rc, ValueFromEnvelope(res.Rc))
-		}
-		if v.Primary != "" && v.Primary != "_" {
-			ex.env.Session.Set(v.Primary, res.Primary)
+		if v.Target != "" && v.Target != "_" {
+			if v.Guard {
+				ex.env.Session.Set(v.Target, res.Primary)
+			} else {
+				ex.env.Session.Set(v.Target, ValueFromOutcome(res))
+			}
 		}
 		return nil, false, nil
 	case *ir.BindDestructure:
@@ -645,7 +642,7 @@ func (ex *executor) execInstr(ins ir.Instr) (*ir.BasicBlock, bool, error) {
 		// ir.BuildEnvelope.Err carries a diagnostic string; it lands
 		// in Envelope.Stderr because Envelope reserves Stderr for
 		// the human-readable failure reason (see envelope.go).
-		env := Envelope{OK: v.Ok, Code: v.Code, Stderr: v.Err}
+		env := Envelope{ExitCode: v.ExitCode, Stderr: v.Err}
 		ex.temps[v.Dst] = ValueFromEnvelope(env)
 		return nil, false, nil
 	case *ir.EmitBindResult:
@@ -748,14 +745,13 @@ func (ex *executor) execInstr(ins ir.Instr) (*ir.BasicBlock, bool, error) {
 			Primary: v.Primary,
 			Args:    []Arg{WordArg{Text: v.Head, Span: v.ArgSpan}},
 			Envelope: Envelope{
-				OK:     v.OK,
-				Code:   v.Code,
-				Stdout: v.Stdout,
-				Stderr: v.Stderr,
-				Killed: v.Killed,
-				Signal: v.Signal,
-				HasPID: v.HasPID,
-				PID:    v.PID,
+				ExitCode: v.ExitCode,
+				Stdout:   v.Stdout,
+				Stderr:   v.Stderr,
+				Killed:   v.Killed,
+				Signal:   v.Signal,
+				HasPID:   v.HasPID,
+				PID:      v.PID,
 			},
 		}
 	case *ir.Fail:
@@ -1020,9 +1016,9 @@ func (ex *executor) execForEachCollect(v *ir.ForEachCollect) (*ir.BasicBlock, bo
 		Origin:          val,
 		Span:            v.Span,
 		Collect:         true,
-		Primary:         v.Primary,
-		Rc:              v.Rc,
+		Primary:         v.Target,
 		Guard:           v.Guard,
+		CollectOK:       true,
 	}
 	if len(raw) == 0 {
 		ex.finaliseCollect(state)
@@ -1053,7 +1049,14 @@ func (ex *executor) execCollectProduce(v *ir.CollectProduce) (*ir.BasicBlock, bo
 	if !ok {
 		return nil, false, syntax.SpanErrorf(v.Span, "collect-produce: t%d expected BindResult, got %T", v.Result, ex.temps[v.Result])
 	}
-	if state.Guard && !res.Rc.OK {
+	outcome := ValueFromOutcome(res)
+	state.Results = append(state.Results, outcome)
+	if res.Rc.OK() {
+		state.Values = append(state.Values, res.Primary)
+	} else {
+		state.CollectOK = false
+	}
+	if state.Guard && !res.Rc.OK() {
 		gf := &GuardFailure{Span: v.Span, Primary: state.Primary, Args: ex.bindArgs[v.Result], Envelope: res.Rc}
 		if ex.inDef {
 			return nil, false, gf
@@ -1065,17 +1068,6 @@ func (ex *executor) execCollectProduce(v *ir.CollectProduce) (*ir.BasicBlock, bo
 			frame = v.Span
 		}
 		return nil, false, syntax.FrameAt(frame, gf)
-	}
-	if state.Primary != "" && state.Primary != "_" {
-		state.PrimaryAcc = append(state.PrimaryAcc, res.Primary.Raw())
-		origin := res.Primary.Origin()
-		state.PrimaryOriginAcc = append(state.PrimaryOriginAcc, origin)
-		if origin != nil {
-			state.HasOrigin = true
-		}
-	}
-	if state.Rc != "" && state.Rc != "_" {
-		state.RcAcc = append(state.RcAcc, ValueFromEnvelope(res.Rc).Raw())
 	}
 	return ex.advanceLoop(state)
 }
@@ -1107,15 +1099,12 @@ func (ex *executor) advanceLoop(state *loopState) (*ir.BasicBlock, bool, error) 
 // IndexValue on the bound list reconstructs each element's
 // typed Value at later access sites.
 func (ex *executor) finaliseCollect(state *loopState) {
-	if state.Rc != "" && state.Rc != "_" {
-		ex.env.Session.Set(state.Rc, ValueFromAny(state.RcAcc))
-	}
 	if state.Primary != "" && state.Primary != "_" {
-		priVal := ValueFromAny(state.PrimaryAcc)
-		if state.HasOrigin {
-			priVal = priVal.withOrigin(state.PrimaryOriginAcc, semantics.OriginUnknown)
+		if state.Guard {
+			ex.env.Session.Set(state.Primary, valueList(state.Values))
+		} else {
+			ex.env.Session.Set(state.Primary, ValueFromCollectOutcome(state.CollectOK, state.Results, state.Values))
 		}
-		ex.env.Session.Set(state.Primary, priVal)
 	}
 }
 

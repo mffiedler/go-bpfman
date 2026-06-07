@@ -1,5 +1,5 @@
 def spawn() {
-  let p <- start sleep 60
+  guard p <- start sleep 60
   defer kill $p
   return $p
 }

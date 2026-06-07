@@ -1,4 +1,4 @@
-let d <- tempdir trace-poll-success
+guard d <- tempdir trace-poll-success
 defer exec rm -rf $d.path
 let marker = "${d.path}/marker"
 

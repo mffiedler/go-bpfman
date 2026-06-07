@@ -1,4 +1,4 @@
-let d <- tempdir branches
+guard d <- tempdir branches
 defer exec rm -rf $d.path
 let out = "${d.path}/chosen"
 if true {

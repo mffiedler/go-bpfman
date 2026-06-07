@@ -3,7 +3,7 @@
 # Cilium/bpf2go-style object names are classified into platform
 # build args.
 
-let dir <- tempdir image-build-cilium
+guard dir <- tempdir image-build-cilium
 defer exec rm -rf $dir.path
 
 let amd64 = "${dir.path}/bpf_x86_bpfel.o"

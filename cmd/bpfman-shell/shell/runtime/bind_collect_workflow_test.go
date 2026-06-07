@@ -35,7 +35,7 @@ func TestBindCollect_WorkflowMatrix(t *testing.T) {
 	}{
 		{
 			name: "filter_break_continue",
-			src: "let xs <- foreach n in [1 2 3 4] {\n" +
+			src: "guard xs <- foreach n in [1 2 3 4] {\n" +
 				"  if $n == 2 { continue }\n" +
 				"  if $n == 4 { break }\n" +
 				"  probe $n\n" +
@@ -51,22 +51,24 @@ func TestBindCollect_WorkflowMatrix(t *testing.T) {
 			},
 		},
 		{
-			name: "tuple_rc_and_primary_lists",
-			src: "let (rc xs) <- foreach n in [1 2] { probe $n }\n" +
-				"foreach x in $xs {\n" +
+			name: "let_outcome_results_and_values",
+			src: "let r <- foreach n in [1 2] { probe $n }\n" +
+				"foreach x in $r.values {\n" +
 				"  print $x\n" +
 				"}\n",
-			names: []string{"rc", "xs"},
+			names: []string{"r"},
 			assert: func(t *testing.T, env *Env, calls []execCall, err error) {
 				require.NoError(t, err)
-				rc := mustBindingList(t, env, "rc")
-				require.Len(t, rc, 2)
-				for _, entry := range rc {
+				r := mustBindingMap(t, env, "r")
+				assert.Equal(t, true, r["ok"])
+				results := r["results"].([]any)
+				require.Len(t, results, 2)
+				for _, entry := range results {
 					m := entry.(map[string]any)
 					assert.Equal(t, true, m["ok"])
-					assert.Equal(t, 0, mustReadInt(t, m["code"]))
+					assert.Equal(t, 0, mustReadInt(t, m["exit_code"]))
 				}
-				assert.Equal(t, "[\"probe-1\",\"probe-2\"]", captureBindings(t, env, []string{"xs"})["xs"])
+				assert.Equal(t, []any{"probe-1", "probe-2"}, r["values"])
 			},
 		},
 		{
@@ -82,10 +84,10 @@ func TestBindCollect_WorkflowMatrix(t *testing.T) {
 		{
 			name: "helper_structured_followon_field_access",
 			src: "def mk(n) {\n" +
-				"  let rec <- record $n\n" +
+				"  guard rec <- record $n\n" +
 				"  return $rec\n" +
 				"}\n" +
-				"let xs <- foreach n in [1 2] { mk $n }\n" +
+				"guard xs <- foreach n in [1 2] { mk $n }\n" +
 				"foreach item in $xs {\n" +
 				"  print $item.id\n" +
 				"  print $item.name\n" +
@@ -100,10 +102,10 @@ func TestBindCollect_WorkflowMatrix(t *testing.T) {
 		{
 			name: "typed_origin_survives_followon_command",
 			src: "def mk(n) {\n" +
-				"  let rec <- link $n\n" +
+				"  guard rec <- link $n\n" +
 				"  return $rec\n" +
 				"}\n" +
-				"let xs <- foreach n in [1 2] { mk $n }\n" +
+				"guard xs <- foreach n in [1 2] { mk $n }\n" +
 				"foreach item in $xs {\n" +
 				"  guard _ <- accept $item\n" +
 				"}\n" +
@@ -124,6 +126,69 @@ func TestBindCollect_WorkflowMatrix(t *testing.T) {
 			tc.assert(t, run.env, run.calls, run.err)
 		})
 	}
+}
+
+func TestLetBind_TypedProviderBindsOutcomeWithValue(t *testing.T) {
+	t.Parallel()
+
+	src := "let r <- link 7\n"
+	run := runBindCollectWorkflow(t, src)
+	require.NoError(t, run.err)
+
+	r := mustBindingMap(t, run.env, "r")
+	assert.Equal(t, true, r["ok"])
+	value := r["value"].(map[string]any)
+	assert.Equal(t, 7, mustReadInt(t, value["id"]))
+	assert.Equal(t, "link-7", value["name"])
+}
+
+func TestLetBind_TypedProviderFailureBindsOutcomeWithoutValue(t *testing.T) {
+	t.Parallel()
+
+	src := "let r <- maybe 2\n"
+	run := runBindCollectWorkflow(t, src)
+	require.NoError(t, run.err)
+
+	r := mustBindingMap(t, run.env, "r")
+	assert.Equal(t, false, r["ok"])
+	assert.Equal(t, 19, mustReadInt(t, r["exit_code"]))
+	assert.Equal(t, "blocked", r["stderr"])
+	assert.NotContains(t, r, "value")
+}
+
+func TestBindCollect_LetBindsAggregateOutcome(t *testing.T) {
+	t.Parallel()
+
+	src := "let r <- foreach n in [1 2 3] { maybe $n }\n"
+	run := runBindCollectWorkflow(t, src)
+	require.NoError(t, run.err)
+
+	r := mustBindingMap(t, run.env, "r")
+	assert.Equal(t, false, r["ok"])
+
+	results := r["results"].([]any)
+	require.Len(t, results, 3)
+	assert.Equal(t, true, results[0].(map[string]any)["ok"])
+	assert.Equal(t, false, results[1].(map[string]any)["ok"])
+	assert.Equal(t, true, results[2].(map[string]any)["ok"])
+
+	values := r["values"].([]any)
+	require.Len(t, values, 2)
+	assert.Equal(t, "maybe-1", values[0])
+	assert.Equal(t, "maybe-3", values[1])
+}
+
+func TestBindCollect_EmptyLetOutcomeIsOk(t *testing.T) {
+	t.Parallel()
+
+	src := "let r <- foreach n in [] { maybe $n }\n"
+	run := runBindCollectWorkflow(t, src)
+	require.NoError(t, run.err)
+
+	r := mustBindingMap(t, run.env, "r")
+	assert.Equal(t, true, r["ok"])
+	assert.Empty(t, r["results"].([]any))
+	assert.Empty(t, r["values"].([]any))
 }
 
 func runBindCollectWorkflow(t *testing.T, src string) bindCollectRun {
@@ -159,7 +224,7 @@ func execBindCollectRuntime(args []Arg) (BindResult, error) {
 	case "maybe":
 		n := mustArgInt(args, 1)
 		if n == 2 {
-			return BindResult{Rc: Envelope{OK: false, Code: 19, Stderr: "blocked"}}, nil
+			return BindResult{Rc: Envelope{ExitCode: 19, Stderr: "blocked"}}, nil
 		}
 		return BindResult{Rc: OkEnvelope(), Primary: StringValue(fmt.Sprintf("maybe-%d", n))}, nil
 	case "record":
@@ -193,7 +258,7 @@ func execBindCollectRuntime(args []Arg) (BindResult, error) {
 				return BindResult{Rc: OkEnvelope(), Primary: ValueFromEnvelope(OkEnvelope())}, nil
 			}
 		}
-		return BindResult{Rc: Envelope{OK: false, Code: 7, Stderr: "origin-lost"}}, nil
+		return BindResult{Rc: Envelope{ExitCode: 7, Stderr: "origin-lost"}}, nil
 	default:
 		return BindResult{Rc: OkEnvelope(), Primary: ValueFromEnvelope(OkEnvelope())}, nil
 	}

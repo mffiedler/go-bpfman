@@ -416,13 +416,13 @@ func (p *parser) rejectTrailingArgs(name string) error {
 func (p *parser) parseLetStmt() (Stmt, error) {
 	letTok := p.advance() // "let"
 	if p.atEOF() {
-		return nil, spanErrorf(letTok.Span, "let requires: let <name> = <expr> or let <name> <- <command...> or let (<a> <b> ...) = <expr> or let (<rc> <prim>) <- <command...>")
+		return nil, spanErrorf(letTok.Span, "let requires: let <name> = <expr> or let <name> <- <command...> or let (<a> <b> ...) = <expr>")
 	}
 	if t := p.peek(); t.Kind == TokenWord && t.Text == "(" {
 		// Parenthesised name list. Two surface forms share this
-		// shape: the let-destructure `let (a b ...) = EXPR` and
-		// the tuple bind `let (rc prim) <- CMD`. The sigil after
-		// the closing ')' selects between them.
+		// shape: the supported let-destructure `let (a b ...) =
+		// EXPR` and the removed tuple-bind spelling after '<-'.
+		// The sigil after the closing ')' selects the outcome.
 		names, openTok, err := p.parseParenNameList("let")
 		if err != nil {
 			return nil, err
@@ -449,13 +449,7 @@ func (p *parser) parseLetStmt() (Stmt, error) {
 			}
 			return &LetDestructureStmt{Names: names, RHS: rhs, Span: p.spanFrom(letTok.Pos)}, nil
 		case TokenBind:
-			if len(names) != 2 {
-				return nil, spanErrorf(openTok.Span, "tuple bind expects exactly two names, got %d", len(names))
-			}
-			if names[0].Text == "_" && names[1].Text == "_" {
-				return nil, spanErrorf(openTok.Span, "tuple bind cannot discard both slots")
-			}
-			return p.parseBindRHS(letTok.Pos, names[0], names[1], false)
+			return nil, spanErrorf(openTok.Span, "tuple bind after '<-' is no longer supported; bind a single outcome name and use named fields")
 		default:
 			return nil, spanErrorf(openTok.Span, "let: expected '=' or '<-' after name list, got %q", p.peek().Text)
 		}
@@ -496,17 +490,15 @@ func (p *parser) parseLetStmt() (Stmt, error) {
 		}
 		return &LetStmt{Name: name, RHS: rhs, Span: p.spanFrom(letTok.Pos)}, nil
 	case TokenBind:
-		return p.parseBindRHS(letTok.Pos, Ident{}, name, false)
+		return p.parseBindRHS(letTok.Pos, name, false)
 	default:
 		return nil, spanErrorf(letTok.Span, "let requires '=' or '<-' after the name, got %q", p.peek().Text)
 	}
 }
 
-// parseGuardStmt parses "guard NAME <- COMMAND" or
-// "guard (RC PRIM) <- COMMAND". The form is fixed: the keyword,
-// a single identifier or a parenthesised pair, the bind sigil
-// '<-', then a non-empty command form. There is no "guard NAME =
-// EXPR" spelling.
+// parseGuardStmt parses "guard NAME <- COMMAND". The form is fixed:
+// the keyword, a single identifier, the bind sigil '<-', then a
+// non-empty command form. There is no "guard NAME = EXPR" spelling.
 // parseDeferStmt parses "defer COMMAND". The RHS is a command
 // form; argument evaluation happens at run time when the defer
 // statement executes (registering the captured invocation), and
@@ -532,23 +524,10 @@ func (p *parser) parseDeferStmt() (Stmt, error) {
 func (p *parser) parseGuardStmt() (Stmt, error) {
 	guardTok := p.advance() // "guard"
 	if p.atEOF() {
-		return nil, spanErrorf(guardTok.Span, "guard requires: guard <name> <- <command...> or guard (<rc> <prim>) <- <command...>")
+		return nil, spanErrorf(guardTok.Span, "guard requires: guard <name> <- <command...>")
 	}
 	if t := p.peek(); t.Kind == TokenWord && t.Text == "(" {
-		names, openTok, err := p.parseParenNameList("guard")
-		if err != nil {
-			return nil, err
-		}
-		if len(names) != 2 {
-			return nil, spanErrorf(openTok.Span, "tuple bind expects exactly two names, got %d", len(names))
-		}
-		if names[0].Text == "_" && names[1].Text == "_" {
-			return nil, spanErrorf(openTok.Span, "tuple bind cannot discard both slots")
-		}
-		if p.atEOF() || p.peek().Kind != TokenBind {
-			return nil, spanErrorf(guardTok.Span, "tuple bind requires '<-' after target list")
-		}
-		return p.parseBindRHS(guardTok.Pos, names[0], names[1], true)
+		return nil, spanErrorf(t.Span, "tuple bind after '<-' is no longer supported; bind a single outcome name and use named fields")
 	}
 	if p.peek().Kind != TokenWord {
 		return nil, spanErrorf(guardTok.Span, "guard requires an identifier, got %q", p.peek().Text)
@@ -561,7 +540,7 @@ func (p *parser) parseGuardStmt() (Stmt, error) {
 	if p.atEOF() || p.peek().Kind != TokenBind {
 		return nil, spanErrorf(guardTok.Span, "guard requires: guard <name> <- <command...> (missing '<-')")
 	}
-	return p.parseBindRHS(guardTok.Pos, Ident{}, name, true)
+	return p.parseBindRHS(guardTok.Pos, name, true)
 }
 
 // parseParenNameList consumes a parenthesised whitespace-separated
@@ -642,9 +621,8 @@ func allUnderscore(names []Ident) bool {
 // statement separator or block marker; a stray '=' or '<-' inside
 // the RHS is rejected. parseCommandArgs handles the command-form
 // tokens so every primary expression the command-statement grammar
-// accepts works on the right of a bind. rc is "" for single-name
-// bindings, an identifier (or "_") for tuple bindings.
-func (p *parser) parseBindRHS(stmtLoc source.Pos, rc, primary Ident, guard bool) (Stmt, error) {
+// accepts works on the right of a bind.
+func (p *parser) parseBindRHS(stmtLoc source.Pos, target Ident, guard bool) (Stmt, error) {
 	bindTok := p.advance() // "<-"
 	// Bind-collect form: 'let X <- foreach NAME in LIST { BODY }'.
 	// The 'foreach' keyword in RHS position triggers a separate
@@ -665,7 +643,7 @@ func (p *parser) parseBindRHS(stmtLoc source.Pos, rc, primary Ident, guard bool)
 			return nil, spanErrorf(NodeSpan(last), "bind-collect: foreach body's last statement must be a command (got %s); the last statement is the iteration's producer", describeStmt(last))
 		}
 		return &BindStmt{
-			Primary: primary, Rc: rc,
+			Target:  target,
 			Collect: fe,
 			Guard:   guard,
 			Span:    p.spanFrom(stmtLoc),
@@ -680,7 +658,7 @@ func (p *parser) parseBindRHS(stmtLoc source.Pos, rc, primary Ident, guard bool)
 		return nil, err
 	}
 	cmd := &CommandStmt{Args: args, Span: p.spanFrom(cmdTokens[0].Pos)}
-	return &BindStmt{Primary: primary, Rc: rc, Cmd: cmd, Guard: guard, Span: p.spanFrom(stmtLoc)}, nil
+	return &BindStmt{Target: target, Cmd: cmd, Guard: guard, Span: p.spanFrom(stmtLoc)}, nil
 }
 
 // describeStmt returns a short human-readable name for a

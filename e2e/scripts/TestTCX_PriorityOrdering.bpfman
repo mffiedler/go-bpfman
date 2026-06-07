@@ -2,7 +2,7 @@
 # Translation experiment: e2e/TestTCX_PriorityOrdering.
 #
 # TCX uses native kernel multi-program support rather than a
-# bpfman dispatcher, so this test exercises a different code
+# bpfman dispatcher, so this test exercises a different code path
 # path from the TC/XDP priority-ordering pair. The kernel
 # refuses to attach the same program to the same
 # (interface, direction) twice, so each priority needs its own

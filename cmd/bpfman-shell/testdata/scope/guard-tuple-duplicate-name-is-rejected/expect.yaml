@@ -3,4 +3,5 @@ stdout_not_contains:
   - unreachable
 stderr_contains:
   - "{main}:1"
-  - 'guard: duplicate name "x"'
+  - "tuple bind after '<-' is no longer supported"
+  - "use named fields"

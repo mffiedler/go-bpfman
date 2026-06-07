@@ -160,15 +160,11 @@ func dumpInstr(b *strings.Builder, i Instr, labels map[*BasicBlock]string, ctx d
 	case *DispatchCommand:
 		fmt.Fprintf(b, "DispatchCommand argv=t%d policy=%s lane=%s", v.Argv, dispatchPolicyName(v.Policy), resolveDispatchLane(v.Argv, ctx))
 	case *ApplyBind:
-		primary := v.Primary
-		if primary == "" {
-			primary = "_"
+		target := v.Target
+		if target == "" {
+			target = "_"
 		}
-		rc := v.Rc
-		if rc == "" {
-			rc = "_"
-		}
-		fmt.Fprintf(b, "ApplyBind src=t%d argv=t%d primary=%s rc=%s guard=%t", v.Src, v.Argv, primary, rc, v.Guard)
+		fmt.Fprintf(b, "ApplyBind src=t%d argv=t%d target=%s guard=%t", v.Src, v.Argv, target, v.Guard)
 		if v.OnFail != nil {
 			fmt.Fprintf(b, " fail=%s", labels[v.OnFail])
 		}
@@ -177,7 +173,7 @@ func dumpInstr(b *strings.Builder, i Instr, labels map[*BasicBlock]string, ctx d
 	case *BindDestructure:
 		fmt.Fprintf(b, "BindDestructure [%s] = t%d", strings.Join(v.Names, " "), v.Src)
 	case *BuildEnvelope:
-		fmt.Fprintf(b, "BuildEnvelope t%d = { ok=%t code=%d err=%q }", v.Dst, v.Ok, v.Code, v.Err)
+		fmt.Fprintf(b, "BuildEnvelope t%d = { ok=%t exit_code=%d err=%q }", v.Dst, v.ExitCode == 0, v.ExitCode, v.Err)
 	case *EmitBindResult:
 		rc := "synthetic"
 		if v.Rc != nil {
@@ -201,7 +197,7 @@ func dumpInstr(b *strings.Builder, i Instr, labels map[*BasicBlock]string, ctx d
 	case *PropagateError:
 		b.WriteString("PropagateError")
 	case *PropagateGuardFailure:
-		fmt.Fprintf(b, "PropagateGuardFailure primary=%s head=%s code=%d stderr=%q", v.Primary, v.Head, v.Code, v.Stderr)
+		fmt.Fprintf(b, "PropagateGuardFailure primary=%s head=%s exit_code=%d stderr=%q", v.Primary, v.Head, v.ExitCode, v.Stderr)
 	case *Fail:
 		fmt.Fprintf(b, "Fail msg=%q", v.Msg)
 	case *BeginPoll:
@@ -227,16 +223,12 @@ func dumpInstr(b *strings.Builder, i Instr, labels map[*BasicBlock]string, ctx d
 	case *ForEachContinue:
 		b.WriteString("ForEachContinue")
 	case *ForEachCollect:
-		primary := v.Primary
-		if primary == "" {
-			primary = "_"
+		target := v.Target
+		if target == "" {
+			target = "_"
 		}
-		rc := v.Rc
-		if rc == "" {
-			rc = "_"
-		}
-		fmt.Fprintf(b, "ForEachCollect list=t%d names=[%s] primary=%s rc=%s guard=%t body=%s exit=%s",
-			v.List, strings.Join(v.Names, " "), primary, rc, v.Guard,
+		fmt.Fprintf(b, "ForEachCollect list=t%d names=[%s] target=%s guard=%t body=%s exit=%s",
+			v.List, strings.Join(v.Names, " "), target, v.Guard,
 			labels[v.Body], labels[v.Exit])
 	case *CollectProduce:
 		fmt.Fprintf(b, "CollectProduce t%d", v.Result)

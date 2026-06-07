@@ -183,7 +183,7 @@ func TestImportedNestedFailureMatrix(t *testing.T) {
 						require.True(t, ok, "guard failures should remain typed under lowered execution")
 						assert.Equal(t, "_", guard.Primary)
 						assert.Equal(t, "probe", guard.Args)
-						assert.Equal(t, Envelope{OK: false, Code: 17, Stdout: "probe-stdout", Stderr: "probe-stderr"}, guard.Envelope)
+						assert.Equal(t, Envelope{ExitCode: 17, Stdout: "probe-stdout", Stderr: "probe-stderr"}, guard.Envelope)
 						assert.Equal(t, 1, callPrefixCount(run.calls, "probe"), "the failing helper should reach probe exactly once")
 					} else {
 						assert.Contains(t, run.err.Error(), "undefined variable")

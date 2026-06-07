@@ -1,12 +1,12 @@
 import ./lib.bpfman
-let (rc files) <- foreach name in ["left" "right"] {
+let result <- foreach name in ["left" "right"] {
   mk $name
 }
-foreach item in $rc {
+foreach item in $result.results {
   print $item.ok
-  print $item.code
+  print $item.exit_code
 }
-foreach path in $files {
+foreach path in $result.values {
   let out <- exec cat $path
   print $out.stdout
 }

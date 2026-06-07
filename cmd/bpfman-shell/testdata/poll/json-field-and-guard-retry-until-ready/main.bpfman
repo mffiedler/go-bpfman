@@ -1,4 +1,4 @@
-let d <- tempdir poll-json-ready
+guard d <- tempdir poll-json-ready
 defer exec rm -rf $d.path
 let state = "${d.path}/state.json"
 

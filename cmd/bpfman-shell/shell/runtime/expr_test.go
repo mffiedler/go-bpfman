@@ -30,7 +30,7 @@ func bindFromValue(f func([]Arg, source.Span) (Value, error)) func([]Arg, source
 		if err != nil {
 			return BindResult{}, err
 		}
-		return BindResult{Rc: Envelope{OK: true}, Primary: v}, nil
+		return BindResult{Rc: Envelope{}, Primary: v}, nil
 	}
 }
 

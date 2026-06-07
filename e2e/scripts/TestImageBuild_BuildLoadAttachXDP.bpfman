@@ -11,7 +11,7 @@
 import ../lib.bpfman
 
 def main() {
-    let image <- registry ref explicit-xdp-pass
+    guard image <- registry ref explicit-xdp-pass
     print "image-build: minted image=${image}"
 
     print "image-build: publishing ${image}"

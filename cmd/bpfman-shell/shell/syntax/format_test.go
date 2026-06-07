@@ -15,9 +15,7 @@ func TestFormatProgramSource_AllStatementFormsRoundTrip(t *testing.T) {
 		{"let", `let x = 1`},
 		{"let destructure", `let (a _ c) = [1 2 3]`},
 		{"let bind", `let out <- exec echo ok`},
-		{"let tuple bind", `let (rc out) <- exec echo ok`},
 		{"guard bind", `guard out <- exec true`},
-		{"guard tuple bind", `guard (rc out) <- exec true`},
 		{"bind collect", `guard xs <- foreach x in (range 3) {
     echo $x
 }`},

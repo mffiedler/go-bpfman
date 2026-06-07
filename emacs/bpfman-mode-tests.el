@@ -263,16 +263,15 @@ not exercise."
     (should (eq indent-line-function #'bpfman-indent-line))))
 
 (ert-deftest bpfman-classify-line-tokens-let-and-bind-targets ()
-  "Classify single-name, tuple, and destructure binding targets."
+  "Classify single-name and destructure binding targets."
   (should (equal (bpfman-test--classified-roles "let value = $input")
                  '((keyword "let")
                    (variable "value")
                    (keyword "=")
                    (variable "$input"))))
   (should (equal (bpfman-test--classified-roles
-                  "guard (rc loaded) <- bpfman program load --path foo.o")
+                  "guard loaded <- bpfman program load --path foo.o")
                  '((keyword "guard")
-                   (variable "rc")
                    (variable "loaded")
                    (keyword "<-")
                    (keyword "bpfman")

@@ -8,6 +8,6 @@ def first_stop(xs) {
   print after-loop
   return none
 }
-let v <- first_stop [go stop end]
+guard v <- first_stop [go stop end]
 print $v
 print after

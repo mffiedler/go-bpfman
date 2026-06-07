@@ -1,4 +1,4 @@
-let d <- tempdir poll-command-status
+guard d <- tempdir poll-command-status
 defer exec rm -rf $d.path
 let marker = "${d.path}/marker"
 

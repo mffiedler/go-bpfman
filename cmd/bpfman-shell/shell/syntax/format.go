@@ -306,7 +306,7 @@ func (f *sourceFormatter) writeBindCollectStmtSource(v *BindStmt, indent int) {
 	} else {
 		f.b.WriteString("let ")
 	}
-	f.writeBindTarget(v.Rc, v.Primary)
+	f.b.WriteString(v.Target.Text)
 	f.b.WriteString(" <- ")
 	f.writeForEachStmtSource(v.Collect, indent)
 }
@@ -317,7 +317,7 @@ func (f *sourceFormatter) writeBindStmt(v *BindStmt, indent int) {
 	} else {
 		f.b.WriteString("let ")
 	}
-	f.writeBindTarget(v.Rc, v.Primary)
+	f.b.WriteString(v.Target.Text)
 	f.b.WriteString(" <- ")
 	if v.Collect != nil {
 		f.writeForEachStmt(v.Collect, indent)
@@ -335,25 +335,9 @@ func (f *sourceFormatter) writeBindStmtContinued(v *BindStmt, indent int) {
 	} else {
 		prefix.WriteString("let ")
 	}
-	writeBindTargetSource(&prefix, v.Rc, v.Primary)
+	prefix.WriteString(v.Target.Text)
 	prefix.WriteString(" <- ")
 	f.writeContinuedCommand(prefix.String(), v.Cmd.Args, indent)
-}
-
-func (f *sourceFormatter) writeBindTarget(rc, primary Ident) {
-	writeBindTargetSource(&f.b, rc, primary)
-}
-
-func writeBindTargetSource(b *strings.Builder, rc, primary Ident) {
-	if rc.Text == "" {
-		b.WriteString(primary.Text)
-		return
-	}
-	b.WriteByte('(')
-	b.WriteString(rc.Text)
-	b.WriteByte(' ')
-	b.WriteString(primary.Text)
-	b.WriteByte(')')
 }
 
 func (f *sourceFormatter) writeIfStmt(v *IfStmt, indent int) {

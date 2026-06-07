@@ -313,8 +313,8 @@ func TestHandleNetRelease_IdempotentOnAlreadyReleased(t *testing.T) {
 	require.Equal(t, semantics.OriginEnvelope, v.Kind())
 	env, ok := v.Origin().(runtime.Envelope)
 	require.True(t, ok, "release should publish a runtime.Envelope as origin")
-	assert.True(t, env.OK)
-	assert.Equal(t, 0, env.Code)
+	assert.True(t, env.OK())
+	assert.Equal(t, 0, env.ExitCode)
 }
 
 func TestHandleNetExec_TooFewArgs(t *testing.T) {
@@ -451,7 +451,7 @@ func TestHandleNetRelease_AutoModeReleasesLease(t *testing.T) {
 	require.NoError(t, err)
 	env, ok := v.Origin().(runtime.Envelope)
 	require.True(t, ok)
-	assert.True(t, env.OK)
+	assert.True(t, env.OK())
 
 	body, err := os.ReadFile(slotLockPath(root, lease.slot))
 	require.NoError(t, err)

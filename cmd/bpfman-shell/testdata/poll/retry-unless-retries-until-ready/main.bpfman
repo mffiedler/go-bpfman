@@ -1,4 +1,4 @@
-let d <- tempdir poll-retry
+guard d <- tempdir poll-retry
 defer exec rm -rf $d.path
 let marker = "${d.path}/marker"
 

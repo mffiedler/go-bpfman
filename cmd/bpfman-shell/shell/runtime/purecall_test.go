@@ -145,7 +145,7 @@ func TestEvalExpr_PureCall_FailingHandlerIsExpressionError(t *testing.T) {
 	env := &Env{
 		Session: NewSession(),
 		ExecBind: func(_ []Arg, _ source.Span) (BindResult, error) {
-			return BindResult{Rc: Envelope{OK: false, Code: 7, Stderr: "bad"}}, nil
+			return BindResult{Rc: Envelope{ExitCode: 7, Stderr: "bad"}}, nil
 		},
 	}
 	call := &syntax.PureCallExpr{Name: name, Args: []syntax.Expr{&syntax.LiteralExpr{Text: "1"}}}
@@ -229,16 +229,6 @@ func TestCheck_PureBuiltin_RejectedInGuardForm(t *testing.T) {
 	t.Parallel()
 
 	src := "guard x <- path-exists 1"
-	issues := checkSource(t, src)
-	require.NotEmpty(t, issues)
-	combined := joinIssues(issues)
-	assert.Contains(t, combined, "pure builtin")
-}
-
-func TestCheck_PureBuiltin_RejectedInTupleBind(t *testing.T) {
-	t.Parallel()
-
-	src := "let (rc x) <- path-exists 1"
 	issues := checkSource(t, src)
 	require.NotEmpty(t, issues)
 	combined := joinIssues(issues)

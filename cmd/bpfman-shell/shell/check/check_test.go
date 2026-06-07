@@ -178,32 +178,57 @@ func TestCheck_LetRHSCheckedBeforeBinding(t *testing.T) {
 	assert.Contains(t, issues[0].Msg, "undefined variable: x")
 }
 
-func TestCheck_BindCollect_TupleBindOnPureBuiltinRejected(t *testing.T) {
+func TestCheck_BindCollect_LetOutcomeOnPureBuiltinAccepted(t *testing.T) {
 	t.Parallel()
 
-	// jq is a pure builtin: it returns a value directly, with
-	// no rc envelope. A bind-collect that uses jq as its
-	// producer and asks for a tuple bind would silently
-	// accumulate synthetic OK envelopes into the rc slot. The
-	// checker rejects this shape and points at the single-bind
-	// alternative.
-	src := "let xs = [10 20 30]\nlet (rc doubled) <- foreach n in $xs { jq \". * 2\" $n }"
+	// A non-guard bind-collect binds an aggregate outcome. The
+	// successful per-iteration payloads are available through
+	// .values.
+	src := "let xs = [10 20 30]\nlet doubled <- foreach n in $xs { jq \". * 2\" $n }\nprint $doubled.values"
 	issues := checkSource(t, src)
-	require.Len(t, issues, 1)
-	assert.Contains(t, issues[0].Msg, "jq is a pure builtin")
-	assert.Contains(t, issues[0].Msg, "tuple bind")
-	assert.Contains(t, issues[0].Msg, "single-bind")
+	assert.Empty(t, issues)
 }
 
 func TestCheck_BindCollect_SingleBindOnPureBuiltinAccepted(t *testing.T) {
 	t.Parallel()
 
-	// The single-bind shape is correct for a pure-builtin
-	// producer: the primary slot carries the per-element
-	// value list; there is no rc list to fabricate.
-	src := "let xs = [10 20 30]\nlet doubled <- foreach n in $xs { jq \". * 2\" $n }"
+	// Guard unwraps the bind-collect result, so the target is the
+	// successful value list directly.
+	src := "let xs = [10 20 30]\nguard doubled <- foreach n in $xs { jq \". * 2\" $n }\nprint $doubled[0]"
 	issues := checkSource(t, src)
 	assert.Empty(t, issues)
+}
+
+func TestCheck_LetBindTypedProviderBindsOutcomeShape(t *testing.T) {
+	t.Parallel()
+
+	src := "let r <- bpfman program get 1\n" +
+		"print $r.ok\n" +
+		"print $r.stderr\n" +
+		"print $r.value.record.program_id"
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
+func TestCheck_LetBindTypedProviderRejectsDirectPayloadAccess(t *testing.T) {
+	t.Parallel()
+
+	src := "let r <- bpfman program get 1\nprint $r.record.program_id"
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "r has kind result")
+	assert.Contains(t, issues[0].Msg, "field \"record\" does not exist")
+	assert.Contains(t, issues[0].Msg, "value")
+}
+
+func TestCheck_LetBindPlainCommandRejectsValueField(t *testing.T) {
+	t.Parallel()
+
+	src := "let r <- echo hello\nprint $r.value"
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "r has kind result")
+	assert.Contains(t, issues[0].Msg, "field \"value\" does not exist")
 }
 
 func TestCheck_ThreadDefArityTooFew(t *testing.T) {
@@ -295,7 +320,7 @@ func TestCheck_JobLeak_KillShadowedSurfacesRealLeak(t *testing.T) {
 	// jobReferenceTarget rule marked $j as managed regardless
 	// of whether kill resolved to a def, hiding the real
 	// leak. The tightened rule lets the leak surface.
-	src := "def kill(arg) { print $arg }\nlet j <- start foo\nkill $j"
+	src := "def kill(arg) { print $arg }\nguard j <- start foo\nkill $j"
 	issues := checkSource(t, src)
 	require.Len(t, issues, 1)
 	assert.Contains(t, issues[0].Msg, "started job \"j\" has no matching wait or kill")
@@ -339,10 +364,10 @@ func TestCheck_BindCollect_LoopVarVisibleInBody(t *testing.T) {
 	assert.Empty(t, issues)
 }
 
-func TestCheck_BindStmtDefinesPrimaryAndRc(t *testing.T) {
+func TestCheck_BindStmtDefinesOutcome(t *testing.T) {
 	t.Parallel()
 
-	issues := checkSource(t, "let (rc p) <- bpfman program list\nprint $p $rc")
+	issues := checkSource(t, "let r <- bpfman program list\nprint $r.ok $r.value.programs")
 	assert.Empty(t, issues)
 }
 
@@ -450,7 +475,7 @@ func TestCheckImportLibraryWithDefs_VisibleDefsResolveBindHead(t *testing.T) {
 
 	prog := parseProgram(t, `
 def outer(x) {
-  let v <- inner $x
+  guard v <- inner $x
   return $v
 }
 `)
@@ -469,7 +494,7 @@ func TestCheckImportLibraryWithDefs_VisibleDefReturnShapeIsUsed(t *testing.T) {
 
 	prog := parseProgram(t, `
 def outer() {
-  let p <- inner
+  guard p <- inner
   print $p.record.program_idd
 }
 `)
@@ -533,7 +558,7 @@ func TestCheck_DotPathOnDefinedNameIsClean(t *testing.T) {
 
 	// Field access on a typed defined name is clean when the
 	// path matches the declared JSON shape.
-	src := "let p <- bpfman program get 1\nprint $p.record.program_id"
+	src := "guard p <- bpfman program get 1\nprint $p.record.program_id"
 	issues := checkSource(t, src)
 	assert.Empty(t, issues)
 }
@@ -553,7 +578,7 @@ func TestCheck_InsideInterpolation(t *testing.T) {
 func TestCheck_LeakedJobIsReported(t *testing.T) {
 	t.Parallel()
 
-	src := "let p <- start sleep 60"
+	src := "guard p <- start sleep 60"
 	issues := checkSource(t, src)
 	require.Len(t, issues, 1)
 	assert.Contains(t, issues[0].Msg, `started job "p" has no matching wait or kill`)
@@ -571,7 +596,7 @@ func TestCheck_GuardLeakedJobIsReported(t *testing.T) {
 func TestCheck_WaitedJobIsClean(t *testing.T) {
 	t.Parallel()
 
-	src := "let p <- start sleep 1\nwait $p"
+	src := "guard p <- start sleep 1\nwait $p"
 	issues := checkSource(t, src)
 	assert.Empty(t, issues)
 }
@@ -579,7 +604,7 @@ func TestCheck_WaitedJobIsClean(t *testing.T) {
 func TestCheck_WaitedJobViaBindIsClean(t *testing.T) {
 	t.Parallel()
 
-	src := "let p <- start sleep 1\nlet rc <- wait $p"
+	src := "guard p <- start sleep 1\nlet rc <- wait $p"
 	issues := checkSource(t, src)
 	assert.Empty(t, issues)
 }
@@ -587,7 +612,7 @@ func TestCheck_WaitedJobViaBindIsClean(t *testing.T) {
 func TestCheck_KilledJobIsClean(t *testing.T) {
 	t.Parallel()
 
-	src := "let p <- start sleep 60\nkill $p"
+	src := "guard p <- start sleep 60\nkill $p"
 	issues := checkSource(t, src)
 	assert.Empty(t, issues)
 }
@@ -595,7 +620,7 @@ func TestCheck_KilledJobIsClean(t *testing.T) {
 func TestCheck_DeferKilledJobIsClean(t *testing.T) {
 	t.Parallel()
 
-	src := "let p <- start sleep 60\ndefer kill $p"
+	src := "guard p <- start sleep 60\ndefer kill $p"
 	issues := checkSource(t, src)
 	assert.Empty(t, issues)
 }
@@ -604,10 +629,10 @@ func TestCheck_HelperReturnedJobManagedByCallerIsClean(t *testing.T) {
 	t.Parallel()
 
 	src := "def spawn() {\n" +
-		"  let p <- start sleep 60\n" +
+		"  guard p <- start sleep 60\n" +
 		"  return $p\n" +
 		"}\n" +
-		"let p <- spawn\n" +
+		"guard p <- spawn\n" +
 		"wait $p\n"
 	issues := checkSource(t, src)
 	assert.Empty(t, issues)
@@ -617,7 +642,7 @@ func TestCheck_HelperLeakedJobWithoutReturnStillReported(t *testing.T) {
 	t.Parallel()
 
 	src := "def spawn() {\n" +
-		"  let p <- start sleep 60\n" +
+		"  guard p <- start sleep 60\n" +
 		"  return 7\n" +
 		"}\n" +
 		"spawn\n"
@@ -631,7 +656,7 @@ func TestCheck_KillWithSignalFlagIsClean(t *testing.T) {
 
 	// 'kill --signal=USR1 $p' should still match $p as the
 	// target. Flag args (starting with '--') are skipped.
-	src := "let p <- start sleep 60\nkill --signal=USR1 $p"
+	src := "guard p <- start sleep 60\nkill --signal=USR1 $p"
 	issues := checkSource(t, src)
 	assert.Empty(t, issues)
 }
@@ -651,21 +676,20 @@ func TestCheck_DiscardedJobIsNotChecked(t *testing.T) {
 func TestCheck_LeakReportedAtStartSite(t *testing.T) {
 	t.Parallel()
 
-	src := "let x = 1\n\nlet p <- start sleep 60"
+	src := "let x = 1\n\nguard p <- start sleep 60"
 	issues := checkSource(t, src)
 	require.Len(t, issues, 1)
 	assert.Equal(t, 3, issues[0].Pos.Line, "leak should be cited at the start site, not elsewhere")
 }
 
-func TestCheck_TupleBindOnStartReportsPrimary(t *testing.T) {
+func TestCheck_LetBindOnStartBindsOutcomeNotJob(t *testing.T) {
 	t.Parallel()
 
-	// 'let (rc p) <- start ...' creates a job named p; rc
-	// is the result envelope, not the job handle.
-	src := "let (rc p) <- start sleep 60"
+	src := "let r <- start sleep 60\nkill $r"
 	issues := checkSource(t, src)
 	require.Len(t, issues, 1)
-	assert.Contains(t, issues[0].Msg, `started job "p"`)
+	assert.Contains(t, issues[0].Msg, "expected a $job argument")
+	assert.Contains(t, issues[0].Msg, "result value")
 }
 
 func TestCheck_ArithmeticOnNumericLiteralsClean(t *testing.T) {
@@ -976,10 +1000,10 @@ func TestCheck_KillSignalKnownNamesClean(t *testing.T) {
 	// lowercase. The static check mirrors the runtime's
 	// acceptance.
 	cases := []string{
-		"let p <- start sleep 60\nkill --signal=USR1 $p\nwait $p",
-		"let p <- start sleep 60\nkill --signal=SIGUSR1 $p\nwait $p",
-		"let p <- start sleep 60\nkill --signal=usr1 $p\nwait $p",
-		"let p <- start sleep 60\nkill --signal=TERM $p\nwait $p",
+		"guard p <- start sleep 60\nkill --signal=USR1 $p\nwait $p",
+		"guard p <- start sleep 60\nkill --signal=SIGUSR1 $p\nwait $p",
+		"guard p <- start sleep 60\nkill --signal=usr1 $p\nwait $p",
+		"guard p <- start sleep 60\nkill --signal=TERM $p\nwait $p",
 	}
 	for _, src := range cases {
 		t.Run(src, func(t *testing.T) {
@@ -993,7 +1017,7 @@ func TestCheck_KillSignalKnownNamesClean(t *testing.T) {
 func TestCheck_KillSignalUnknownReported(t *testing.T) {
 	t.Parallel()
 
-	src := "let p <- start sleep 60\nkill --signal=BLAH $p\nwait $p"
+	src := "guard p <- start sleep 60\nkill --signal=BLAH $p\nwait $p"
 	issues := checkSource(t, src)
 	require.Len(t, issues, 1)
 	assert.Contains(t, issues[0].Msg, `unknown signal "BLAH"`)
@@ -1003,10 +1027,10 @@ func TestCheck_KillGraceValidDurationsClean(t *testing.T) {
 	t.Parallel()
 
 	cases := []string{
-		"let p <- start sleep 60\nkill --grace=2s $p\nwait $p",
-		"let p <- start sleep 60\nkill --grace=500ms $p\nwait $p",
-		"let p <- start sleep 60\nkill --grace=0 $p\nwait $p",
-		"let p <- start sleep 60\nkill --grace=1m30s $p\nwait $p",
+		"guard p <- start sleep 60\nkill --grace=2s $p\nwait $p",
+		"guard p <- start sleep 60\nkill --grace=500ms $p\nwait $p",
+		"guard p <- start sleep 60\nkill --grace=0 $p\nwait $p",
+		"guard p <- start sleep 60\nkill --grace=1m30s $p\nwait $p",
 	}
 	for _, src := range cases {
 		t.Run(src, func(t *testing.T) {
@@ -1020,7 +1044,7 @@ func TestCheck_KillGraceValidDurationsClean(t *testing.T) {
 func TestCheck_KillGraceMalformedReported(t *testing.T) {
 	t.Parallel()
 
-	src := "let p <- start sleep 60\nkill --grace=banana $p\nwait $p"
+	src := "guard p <- start sleep 60\nkill --grace=banana $p\nwait $p"
 	issues := checkSource(t, src)
 	require.Len(t, issues, 1)
 	assert.Contains(t, issues[0].Msg, "kill --grace:")
@@ -1031,7 +1055,7 @@ func TestCheck_KindFieldAccess_JobBadField(t *testing.T) {
 
 	// 'start' produces a Job whose only sealed field is 'pid'.
 	// Any other field name on $p is statically detectable.
-	src := "let p <- start sleep 60\nprint $p.pidd\nkill $p"
+	src := "guard p <- start sleep 60\nprint $p.pidd\nkill $p"
 	issues := checkSource(t, src)
 	require.Len(t, issues, 1)
 	assert.Contains(t, issues[0].Msg, "p has kind job")
@@ -1042,7 +1066,7 @@ func TestCheck_KindFieldAccess_JobBadField(t *testing.T) {
 func TestCheck_KindFieldAccess_JobValidField(t *testing.T) {
 	t.Parallel()
 
-	src := "let p <- start sleep 60\nprint $p.pid\nkill $p"
+	src := "guard p <- start sleep 60\nprint $p.pid\nkill $p"
 	issues := checkSource(t, src)
 	assert.Empty(t, issues)
 }
@@ -1051,17 +1075,17 @@ func TestCheck_KindFieldAccess_EnvelopeBadField(t *testing.T) {
 	t.Parallel()
 
 	// An external command (here 'which') binds through the
-	// envelope path, so $bpftool.exit_code is statically
-	// detectable as a typo for $bpftool.code.
+	// envelope path, so $bpftool.code is statically
+	// detectable as a typo for $bpftool.exit_code.
 	src := `let bpftool <- which bpftool
-if $bpftool.exit_code == 0 {
+if $bpftool.code == 0 {
     print "found"
 }`
 	issues := checkSource(t, src)
 	require.Len(t, issues, 1)
 	assert.Contains(t, issues[0].Msg, "bpftool has kind result")
-	assert.Contains(t, issues[0].Msg, `"exit_code"`)
-	assert.Contains(t, issues[0].Msg, "code")
+	assert.Contains(t, issues[0].Msg, `"code"`)
+	assert.Contains(t, issues[0].Msg, "exit_code")
 }
 
 func TestCheck_KindFieldAccess_ScalarRejectsAnyField(t *testing.T) {
@@ -1102,26 +1126,21 @@ func TestCheck_KindFieldAccess_LetCopyKindFromVarRef(t *testing.T) {
 
 	// 'let q = $p' copies p's inferred kind onto q, so
 	// $q.field is checked the same way $p.field would be.
-	src := "let p <- start sleep 60\nlet q = $p\nprint $q.pidd\nkill $p"
+	src := "guard p <- start sleep 60\nlet q = $p\nprint $q.pidd\nkill $p"
 	issues := checkSource(t, src)
 	require.Len(t, issues, 1)
 	assert.Contains(t, issues[0].Msg, "q has kind job")
 }
 
-func TestCheck_KindFieldAccess_TupleRcIsEnvelope(t *testing.T) {
+func TestCheck_KindFieldAccess_LetBindOutcomeIsEnvelope(t *testing.T) {
 	t.Parallel()
 
-	// The rc slot of a tuple bind is always an envelope, so
-	// $rc.exit_code (the typo) gets the same treatment as
-	// $bpftool.exit_code did.
-	src := `let (rc prog) <- bpfman program get 42
-if $rc.exit_code == 0 {
-    print $prog
+	src := `let r <- bpfman program get 42
+if $r.exit_code == 0 {
+    print $r.value
 }`
 	issues := checkSource(t, src)
-	require.Len(t, issues, 1)
-	assert.Contains(t, issues[0].Msg, "rc has kind result")
-	assert.Contains(t, issues[0].Msg, `"exit_code"`)
+	assert.Empty(t, issues)
 }
 
 func TestCheck_KindFieldAccess_DidYouMeanSuggestion(t *testing.T) {
@@ -1129,7 +1148,7 @@ func TestCheck_KindFieldAccess_DidYouMeanSuggestion(t *testing.T) {
 
 	// A near-miss field name produces a suggestion derived
 	// through internal/strdist's nearest-string ranker.
-	src := "let p <- start sleep 60\nprint $p.pidd\nkill $p"
+	src := "guard p <- start sleep 60\nprint $p.pidd\nkill $p"
 	issues := checkSource(t, src)
 	require.Len(t, issues, 1)
 	assert.Contains(t, issues[0].Msg, "did you mean")
@@ -1139,11 +1158,11 @@ func TestCheck_KindFieldAccess_DidYouMeanSuggestion(t *testing.T) {
 func TestCheck_KindFieldAccess_NestedKindPropagation(t *testing.T) {
 	t.Parallel()
 
-	// 'let q = $r.code' inherits Scalar from the result's
-	// code field, so $q.field on q reports the scalar
+	// 'let q = $r.exit_code' inherits Scalar from the result's
+	// exit_code field, so $q.field on q reports the scalar
 	// constraint rather than silently passing.
 	src := `let r <- exec ls
-let q = $r.code
+let q = $r.exit_code
 print $q.field`
 	issues := checkSource(t, src)
 	require.Len(t, issues, 1)
@@ -1163,8 +1182,8 @@ print $xs[0].field`
 func TestCheck_ListExprShape_HomogeneousProgramElementsAreChecked(t *testing.T) {
 	t.Parallel()
 
-	src := `let p1 <- bpfman program get 1
-let p2 <- bpfman program get 2
+	src := `guard p1 <- bpfman program get 1
+guard p2 <- bpfman program get 2
 let xs = [$p1 $p2]
 print $xs[0].record.program_idd`
 	issues := checkSource(t, src)
@@ -1177,11 +1196,11 @@ func TestCheck_ListExprShape_DefReturnedHomogeneousListIsChecked(t *testing.T) {
 	t.Parallel()
 
 	src := `def progs() {
-    let p1 <- bpfman program get 1
-    let p2 <- bpfman program get 2
+    guard p1 <- bpfman program get 1
+    guard p2 <- bpfman program get 2
     return [$p1 $p2]
 }
-let xs <- progs
+guard xs <- progs
 print $xs[0].record.program_idd`
 	issues := checkSource(t, src)
 	require.Len(t, issues, 1)
@@ -1192,7 +1211,7 @@ print $xs[0].record.program_idd`
 func TestCheck_ListExprShape_MixedElementsStayOpen(t *testing.T) {
 	t.Parallel()
 
-	src := `let p <- bpfman program get 1
+	src := `guard p <- bpfman program get 1
 let r <- exec true
 let xs = [$p $r]
 print $xs[0].record.program_idd`
@@ -1203,7 +1222,7 @@ print $xs[0].record.program_idd`
 func TestCheck_RecordExprShape_FieldTypoRejected(t *testing.T) {
 	t.Parallel()
 
-	src := `let p <- bpfman program get 42
+	src := `guard p <- bpfman program get 42
 let r = record {
     prog: $p
 }
@@ -1218,7 +1237,7 @@ print $r.prgo`
 func TestCheck_RecordExprShape_NestedTypedFieldTypoRejected(t *testing.T) {
 	t.Parallel()
 
-	src := `let p <- bpfman program get 42
+	src := `guard p <- bpfman program get 42
 let r = record {
     prog: $p
 }
@@ -1233,12 +1252,12 @@ func TestCheck_RecordExprShape_DefReturnedRecordIsChecked(t *testing.T) {
 	t.Parallel()
 
 	src := `def loaded() {
-    let p <- bpfman program get 42
+    guard p <- bpfman program get 42
     return record {
         prog: $p
     }
 }
-let r <- loaded
+guard r <- loaded
 print $r.prog.record.program_idd`
 	issues := checkSource(t, src)
 	require.Len(t, issues, 1)
@@ -1369,8 +1388,8 @@ func TestCheck_RecordExprShape_ParamFieldStaysOpen(t *testing.T) {
         item: $x
     }
 }
-let p <- bpfman program get 42
-let r <- box $p
+guard p <- bpfman program get 42
+guard r <- box $p
 print $r.item.record.program_idd`
 	issues := checkSource(t, src)
 	assert.Empty(t, issues)
@@ -1380,10 +1399,10 @@ func TestCheck_DefReturnShape_ProgramFieldTypoRejected(t *testing.T) {
 	t.Parallel()
 
 	src := `def get_prog() {
-    let p <- bpfman program get 42
+    guard p <- bpfman program get 42
     return $p
 }
-let p <- get_prog
+guard p <- get_prog
 print $p.record.program_idd`
 	issues := checkSource(t, src)
 	require.Len(t, issues, 1)
@@ -1396,14 +1415,14 @@ func TestCheck_DefReturnShape_ComposedHelperUsesCalleeShape(t *testing.T) {
 	t.Parallel()
 
 	src := `def inner() {
-    let p <- bpfman program get 42
+    guard p <- bpfman program get 42
     return $p
 }
 def outer() {
-    let p <- inner
+    guard p <- inner
     return $p
 }
-let p <- outer
+guard p <- outer
 print $p.record.program_idd`
 	issues := checkSource(t, src)
 	require.Len(t, issues, 1)
@@ -1415,14 +1434,14 @@ func TestCheck_DefReturnShape_ForwardHelperUsesCalleeShape(t *testing.T) {
 	t.Parallel()
 
 	src := `def outer() {
-    let p <- inner
+    guard p <- inner
     return $p
 }
 def inner() {
-    let p <- bpfman program get 42
+    guard p <- bpfman program get 42
     return $p
 }
-let p <- outer
+guard p <- outer
 print $p.record.program_idd`
 	issues := checkSource(t, src)
 	require.Len(t, issues, 1)
@@ -1436,8 +1455,8 @@ func TestCheck_DefReturnShape_ParamPassthroughStaysOpen(t *testing.T) {
 	src := `def id(x) {
     return $x
 }
-let p <- bpfman program get 42
-let q <- id $p
+guard p <- bpfman program get 42
+guard q <- id $p
 print $q.record.program_idd`
 	issues := checkSource(t, src)
 	assert.Empty(t, issues)
@@ -1446,11 +1465,11 @@ print $q.record.program_idd`
 func TestCheck_DefReturnShape_DoesNotCaptureCallerFrame(t *testing.T) {
 	t.Parallel()
 
-	src := `let x <- bpfman program get 42
+	src := `guard x <- bpfman program get 42
 def get_x() {
     return $x
 }
-let q <- get_x
+guard q <- get_x
 print $q.record.program_idd`
 	issues := checkSource(t, src)
 	assert.Empty(t, issues)
@@ -1462,7 +1481,7 @@ func TestCheck_DefReturnShape_ScalarFieldAccessRejected(t *testing.T) {
 	src := `def seven() {
     return 7
 }
-let n <- seven
+guard n <- seven
 print $n.field`
 	issues := checkSource(t, src)
 	require.Len(t, issues, 1)
@@ -1474,14 +1493,14 @@ func TestCheck_DefReturnShape_FullIfElseSameShapeRejected(t *testing.T) {
 
 	src := `def choose(flag) {
     if $flag {
-        let p <- bpfman program get 1
+        guard p <- bpfman program get 1
         return $p
     } else {
-        let p <- bpfman program get 2
+        guard p <- bpfman program get 2
         return $p
     }
 }
-let p <- choose true
+guard p <- choose true
 print $p.record.program_idd`
 	issues := checkSource(t, src)
 	require.Len(t, issues, 1)
@@ -1494,11 +1513,11 @@ func TestCheck_DefReturnShape_PartialIfReturnStaysOpen(t *testing.T) {
 
 	src := `def choose(flag) {
     if $flag {
-        let p <- bpfman program get 1
+        guard p <- bpfman program get 1
         return $p
     }
 }
-let p <- choose true
+guard p <- choose true
 print $p.record.program_idd`
 	issues := checkSource(t, src)
 	assert.Empty(t, issues)
@@ -1509,14 +1528,14 @@ func TestCheck_DefReturnShape_MixedReturnShapesStayOpen(t *testing.T) {
 
 	src := `def choose(flag) {
     if $flag {
-        let p <- bpfman program get 1
+        guard p <- bpfman program get 1
         return $p
     } else {
         let r <- exec true
         return $r
     }
 }
-let p <- choose true
+guard p <- choose true
 print $p.record.program_idd`
 	issues := checkSource(t, src)
 	assert.Empty(t, issues)
@@ -1526,10 +1545,10 @@ func TestCheck_DefReturnShape_RecursiveReturnStaysOpen(t *testing.T) {
 	t.Parallel()
 
 	src := `def self() {
-    let p <- self
+    guard p <- self
     return $p
 }
-let p <- self
+guard p <- self
 print $p.record.program_idd`
 	issues := checkSource(t, src)
 	assert.Empty(t, issues)
@@ -1544,9 +1563,7 @@ func TestCheck_DefReturnShape_NoReturnDefStillEnvelope(t *testing.T) {
 let r <- warmup
 print $r.exit_code`
 	issues := checkSource(t, src)
-	require.Len(t, issues, 1)
-	assert.Contains(t, issues[0].Msg, "r has kind result")
-	assert.Contains(t, issues[0].Msg, `"exit_code"`)
+	assert.Empty(t, issues)
 }
 
 func TestCheck_KindFieldAccess_UnknownBindIsPermissive(t *testing.T) {

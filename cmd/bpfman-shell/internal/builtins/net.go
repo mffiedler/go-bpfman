@@ -517,10 +517,9 @@ func NetExecEnvelope(ctx context.Context, args []runtime.Arg) (runtime.Envelope,
 		return runtime.Envelope{}, fmt.Errorf("net exec: %w", err)
 	}
 	return runtime.Envelope{
-		OK:     cap.ExitCode == 0,
-		Code:   cap.ExitCode,
-		Stdout: cap.Stdout,
-		Stderr: cap.Stderr,
+		ExitCode: cap.ExitCode,
+		Stdout:   cap.Stdout,
+		Stderr:   cap.Stderr,
 	}, nil
 }
 

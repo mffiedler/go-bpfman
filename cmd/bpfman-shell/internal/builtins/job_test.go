@@ -163,8 +163,8 @@ func TestJobWait_BlocksAndCapturesEnvelope(t *testing.T) {
 		runtime.StructuredValueArg{Name: "job", Value: val},
 	})
 	require.NoError(t, err)
-	assert.True(t, env.OK, "successful exit -> ok envelope")
-	assert.Equal(t, 0, env.Code)
+	assert.True(t, env.OK(), "successful exit -> ok envelope")
+	assert.Equal(t, 0, env.ExitCode)
 	assert.Equal(t, "hello\nbye\n", env.Stdout)
 	assert.Empty(t, env.Stderr)
 	assert.True(t, job.IsManaged(), "wait must mark the job managed")
@@ -194,7 +194,7 @@ func TestJobWait_AfterAlreadyCompleted(t *testing.T) {
 		runtime.StructuredValueArg{Name: "job", Value: val},
 	})
 	require.NoError(t, err)
-	assert.True(t, env.OK)
+	assert.True(t, env.OK())
 	assert.Equal(t, "done\n", env.Stdout)
 	assert.True(t, job.IsManaged(), "wait on a completed job still marks it managed")
 }
@@ -213,8 +213,8 @@ func TestJobWait_NonZeroExitProducesNotOk(t *testing.T) {
 		runtime.StructuredValueArg{Name: "job", Value: val},
 	})
 	require.NoError(t, err)
-	assert.False(t, env.OK, "non-zero exit -> not ok")
-	assert.Equal(t, 7, env.Code)
+	assert.False(t, env.OK(), "non-zero exit -> not ok")
+	assert.Equal(t, 7, env.ExitCode)
 }
 
 func TestJobWait_ContextCancelReturnsNotOk(t *testing.T) {
@@ -240,8 +240,8 @@ func TestJobWait_ContextCancelReturnsNotOk(t *testing.T) {
 		runtime.StructuredValueArg{Name: "job", Value: val},
 	})
 	require.NoError(t, err)
-	assert.False(t, env.OK)
-	assert.Equal(t, -1, env.Code)
+	assert.False(t, env.OK())
+	assert.Equal(t, -1, env.ExitCode)
 	assert.Contains(t, env.Stderr, "context canceled")
 
 	// Tear down the still-running process so the test does
@@ -355,7 +355,7 @@ func TestJobKill_TerminatesAndMarksManaged(t *testing.T) {
 		runtime.StructuredValueArg{Name: "job", Value: val},
 	})
 	require.NoError(t, err)
-	assert.True(t, env.OK, "kill that delivered a signal is ok")
+	assert.True(t, env.OK(), "kill that delivered a signal is ok")
 	assert.True(t, job.IsManaged(), "kill marks the job managed")
 
 	waitForJob(t, job)
@@ -369,7 +369,7 @@ func TestJobKill_KilledThenWaitReportsLifecycle(t *testing.T) {
 
 	// 'ok' is tied to "exit code 0", so a killed job that did
 	// not return zero reports !ok. The lifecycle facts are
-	// carried by 'killed' and 'signal', and 'code' uses the
+	// carried by 'killed' and 'signal', and 'exit_code' uses the
 	// shell convention 128+signum for a SIGTERM kill.
 	val, err := startCall(t, []runtime.Arg{
 		runtime.WordArg{Text: "sh"},
@@ -387,10 +387,10 @@ func TestJobKill_KilledThenWaitReportsLifecycle(t *testing.T) {
 		runtime.StructuredValueArg{Name: "job", Value: val},
 	})
 	require.NoError(t, err)
-	assert.False(t, env.OK, "killed != ok; ok stays tied to exit-code-0")
+	assert.False(t, env.OK(), "killed != ok; ok stays tied to exit-code-0")
 	assert.True(t, env.Killed, "killed flag carries the lifecycle fact")
 	assert.Equal(t, "TERM", env.Signal)
-	assert.Equal(t, 128+15, env.Code, "shell convention: SIGTERM -> 143")
+	assert.Equal(t, 128+15, env.ExitCode, "shell convention: SIGTERM -> 143")
 }
 
 func TestJobKill_AlreadyExitedIsOk(t *testing.T) {
@@ -411,7 +411,7 @@ func TestJobKill_AlreadyExitedIsOk(t *testing.T) {
 		runtime.StructuredValueArg{Name: "job", Value: val},
 	})
 	require.NoError(t, err)
-	assert.True(t, env.OK, "kill against already-exited job is ok (ESRCH swallowed)")
+	assert.True(t, env.OK(), "kill against already-exited job is ok (ESRCH swallowed)")
 }
 
 func TestJobKill_SignalFlag(t *testing.T) {
@@ -442,7 +442,7 @@ func TestJobKill_SignalFlag(t *testing.T) {
 		runtime.StructuredValueArg{Name: "job", Value: val},
 	})
 	require.NoError(t, err)
-	assert.True(t, env.OK, "kill itself succeeded (signal delivered)")
+	assert.True(t, env.OK(), "kill itself succeeded (signal delivered)")
 
 	waitForJob(t, job)
 	job.Mu.Lock()
@@ -471,7 +471,7 @@ func TestJobKill_DefaultPathBlocksUntilReaped(t *testing.T) {
 		runtime.StructuredValueArg{Name: "job", Value: val},
 	})
 	require.NoError(t, err)
-	assert.True(t, env.OK)
+	assert.True(t, env.OK())
 
 	// Done must already be closed: the kill builtin returned,
 	// so the reaper has settled the job.
@@ -502,7 +502,7 @@ func TestJobKill_GraceZeroSendsKillImmediately(t *testing.T) {
 		runtime.StructuredValueArg{Name: "job", Value: val},
 	})
 	require.NoError(t, err)
-	assert.True(t, env.OK)
+	assert.True(t, env.OK())
 
 	select {
 	case <-job.Done:
@@ -554,7 +554,7 @@ func TestJobKill_CustomSignalSkipsEscalation(t *testing.T) {
 		runtime.StructuredValueArg{Name: "job", Value: val},
 	})
 	require.NoError(t, err)
-	assert.True(t, env.OK)
+	assert.True(t, env.OK())
 
 	// Reap separately, then assert Signal stayed as USR1
 	// (escalation would have rewritten to KILL).

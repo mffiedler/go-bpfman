@@ -3,5 +3,5 @@ def warmup() {
 }
 let rc <- warmup
 print $rc.ok
-print $rc.code
+print $rc.exit_code
 print after

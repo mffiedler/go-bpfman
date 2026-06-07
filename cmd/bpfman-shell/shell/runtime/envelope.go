@@ -10,13 +10,14 @@ import (
 // Envelope is the result envelope returned alongside every command
 // form. It carries execution metadata only:
 //
-//	ok      true iff the underlying command exited zero. For an
-//	        async job that was killed, ok stays false because
+//	ok      derived as exit_code == 0. For an async job that was
+//	        killed, ok stays false because
 //	        the process did not exit zero; the script
 //	        distinguishes "expected termination" from "real
 //	        failure" via the killed and signal fields.
-//	code    exit code (subprocess) or 0/1 (in-process). For a
-//	        signalled process, code is the conventional
+//	exit_code
+//	        exit code (subprocess) or 0/1 (in-process). For a
+//	        signalled process, exit_code is the conventional
 //	        128+signum (matching shell convention), so
 //	        SIGTERM yields 143, SIGUSR1 yields 138, and so on.
 //	        A trap that exits with its own status overrides
@@ -36,28 +37,34 @@ import (
 // The provider's typed payload (the primary) lives in its own
 // slot, not on the envelope. See BindResult.
 type Envelope struct {
-	OK     bool
-	Code   int
-	Stdout string
-	Stderr string
-	Killed bool
-	Signal string
-	HasPID bool
-	PID    int
+	ExitCode int
+	Stdout   string
+	Stderr   string
+	Killed   bool
+	Signal   string
+	HasPID   bool
+	PID      int
+}
+
+// OK reports whether the operation succeeded. ExitCode is the single
+// source of truth, so impossible combinations such as ok=true with
+// exit_code=5 are not representable in Go.
+func (e Envelope) OK() bool {
+	return e.ExitCode == 0
 }
 
 // ValueFromEnvelope wraps e as a Value. The Value carries e in the
 // origin slot (recoverable via Origin()) and a JSON-tree mirror in
 // the standard v slot so the path machinery resolves $r.ok,
-// $r.code, $r.stdout, $r.stderr, and $r.pid (when HasPID).
+// $r.exit_code, $r.stdout, $r.stderr, and $r.pid (when HasPID).
 func ValueFromEnvelope(e Envelope) Value {
 	mirror := map[string]any{
-		"ok":     e.OK,
-		"code":   numFromInt(e.Code),
-		"stdout": e.Stdout,
-		"stderr": e.Stderr,
-		"killed": e.Killed,
-		"signal": e.Signal,
+		"ok":        e.OK(),
+		"exit_code": numFromInt(e.ExitCode),
+		"stdout":    e.Stdout,
+		"stderr":    e.Stderr,
+		"killed":    e.Killed,
+		"signal":    e.Signal,
 	}
 	if e.HasPID {
 		mirror["pid"] = numFromInt(e.PID)
@@ -65,8 +72,67 @@ func ValueFromEnvelope(e Envelope) Value {
 	return Value{v: mirror, origin: e, kind: semantics.OriginEnvelope}
 }
 
+// ValueFromOutcome wraps the complete result of a bind-position
+// operation. It carries the envelope fields and, when the provider
+// produced a distinct primary payload, a value field preserving that
+// payload's origin for typed follow-on use.
+func ValueFromOutcome(result BindResult) Value {
+	fields := envelopeFields(result.Rc)
+	var valueOrigin any
+	if hasDistinctPrimary(result.Primary) {
+		fields["value"] = result.Primary
+		valueOrigin = result.Primary.Origin()
+	}
+	return ValueFromRecord(fields).withOrigin(outcomeOrigin{Value: valueOrigin}, semantics.OriginEnvelope)
+}
+
+// ValueFromCollectOutcome builds the aggregate result for
+// `let r <- foreach ...`. results is the authoritative
+// per-iteration list; values is the successful unwrapped payload
+// projection.
+func ValueFromCollectOutcome(ok bool, results, values []Value) Value {
+	return ValueFromRecord(map[string]Value{
+		"ok":      BoolValue(ok),
+		"results": valueList(results),
+		"values":  valueList(values),
+	}).WithKind(semantics.OriginEnvelope)
+}
+
+func envelopeFields(e Envelope) map[string]Value {
+	fields := map[string]Value{
+		"ok":        BoolValue(e.OK()),
+		"exit_code": ValueFromAny(numFromInt(e.ExitCode)).WithKind(semantics.OriginScalar),
+		"stdout":    StringValue(e.Stdout),
+		"stderr":    StringValue(e.Stderr),
+		"killed":    BoolValue(e.Killed),
+		"signal":    StringValue(e.Signal),
+	}
+	if e.HasPID {
+		fields["pid"] = ValueFromAny(numFromInt(e.PID)).WithKind(semantics.OriginScalar)
+	}
+	return fields
+}
+
+func hasDistinctPrimary(v Value) bool {
+	return !v.IsNil() && v.Kind() != semantics.OriginEnvelope
+}
+
+func valueList(values []Value) Value {
+	raw := make([]any, 0, len(values))
+	origins := make([]any, 0, len(values))
+	for _, v := range values {
+		raw = append(raw, v.Raw())
+		origins = append(origins, v.Origin())
+	}
+	return ValueFromAny(raw).withOrigin(origins, semantics.OriginUnknown)
+}
+
+type outcomeOrigin struct {
+	Value any `json:"value"`
+}
+
 // OkEnvelope returns the canonical "command succeeded with no
-// specific payload" envelope: OK=true, Code=0, no streams.
+// specific payload" envelope: ExitCode=0, no streams.
 // Used by dispatch sites that synthesize a successful outcome
 // from scratch -- a def body that ran cleanly, a poll
 // attempt that satisfied its body without retry. Sites that
@@ -75,20 +141,16 @@ func ValueFromEnvelope(e Envelope) Value {
 // directly because they have richer information than this
 // helper can express.
 func OkEnvelope() Envelope {
-	return Envelope{OK: true}
+	return Envelope{}
 }
 
 // FailEnvelope returns the canonical "command failed without a
-// more specific source" envelope: OK=false, Code=1, no
-// streams. The Code field tracks OK so an envelope is never
-// internally inconsistent (OK=false / Code=0 reads as
-// "succeeded but not ok" and confuses every renderer that
-// prints both fields). Sites that have a specific failure
-// code (a subprocess that exited non-zero, a guard-failure
-// envelope from a registered handler) build Envelope{...}
-// directly with the real code.
+// more specific source" envelope: ExitCode=1, no streams. Sites
+// that have a specific failure exit code (a subprocess that exited
+// non-zero, a guard-failure envelope from a registered handler)
+// build Envelope{...} directly with the real exit code.
 func FailEnvelope() Envelope {
-	return Envelope{OK: false, Code: 1}
+	return Envelope{ExitCode: 1}
 }
 
 // FailEnvelopeFromError returns a FailEnvelope with err's

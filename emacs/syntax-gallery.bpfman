@@ -142,29 +142,28 @@ let esc_dollar = "price=\$5"                       # literal $ without ${...}
 
 # ---- 4. Command capture with the bind sigil ----
 
-# Single-name binding captures the provider's primary result.
-# 'let' continues regardless of failure; 'guard' halts on '!ok'
-# and renders the captured envelope through a labelled formatter.
+# Single-name 'let' captures an inspectable outcome and continues
+# regardless of failure. 'guard' requires success and unwraps the
+# provider's declared value.
 let r <- ip link show
 guard one <- bpfman program list
 guard arg_after <- diff file:$a file:$b
 
-# Tuple binding captures the result envelope and the primary
-# separately. Only legal on '<-'; '=' stays single-name. The
-# primary of a 'bpfman program load' is a {programs: [...]}
-# wrapper; downstream code reads the first (or only) program
-# through `.programs[0]`.
-guard (rc loaded) <- bpfman program load file --path ./foo.o --programs xdp:pass
+# A typed operation captured with 'let' exposes its conditional
+# payload through `.value`; a guarded bind unwraps it directly.
+let loaded_result <- bpfman program load file --path ./foo.o --programs xdp:pass
+require $loaded_result.ok
+let loaded = $loaded_result.value
 let prog = $loaded.programs[0]
-let (rc2 _) <- ip link del veth-host
+let rc2 <- ip link del veth-host
 
-# '_' discards a slot. The single-name discard form is the
-# "run, ignore result, continue regardless" idiom for cleanup.
+# '_' is the "run, ignore result, continue regardless" idiom for
+# cleanup.
 let _ <- ip link del bpfman-demo
 guard _ <- ip netns add bpfman-test
 
-# Bind-collect runs a foreach body and collects the last command's
-# primary result for each iteration.
+# Bind-collect runs a foreach body and returns an aggregate outcome:
+# per-iteration results plus the filtered successful values.
 let collected <- foreach id in $ids {
     print $id
 }
@@ -289,7 +288,7 @@ let parsed = jq "." '{"name":"xdp_pass","id":42}'
 jq "." '{"a":1}'     # bare form prints the parsed value
 
 let data     = hello
-let tmp_path <- file temp $data
+guard tmp_path <- file temp $data
 cat file:$data
 cat file:$parsed.name
 

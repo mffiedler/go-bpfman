@@ -1,4 +1,4 @@
-let d <- tempdir predicate-workflow
+guard d <- tempdir predicate-workflow
 defer exec rm -rf $d.path
 
 let present = "${d.path}/payload.txt"

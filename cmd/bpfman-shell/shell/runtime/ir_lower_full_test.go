@@ -141,7 +141,7 @@ func TestLower_bindCollect(t *testing.T) {
 		t.Fatalf("Lower: %v", err)
 	}
 	got := dumpLoweredString(t, lp)
-	mustContain(t, got, "ForEachCollect list=t0 names=[p] primary=xs rc=_ guard=false")
+	mustContain(t, got, "ForEachCollect list=t0 names=[p] target=xs guard=false")
 	mustContain(t, got, "CollectProduce")
 }
 

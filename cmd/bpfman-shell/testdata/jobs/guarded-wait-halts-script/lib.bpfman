@@ -1,4 +1,4 @@
 def spawn_bad() {
-  let p <- start sh -c "exit 7"
+  guard p <- start sh -c "exit 7"
   return $p
 }

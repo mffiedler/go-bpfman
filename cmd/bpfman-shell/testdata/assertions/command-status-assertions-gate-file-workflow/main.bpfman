@@ -1,4 +1,4 @@
-let d <- tempdir status-assertions
+guard d <- tempdir status-assertions
 defer exec rm -rf $d.path
 
 let probe = "${d.path}/probe.txt"

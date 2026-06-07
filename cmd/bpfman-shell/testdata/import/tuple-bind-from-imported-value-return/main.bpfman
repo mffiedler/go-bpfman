@@ -1,4 +1,4 @@
 import ./lib.bpfman
-let (rc p) <- f
-print $rc.ok
-print $p
+let r <- f
+print $r.ok
+print $r.value

@@ -1,4 +1,4 @@
 def spawn() {
-  let p <- start sleep 60
+  guard p <- start sleep 60
   return $p
 }

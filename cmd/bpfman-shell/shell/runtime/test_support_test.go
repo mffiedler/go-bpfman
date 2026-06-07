@@ -48,11 +48,11 @@ func cloneFailureSchedule(in map[string]int) map[string]int {
 func scriptedCommandEnvelope(head string) Envelope {
 	switch head {
 	case "probe":
-		return Envelope{OK: false, Code: 17, Stdout: "probe-stdout", Stderr: "probe-stderr"}
+		return Envelope{ExitCode: 17, Stdout: "probe-stdout", Stderr: "probe-stderr"}
 	case "cleanup":
-		return Envelope{OK: false, Code: 29, Stdout: "cleanup-stdout", Stderr: "cleanup-stderr"}
+		return Envelope{ExitCode: 29, Stdout: "cleanup-stdout", Stderr: "cleanup-stderr"}
 	default:
-		return Envelope{OK: false, Code: 1, Stderr: head + "-stderr"}
+		return Envelope{ExitCode: 1, Stderr: head + "-stderr"}
 	}
 }
 

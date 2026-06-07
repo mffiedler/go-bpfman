@@ -292,11 +292,10 @@ outer
 	assert.Equal(t, []string{"after-outer"}, calls[2])
 }
 
-// Bind-position tests pin the value-returning contract: a def
-// callable on the right of '<-' publishes its return Value as the
-// primary, defer failures during return-unwind flip Rc.OK, and
-// the existing bind-target shapes (single name, tuple, guard,
-// discard) work uniformly across def-dispatch and ExecBind.
+// Bind-position tests pin the value-returning contract: guard
+// publishes a def's return Value as the unwrapped primary, let keeps
+// the inspectable outcome, and defer failures during return-unwind
+// mark Rc failed.
 
 // bindEnv builds an Env for tests that exercise the bind path:
 // the recorder captures every ExecBind call so a non-def-dispatch
@@ -314,18 +313,18 @@ func bindEnv(r *recorder) *Env {
 	}
 }
 
-func TestExecSource_Return_BindCarriesPrimary(t *testing.T) {
+func TestExecSource_Return_GuardCarriesPrimary(t *testing.T) {
 	t.Parallel()
 	r := &recorder{}
 	env := bindEnv(r)
 	src := `
 def f() { return 7 }
-let v <- f
+guard v <- f
 seen $v
 `
 	require.NoError(t, runProgramWithEnv(t, src, env))
 	v, ok := env.Session.Get("v")
-	require.True(t, ok, "single-name bind must set v")
+	require.True(t, ok, "guard bind must set v")
 	got, err := v.Scalar()
 	require.NoError(t, err)
 	assert.Equal(t, "7", got)
@@ -337,7 +336,7 @@ func TestExecSource_Return_BindFromParameter(t *testing.T) {
 	env := bindEnv(r)
 	src := `
 def echo(x) { return $x }
-let v <- echo "hello"
+guard v <- echo "hello"
 `
 	require.NoError(t, runProgramWithEnv(t, src, env))
 	v, ok := env.Session.Get("v")
@@ -352,7 +351,7 @@ func TestExecSource_Return_BindReturnsList(t *testing.T) {
 	env := bindEnv(r)
 	src := `
 def triple() { return [1 2 3] }
-let xs <- triple
+guard xs <- triple
 `
 	require.NoError(t, runProgramWithEnv(t, src, env))
 	xs, ok := env.Session.Get("xs")
@@ -371,7 +370,7 @@ func TestExecSource_Return_BindIntoListThenDestructure(t *testing.T) {
 	env := bindEnv(r)
 	src := `
 def pair() { return [left right] }
-let p <- pair
+guard p <- pair
 let (a b) = $p
 seen $a $b
 `
@@ -384,22 +383,22 @@ seen $a $b
 	assert.Equal(t, "right", gb)
 }
 
-func TestExecSource_Return_TupleBindSetsBothSlots(t *testing.T) {
+func TestExecSource_Return_LetBindSetsOutcomeAndValue(t *testing.T) {
 	t.Parallel()
 	r := &recorder{}
 	env := bindEnv(r)
 	src := `
 def f() { return "primary-value" }
-let (rc p) <- f
+let r <- f
 `
 	require.NoError(t, runProgramWithEnv(t, src, env))
-	rc, ok := env.Session.Get("rc")
+	got, ok := env.Session.Get("r")
 	require.True(t, ok)
-	rawRc, ok := rc.Raw().(map[string]any)
+	raw, ok := got.Raw().(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, true, rawRc["ok"], "Rc.OK true for a clean return")
-	p, ok := env.Session.Get("p")
-	require.True(t, ok)
+	assert.Equal(t, true, raw["ok"], "outcome is ok for a clean return")
+	p, err := got.LookupValue("r", "value")
+	require.NoError(t, err)
 	gp, err := p.Scalar()
 	require.NoError(t, err)
 	assert.Equal(t, "primary-value", gp)
@@ -458,18 +457,17 @@ let _ <- f
 func TestExecSource_Return_DeferFailureFlipsRcOk(t *testing.T) {
 	t.Parallel()
 	// A defer that fires inside the def body and returns non-ok
-	// must flip the bind-position Rc.OK to false even though
-	// `return EXPR` itself evaluated cleanly. The Primary
-	// remains the returned Value -- the single-name bind family
-	// discards the envelope, so the script sees the value; the
-	// tuple bind sees ok:false on rc.
+	// must mark the bind-position Rc failed even though
+	// `return EXPR` itself evaluated cleanly. The outcome exposes
+	// the failed envelope while .value still carries the returned
+	// payload.
 	r := &recorder{rc: func(args []Arg) Envelope {
 		if len(args) > 0 {
 			if w, ok := args[0].(WordArg); ok && w.Text == "cleanup" {
-				return Envelope{OK: false, Code: 1}
+				return Envelope{ExitCode: 1}
 			}
 		}
-		return Envelope{OK: true}
+		return Envelope{}
 	}}
 	env := bindEnv(r)
 	// RenderDeferFailure is required so the defer dispatcher
@@ -482,25 +480,26 @@ def f() {
   defer cleanup "kaboom"
   return 1
 }
-let (rc p) <- f
+let r <- f
 `
 	require.NoError(t, runProgramWithEnv(t, src, env))
-	rc, ok := env.Session.Get("rc")
+	got, ok := env.Session.Get("r")
 	require.True(t, ok)
-	rawRc, ok := rc.Raw().(map[string]any)
+	raw, ok := got.Raw().(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, false, rawRc["ok"], "defer failure during return unwind must flip rc.ok")
-	// rc.code must be non-zero when rc.ok is false; an
-	// envelope with ok=false / code=0 is internally
+	assert.Equal(t, false, raw["ok"], "defer failure during return unwind must flip outcome ok")
+	// outcome.exit_code must be non-zero when outcome.ok is false; an
+	// envelope with ok=false / exit_code=0 is internally
 	// inconsistent and confuses the guard-failure renderer
 	// (which prints "exit: 0" for what was actually a
 	// failed call).
-	codeStr := fmt.Sprint(rawRc["code"])
-	assert.NotEqual(t, "0", codeStr, "rc.code must be non-zero alongside rc.ok=false")
-	p, _ := env.Session.Get("p")
+	exitCodeStr := fmt.Sprint(raw["exit_code"])
+	assert.NotEqual(t, "0", exitCodeStr, "outcome exit_code must be non-zero alongside ok=false")
+	p, err := got.LookupValue("r", "value")
+	require.NoError(t, err)
 	gp, err := p.Scalar()
 	require.NoError(t, err)
-	assert.Equal(t, "1", gp, "primary still carries the returned value")
+	assert.Equal(t, "1", gp, "value still carries the returned payload")
 }
 
 func TestExecSource_Return_GuardHaltsOnDeferFailure(t *testing.T) {
@@ -511,10 +510,10 @@ func TestExecSource_Return_GuardHaltsOnDeferFailure(t *testing.T) {
 	r := &recorder{rc: func(args []Arg) Envelope {
 		if len(args) > 0 {
 			if w, ok := args[0].(WordArg); ok && w.Text == "cleanup" {
-				return Envelope{OK: false, Code: 1}
+				return Envelope{ExitCode: 1}
 			}
 		}
-		return Envelope{OK: true}
+		return Envelope{}
 	}}
 	env := bindEnv(r)
 	env.RenderDeferFailure = func(source.Pos, []Arg, Envelope) {}
@@ -531,14 +530,14 @@ after $p
 	require.Error(t, err)
 	var gf *GuardFailure
 	require.True(t, errors.As(err, &gf), "expected GuardFailure, got %T: %v", err, err)
-	assert.False(t, gf.Envelope.OK)
-	// The guard-failure envelope must carry a non-zero code
+	assert.False(t, gf.Envelope.OK())
+	// The guard-failure envelope must carry a non-zero exit code
 	// when rc.ok is false. The driver-side
-	// RenderEnvelopeFailure block prints "exit: <code>", so a
-	// code of 0 alongside ok=false reads as a successful exit
+	// RenderEnvelopeFailure block prints "exit: <exit_code>", so a
+	// exit_code of 0 alongside ok=false reads as a successful exit
 	// in the rendered diagnostic -- internally inconsistent
 	// and actively misleading.
-	assert.NotZero(t, gf.Envelope.Code, "guard envelope's code must be non-zero on failure")
+	assert.NotZero(t, gf.Envelope.ExitCode, "guard envelope's exit_code must be non-zero on failure")
 }
 
 func TestExecSource_Return_RecursiveValueReturn(t *testing.T) {
@@ -562,10 +561,10 @@ def chain(depth) {
   if $depth == "stop" {
     return "base"
   }
-  let next <- chain stop
+  guard next <- chain stop
   return "wrap:${next}"
 }
-let v <- chain go
+guard v <- chain go
 `
 	require.NoError(t, runProgramWithEnv(t, src, env))
 	v, ok := env.Session.Get("v")
@@ -846,7 +845,7 @@ func TestCheck_Return_TopLevelDefStillRegistered(t *testing.T) {
 def visible() {
   return "v"
 }
-let p <- visible
+guard p <- visible
 print $p
 `
 	issues := checkSource(t, src)
@@ -1014,7 +1013,7 @@ let a <- echo "first"
 			return Value{}, nil
 		},
 		ExecBind: func([]Arg, source.Span) (BindResult, error) {
-			return BindResult{Rc: Envelope{OK: true}}, nil
+			return BindResult{Rc: Envelope{}}, nil
 		},
 	}
 	err := execParsedProgram(t, prog, env)
@@ -1046,7 +1045,7 @@ func TestExecSource_Return_DeepChainCallSiteIsInnermost(t *testing.T) {
 		Session:     s,
 		ExecCommand: func([]Arg, source.Span) (Value, error) { return Value{}, nil },
 		ExecBind: func([]Arg, source.Span) (BindResult, error) {
-			return BindResult{Rc: Envelope{OK: true}}, nil
+			return BindResult{Rc: Envelope{}}, nil
 		},
 	}
 
@@ -1091,7 +1090,7 @@ func TestExecSource_Return_CallSiteAtEmbeddedTopLevel(t *testing.T) {
 		Session:     NewSession(),
 		ExecCommand: func([]Arg, source.Span) (Value, error) { return Value{}, nil },
 		ExecBind: func([]Arg, source.Span) (BindResult, error) {
-			return BindResult{Rc: Envelope{OK: true}}, nil
+			return BindResult{Rc: Envelope{}}, nil
 		},
 	}
 	err := execParsedProgram(t, prog, env)
@@ -1104,7 +1103,7 @@ func TestExecSource_Return_CallSiteAtEmbeddedTopLevel(t *testing.T) {
 // Regression: the static checker must treat a parameter-dependent
 // def return as an open-shape source, not as a result envelope.
 // The Envelope shape is sealed -- its fields are
-// ok/code/stdout/stderr/... -- so a field name like `.id` that
+// ok/exit_code/stdout/stderr/... -- so a field name like `.id` that
 // does not exist there gets rejected at preflight when the
 // primary is mis-shaped as an envelope. Parameter passthrough is
 // still dynamic under monomorphic return-shape inference, so the
@@ -1115,7 +1114,7 @@ func TestCheck_Return_BindFromDef_UnknownShapeAllowsFieldAccess(t *testing.T) {
 def load_prog(x) {
   return $x
 }
-let p <- load_prog hello
+guard p <- load_prog hello
 print $p.id
 `
 	issues := checkSource(t, src)
@@ -1134,10 +1133,10 @@ def chain(depth) {
   if $depth == "stop" {
     return "base"
   }
-  let next <- chain stop
+  guard next <- chain stop
   return ${next}
 }
-let v <- chain go
+guard v <- chain go
 print $v.field
 `
 	issues := checkSource(t, src)
@@ -1188,11 +1187,11 @@ let v <- range
 	assert.Empty(t, issues, "a def shadowing a pure builtin must not trip the pure-builtin <- rejection")
 }
 
-// Regression: a defer-failure flip on the bind-position Rc.OK
+// Regression: a defer-failure flip on the bind-position outcome
 // must reflect the def's OWN cleanup outcome, not the session-
 // wide counter. An inner def whose defer fails -- invoked as a
 // command form and discarding its own rc -- must not cause the
-// outer def's `let (rc p) <- outer` to land with rc.ok = false.
+// outer def's `let r <- outer` to land with r.ok = false.
 // The contract is def-local cleanup; nested defer failures must
 // not leak across call boundaries.
 func TestExecSource_Return_NestedDeferFailureDoesNotLeak(t *testing.T) {
@@ -1200,10 +1199,10 @@ func TestExecSource_Return_NestedDeferFailureDoesNotLeak(t *testing.T) {
 	r := &recorder{rc: func(args []Arg) Envelope {
 		if len(args) > 0 {
 			if w, ok := args[0].(WordArg); ok && w.Text == "cleanup_inner" {
-				return Envelope{OK: false, Code: 1}
+				return Envelope{ExitCode: 1}
 			}
 		}
-		return Envelope{OK: true}
+		return Envelope{}
 	}}
 	env := bindEnv(r)
 	env.RenderDeferFailure = func(source.Pos, []Arg, Envelope) {}
@@ -1215,12 +1214,12 @@ def outer() {
   inner
   return 1
 }
-let (rc p) <- outer
+let r <- outer
 `
 	require.NoError(t, runProgramWithEnv(t, src, env))
-	rc, ok := env.Session.Get("rc")
+	rc, ok := env.Session.Get("r")
 	require.True(t, ok)
 	rawRc, ok := rc.Raw().(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, true, rawRc["ok"], "outer's rc.ok must reflect outer's OWN cleanup, not the inner def's defer failure")
+	assert.Equal(t, true, rawRc["ok"], "outer's r.ok must reflect outer's OWN cleanup, not the inner def's defer failure")
 }

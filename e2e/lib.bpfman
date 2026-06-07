@@ -118,7 +118,7 @@ def await_wave_completion(ack n) {
 # We count via `[<filter>] | length` rather than testing `assert null
 # (<filter>)`: a bare `select(...)` that matches nothing yields jq's
 # empty stream, which the DSL binds as the command-result envelope
-# (ok/code/stdout/stderr) rather than as null. Wrapping the filter in
+# (ok/exit_code/stdout/stderr) rather than as null. Wrapping the filter in
 # `[...]` collapses the stream to a single array and `| length`
 # collapses that to a single number, so the bind always sees one value
 # regardless of how many entries matched.

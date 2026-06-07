@@ -89,7 +89,7 @@ func TestParse_LineContinuation(t *testing.T) {
 		require.NoError(t, err)
 		bind, ok := firstStmt(t, prog).(*BindStmt)
 		require.True(t, ok)
-		assert.Equal(t, "p", bind.Primary.Text)
+		assert.Equal(t, "p", bind.Target.Text)
 		require.NotNil(t, bind.Cmd)
 		require.Len(t, bind.Cmd.Args, 3)
 	})
@@ -295,8 +295,7 @@ func TestParse_LetBindSingle(t *testing.T) {
 	require.NoError(t, err)
 	bind, ok := firstStmt(t, prog).(*BindStmt)
 	require.True(t, ok, "expected BindStmt, got %T", firstStmt(t, prog))
-	assert.Equal(t, "r", bind.Primary.Text)
-	assert.Equal(t, "", bind.Rc.Text, "single-name bind must leave Rc empty")
+	assert.Equal(t, "r", bind.Target.Text)
 	assert.False(t, bind.Guard, "let bind must not set Guard")
 	require.NotNil(t, bind.Cmd)
 	require.Len(t, bind.Cmd.Args, 2)
@@ -312,8 +311,7 @@ func TestParse_GuardBindSingle(t *testing.T) {
 	require.NoError(t, err)
 	bind, ok := firstStmt(t, prog).(*BindStmt)
 	require.True(t, ok, "expected BindStmt, got %T", firstStmt(t, prog))
-	assert.Equal(t, "prog", bind.Primary.Text)
-	assert.Equal(t, "", bind.Rc.Text)
+	assert.Equal(t, "prog", bind.Target.Text)
 	assert.True(t, bind.Guard, "guard bind must set Guard")
 	require.NotNil(t, bind.Cmd)
 	require.Len(t, bind.Cmd.Args, 4)
@@ -322,39 +320,28 @@ func TestParse_GuardBindSingle(t *testing.T) {
 	assert.Equal(t, "pid", ref.Name)
 }
 
-func TestParse_LetBindTuple(t *testing.T) {
+func TestParse_LetBindTupleRejected(t *testing.T) {
 	t.Parallel()
 
-	prog, err := parseSource(t, "let (rc prog) <- bpfman program get $pid")
-	require.NoError(t, err)
-	bind, ok := firstStmt(t, prog).(*BindStmt)
-	require.True(t, ok, "expected BindStmt, got %T", firstStmt(t, prog))
-	assert.Equal(t, "rc", bind.Rc.Text)
-	assert.Equal(t, "prog", bind.Primary.Text)
-	assert.False(t, bind.Guard)
+	_, err := parseSource(t, "let (rc prog) <- bpfman program get $pid")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "tuple bind after '<-' is no longer supported")
 }
 
-func TestParse_GuardBindTuple(t *testing.T) {
+func TestParse_GuardBindTupleRejected(t *testing.T) {
 	t.Parallel()
 
-	prog, err := parseSource(t, "guard (rc prog) <- bpfman program get $pid")
-	require.NoError(t, err)
-	bind, ok := firstStmt(t, prog).(*BindStmt)
-	require.True(t, ok)
-	assert.Equal(t, "rc", bind.Rc.Text)
-	assert.Equal(t, "prog", bind.Primary.Text)
-	assert.True(t, bind.Guard)
+	_, err := parseSource(t, "guard (rc prog) <- bpfman program get $pid")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "tuple bind after '<-' is no longer supported")
 }
 
-func TestParse_BindTupleDiscard(t *testing.T) {
+func TestParse_BindTupleDiscardRejected(t *testing.T) {
 	t.Parallel()
 
-	prog, err := parseSource(t, "let (_ prog) <- bpfman program get $pid")
-	require.NoError(t, err)
-	bind, ok := firstStmt(t, prog).(*BindStmt)
-	require.True(t, ok)
-	assert.Equal(t, "_", bind.Rc.Text, "underscore must round-trip in the AST")
-	assert.Equal(t, "prog", bind.Primary.Text)
+	_, err := parseSource(t, "let (_ prog) <- bpfman program get $pid")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "tuple bind after '<-' is no longer supported")
 }
 
 func TestParse_LetDestructure(t *testing.T) {
@@ -400,14 +387,14 @@ func TestParse_BindErrors(t *testing.T) {
 		{"guard without name", "guard <- foo", "guard requires"},
 		{"chained bind sigils rejected", "let x <- foo <- bar", "unexpected '<-' on bind RHS"},
 		{"assign inside bind RHS rejected", "let x <- foo = bar", "unexpected '=' on bind RHS"},
-		{"tuple discard both rejected", "let (_ _) <- foo", "cannot discard both slots"},
+		{"tuple discard both rejected", "let (_ _) <- foo", "tuple bind after '<-' is no longer supported"},
 		{"tuple comma rejected", "let (rc, prog) <- foo", "comma is not a separator"},
 		{"tuple trailing comma rejected", "let (rc prog,) <- foo", "comma is not a separator"},
 		{"tuple missing close paren", "let (rc prog <- foo", "expected name"},
 		{"single-name parens rejected at let", "let (x) = $foo", "requires at least two names"},
-		{"three-slot bind tuple rejected", "let (a b c) <- foo", "expects exactly two names"},
-		{"single-name parens rejected at guard", "guard (x) <- foo", "requires at least two names"},
-		{"three-slot guard tuple rejected", "guard (a b c) <- foo", "expects exactly two names"},
+		{"three-slot bind tuple rejected", "let (a b c) <- foo", "tuple bind after '<-' is no longer supported"},
+		{"single-name parens rejected at guard", "guard (x) <- foo", "tuple bind after '<-' is no longer supported"},
+		{"three-slot guard tuple rejected", "guard (a b c) <- foo", "tuple bind after '<-' is no longer supported"},
 		{"all-underscore destructure rejected", "let (_ _) = $xs", "at least one must bind"},
 	}
 	for _, tc := range cases {

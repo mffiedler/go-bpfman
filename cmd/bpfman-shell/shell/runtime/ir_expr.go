@@ -96,11 +96,11 @@ func evalExpr(expr ir.Expr, env *Env) (Value, error) {
 		if err != nil {
 			return Value{}, syntax.FrameAt(threadSpan, err)
 		}
-		if !result.Rc.OK {
+		if !result.Rc.OK() {
 			if result.Rc.Stderr != "" {
-				return Value{}, syntax.SpanErrorf(threadSpan, "thread: command failed (exit %d): %s", result.Rc.Code, result.Rc.Stderr)
+				return Value{}, syntax.SpanErrorf(threadSpan, "thread: command failed (exit %d): %s", result.Rc.ExitCode, result.Rc.Stderr)
 			}
-			return Value{}, syntax.SpanErrorf(threadSpan, "thread: command failed (exit %d)", result.Rc.Code)
+			return Value{}, syntax.SpanErrorf(threadSpan, "thread: command failed (exit %d)", result.Rc.ExitCode)
 		}
 		return result.Primary, nil
 	case *ir.BinaryExpr:
@@ -210,11 +210,11 @@ func evalExpr(expr ir.Expr, env *Env) (Value, error) {
 		if err != nil {
 			return Value{}, syntax.FrameAt(e.Span, err)
 		}
-		if !result.Rc.OK {
+		if !result.Rc.OK() {
 			if result.Rc.Stderr != "" {
 				return Value{}, syntax.SpanErrorf(e.Span, "%s: %s", e.Name, result.Rc.Stderr)
 			}
-			return Value{}, syntax.SpanErrorf(e.Span, "%s: call failed (exit %d)", e.Name, result.Rc.Code)
+			return Value{}, syntax.SpanErrorf(e.Span, "%s: call failed (exit %d)", e.Name, result.Rc.ExitCode)
 		}
 		return result.Primary, nil
 	case *ir.MatchesExpr:

@@ -632,12 +632,11 @@ func (l *lowerer) lowerBindCmd(s *syntax.BindStmt) error {
 	})
 
 	apply := &ir.ApplyBind{
-		Src:     result,
-		Argv:    argv,
-		Primary: s.Primary.Text,
-		Rc:      s.Rc.Text,
-		Guard:   s.Guard,
-		Span:    s.Span,
+		Src:    result,
+		Argv:   argv,
+		Target: s.Target.Text,
+		Guard:  s.Guard,
+		Span:   s.Span,
 	}
 	if s.Guard {
 		apply.OnFail = l.buildGuardFailBlock(s.Span, result)
@@ -673,8 +672,8 @@ func (l *lowerer) buildGuardFailBlock(sp source.Span, last ir.Temp) *ir.BasicBlo
 // lowerBindCollect lowers bind-collect: the body iterates the
 // list, the body's final syntax.CommandStmt dispatches in bind
 // position, and the per-iteration result is collected via a
-// ir.CollectProduce terminator. The interpreter accumulates
-// primary and rc according to the ir.ForEachCollect's policy.
+// ir.CollectProduce terminator. The interpreter binds either
+// collected values (guard) or an aggregate outcome (let).
 func (l *lowerer) lowerBindCollect(s *syntax.BindStmt) error {
 	fe := s.Collect
 	if len(fe.Body) == 0 {
@@ -693,13 +692,12 @@ func (l *lowerer) lowerBindCollect(s *syntax.BindStmt) error {
 	body := l.newBlock(fe.Span)
 	exit := l.newBlock(fe.Span)
 	l.emit(&ir.ForEachCollect{
-		List:    listTemp,
-		Names:   identTexts(fe.Names),
-		Primary: s.Primary.Text,
-		Rc:      s.Rc.Text,
-		Guard:   s.Guard,
-		Body:    body,
-		Exit:    exit,
+		List:   listTemp,
+		Names:  identTexts(fe.Names),
+		Target: s.Target.Text,
+		Guard:  s.Guard,
+		Body:   body,
+		Exit:   exit,
 		// Use the inner foreach's span so a "bind-collect: list
 		// expression is null" error frames at the same column
 		// the tree walker's evalBindCollect uses (fe.Span,
@@ -776,18 +774,7 @@ func bindTraceHeader(s *syntax.BindStmt) string {
 	if s.Guard {
 		verb = "guard"
 	}
-	rc := s.Rc.Text
-	primary := s.Primary.Text
-	switch {
-	case rc != "" && primary != "":
-		return fmt.Sprintf("%s (%s %s)", verb, named(rc), named(primary))
-	case primary != "":
-		return fmt.Sprintf("%s %s", verb, named(primary))
-	case rc != "":
-		return fmt.Sprintf("%s %s", verb, named(rc))
-	default:
-		return verb + " _"
-	}
+	return fmt.Sprintf("%s %s", verb, named(s.Target.Text))
 }
 
 func named(s string) string {

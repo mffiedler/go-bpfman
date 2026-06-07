@@ -1,5 +1,5 @@
 import ./lib.bpfman
-let xs <- foreach n in [1 2 3] {
+guard xs <- foreach n in [1 2 3] {
   square $n
 }
 foreach x in $xs {

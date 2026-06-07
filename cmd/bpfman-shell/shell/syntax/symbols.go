@@ -71,8 +71,7 @@ func (w symbolWalker) walkStmt(st Stmt, scope source.Span) {
 			w.emit(name, SymbolDestructure, scope)
 		}
 	case *BindStmt:
-		w.emit(n.Primary, SymbolBind, scope)
-		w.emit(n.Rc, SymbolBindRC, scope)
+		w.emit(n.Target, SymbolBind, scope)
 		if n.Collect != nil {
 			w.walkForEach(n.Collect)
 		}
