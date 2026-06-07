@@ -46,6 +46,7 @@ type CLI struct {
 	Fmt         bool     `name:"fmt" help:"Format input as canonical bpfman-shell source and print it to stdout; do not evaluate."`
 	FmtWrite    bool     `name:"write" short:"w" help:"Write formatted output back to the script file when used with fmt."`
 	Lowered     bool     `name:"lowered" help:"Parse input, lower it to the canonical IR, and print the lowered form to stdout; do not evaluate."`
+	Symbols     bool     `name:"symbols" help:"Parse input and print a JSON symbol table for editor tooling; do not evaluate."`
 	ListScripts bool     `name:"list-scripts" help:"Print script paths whose header labels match --selector; does not run scripts or open bpfman state."`
 	Selector    string   `name:"selector" help:"Kubernetes-style label selector for --list-scripts, for example 'program in (tc,xdp),external'."`
 	Trace       bool     `name:"trace" short:"x" help:"Trace each statement to stderr with interpolations resolved, like bash -x. Equivalent to running 'trace on' at script start; toggle with 'trace on' / 'trace off' from within a session."`
@@ -62,10 +63,10 @@ func NewCLI() (*CLI, error) {
 	c.DefaultWriters()
 
 	// Initialise logger eagerly. Skip for --check, --ast,
-	// --lowered, and --version, which do no I/O against the
+	// --lowered, --symbols, and --version, which do no I/O against the
 	// manager and must be runnable without access to the system
 	// config file.
-	if !c.Check && !c.AST && !c.Fmt && !c.FmtWrite && !c.Lowered && !c.ListScripts && !c.Version {
+	if !c.Check && !c.AST && !c.Fmt && !c.FmtWrite && !c.Lowered && !c.Symbols && !c.ListScripts && !c.Version {
 		if err := c.InitLogger(); err != nil {
 			return nil, fmt.Errorf("create logger: %w", err)
 		}
@@ -184,6 +185,22 @@ func (c *CLI) runLowered() error {
 	return nil
 }
 
+// runSymbols drives the --symbols pipeline: slurp the whole input,
+// render the visible symbol table as JSON, and exit.
+func (c *CLI) runSymbols() error {
+	reader, err := c.openInputReader()
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+
+	file := c.inputFileLabel()
+	if driver.SymbolsInput(reader, c.Out, c.Err, file) {
+		return driver.ErrSilent
+	}
+	return nil
+}
+
 // runFmt drives the fmt pipeline: parse one input file (or stdin),
 // render the canonical source form, and either print it or write it
 // back to the named script.
@@ -222,7 +239,7 @@ func (c *CLI) runFmt() error {
 }
 
 // Run is the CLI's top-level entry. With --check / --ast /
-// --lowered it short-circuits to those parse-only pipelines;
+// --lowered / --symbols it short-circuits to those parse-only pipelines;
 // otherwise it opens the manager, builds a script-runner
 // config, and delegates to driver.Run.
 func (c *CLI) Run(ctx context.Context) error {
@@ -246,6 +263,9 @@ func (c *CLI) Run(ctx context.Context) error {
 	}
 	if c.Lowered {
 		return c.runLowered()
+	}
+	if c.Symbols {
+		return c.runSymbols()
 	}
 	mgr, cleanup, err := c.NewManagerWithPuller(ctx)
 	if err != nil {

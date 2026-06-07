@@ -30,7 +30,8 @@ func TestDumpAST_LetWithLiteral(t *testing.T) {
 	assert.Contains(t, out, "Program {")
 	assert.Contains(t, out, "Stmts: []syntax.Stmt (len = 1)")
 	assert.Contains(t, out, "LetStmt {")
-	assert.Contains(t, out, `Name: "x"`)
+	assert.Contains(t, out, "Name: Ident {")
+	assert.Contains(t, out, `Text: "x"`)
 	assert.Contains(t, out, "LiteralExpr {")
 	assert.Contains(t, out, `Text: "42"`)
 }

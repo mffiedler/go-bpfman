@@ -133,11 +133,11 @@ func isBlockStmt(st Stmt) bool {
 func (f *sourceFormatter) writeStmt(st Stmt, indent int) {
 	switch v := st.(type) {
 	case *LetStmt:
-		fmt.Fprintf(&f.b, "let %s = ", v.Name)
+		fmt.Fprintf(&f.b, "let %s = ", v.Name.Text)
 		f.writeExprIndented(v.RHS, indent)
 	case *LetDestructureStmt:
 		f.b.WriteString("let (")
-		f.b.WriteString(strings.Join(v.Names, " "))
+		f.b.WriteString(joinIdentTexts(v.Names))
 		f.b.WriteString(") = ")
 		f.writeExprIndented(v.RHS, indent)
 	case *BindStmt:
@@ -177,8 +177,8 @@ func (f *sourceFormatter) writeStmt(st Stmt, indent int) {
 			f.writeExpr(v.Unless)
 		}
 	case *DefStmt:
-		fmt.Fprintf(&f.b, "def %s(", v.Name)
-		f.b.WriteString(strings.Join(v.Params, " "))
+		fmt.Fprintf(&f.b, "def %s(", v.Name.Text)
+		f.b.WriteString(joinIdentTexts(v.Params))
 		f.b.WriteString(") {\n")
 		f.writeStmts(v.Body, indent+1)
 		f.writeIndent(indent)
@@ -278,16 +278,16 @@ func (f *sourceFormatter) writePollStmtSource(v *PollStmt, indent int) {
 
 func (f *sourceFormatter) writeDefStmtSource(v *DefStmt, indent int) {
 	if v.Pos.Line == v.End.Line {
-		fmt.Fprintf(&f.b, "def %s(", v.Name)
-		f.b.WriteString(strings.Join(v.Params, " "))
+		fmt.Fprintf(&f.b, "def %s(", v.Name.Text)
+		f.b.WriteString(joinIdentTexts(v.Params))
 		f.b.WriteString(") {\n")
 		f.writeStmts(v.Body, indent+1)
 		f.writeIndent(indent)
 		f.b.WriteByte('}')
 		return
 	}
-	fmt.Fprintf(&f.b, "def %s(", v.Name)
-	f.b.WriteString(strings.Join(v.Params, " "))
+	fmt.Fprintf(&f.b, "def %s(", v.Name.Text)
+	f.b.WriteString(joinIdentTexts(v.Params))
 	f.b.WriteString(") {")
 	f.writeLineComment(v.Pos.Line)
 	f.b.WriteByte('\n')
@@ -340,19 +340,19 @@ func (f *sourceFormatter) writeBindStmtContinued(v *BindStmt, indent int) {
 	f.writeContinuedCommand(prefix.String(), v.Cmd.Args, indent)
 }
 
-func (f *sourceFormatter) writeBindTarget(rc, primary string) {
+func (f *sourceFormatter) writeBindTarget(rc, primary Ident) {
 	writeBindTargetSource(&f.b, rc, primary)
 }
 
-func writeBindTargetSource(b *strings.Builder, rc, primary string) {
-	if rc == "" {
-		b.WriteString(primary)
+func writeBindTargetSource(b *strings.Builder, rc, primary Ident) {
+	if rc.Text == "" {
+		b.WriteString(primary.Text)
 		return
 	}
 	b.WriteByte('(')
-	b.WriteString(rc)
+	b.WriteString(rc.Text)
 	b.WriteByte(' ')
-	b.WriteString(primary)
+	b.WriteString(primary.Text)
 	b.WriteByte(')')
 }
 
@@ -390,14 +390,22 @@ func (f *sourceFormatter) writeForEachStmt(v *ForEachStmt, indent int) {
 func (f *sourceFormatter) writeForEachHeader(v *ForEachStmt) {
 	f.b.WriteString("foreach ")
 	if len(v.Names) == 1 {
-		f.b.WriteString(v.Names[0])
+		f.b.WriteString(v.Names[0].Text)
 	} else {
 		f.b.WriteByte('(')
-		f.b.WriteString(strings.Join(v.Names, " "))
+		f.b.WriteString(joinIdentTexts(v.Names))
 		f.b.WriteByte(')')
 	}
 	f.b.WriteString(" in ")
 	f.writeExpr(v.List)
+}
+
+func joinIdentTexts(idents []Ident) string {
+	texts := make([]string, 0, len(idents))
+	for _, ident := range idents {
+		texts = append(texts, ident.Text)
+	}
+	return strings.Join(texts, " ")
 }
 
 func (f *sourceFormatter) writeCommandStmt(v *CommandStmt) {

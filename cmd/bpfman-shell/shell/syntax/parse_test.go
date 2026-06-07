@@ -29,6 +29,14 @@ func firstStmt(t *testing.T, prog *Program) Stmt {
 	return prog.Stmts[0]
 }
 
+func identTextList(idents []Ident) []string {
+	out := make([]string, 0, len(idents))
+	for _, ident := range idents {
+		out = append(out, ident.Text)
+	}
+	return out
+}
+
 func TestParse_SingleWordCommand(t *testing.T) {
 	t.Parallel()
 
@@ -81,7 +89,7 @@ func TestParse_LineContinuation(t *testing.T) {
 		require.NoError(t, err)
 		bind, ok := firstStmt(t, prog).(*BindStmt)
 		require.True(t, ok)
-		assert.Equal(t, "p", bind.Primary)
+		assert.Equal(t, "p", bind.Primary.Text)
 		require.NotNil(t, bind.Cmd)
 		require.Len(t, bind.Cmd.Args, 3)
 	})
@@ -134,7 +142,7 @@ func TestParse_MultilineListLiteral(t *testing.T) {
 		require.NoError(t, err)
 		let, ok := firstStmt(t, prog).(*LetStmt)
 		require.True(t, ok)
-		assert.Equal(t, "priorities", let.Name)
+		assert.Equal(t, "priorities", let.Name.Text)
 		list, ok := let.RHS.(*ListExpr)
 		require.True(t, ok, "RHS should be a ListExpr, got %T", let.RHS)
 		require.Len(t, list.Elems, 3)
@@ -223,7 +231,7 @@ func TestParse_LetAssignment_Literal(t *testing.T) {
 	require.NoError(t, err)
 	let, ok := firstStmt(t, prog).(*LetStmt)
 	require.True(t, ok)
-	assert.Equal(t, "prog", let.Name)
+	assert.Equal(t, "prog", let.Name.Text)
 	lit, ok := let.RHS.(*LiteralExpr)
 	require.True(t, ok)
 	assert.Equal(t, "42", lit.Text)
@@ -248,7 +256,7 @@ func TestParse_LetWithVarRef(t *testing.T) {
 	require.NoError(t, err)
 	let, ok := firstStmt(t, prog).(*LetStmt)
 	require.True(t, ok)
-	assert.Equal(t, "link", let.Name)
+	assert.Equal(t, "link", let.Name.Text)
 	ref, ok := let.RHS.(*VarRefExpr)
 	require.True(t, ok)
 	assert.Equal(t, "prog", ref.Name)
@@ -287,8 +295,8 @@ func TestParse_LetBindSingle(t *testing.T) {
 	require.NoError(t, err)
 	bind, ok := firstStmt(t, prog).(*BindStmt)
 	require.True(t, ok, "expected BindStmt, got %T", firstStmt(t, prog))
-	assert.Equal(t, "r", bind.Primary)
-	assert.Equal(t, "", bind.Rc, "single-name bind must leave Rc empty")
+	assert.Equal(t, "r", bind.Primary.Text)
+	assert.Equal(t, "", bind.Rc.Text, "single-name bind must leave Rc empty")
 	assert.False(t, bind.Guard, "let bind must not set Guard")
 	require.NotNil(t, bind.Cmd)
 	require.Len(t, bind.Cmd.Args, 2)
@@ -304,8 +312,8 @@ func TestParse_GuardBindSingle(t *testing.T) {
 	require.NoError(t, err)
 	bind, ok := firstStmt(t, prog).(*BindStmt)
 	require.True(t, ok, "expected BindStmt, got %T", firstStmt(t, prog))
-	assert.Equal(t, "prog", bind.Primary)
-	assert.Equal(t, "", bind.Rc)
+	assert.Equal(t, "prog", bind.Primary.Text)
+	assert.Equal(t, "", bind.Rc.Text)
 	assert.True(t, bind.Guard, "guard bind must set Guard")
 	require.NotNil(t, bind.Cmd)
 	require.Len(t, bind.Cmd.Args, 4)
@@ -321,8 +329,8 @@ func TestParse_LetBindTuple(t *testing.T) {
 	require.NoError(t, err)
 	bind, ok := firstStmt(t, prog).(*BindStmt)
 	require.True(t, ok, "expected BindStmt, got %T", firstStmt(t, prog))
-	assert.Equal(t, "rc", bind.Rc)
-	assert.Equal(t, "prog", bind.Primary)
+	assert.Equal(t, "rc", bind.Rc.Text)
+	assert.Equal(t, "prog", bind.Primary.Text)
 	assert.False(t, bind.Guard)
 }
 
@@ -333,8 +341,8 @@ func TestParse_GuardBindTuple(t *testing.T) {
 	require.NoError(t, err)
 	bind, ok := firstStmt(t, prog).(*BindStmt)
 	require.True(t, ok)
-	assert.Equal(t, "rc", bind.Rc)
-	assert.Equal(t, "prog", bind.Primary)
+	assert.Equal(t, "rc", bind.Rc.Text)
+	assert.Equal(t, "prog", bind.Primary.Text)
 	assert.True(t, bind.Guard)
 }
 
@@ -345,8 +353,8 @@ func TestParse_BindTupleDiscard(t *testing.T) {
 	require.NoError(t, err)
 	bind, ok := firstStmt(t, prog).(*BindStmt)
 	require.True(t, ok)
-	assert.Equal(t, "_", bind.Rc, "underscore must round-trip in the AST")
-	assert.Equal(t, "prog", bind.Primary)
+	assert.Equal(t, "_", bind.Rc.Text, "underscore must round-trip in the AST")
+	assert.Equal(t, "prog", bind.Primary.Text)
 }
 
 func TestParse_LetDestructure(t *testing.T) {
@@ -372,7 +380,7 @@ func TestParse_LetDestructure(t *testing.T) {
 			require.NoError(t, err)
 			let, ok := firstStmt(t, prog).(*LetDestructureStmt)
 			require.True(t, ok, "expected LetDestructureStmt, got %T", firstStmt(t, prog))
-			assert.Equal(t, tc.want, let.Names)
+			assert.Equal(t, tc.want, identTextList(let.Names))
 			assert.NotNil(t, let.RHS)
 		})
 	}
@@ -692,7 +700,7 @@ func TestParse_ForEach_Basic(t *testing.T) {
 	require.NoError(t, err)
 	fe, ok := firstStmt(t, prog).(*ForEachStmt)
 	require.True(t, ok, "expected ForEachStmt, got %T", prog.Stmts[0])
-	assert.Equal(t, []string{"p"}, fe.Names)
+	assert.Equal(t, []string{"p"}, identTextList(fe.Names))
 	ref, ok := fe.List.(*VarRefExpr)
 	require.True(t, ok)
 	assert.Equal(t, "list", ref.Name)
@@ -740,7 +748,7 @@ func TestParse_ForEach_Nested(t *testing.T) {
 	require.Len(t, outer.Body, 1)
 	inner, ok := outer.Body[0].(*ForEachStmt)
 	require.True(t, ok)
-	assert.Equal(t, []string{"b"}, inner.Names)
+	assert.Equal(t, []string{"b"}, identTextList(inner.Names))
 }
 
 func TestParse_ForEach_Errors(t *testing.T) {
@@ -796,7 +804,7 @@ func TestParse_ForEach_MultiVar(t *testing.T) {
 			prog, err := parseSource(t, tc.input)
 			require.NoError(t, err)
 			fe := firstStmt(t, prog).(*ForEachStmt)
-			assert.Equal(t, tc.want, fe.Names)
+			assert.Equal(t, tc.want, identTextList(fe.Names))
 		})
 	}
 }
@@ -1279,7 +1287,7 @@ func TestValidateLocs_FailsOnDeliberatelyBrokenNode(t *testing.T) {
 	// the failure takes.
 	prog := &Program{
 		Stmts: []Stmt{
-			&LetStmt{Name: "x", RHS: &LiteralExpr{Text: "1", Span: source.Span{Pos: source.Pos{Line: 1, Col: 9}}}},
+			&LetStmt{Name: Ident{Text: "x"}, RHS: &LiteralExpr{Text: "1", Span: source.Span{Pos: source.Pos{Line: 1, Col: 9}}}},
 		},
 		Span: source.Span{Pos: source.Pos{Line: 1, Col: 1}},
 	}

@@ -64,8 +64,8 @@ func TestParse_Def_Basic(t *testing.T) {
 	require.Len(t, prog.Stmts, 1)
 	d, ok := prog.Stmts[0].(*syntax.DefStmt)
 	require.True(t, ok)
-	assert.Equal(t, "greet", d.Name)
-	assert.Equal(t, []string{"name"}, d.Params)
+	assert.Equal(t, "greet", d.Name.Text)
+	assert.Equal(t, []string{"name"}, identTexts(d.Params))
 	require.Len(t, d.Body, 1)
 }
 
@@ -75,7 +75,7 @@ func TestParse_Def_NoParams(t *testing.T) {
 	require.Len(t, prog.Stmts, 1)
 	d, ok := prog.Stmts[0].(*syntax.DefStmt)
 	require.True(t, ok)
-	assert.Equal(t, "banner", d.Name)
+	assert.Equal(t, "banner", d.Name.Text)
 	assert.Empty(t, d.Params)
 }
 
@@ -83,7 +83,7 @@ func TestParse_Def_WhitespaceSeparatedParams(t *testing.T) {
 	t.Parallel()
 	prog := parseProgram(t, `def f(a b c) { print $a }`)
 	d := prog.Stmts[0].(*syntax.DefStmt)
-	assert.Equal(t, []string{"a", "b", "c"}, d.Params)
+	assert.Equal(t, []string{"a", "b", "c"}, identTexts(d.Params))
 }
 
 func TestParse_Def_Errors(t *testing.T) {

@@ -418,7 +418,7 @@ func TestCheck_DuplicateTopLevelDefRejected(t *testing.T) {
 	issues := checkSource(t, src)
 	require.Len(t, issues, 1)
 	assert.Contains(t, issues[0].Msg, `duplicate top-level def "helper"`)
-	assert.Contains(t, issues[0].Msg, "1:1")
+	assert.Contains(t, issues[0].Msg, "1:5")
 }
 
 func TestCheckImportLibrary_RejectsTopLevelLet(t *testing.T) {
@@ -841,7 +841,7 @@ func TestCheck_DefArity_CommandReported(t *testing.T) {
 	issues := checkSource(t, src)
 	require.Len(t, issues, 1)
 	assert.Contains(t, issues[0].Msg, "hello: expected 2 argument(s), got 1")
-	assert.Contains(t, issues[0].Msg, "def declared at 3:1")
+	assert.Contains(t, issues[0].Msg, "def declared at 3:5")
 }
 
 func TestCheck_DefArity_BindReported(t *testing.T) {

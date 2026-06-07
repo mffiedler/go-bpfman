@@ -256,15 +256,16 @@ func (c *checker) prescanTopLevelDefs(stmts []syntax.Stmt) {
 		if !ok {
 			continue
 		}
-		if prev, dup := c.defDeclPos[def.Name]; dup {
-			c.addIssue(def.Span, "duplicate top-level def %q; previous declaration at %s", def.Name, formatPos(prev))
+		name := def.Name.Text
+		if prev, dup := c.defDeclPos[name]; dup {
+			c.addIssue(def.Name.Span, "duplicate top-level def %q; previous declaration at %s", name, formatPos(prev))
 			continue
 		}
-		c.defs[def.Name] = true
-		c.defArity[def.Name] = len(def.Params)
-		c.defDeclPos[def.Name] = def.Pos
-		c.defDecls[def.Name] = def
-		c.defHasReturn[def.Name] = bodyHasReturn(def.Body)
+		c.defs[name] = true
+		c.defArity[name] = len(def.Params)
+		c.defDeclPos[name] = def.Name.Pos
+		c.defDecls[name] = def
+		c.defHasReturn[name] = bodyHasReturn(def.Body)
 	}
 }
 
@@ -636,7 +637,7 @@ func (c *checker) inferDefReturnShape(name string) semantics.Shape {
 	}()
 	c.withFrame(func() {
 		for _, p := range def.Params {
-			c.define(p, openShape(), nil)
+			c.define(p.Text, openShape(), nil)
 		}
 		summary = c.inferBlockReturn(def.Body)
 	})
@@ -672,12 +673,12 @@ func (c *checker) inferStmtReturn(st syntax.Stmt) returnSummary {
 		if l, ok := n.RHS.(*syntax.LiteralExpr); ok {
 			lit = l
 		}
-		c.define(n.Name, c.inferExprShape(n.RHS), lit)
+		c.define(n.Name.Text, c.inferExprShape(n.RHS), lit)
 		return noReturnSummary()
 
 	case *syntax.LetDestructureStmt:
 		for _, name := range n.Names {
-			c.define(name, openShape(), nil)
+			c.define(name.Text, openShape(), nil)
 		}
 		return noReturnSummary()
 
@@ -686,12 +687,12 @@ func (c *checker) inferStmtReturn(st syntax.Stmt) returnSummary {
 			return c.inferBindCollectReturn(n)
 		}
 		headIsDef := c.bindHeadDef(n.Cmd)
-		if n.Rc != "" {
-			c.define(n.Primary, c.bindPrimaryShape(n.Cmd, headIsDef), nil)
-			c.define(n.Rc, semantics.KindShape(semantics.OriginEnvelope), nil)
+		if n.Rc.Text != "" {
+			c.define(n.Primary.Text, c.bindPrimaryShape(n.Cmd, headIsDef), nil)
+			c.define(n.Rc.Text, semantics.KindShape(semantics.OriginEnvelope), nil)
 			return noReturnSummary()
 		}
-		c.define(n.Primary, c.bindPrimaryShape(n.Cmd, headIsDef), nil)
+		c.define(n.Primary.Text, c.bindPrimaryShape(n.Cmd, headIsDef), nil)
 		return noReturnSummary()
 
 	case *syntax.ReturnStmt:
@@ -723,11 +724,11 @@ func (c *checker) inferBindCollectReturn(n *syntax.BindStmt) returnSummary {
 	return c.inferLoopBodyReturn(n.Collect.Names, n.Collect.Body)
 }
 
-func (c *checker) inferLoopBodyReturn(names []string, body []syntax.Stmt) returnSummary {
+func (c *checker) inferLoopBodyReturn(names []syntax.Ident, body []syntax.Stmt) returnSummary {
 	var summary returnSummary
 	c.withFrame(func() {
 		for _, name := range names {
-			c.define(name, openShape(), nil)
+			c.define(name.Text, openShape(), nil)
 		}
 		summary = c.inferBlockReturn(body)
 	})
@@ -952,10 +953,10 @@ func (c *checker) checkDefArity(cmd *syntax.CommandStmt) {
 // the hint suggests.
 func primaryNameForHint(n *syntax.BindStmt) string {
 	switch {
-	case n.Primary != "" && n.Primary != "_":
-		return n.Primary
-	case n.Rc != "" && n.Rc != "_":
-		return n.Rc
+	case n.Primary.Text != "" && n.Primary.Text != "_":
+		return n.Primary.Text
+	case n.Rc.Text != "" && n.Rc.Text != "_":
+		return n.Rc.Text
 	default:
 		return "x"
 	}
@@ -997,9 +998,9 @@ func (c *checker) walkStmt(s syntax.Stmt) {
 		// hint points at the corrective shape without
 		// restricting the bareword-literal case.
 		if lit != nil && !lit.Quoted && c.defs[lit.Text] {
-			c.addIssue(lit.Span, "let %s = %s binds the literal string %q; %q is a def -- did you mean `let %s <- %s`?", n.Name, lit.Text, lit.Text, lit.Text, n.Name, lit.Text)
+			c.addIssue(lit.Span, "let %s = %s binds the literal string %q; %q is a def -- did you mean `let %s <- %s`?", n.Name.Text, lit.Text, lit.Text, lit.Text, n.Name.Text, lit.Text)
 		}
-		c.define(n.Name, c.inferExprShape(n.RHS), lit)
+		c.define(n.Name.Text, c.inferExprShape(n.RHS), lit)
 
 	case *syntax.LetDestructureStmt:
 		c.checkExpr(n.RHS)
@@ -1008,7 +1009,7 @@ func (c *checker) walkStmt(s syntax.Stmt) {
 		// list expression; only the binding existence matters
 		// for downstream name-resolution.
 		for _, name := range n.Names {
-			c.define(name, semantics.Shape{Sealed: false, Kind: semantics.OriginUnknown}, nil)
+			c.define(name.Text, semantics.Shape{Sealed: false, Kind: semantics.OriginUnknown}, nil)
 		}
 
 	case *syntax.BindStmt:
@@ -1061,11 +1062,11 @@ func (c *checker) walkStmt(s syntax.Stmt) {
 		// precedence rule applies: a def producer routes through
 		// callDefAsBind and is not a pure builtin even when its
 		// name shadows one.
-		if n.Collect != nil && n.Rc != "" && n.Rc != "_" && len(n.Collect.Body) > 0 {
+		if n.Collect != nil && n.Rc.Text != "" && n.Rc.Text != "_" && len(n.Collect.Body) > 0 {
 			if last, ok := n.Collect.Body[len(n.Collect.Body)-1].(*syntax.CommandStmt); ok {
 				if !c.bindHeadDef(last) {
 					if name, ok := bindHeadPureBuiltin(last); ok {
-						c.addIssue(last.Span, "%s is a pure builtin; tuple bind '(%s, %s)' is invalid in bind-collect because pure builtins produce no rc envelope; use single-bind 'let %s <- foreach ... { %s ... }' instead", name, n.Rc, primaryNameForHint(n), primaryNameForHint(n), name)
+						c.addIssue(last.Span, "%s is a pure builtin; tuple bind '(%s, %s)' is invalid in bind-collect because pure builtins produce no rc envelope; use single-bind 'let %s <- foreach ... { %s ... }' instead", name, n.Rc.Text, primaryNameForHint(n), primaryNameForHint(n), name)
 					}
 				}
 			}
@@ -1087,7 +1088,7 @@ func (c *checker) walkStmt(s syntax.Stmt) {
 			c.nonTopLevelDepth++
 			c.withFrame(func() {
 				for _, name := range n.Collect.Names {
-					c.define(name, semantics.Shape{Sealed: false, Kind: semantics.OriginUnknown}, nil)
+					c.define(name.Text, semantics.Shape{Sealed: false, Kind: semantics.OriginUnknown}, nil)
 				}
 				c.walkStmts(n.Collect.Body)
 			})
@@ -1099,8 +1100,8 @@ func (c *checker) walkStmt(s syntax.Stmt) {
 		// disagreeing returns stay open; no-return defs keep the
 		// sealed result-envelope shape they publish at runtime.
 		primaryShape := c.bindPrimaryShape(n.Cmd, headIsDef)
-		c.define(n.Primary, primaryShape, nil)
-		c.define(n.Rc, semantics.KindShape(semantics.OriginEnvelope), nil)
+		c.define(n.Primary.Text, primaryShape, nil)
+		c.define(n.Rc.Text, semantics.KindShape(semantics.OriginEnvelope), nil)
 
 	case *syntax.ForEachStmt:
 		c.checkExpr(n.List)
@@ -1116,7 +1117,7 @@ func (c *checker) walkStmt(s syntax.Stmt) {
 		c.nonTopLevelDepth++
 		c.withFrame(func() {
 			for _, name := range n.Names {
-				c.define(name, semantics.Shape{Sealed: false, Kind: semantics.OriginUnknown}, nil)
+				c.define(name.Text, semantics.Shape{Sealed: false, Kind: semantics.OriginUnknown}, nil)
 			}
 			c.walkStmts(n.Body)
 		})
@@ -1133,9 +1134,9 @@ func (c *checker) walkStmt(s syntax.Stmt) {
 		// declaration site rather than asking readers to reason
 		// about conditional/global registration.
 		if c.nonTopLevelDepth != 0 {
-			c.addIssue(n.Span, "def %q must be declared at top level", n.Name)
+			c.addIssue(n.Name.Span, "def %q must be declared at top level", n.Name.Text)
 		}
-		c.defHasReturn[n.Name] = bodyHasReturn(n.Body)
+		c.defHasReturn[n.Name.Text] = bodyHasReturn(n.Body)
 		// Parameters are visible inside the body and disappear
 		// at end-of-def. The runtime allocates a fresh frame
 		// per call; the checker walks the def body once with
@@ -1148,7 +1149,7 @@ func (c *checker) walkStmt(s syntax.Stmt) {
 		c.nonTopLevelDepth++
 		c.withFrame(func() {
 			for _, p := range n.Params {
-				c.define(p, semantics.Shape{Sealed: false, Kind: semantics.OriginUnknown}, nil)
+				c.define(p.Text, semantics.Shape{Sealed: false, Kind: semantics.OriginUnknown}, nil)
 			}
 			c.walkStmts(n.Body)
 		})
@@ -1520,8 +1521,8 @@ func (c *checker) checkJobLeaksInBody(stmts []syntax.Stmt) {
 		for _, st := range stmts {
 			switch s := st.(type) {
 			case *syntax.BindStmt:
-				if c.isStartCommand(s.Cmd) && s.Primary != "" && s.Primary != "_" {
-					started = append(started, jobBinding{Name: s.Primary, Span: s.Span})
+				if c.isStartCommand(s.Cmd) && s.Primary.Text != "" && s.Primary.Text != "_" {
+					started = append(started, jobBinding{Name: s.Primary.Text, Span: s.Primary.Span})
 				}
 				if name := c.jobReferenceTarget(s.Cmd); name != "" {
 					managed[name] = true

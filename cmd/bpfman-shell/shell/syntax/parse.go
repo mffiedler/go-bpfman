@@ -97,6 +97,10 @@ func NodeSpan(n Node) source.Span {
 	return source.Span{}
 }
 
+func identFromToken(tok Token) Ident {
+	return Ident{Text: tok.Text, Span: tok.Span}
+}
+
 // parser is the recursive-descent state: a token stream and a
 // cursor. All navigation goes through peek/advance so the cursor
 // stays consistent with what has been consumed.
@@ -448,7 +452,7 @@ func (p *parser) parseLetStmt() (Stmt, error) {
 			if len(names) != 2 {
 				return nil, spanErrorf(openTok.Span, "tuple bind expects exactly two names, got %d", len(names))
 			}
-			if names[0] == "_" && names[1] == "_" {
+			if names[0].Text == "_" && names[1].Text == "_" {
 				return nil, spanErrorf(openTok.Span, "tuple bind cannot discard both slots")
 			}
 			return p.parseBindRHS(letTok.Pos, names[0], names[1], false)
@@ -460,9 +464,9 @@ func (p *parser) parseLetStmt() (Stmt, error) {
 		return nil, spanErrorf(letTok.Span, "let requires an identifier, got %q", p.peek().Text)
 	}
 	nameTok := p.advance()
-	name := nameTok.Text
-	if !isIdent(name) {
-		return nil, spanErrorf(nameTok.Span, "invalid variable name: %q", name)
+	name := identFromToken(nameTok)
+	if !isIdent(name.Text) {
+		return nil, spanErrorf(nameTok.Span, "invalid variable name: %q", name.Text)
 	}
 	if p.atEOF() {
 		return nil, spanErrorf(letTok.Span, "let requires '=' or '<-' after the name")
@@ -476,7 +480,7 @@ func (p *parser) parseLetStmt() (Stmt, error) {
 		// as an ordinary name. Reject it so the asymmetry is
 		// gone: force-evaluation for side effects belongs in
 		// bind / guard / a bare command, not `let _ = ...`.
-		if name == "_" {
+		if name.Text == "_" {
 			return nil, spanErrorf(nameTok.Span, "single-name let cannot bind '_'; use a real name")
 		}
 		rhsTokens, err := p.takeStmtTokens(true)
@@ -492,7 +496,7 @@ func (p *parser) parseLetStmt() (Stmt, error) {
 		}
 		return &LetStmt{Name: name, RHS: rhs, Span: p.spanFrom(letTok.Pos)}, nil
 	case TokenBind:
-		return p.parseBindRHS(letTok.Pos, "", name, false)
+		return p.parseBindRHS(letTok.Pos, Ident{}, name, false)
 	default:
 		return nil, spanErrorf(letTok.Span, "let requires '=' or '<-' after the name, got %q", p.peek().Text)
 	}
@@ -538,7 +542,7 @@ func (p *parser) parseGuardStmt() (Stmt, error) {
 		if len(names) != 2 {
 			return nil, spanErrorf(openTok.Span, "tuple bind expects exactly two names, got %d", len(names))
 		}
-		if names[0] == "_" && names[1] == "_" {
+		if names[0].Text == "_" && names[1].Text == "_" {
 			return nil, spanErrorf(openTok.Span, "tuple bind cannot discard both slots")
 		}
 		if p.atEOF() || p.peek().Kind != TokenBind {
@@ -550,14 +554,14 @@ func (p *parser) parseGuardStmt() (Stmt, error) {
 		return nil, spanErrorf(guardTok.Span, "guard requires an identifier, got %q", p.peek().Text)
 	}
 	nameTok := p.advance()
-	name := nameTok.Text
-	if !isIdent(name) {
-		return nil, spanErrorf(nameTok.Span, "invalid variable name: %q", name)
+	name := identFromToken(nameTok)
+	if !isIdent(name.Text) {
+		return nil, spanErrorf(nameTok.Span, "invalid variable name: %q", name.Text)
 	}
 	if p.atEOF() || p.peek().Kind != TokenBind {
 		return nil, spanErrorf(guardTok.Span, "guard requires: guard <name> <- <command...> (missing '<-')")
 	}
-	return p.parseBindRHS(guardTok.Pos, "", name, true)
+	return p.parseBindRHS(guardTok.Pos, Ident{}, name, true)
 }
 
 // parseParenNameList consumes a parenthesised whitespace-separated
@@ -581,9 +585,9 @@ func (p *parser) parseGuardStmt() (Stmt, error) {
 // helper returns. The returned openTok carries the source span of
 // the opening '(' so call-site diagnostics point at the right token.
 // site prefixes error messages (`let` or `guard`).
-func (p *parser) parseParenNameList(site string) ([]string, Token, error) {
+func (p *parser) parseParenNameList(site string) ([]Ident, Token, error) {
 	openTok := p.advance() // "("
-	var names []string
+	var names []Ident
 	seen := make(map[string]bool)
 	for {
 		for !p.atEOF() && p.peek().Kind == TokenSep {
@@ -612,7 +616,7 @@ func (p *parser) parseParenNameList(site string) ([]string, Token, error) {
 			}
 			seen[t.Text] = true
 		}
-		names = append(names, t.Text)
+		names = append(names, identFromToken(t))
 		p.advance()
 	}
 	if len(names) < 2 {
@@ -624,9 +628,9 @@ func (p *parser) parseParenNameList(site string) ([]string, Token, error) {
 // allUnderscore reports whether every element of names is "_".
 // Callers use this to enforce the binding-design rule that a
 // multi-name group must establish at least one real binding.
-func allUnderscore(names []string) bool {
+func allUnderscore(names []Ident) bool {
 	for _, n := range names {
-		if n != "_" {
+		if n.Text != "_" {
 			return false
 		}
 	}
@@ -640,7 +644,7 @@ func allUnderscore(names []string) bool {
 // tokens so every primary expression the command-statement grammar
 // accepts works on the right of a bind. rc is "" for single-name
 // bindings, an identifier (or "_") for tuple bindings.
-func (p *parser) parseBindRHS(stmtLoc source.Pos, rc, primary string, guard bool) (Stmt, error) {
+func (p *parser) parseBindRHS(stmtLoc source.Pos, rc, primary Ident, guard bool) (Stmt, error) {
 	bindTok := p.advance() // "<-"
 	// Bind-collect form: 'let X <- foreach NAME in LIST { BODY }'.
 	// The 'foreach' keyword in RHS position triggers a separate
@@ -936,12 +940,12 @@ func (p *parser) parseDefStmt() (Stmt, error) {
 		return nil, spanErrorf(defTok.Span, "def requires a name before '('")
 	}
 	nameTok := p.advance()
-	name := nameTok.Text
-	if !isIdent(name) {
-		return nil, spanErrorf(nameTok.Span, "invalid def name: %q", name)
+	name := identFromToken(nameTok)
+	if !isIdent(name.Text) {
+		return nil, spanErrorf(nameTok.Span, "invalid def name: %q", name.Text)
 	}
-	if reservedDefNames[name] {
-		return nil, spanErrorf(nameTok.Span, "cannot use reserved word %q as a def name", name)
+	if reservedDefNames[name.Text] {
+		return nil, spanErrorf(nameTok.Span, "cannot use reserved word %q as a def name", name.Text)
 	}
 	if p.atEOF() || !(p.peek().Kind == TokenWord && p.peek().Text == "(") {
 		return nil, spanErrorf(defTok.Span, "def requires '(' after the name")
@@ -957,7 +961,7 @@ func (p *parser) parseDefStmt() (Stmt, error) {
 	}
 	body, err := p.parseBlock()
 	if err != nil {
-		return nil, WrapError(fmt.Sprintf("def %s", name), err)
+		return nil, WrapError(fmt.Sprintf("def %s", name.Text), err)
 	}
 	return &DefStmt{Name: name, Params: params, Body: body, Span: p.spanFrom(defTok.Pos)}, nil
 }
@@ -997,8 +1001,8 @@ func (p *parser) parseReturnStmt() (Stmt, error) {
 // rejected with a clear error so the migration from the previous
 // comma-separated spelling fails loudly rather than silently
 // accepting `def f(a, b)` as `def f(a, b)` with a glued-comma name.
-func (p *parser) parseDefParams(defLoc source.Pos) ([]string, error) {
-	var params []string
+func (p *parser) parseDefParams(defLoc source.Pos) ([]Ident, error) {
+	var params []Ident
 	seen := make(map[string]bool)
 	for {
 		// Allow newlines/semis inside the parameter list so a long
@@ -1030,7 +1034,7 @@ func (p *parser) parseDefParams(defLoc source.Pos) ([]string, error) {
 			return nil, spanErrorf(t.Span, "def: duplicate parameter name %q", t.Text)
 		}
 		seen[t.Text] = true
-		params = append(params, t.Text)
+		params = append(params, identFromToken(t))
 		p.advance()
 	}
 }
@@ -1187,7 +1191,7 @@ func (p *parser) parseForEachStmt() (Stmt, error) {
 // Commas are not a separator at this site. A token whose text
 // contains ',' is rejected with an explicit error so a stray
 // 'foreach a, b in xs' fails loudly rather than silently mis-parsing.
-func (p *parser) parseForEachNames(feTok Token) ([]string, error) {
+func (p *parser) parseForEachNames(feTok Token) ([]Ident, error) {
 	if p.atEOF() || p.peek().Kind != TokenWord {
 		return nil, spanErrorf(feTok.Span, "foreach requires: foreach <name> in <expr> { ... }  |  foreach (<name1> <name2> ...) in <expr> { ... }")
 	}
@@ -1198,7 +1202,7 @@ func (p *parser) parseForEachNames(feTok Token) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return []string{name}, nil
+	return []Ident{name}, nil
 }
 
 // parseForEachDestructureNames consumes a parenthesised name list:
@@ -1208,9 +1212,9 @@ func (p *parser) parseForEachNames(feTok Token) ([]string, error) {
 // 'foreach x in xs' is the canonical spelling for one loop
 // variable. Newlines and semicolons inside the parens are
 // transparent so a long list can wrap.
-func (p *parser) parseForEachDestructureNames(feTok Token) ([]string, error) {
+func (p *parser) parseForEachDestructureNames(feTok Token) ([]Ident, error) {
 	openTok := p.advance() // "("
-	var names []string
+	var names []Ident
 	seen := make(map[string]bool)
 	for {
 		for !p.atEOF() && p.peek().Kind == TokenSep {
@@ -1229,11 +1233,11 @@ func (p *parser) parseForEachDestructureNames(feTok Token) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		if name != "_" {
-			if seen[name] {
-				return nil, spanErrorf(nameTok.Span, "foreach: duplicate name %q", name)
+		if name.Text != "_" {
+			if seen[name.Text] {
+				return nil, spanErrorf(nameTok.Span, "foreach: duplicate name %q", name.Text)
 			}
-			seen[name] = true
+			seen[name.Text] = true
 		}
 		names = append(names, name)
 	}
@@ -1242,7 +1246,7 @@ func (p *parser) parseForEachDestructureNames(feTok Token) ([]string, error) {
 	}
 	allDiscard := true
 	for _, n := range names {
-		if n != "_" {
+		if n.Text != "_" {
 			allDiscard = false
 			break
 		}
@@ -1258,24 +1262,24 @@ func (p *parser) parseForEachDestructureNames(feTok Token) ([]string, error) {
 // the single-var call site. Tokens whose text contains ',' are
 // rejected explicitly so the old 'foreach a, b in xs' spelling
 // fails with a clear diagnostic.
-func (p *parser) parseForEachNameToken(feTok Token) (string, error) {
+func (p *parser) parseForEachNameToken(feTok Token) (Ident, error) {
 	if p.atEOF() || p.peek().Kind != TokenWord {
-		return "", spanErrorf(feTok.Span, "foreach: expected variable name, got end of input")
+		return Ident{}, spanErrorf(feTok.Span, "foreach: expected variable name, got end of input")
 	}
 	t := p.advance()
 	if strings.ContainsRune(t.Text, ',') {
-		return "", spanErrorf(t.Span, "foreach: comma is not a separator; use whitespace and wrap multi-var lists in parens (got %q)", t.Text)
+		return Ident{}, spanErrorf(t.Span, "foreach: comma is not a separator; use whitespace and wrap multi-var lists in parens (got %q)", t.Text)
 	}
 	if t.Text == "in" {
-		return "", spanErrorf(t.Span, "foreach requires a variable name before 'in'")
+		return Ident{}, spanErrorf(t.Span, "foreach requires a variable name before 'in'")
 	}
 	if t.Text == "_" {
-		return "_", nil
+		return identFromToken(t), nil
 	}
 	if !isIdent(t.Text) {
-		return "", spanErrorf(t.Span, "invalid variable name: %q", t.Text)
+		return Ident{}, spanErrorf(t.Span, "invalid variable name: %q", t.Text)
 	}
-	return t.Text, nil
+	return identFromToken(t), nil
 }
 
 // takeUntilOpenBrace collects tokens up to (but not including) the

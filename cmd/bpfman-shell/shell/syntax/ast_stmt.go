@@ -21,10 +21,20 @@ type Stmt interface {
 	stmtNode()
 }
 
+// Ident is a parsed identifier exactly as it appeared in source.
+// Text is the identifier spelling; Span points at the identifier
+// token itself. Binding and definition forms use Ident rather than a
+// bare string so the syntax tree preserves both the interpreter-facing
+// name and the editor/diagnostic-facing source location.
+type Ident struct {
+	Text string
+	source.Span
+}
+
 // LetStmt binds the result of evaluating RHS to Name. Name is
 // guaranteed to be a valid identifier by the parser.
 type LetStmt struct {
-	Name string
+	Name Ident
 	RHS  Expr
 	source.Span
 }
@@ -37,7 +47,7 @@ type LetStmt struct {
 // duplicate real names, and all-underscore name lists; runtime
 // errors fire when RHS is not a list or its length does not match.
 type LetDestructureStmt struct {
-	Names []string
+	Names []Ident
 	RHS   Expr
 	source.Span
 }
@@ -72,8 +82,8 @@ type LetDestructureStmt struct {
 // always names the primary; tuple binding names rc then primary,
 // matching section 6.2 of the design.
 type BindStmt struct {
-	Primary string
-	Rc      string
+	Primary Ident
+	Rc      Ident
 	Cmd     *CommandStmt
 	Collect *ForEachStmt
 	Guard   bool
@@ -126,7 +136,7 @@ type ExprStmt struct {
 // any prior binding of a name is restored on exit and a name that
 // did not exist before the loop disappears again.
 type ForEachStmt struct {
-	Names []string
+	Names []Ident
 	List  Expr
 	Body  []Stmt
 	source.Span
@@ -176,8 +186,8 @@ type DeferStmt struct {
 
 // DefStmt declares a user-defined command.
 type DefStmt struct {
-	Name   string
-	Params []string
+	Name   Ident
+	Params []Ident
 	Body   []Stmt
 	source.Span
 }

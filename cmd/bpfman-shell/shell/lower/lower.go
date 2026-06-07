@@ -216,9 +216,9 @@ func (l *lowerer) lowerLetStmt(s *syntax.LetStmt) error {
 	v := l.alloc()
 	l.emit(&ir.Eval{Dst: v, Expr: lowerIRExpr(s.RHS), Span: s.Span})
 	l.emit(&ir.BindName{
-		Name:        s.Name,
+		Name:        s.Name.Text,
 		Src:         v,
-		TracePrefix: fmt.Sprintf("let %s = ", s.Name),
+		TracePrefix: fmt.Sprintf("let %s = ", s.Name.Text),
 		Span:        s.Span,
 	})
 	return nil
@@ -231,7 +231,7 @@ func (l *lowerer) lowerLetStmt(s *syntax.LetStmt) error {
 func (l *lowerer) lowerLetDestructureStmt(s *syntax.LetDestructureStmt) error {
 	src := l.alloc()
 	l.emit(&ir.Eval{Dst: src, Expr: lowerIRExpr(s.RHS), Span: s.Span})
-	l.emit(&ir.BindDestructure{Names: s.Names, Src: src, Trace: true, Span: s.Span})
+	l.emit(&ir.BindDestructure{Names: identTexts(s.Names), Src: src, Trace: true, Span: s.Span})
 	return nil
 }
 
@@ -363,7 +363,7 @@ func (l *lowerer) lowerForEachStmt(s *syntax.ForEachStmt) error {
 	exit := l.newBlock(s.Span)
 	l.emit(&ir.ForEach{
 		List:  listTemp,
-		Names: s.Names,
+		Names: identTexts(s.Names),
 		Body:  body,
 		Exit:  exit,
 		Span:  s.Span,
@@ -541,7 +541,7 @@ func (l *lowerer) lowerDefStmt(s *syntax.DefStmt) error {
 	// nonTopLevel covers the if / foreach / poll branches that
 	// bump it around their bodies.
 	if l.ctx.returnTo != nil || l.ctx.nonTopLevel {
-		return syntax.SpanErrorf(s.Span, "def %q must be declared at top level", s.Name)
+		return syntax.SpanErrorf(s.Span, "def %q must be declared at top level", s.Name.Text)
 	}
 	defL := newLowerer(l.state, lowerCtx{deferPolicy: ir.RunDefersDefLocal})
 	defL.nextTemp = ir.Temp(len(s.Params))
@@ -554,7 +554,7 @@ func (l *lowerer) lowerDefStmt(s *syntax.DefStmt) error {
 	defL.emit(&ir.EnterFrame{Kind: ir.FrameDef, Span: s.Span})
 	defL.emit(&ir.EnterDeferScope{Kind: ir.DeferScopeDef, Span: s.Span})
 	for i, name := range s.Params {
-		defL.emit(&ir.BindName{Name: name, Src: ir.Temp(i), Span: s.Span})
+		defL.emit(&ir.BindName{Name: name.Text, Src: ir.Temp(i), Span: s.Span})
 	}
 	for _, st := range s.Body {
 		if err := defL.lowerStmt(st); err != nil {
@@ -570,8 +570,8 @@ func (l *lowerer) lowerDefStmt(s *syntax.DefStmt) error {
 	defL.emit(&ir.EmitBindResult{Span: s.Span})
 
 	def := &ir.Def{
-		Name:      s.Name,
-		Params:    s.Params,
+		Name:      s.Name.Text,
+		Params:    identTexts(s.Params),
 		HasReturn: bodyHasReturn(s.Body),
 		Entry:     entry,
 		Blocks:    defL.blocks,
@@ -634,8 +634,8 @@ func (l *lowerer) lowerBindCmd(s *syntax.BindStmt) error {
 	apply := &ir.ApplyBind{
 		Src:     result,
 		Argv:    argv,
-		Primary: s.Primary,
-		Rc:      s.Rc,
+		Primary: s.Primary.Text,
+		Rc:      s.Rc.Text,
 		Guard:   s.Guard,
 		Span:    s.Span,
 	}
@@ -694,9 +694,9 @@ func (l *lowerer) lowerBindCollect(s *syntax.BindStmt) error {
 	exit := l.newBlock(fe.Span)
 	l.emit(&ir.ForEachCollect{
 		List:    listTemp,
-		Names:   fe.Names,
-		Primary: s.Primary,
-		Rc:      s.Rc,
+		Names:   identTexts(fe.Names),
+		Primary: s.Primary.Text,
+		Rc:      s.Rc.Text,
 		Guard:   s.Guard,
 		Body:    body,
 		Exit:    exit,
@@ -776,8 +776,8 @@ func bindTraceHeader(s *syntax.BindStmt) string {
 	if s.Guard {
 		verb = "guard"
 	}
-	rc := s.Rc
-	primary := s.Primary
+	rc := s.Rc.Text
+	primary := s.Primary.Text
 	switch {
 	case rc != "" && primary != "":
 		return fmt.Sprintf("%s (%s %s)", verb, named(rc), named(primary))
@@ -795,4 +795,12 @@ func named(s string) string {
 		return "_"
 	}
 	return s
+}
+
+func identTexts(idents []syntax.Ident) []string {
+	texts := make([]string, 0, len(idents))
+	for _, ident := range idents {
+		texts = append(texts, ident.Text)
+	}
+	return texts
 }

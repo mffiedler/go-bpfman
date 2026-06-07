@@ -34,14 +34,39 @@ func parseAndExpandWithBaseTrace(file, baseDir, src string, startLine int, visib
 	visibleDefs = cloneDefInfo(visibleDefs)
 	recordTopLevelDefInfo(visibleDefs, prog.Stmts)
 
-	out := &syntax.Program{Span: prog.Span}
+	stmts, err := expandDirectImports(file, baseDir, prog, visibleDefs, traceImport, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &syntax.Program{Span: prog.Span, Stmts: stmts}, nil
+}
+
+type directImport struct {
+	Path string
+	Span source.Span
+	Prog *syntax.Program
+}
+
+func expandDirectImports(file, baseDir string, prog *syntax.Program, visibleDefs map[string]check.DefStaticInfo, traceImport func(source.Pos, string), visitImport func(directImport), tolerateError func(error) bool) ([]syntax.Stmt, error) {
+	var out []syntax.Stmt
+	handleErr := func(err error) bool {
+		if tolerateError != nil && tolerateError(err) {
+			return true
+		}
+		return false
+	}
+
 	for _, st := range prog.Stmts {
 		path, span, isImport, err := importLiteralPath(st)
 		if err != nil {
-			return nil, syntaxError(file, span, err.Error())
+			err = syntaxError(file, span, err.Error())
+			if handleErr(err) {
+				continue
+			}
+			return nil, err
 		}
 		if !isImport {
-			out.Stmts = append(out.Stmts, st)
+			out = append(out, st)
 			continue
 		}
 		if traceImport != nil {
@@ -51,19 +76,33 @@ func parseAndExpandWithBaseTrace(file, baseDir, src string, startLine int, visib
 		resolved := resolveImportPath(file, baseDir, path)
 		lr, err := OpenScriptReader(resolved)
 		if err != nil {
-			return nil, syntaxError(file, span, err.Error())
+			err = syntaxError(file, span, err.Error())
+			if handleErr(err) {
+				continue
+			}
+			return nil, err
 		}
 		childSrc, err := SlurpReader(lr)
 		lr.Close()
 		if err != nil {
-			return nil, syntaxError(file, span, err.Error())
+			err = syntaxError(file, span, err.Error())
+			if handleErr(err) {
+				continue
+			}
+			return nil, err
 		}
 
 		lib, err := parseImportProgram(resolved, childSrc, visibleDefs)
 		if err != nil {
+			if handleErr(err) {
+				continue
+			}
 			return nil, err
 		}
-		out.Stmts = append(out.Stmts, lib.Stmts...)
+		if visitImport != nil {
+			visitImport(directImport{Path: resolved, Span: span, Prog: lib})
+		}
+		out = append(out, lib.Stmts...)
 		recordTopLevelDefInfo(visibleDefs, lib.Stmts)
 	}
 	return out, nil
@@ -120,7 +159,8 @@ func recordTopLevelDefInfo(dst map[string]check.DefStaticInfo, stmts []syntax.St
 		if !ok {
 			continue
 		}
-		if _, exists := dst[def.Name]; exists {
+		name := def.Name.Text
+		if _, exists := dst[name]; exists {
 			continue
 		}
 		// ReturnShape is intentionally left open here for now:
@@ -128,9 +168,9 @@ func recordTopLevelDefInfo(dst map[string]check.DefStaticInfo, stmts []syntax.St
 		// and infers their return shapes directly. Exporting
 		// inferred shapes through pre-expansion import metadata is
 		// a separate follow-up.
-		dst[def.Name] = check.DefStaticInfo{
+		dst[name] = check.DefStaticInfo{
 			Arity:     len(def.Params),
-			DeclPos:   def.Pos,
+			DeclPos:   def.Name.Pos,
 			HasReturn: bodyHasReturn(def.Body),
 		}
 	}

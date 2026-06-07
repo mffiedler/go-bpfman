@@ -34,6 +34,22 @@ func bindFromValue(f func([]Arg, source.Span) (Value, error)) func([]Arg, source
 	}
 }
 
+func idents(names ...string) []syntax.Ident {
+	out := make([]syntax.Ident, 0, len(names))
+	for _, name := range names {
+		out = append(out, syntax.Ident{Text: name})
+	}
+	return out
+}
+
+func identTexts(idents []syntax.Ident) []string {
+	out := make([]string, 0, len(idents))
+	for _, ident := range idents {
+		out = append(out, ident.Text)
+	}
+	return out
+}
+
 func TestEvalExpr_Literal(t *testing.T) {
 	t.Parallel()
 
@@ -741,7 +757,7 @@ func TestExecSource_ForEach_IteratesList(t *testing.T) {
 	// runner captures each element's text.
 	prog := &syntax.Program{Stmts: []syntax.Stmt{
 		&syntax.ForEachStmt{
-			Names: []string{"p"},
+			Names: idents("p"),
 			List:  &syntax.VarRefExpr{Name: "xs"},
 			Body: []syntax.Stmt{
 				&syntax.CommandStmt{Args: []syntax.Expr{&syntax.VarRefExpr{Name: "p"}}},
@@ -765,7 +781,7 @@ func TestExecSource_ForEach_LoopVarBodyScoped(t *testing.T) {
 	}
 	prog := &syntax.Program{Stmts: []syntax.Stmt{
 		&syntax.ForEachStmt{
-			Names: []string{"i"},
+			Names: idents("i"),
 			List:  &syntax.VarRefExpr{Name: "xs"},
 			Body:  []syntax.Stmt{&syntax.CommandStmt{Args: []syntax.Expr{&syntax.VarRefExpr{Name: "i"}}}},
 		},
@@ -790,7 +806,7 @@ func TestExecSource_ForEach_LoopVarRestoresPriorBinding(t *testing.T) {
 	}
 	prog := &syntax.Program{Stmts: []syntax.Stmt{
 		&syntax.ForEachStmt{
-			Names: []string{"i"},
+			Names: idents("i"),
 			List:  &syntax.VarRefExpr{Name: "xs"},
 			Body:  []syntax.Stmt{&syntax.CommandStmt{Args: []syntax.Expr{&syntax.VarRefExpr{Name: "i"}}}},
 		},
@@ -929,7 +945,7 @@ func TestExecSource_ForEach_EmptyList(t *testing.T) {
 	}
 	prog := &syntax.Program{Stmts: []syntax.Stmt{
 		&syntax.ForEachStmt{
-			Names: []string{"x"},
+			Names: idents("x"),
 			List:  &syntax.VarRefExpr{Name: "xs"},
 			Body:  []syntax.Stmt{&syntax.CommandStmt{Args: []syntax.Expr{&syntax.LiteralExpr{Text: "body"}}}},
 		},
@@ -951,7 +967,7 @@ func TestExecSource_ForEach_NonListIsError(t *testing.T) {
 	}
 	prog := &syntax.Program{Stmts: []syntax.Stmt{
 		&syntax.ForEachStmt{
-			Names: []string{"x"},
+			Names: idents("x"),
 			List:  &syntax.VarRefExpr{Name: "notalist"},
 			Body:  []syntax.Stmt{},
 		},
@@ -982,7 +998,7 @@ func TestExecSource_ForEach_BodyErrorHaltsLoop(t *testing.T) {
 	}
 	prog := &syntax.Program{Stmts: []syntax.Stmt{
 		&syntax.ForEachStmt{
-			Names: []string{"x"},
+			Names: idents("x"),
 			List:  &syntax.VarRefExpr{Name: "xs"},
 			Body:  []syntax.Stmt{&syntax.CommandStmt{Args: []syntax.Expr{&syntax.VarRefExpr{Name: "x"}}}},
 		},
@@ -1015,7 +1031,7 @@ func TestExecSource_ForEach_BreakStopsIteration(t *testing.T) {
 	// }
 	prog := &syntax.Program{Stmts: []syntax.Stmt{
 		&syntax.ForEachStmt{
-			Names: []string{"x"},
+			Names: idents("x"),
 			List:  &syntax.VarRefExpr{Name: "xs"},
 			Body: []syntax.Stmt{
 				&syntax.IfStmt{
@@ -1056,7 +1072,7 @@ func TestExecSource_ForEach_ContinueSkipsIteration(t *testing.T) {
 	// }
 	prog := &syntax.Program{Stmts: []syntax.Stmt{
 		&syntax.ForEachStmt{
-			Names: []string{"x"},
+			Names: idents("x"),
 			List:  &syntax.VarRefExpr{Name: "xs"},
 			Body: []syntax.Stmt{
 				&syntax.IfStmt{
@@ -1105,11 +1121,11 @@ func TestExecSource_ForEach_BreakInnerOnly(t *testing.T) {
 	// }
 	prog := &syntax.Program{Stmts: []syntax.Stmt{
 		&syntax.ForEachStmt{
-			Names: []string{"a"},
+			Names: idents("a"),
 			List:  &syntax.VarRefExpr{Name: "outer"},
 			Body: []syntax.Stmt{
 				&syntax.ForEachStmt{
-					Names: []string{"b"},
+					Names: idents("b"),
 					List:  &syntax.VarRefExpr{Name: "inner"},
 					Body: []syntax.Stmt{
 						&syntax.IfStmt{
@@ -1154,7 +1170,7 @@ func TestExecSource_ForEach_MultiVarDestructures(t *testing.T) {
 	// foreach (k v) in $pairs { print $k $v }
 	prog := &syntax.Program{Stmts: []syntax.Stmt{
 		&syntax.ForEachStmt{
-			Names: []string{"k", "v"},
+			Names: idents("k", "v"),
 			List:  &syntax.VarRefExpr{Name: "pairs"},
 			Body: []syntax.Stmt{
 				&syntax.CommandStmt{Args: []syntax.Expr{
@@ -1188,7 +1204,7 @@ func TestExecSource_ForEach_MultiVarLengthMismatchIsError(t *testing.T) {
 	}
 	prog := &syntax.Program{Stmts: []syntax.Stmt{
 		&syntax.ForEachStmt{
-			Names: []string{"a", "b"},
+			Names: idents("a", "b"),
 			List:  &syntax.VarRefExpr{Name: "pairs"},
 			Body:  []syntax.Stmt{},
 		},
@@ -1212,7 +1228,7 @@ func TestExecSource_ForEach_MultiVarNonListElementIsError(t *testing.T) {
 	}
 	prog := &syntax.Program{Stmts: []syntax.Stmt{
 		&syntax.ForEachStmt{
-			Names: []string{"a", "b"},
+			Names: idents("a", "b"),
 			List:  &syntax.VarRefExpr{Name: "xs"},
 			Body:  []syntax.Stmt{},
 		},
@@ -1240,7 +1256,7 @@ func TestExecSource_ForEach_MultiVarDiscardSlot(t *testing.T) {
 	// foreach (_ v) in $pairs { $v }
 	prog := &syntax.Program{Stmts: []syntax.Stmt{
 		&syntax.ForEachStmt{
-			Names: []string{"_", "v"},
+			Names: idents("_", "v"),
 			List:  &syntax.VarRefExpr{Name: "pairs"},
 			Body: []syntax.Stmt{
 				&syntax.CommandStmt{Args: []syntax.Expr{&syntax.VarRefExpr{Name: "v"}}},
@@ -1267,7 +1283,7 @@ func TestExecSource_LetDestructure_BindsPositional(t *testing.T) {
 	}
 	prog := &syntax.Program{Stmts: []syntax.Stmt{
 		&syntax.LetDestructureStmt{
-			Names: []string{"a", "b", "c"},
+			Names: idents("a", "b", "c"),
 			RHS:   &syntax.VarRefExpr{Name: "xs"},
 		},
 	}}
@@ -1302,7 +1318,7 @@ func TestExecSource_LetDestructure_DiscardSlots(t *testing.T) {
 	}
 	prog := &syntax.Program{Stmts: []syntax.Stmt{
 		&syntax.LetDestructureStmt{
-			Names: []string{"a", "_", "c"},
+			Names: idents("a", "_", "c"),
 			RHS:   &syntax.VarRefExpr{Name: "xs"},
 		},
 	}}
@@ -1335,7 +1351,7 @@ func TestExecSource_LetDestructure_LengthMismatchIsError(t *testing.T) {
 	}
 	prog := &syntax.Program{Stmts: []syntax.Stmt{
 		&syntax.LetDestructureStmt{
-			Names: []string{"a", "b"},
+			Names: idents("a", "b"),
 			RHS:   &syntax.VarRefExpr{Name: "xs"},
 		},
 	}}
@@ -1355,7 +1371,7 @@ func TestExecSource_LetDestructure_NonListIsError(t *testing.T) {
 	}
 	prog := &syntax.Program{Stmts: []syntax.Stmt{
 		&syntax.LetDestructureStmt{
-			Names: []string{"a", "b"},
+			Names: idents("a", "b"),
 			RHS:   &syntax.VarRefExpr{Name: "x"},
 		},
 	}}
