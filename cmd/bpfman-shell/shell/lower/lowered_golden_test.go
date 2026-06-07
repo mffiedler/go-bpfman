@@ -28,6 +28,8 @@ import (
 var updateGolden = flag.Bool("update", false, "rewrite lowered golden files instead of comparing")
 
 func TestLanguageLoweredGolden(t *testing.T) {
+	t.Parallel()
+
 	const (
 		src    = "testdata/language.bpfman"
 		golden = "testdata/language.lowered"
