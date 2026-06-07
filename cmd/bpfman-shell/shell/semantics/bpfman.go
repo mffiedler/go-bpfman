@@ -24,6 +24,10 @@ var (
 	programShape = shapeFromType(reflect.TypeFor[bpfman.Program](), OriginProgram)
 	linkShape    = shapeFromType(reflect.TypeFor[bpfman.Link](), OriginLink)
 
+	loadResultShape        = shapeFromType(reflect.TypeFor[bpfman.LoadResult](), OriginUnknown)
+	programListResultShape = shapeFromType(reflect.TypeFor[bpfman.ProgramListResult](), OriginUnknown)
+	linkListResultShape    = shapeFromType(reflect.TypeFor[bpfman.LinkListResult](), OriginUnknown)
+
 	linkDetailsShapes = buildLinkDetailsShapes()
 )
 
@@ -55,19 +59,11 @@ func inferBpfmanBindShape(args []syntax.Expr) Shape {
 	case "program":
 		switch verb.Text {
 		case "load":
-			elem := KindShape(OriginProgram)
-			return Shape{
-				Sealed: true,
-				Kind:   OriginUnknown,
-				Fields: map[string]Shape{
-					"programs": {Sealed: false, Kind: OriginUnknown, Elem: &elem},
-				},
-			}
+			return loadResultShape
 		case "get":
 			return KindShape(OriginProgram)
 		case "list":
-			elem := KindShape(OriginProgram)
-			return Shape{Sealed: false, Kind: OriginUnknown, Elem: &elem}
+			return programListResultShape
 		}
 	case "link":
 		switch verb.Text {
@@ -83,8 +79,7 @@ func inferBpfmanBindShape(args []syntax.Expr) Shape {
 		case "get":
 			return KindShape(OriginLink)
 		case "list":
-			elem := KindShape(OriginLink)
-			return Shape{Sealed: false, Kind: OriginUnknown, Elem: &elem}
+			return linkListResultShape
 		}
 	}
 	return Shape{Sealed: false, Kind: OriginUnknown}

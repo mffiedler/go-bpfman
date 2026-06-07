@@ -58,6 +58,66 @@ func TestValue_ConstructorKinds(t *testing.T) {
 	assert.Equal(t, semantics.OriginBool, BoolValue(true).Kind())
 }
 
+func TestValue_InternalOriginMirrorKeysMatchSealedShapeFields(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		kind semantics.OriginKind
+		v    Value
+	}{
+		{
+			name: "envelope",
+			kind: semantics.OriginEnvelope,
+			v: ValueFromEnvelope(Envelope{
+				OK:     false,
+				Code:   143,
+				Stdout: "out",
+				Stderr: "err",
+				Killed: true,
+				Signal: "TERM",
+				HasPID: true,
+				PID:    4321,
+			}),
+		},
+		{
+			name: "job",
+			kind: semantics.OriginJob,
+			v:    ValueFromJob(&Job{PID: 4321, TargetBinary: "/usr/bin/sleep"}),
+		},
+		{
+			name: semantics.OriginNetPair.String(),
+			kind: semantics.OriginNetPair,
+			v: ValueFromNetPair(&NetPair{
+				Ns:          "ns0",
+				HostLink:    "veth0",
+				PeerLink:    "veth1",
+				HostAddr:    "192.0.2.1",
+				PeerAddr:    "192.0.2.2",
+				HostIfindex: 10,
+				HostNsid:    20,
+			}),
+		},
+		{
+			name: semantics.OriginKfunc.String(),
+			kind: semantics.OriginKfunc,
+			v:    ValueFromKfunc(&Kfunc{Index: 1, Name: "bpfman_test", Trigger: "/sys/kernel/debug/tracing/events/foo", Count: "/sys/kernel/debug/tracing/events/foo/count"}),
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.kind, tc.v.Kind())
+			shape := semantics.KindShape(tc.kind)
+			require.True(t, shape.Sealed, "%s shape must be sealed", tc.kind)
+			raw, ok := tc.v.Raw().(map[string]any)
+			require.True(t, ok, "%s mirror should be a JSON object, got %T", tc.kind, tc.v.Raw())
+			assert.ElementsMatch(t, shapeFieldNames(shape), valueFieldNames(raw))
+		})
+	}
+}
+
 func TestValue_WithKind(t *testing.T) {
 	t.Parallel()
 
@@ -132,4 +192,20 @@ func TestOriginMismatchError_Message(t *testing.T) {
 			assert.Equal(t, tc.want, tc.err.Error())
 		})
 	}
+}
+
+func shapeFieldNames(shape semantics.Shape) []string {
+	names := make([]string, 0, len(shape.Fields))
+	for name := range shape.Fields {
+		names = append(names, name)
+	}
+	return names
+}
+
+func valueFieldNames(raw map[string]any) []string {
+	names := make([]string, 0, len(raw))
+	for name := range raw {
+		names = append(names, name)
+	}
+	return names
 }

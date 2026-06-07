@@ -624,6 +624,30 @@ func TestEvalExpr_Thread_AppendsStructuredValueAsLastArg(t *testing.T) {
 	assert.Equal(t, semantics.OriginProgram, sva.Value.Kind())
 }
 
+func TestEvalExpr_Thread_DestructuredSlotPreservesValueAsLastArg(t *testing.T) {
+	t.Parallel()
+
+	src := `
+let (left right) = ["left" "right"]
+let got = $left |> jq "."
+`
+	var captured []Arg
+	env := &Env{
+		Session: NewSession(),
+		ExecBind: bindFromValue(func(args []Arg, _ source.Span) (Value, error) {
+			captured = args
+			return StringValue("ok"), nil
+		}),
+	}
+	require.NoError(t, execSourceProgram(t, src, env))
+	require.Len(t, captured, 3)
+	scalar, ok := captured[2].(ScalarValueArg)
+	require.True(t, ok, "destructured scalar should produce ScalarValueArg, got %T", captured[2])
+	assert.Equal(t, "left", scalar.Text)
+	assert.True(t, scalar.HasValue)
+	assert.Equal(t, "left", scalar.Value.Raw())
+}
+
 func TestEvalExpr_Thread_NilLHSPassesAsNilArg(t *testing.T) {
 	t.Parallel()
 

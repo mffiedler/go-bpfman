@@ -531,10 +531,9 @@ func TestCheck_MultipleIssuesAccumulate(t *testing.T) {
 func TestCheck_DotPathOnDefinedNameIsClean(t *testing.T) {
 	t.Parallel()
 
-	// Field access on a defined name reports nothing; the
-	// path is checked structurally by the parser, not by
-	// the static checker.
-	src := "let p <- bpfman program list\nprint $p.id"
+	// Field access on a typed defined name is clean when the
+	// path matches the declared JSON shape.
+	src := "let p <- bpfman program get 1\nprint $p.record.program_id"
 	issues := checkSource(t, src)
 	assert.Empty(t, issues)
 }
@@ -1245,6 +1244,121 @@ print $r.prog.record.program_idd`
 	require.Len(t, issues, 1)
 	assert.Contains(t, issues[0].Msg, `"program_idd"`)
 	assert.Contains(t, issues[0].Msg, `"program_id"`)
+}
+
+func TestCheck_BPFManProgramListResultShape_TopLevelFieldTypoRejected(t *testing.T) {
+	t.Parallel()
+
+	src := `guard listed <- bpfman program list -o json
+print $listed.progams[0].record.program_id`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "listed has no field")
+	assert.Contains(t, issues[0].Msg, `"progams"`)
+	assert.Contains(t, issues[0].Msg, `"programs"`)
+}
+
+func TestCheck_BPFManProgramListResultShape_ValidProgramFieldIsClean(t *testing.T) {
+	t.Parallel()
+
+	src := `guard listed <- bpfman program list -o json
+print $listed.programs[0].record.program_id`
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
+func TestCheck_BPFManProgramListResultShape_WrapperFieldsAreClean(t *testing.T) {
+	t.Parallel()
+
+	// The sealed wrapper exposes observed_at and host alongside
+	// programs; all three are valid top-level fields. Guards
+	// against the reflected shape dropping a wrapper field the
+	// CLI's JSON still emits, which programs-only coverage misses.
+	src := `guard listed <- bpfman program list -o json
+print $listed.observed_at
+print $listed.host
+print $listed.programs[0].record.program_id`
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
+func TestCheck_BPFManProgramListResultShape_WrapperFieldTypoRejected(t *testing.T) {
+	t.Parallel()
+
+	// A typo on a non-programs wrapper field is rejected too, so the
+	// sealing covers the whole wrapper, not just the programs slot.
+	src := `guard listed <- bpfman program list -o json
+print $listed.observed_att`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "listed has no field")
+	assert.Contains(t, issues[0].Msg, `"observed_att"`)
+	assert.Contains(t, issues[0].Msg, `"observed_at"`)
+}
+
+func TestCheck_BPFManProgramListResultShape_ProgramFieldsAreChecked(t *testing.T) {
+	t.Parallel()
+
+	src := `guard listed <- bpfman program list -o json
+print $listed.programs[0].record.program_idd`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, `"program_idd"`)
+	assert.Contains(t, issues[0].Msg, `"program_id"`)
+}
+
+func TestCheck_BPFManProgramLoadResultShape_ValidProgramFieldIsClean(t *testing.T) {
+	t.Parallel()
+
+	src := `guard loaded <- bpfman program load xdp file /tmp/x.o
+print $loaded.programs[0].record.program_id`
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
+func TestCheck_BPFManProgramLoadResultShape_TopLevelFieldTypoRejected(t *testing.T) {
+	t.Parallel()
+
+	src := `guard loaded <- bpfman program load xdp file /tmp/x.o
+print $loaded.progams[0].record.program_id`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "loaded has no field")
+	assert.Contains(t, issues[0].Msg, `"progams"`)
+	assert.Contains(t, issues[0].Msg, `"programs"`)
+}
+
+func TestCheck_BPFManLinkListResultShape_TopLevelFieldTypoRejected(t *testing.T) {
+	t.Parallel()
+
+	src := `guard listed <- bpfman link list -o json
+print $listed.lniks[0].id`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "listed has no field")
+	assert.Contains(t, issues[0].Msg, `"lniks"`)
+	assert.Contains(t, issues[0].Msg, `"links"`)
+}
+
+func TestCheck_BPFManLinkListResultShape_ValidLinkFieldIsClean(t *testing.T) {
+	t.Parallel()
+
+	src := `guard listed <- bpfman link list -o json
+print $listed.links[0].id
+print $listed.links[0].kind`
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
+func TestCheck_BPFManLinkListResultShape_LinkFieldsAreChecked(t *testing.T) {
+	t.Parallel()
+
+	src := `guard listed <- bpfman link list -o json
+print $listed.links[0].kindd`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, `"kindd"`)
+	assert.Contains(t, issues[0].Msg, `"kind"`)
 }
 
 func TestCheck_RecordExprShape_ParamFieldStaysOpen(t *testing.T) {

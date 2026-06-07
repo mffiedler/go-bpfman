@@ -73,6 +73,74 @@ func TestJQ_PathOnStructured(t *testing.T) {
 	assert.Equal(t, "apple", s)
 }
 
+func TestJQ_ShellResolvedScalarStringIsInputValue(t *testing.T) {
+	t.Parallel()
+
+	input := runtime.StringValue("hello")
+	v, err := jqCall(t, []runtime.Arg{
+		runtime.WordArg{Text: "."},
+		runtime.ScalarValueArg{Text: "hello", Value: input, HasValue: true},
+	})
+	require.NoError(t, err)
+	s, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "hello", s)
+}
+
+func TestJQ_ListValueIsInputArray(t *testing.T) {
+	t.Parallel()
+
+	input := runtime.ValueFromAny([]any{
+		json.Number("1"),
+		json.Number("2"),
+		json.Number("3"),
+	})
+	v, err := jqCall(t, []runtime.Arg{
+		runtime.QuotedArg{Text: "add"},
+		runtime.StructuredValueArg{Value: input},
+	})
+	require.NoError(t, err)
+	s, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "6", s)
+}
+
+func TestJQ_RecordValueIsInputObject(t *testing.T) {
+	t.Parallel()
+
+	input := runtime.ValueFromRecord(map[string]runtime.Value{
+		"name":  runtime.StringValue("demo"),
+		"count": runtime.ValueFromAny(json.Number("3")),
+	})
+	v, err := jqCall(t, []runtime.Arg{
+		runtime.QuotedArg{Text: `.name + ":" + (.count | tostring)`},
+		runtime.StructuredValueArg{Value: input},
+	})
+	require.NoError(t, err)
+	s, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "demo:3", s)
+}
+
+func TestJQ_StructValueIsInputObject(t *testing.T) {
+	t.Parallel()
+
+	type sample struct {
+		Name  string `json:"name"`
+		Count int    `json:"count"`
+	}
+	input, err := runtime.ValueFromStruct(sample{Name: "demo", Count: 3})
+	require.NoError(t, err)
+	v, err := jqCall(t, []runtime.Arg{
+		runtime.QuotedArg{Text: `.name + ":" + (.count | tostring)`},
+		runtime.StructuredValueArg{Value: input},
+	})
+	require.NoError(t, err)
+	s, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "demo:3", s)
+}
+
 func TestJQ_AggregateSum(t *testing.T) {
 	t.Parallel()
 
