@@ -50,13 +50,6 @@ E2E_SCRIPTS_TIMELINE_TRACE ?= $(COVERAGE_DIR)/e2e-scripts-timeline.trace.json
 BPFMAN_PROTO_DIR := proto
 BPFMAN_PB_DIR := server/pb
 DOC_PORT ?= 6060
-E2E_SCRIPT_SOURCES := $(wildcard e2e/scripts/*.bpfman)
-E2E_SCRIPT_LOWER_DEPS := e2e/lib.bpfman
-LOWERED_CORPUS_DIR := e2e/testdata/lowered
-LOWERED_CORPUS_E2E_SCRIPT_OUTPUTS := $(patsubst e2e/scripts/%.bpfman,$(LOWERED_CORPUS_DIR)/scripts/%.lowered,$(E2E_SCRIPT_SOURCES))
-LOWERED_CORPUS_E2E_LIB_OUTPUT := $(LOWERED_CORPUS_DIR)/lib/lib.lowered
-LOWERED_CORPUS_OUTPUTS := $(LOWERED_CORPUS_E2E_SCRIPT_OUTPUTS) $(LOWERED_CORPUS_E2E_LIB_OUTPUT)
-BPFMAN_SHELL_GO_SOURCES := $(shell find . -path ./vendor -prune -o -name '*.go' ! -name '*_test.go' -print)
 
 # ---------------------------------------------------------------------------
 # Image-building tool (docker / podman). Mirrors the bpfman-operator
@@ -604,7 +597,7 @@ LINT_MAKE_TARGETS := \
 	bpfman-compile \
 	build-image build-image-amd64 build-image-dev \
 	build-image-csi-sanity build-image-openshift \
-	ci-build ci-check-fmt ci-check-goimports ci-check-goldens ci-check-vendor ci-check-vet ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-grpc ci-test-e2e-scripts \
+	ci-build ci-check-fmt ci-check-goimports ci-check-vendor ci-check-vet ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-grpc ci-test-e2e-scripts \
 	cosign-sign coverage clean
 
 # Lint every Dockerfile / Containerfile with hadolint. The existing
@@ -641,6 +634,7 @@ help:
 	@echo "Testing:"
 	@printf "  %-31s %s\n" "test" "Run all tests"
 	@printf "  %-31s %s\n" "test-all" "Run every host-side test surface in CI order (pre-push gate)"
+	@printf "  %-31s %s\n" "update-lowered-goldens" "Regenerate the lowerer golden fixture"
 	@printf "  %-31s %s\n" "test-e2e" "Run e2e tests (requires root)"
 	@printf "  %-31s %s\n" "test-e2e-grpc" "Run the parallel gRPC e2e test against a real bpfman serve daemon (requires root)"
 	@printf "  %-31s %s\n" "test-e2e-scripts" "Run .bpfman e2e scripts under e2e/scripts/ via the Go test binary in e2e/scriptrunner (requires root)"
@@ -672,7 +666,6 @@ help:
 	@echo "  ci-build                    Compile bpfman binary inside the CI container"
 	@echo "  ci-check-fmt                Verify Go formatting is tidy (matches CI check-fmt)"
 	@echo "  ci-check-goimports          Verify Go imports are tidy (matches CI check-goimports)"
-	@echo "  ci-check-goldens            Verify generated golden corpora are tidy (matches CI check-goldens)"
 	@echo "  ci-check-vendor             Verify go.mod and vendor are tidy (matches CI check-vendor)"
 	@echo "  ci-check-vet                Run go vet over every build-tag combo (matches CI check-vet)"
 	@echo "  ci-image                    Build the CI base image (loaded as bpfman-ci)"
@@ -830,12 +823,6 @@ test-all:
 	$(Q)$(MAKE) test-e2e-scripts-matrix
 	$(Q)$(MAKE) test-e2e
 	$(Q)$(MAKE) test-e2e-grpc
-
-# The lowered corpus is checked in deliberately: it is a reviewable
-# snapshot of the canonical IR for the e2e .bpfman scripts. The
-# checked-in .lowered files are ordinary Make outputs below: changing
-# a script, e2e/lib.bpfman, or bin/bpfman-shell refreshes the relevant
-# snapshot when a target depends on $(LOWERED_CORPUS_OUTPUTS).
 
 # nsenter cross-architecture tests
 #
@@ -1001,18 +988,15 @@ E2E_SCRIPTS_FORWARD_VARS := \
 $(BIN_DIR)/e2e-scripts.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) | $(BIN_DIR)
 	$(strip go test -c $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(E2E_TAGS),-tags=$(E2E_TAGS)) $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") -o $(BIN_DIR)/e2e-scripts.test ./e2e/scriptrunner)
 
-$(LOWERED_CORPUS_DIR)/scripts/%.lowered: e2e/scripts/%.bpfman $(E2E_SCRIPT_LOWER_DEPS) $(BIN_DIR)/bpfman-shell | $(LOWERED_CORPUS_DIR)/scripts
-	$(call quiet_cmd,LOWERED,$@)
-	$(Q)$(BIN_DIR)/bpfman-shell --lowered $< > $@
+# Regenerate the lowerer golden fixture. The single dense fixture under
+# shell/lower/testdata is the lowerer contract; TestLanguageLoweredGolden
+# compares against it in `make test`. Run this after an intended lowerer
+# change, then review the diff. Lowering is pure, so this builds but does
+# not run the manager; the embed prerequisites are for a clean checkout.
+update-lowered-goldens: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS)
+	$(strip go test $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") ./cmd/bpfman-shell/shell/lower -run '^TestLanguageLoweredGolden$$' -update)
 
-$(LOWERED_CORPUS_E2E_LIB_OUTPUT): e2e/lib.bpfman $(BIN_DIR)/bpfman-shell | $(LOWERED_CORPUS_DIR)/lib
-	$(call quiet_cmd,LOWERED,$@)
-	$(Q)$(BIN_DIR)/bpfman-shell --lowered $< > $@
-
-$(LOWERED_CORPUS_DIR)/scripts $(LOWERED_CORPUS_DIR)/lib:
-	@mkdir -p $@
-
-build-e2e-scripts: bpfman-compile bpfman-shell-compile $(E2E_SCRIPTS_TEST_BIN) $(LOWERED_CORPUS_OUTPUTS)
+build-e2e-scripts: bpfman-compile bpfman-shell-compile $(E2E_SCRIPTS_TEST_BIN)
 
 # PATH is arranged via `sudo env PATH=...` so the script test
 # binary can resolve bpfman-shell regardless of how sudo's
@@ -1321,12 +1305,11 @@ bpfman-shell-build: bpfman-fmt bpfman-shell-compile
 
 # Depends on the dispatcher and platform/ebpf BPF embeds because the
 # shell transitively imports both packages and their go:embed
-# directives need the .bpf.o objects present at compile time. Make's
-# pattern rules build them on demand if missing or out of date.
-$(BIN_DIR)/bpfman-shell: $(BPFMAN_SHELL_GO_SOURCES) $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS) | $(BIN_DIR)
+# directives need the .bpf.o objects present at compile time. Make
+# supplies those non-Go inputs; the Go toolchain owns Go freshness and
+# decides what actually needs recompiling.
+bpfman-shell-compile: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS) | $(BIN_DIR)
 	$(strip go build $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(BUILD_TAGS),-tags '$(BUILD_TAGS)') $(if $(BIN_LDFLAGS),-ldflags "$(BIN_LDFLAGS)") -o $(BIN_DIR)/bpfman-shell ./cmd/bpfman-shell)
-
-bpfman-shell-compile: $(BIN_DIR)/bpfman-shell
 
 clean-bpfman-shell:
 	$(RM) $(BIN_DIR)/bpfman-shell
@@ -1673,18 +1656,6 @@ ci-check-goimports:
 	$(MAKE) bpfman-goimports
 	git diff --exit-code
 
-# Reproduce the workflow's check-goldens job locally. Regenerates the
-# generated golden files inside the CI container -- the lowered corpus
-# rules build bpfman-shell, which embeds the dispatcher and
-# platform/ebpf BPF objects, so it needs clang, libbpf, and the kernel
-# headers the container provides -- then verifies the tree is still
-# clean on the host. This catches commits that edit .bpfman scripts,
-# the lowerer, or corpus inputs without also committing the
-# regenerated lowered IR goldens.
-ci-check-goldens: ci-image
-	$(CI_RUN) make $(LOWERED_CORPUS_OUTPUTS)
-	git diff --exit-code
-
 # Reproduce the workflow's lint job locally. Runs the full
 # `make lint` umbrella (golangci-lint + hadolint + shellcheck +
 # checkmake) inside the CI container.
@@ -1780,7 +1751,7 @@ ci-test-e2e-grpc:
 # attach failures to shell counter assertions seeing the other
 # suite's events. Don't `make -j ci-test-e2e ci-test-e2e-scripts`
 # locally, and don't run them in two shells at once.
-ci: ci-check-vendor ci-check-fmt ci-check-goimports ci-check-goldens ci-check-vet ci-check-gofix ci-build ci-lint ci-test ci-test-e2e ci-test-e2e-scripts ci-test-e2e-grpc
+ci: ci-check-vendor ci-check-fmt ci-check-goimports ci-check-vet ci-check-gofix ci-build ci-lint ci-test ci-test-e2e ci-test-e2e-scripts ci-test-e2e-grpc
 
 # ---------------------------------------------------------------------------
 # gRPC integration test.
@@ -1803,9 +1774,9 @@ bpfman-test-grpc: build-image-dev
 .PHONY: bpfman-e2e-cleanup-build bpfman-e2e-cleanup-compile clean-bpfman-e2e-cleanup
 .PHONY: go-test-timeline-build go-test-timeline-compile clean-go-test-timeline
 .PHONY: build-image build-image-amd64 build-image-arm64 build-image-csi-sanity build-image-dev build-image-nix build-image-openshift build-image-ppc64le build-image-s390x cosign-sign
-.PHONY: ci ci-build ci-check-fmt ci-check-gofix ci-check-goimports ci-check-goldens ci-check-vendor ci-check-vet ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-grpc ci-test-e2e-scripts
+.PHONY: ci ci-build ci-check-fmt ci-check-gofix ci-check-goimports ci-check-vendor ci-check-vet ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-grpc ci-test-e2e-scripts
 .PHONY: coverage clean-coverage coverage-func coverage-html coverage-open
 .PHONY: doc doc-text
 .PHONY: print-fedora-version print-go-version print-golangci-lint-version
-.PHONY: build-e2e-grpc build-e2e-scripts $(BIN_DIR)/e2e.test $(BIN_DIR)/e2e-grpc.test $(BIN_DIR)/e2e-scripts.test run-e2e-grpc run-e2e-scripts run-e2e-scripts-timeline test test-timeline test-all test-e2e test-e2e-grpc test-e2e-scripts test-e2e-scripts-file test-e2e-scripts-image test-e2e-scripts-matrix test-e2e-scripts-file-matrix test-e2e-scripts-image-matrix test-e2e-scripts-image-ci test-e2e-published-images test-e2e-scripts-stress test-e2e-scripts-timeline test-examples
+.PHONY: build-e2e-grpc build-e2e-scripts $(BIN_DIR)/e2e.test $(BIN_DIR)/e2e-grpc.test $(BIN_DIR)/e2e-scripts.test run-e2e-grpc run-e2e-scripts run-e2e-scripts-timeline update-lowered-goldens test test-timeline test-all test-e2e test-e2e-grpc test-e2e-scripts test-e2e-scripts-file test-e2e-scripts-image test-e2e-scripts-matrix test-e2e-scripts-file-matrix test-e2e-scripts-image-matrix test-e2e-scripts-image-ci test-e2e-published-images test-e2e-scripts-stress test-e2e-scripts-timeline test-examples
 .PHONY: test-nsenter test-nsenter-amd64 test-nsenter-arm64 test-nsenter-cross test-nsenter-ppc64le test-nsenter-s390x

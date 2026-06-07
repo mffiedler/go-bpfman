@@ -1,0 +1,186 @@
+def lib_double(n) entry=bb0
+
+bb0:
+  EnterFrame kind=def
+  EnterDeferScope kind=def
+  BindName n = t0
+  Eval t1 = $n * 2
+  ReturnValue t1 to=bb2
+
+bb1:
+  Jump bb2
+
+bb2:
+  RunDefers policy=def-local
+  ExitFrame
+  EmitBindResult rc=synthetic primary=nil
+
+def describe(label value) entry=bb0
+
+bb0:
+  EnterFrame kind=def
+  EnterDeferScope kind=def
+  BindName label = t0
+  BindName value = t1
+  BuildArgs t2 = [print $label $value]
+  DispatchCommand argv=t2 policy=def-then-exec-command lane=builtin(print)
+  Eval t3 = $value
+  ReturnValue t3 to=bb2
+
+bb1:
+  Jump bb2
+
+bb2:
+  RunDefers policy=def-local
+  ExitFrame
+  EmitBindResult rc=synthetic primary=nil
+
+body entry=bb0
+
+bb0:
+  EnterDeferScope kind=program
+  BuildArgs t0 = [print "start"]
+  DispatchCommand argv=t0 policy=def-then-exec-command lane=builtin(print)
+  Eval t1 = [1 2 3]
+  BindName nums = t1
+  Eval t2 = $nums.[0]
+  BindName first = t2
+  Eval t3 = $first + 10
+  BindName sum = t3
+  Eval t4 = $nums
+  BindDestructure [a b c] = t4
+  Eval t5 = record {id: $first label: "demo" total: $sum + 1}
+  BindName rec = t5
+  BuildArgs t6 = [lib_double 21]
+  DispatchBind t7 = t6 policy=def-then-exec-bind lane=def(lib_double)
+  ApplyBind src=t7 argv=t6 primary=doubled rc=_ guard=false
+  BuildArgs t8 = [echo hello]
+  DispatchBind t9 = t8 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t9 argv=t8 primary=greeting rc=_ guard=false
+  BuildArgs t10 = [echo world]
+  DispatchBind t11 = t10 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t11 argv=t10 primary=out rc=rc guard=false
+  BuildArgs t12 = [echo ready]
+  DispatchBind t13 = t12 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t13 argv=t12 primary=ok rc=_ guard=true fail=bb1
+  BuildArgs t14 = [describe count $sum]
+  DispatchBind t15 = t14 policy=def-then-exec-bind lane=def(describe)
+  ApplyBind src=t15 argv=t14 primary=described rc=_ guard=false
+  BuildArgs t16 = [echo cleanup]
+  RegisterDefer argv=t16 policy=def-then-exec-bind lane=exec
+  Eval t17 = $sum > 0
+  Branch cond=t17 true=bb2 false=bb3
+
+bb1:
+  RunDefers policy=program
+  PropagateError
+
+bb2:
+  EnterFrame kind=if-branch
+  BuildArgs t18 = [print positive]
+  DispatchCommand argv=t18 policy=def-then-exec-command lane=builtin(print)
+  ExitFrame
+  Jump bb6
+
+bb3:
+  Eval t19 = $sum == 0
+  Branch cond=t19 true=bb4 false=bb5
+
+bb4:
+  EnterFrame kind=if-branch
+  BuildArgs t20 = [print zero]
+  DispatchCommand argv=t20 policy=def-then-exec-command lane=builtin(print)
+  ExitFrame
+  Jump bb6
+
+bb5:
+  EnterFrame kind=if-branch
+  BuildArgs t21 = [print negative]
+  DispatchCommand argv=t21 policy=def-then-exec-command lane=builtin(print)
+  ExitFrame
+  Jump bb6
+
+bb6:
+  Eval t22 = $nums
+  ForEach list=t22 names=[n] body=bb7 exit=bb8
+
+bb7:
+  Eval t23 = $n == 2
+  Branch cond=t23 true=bb9 false=bb10
+
+bb8:
+  Eval t26 = $nums
+  ForEachCollect list=t26 names=[n] primary=collected rc=_ guard=false body=bb17 exit=bb18
+
+bb9:
+  EnterFrame kind=if-branch
+  ForEachContinue
+
+bb10:
+  Jump bb12
+
+bb11:
+  ExitFrame
+  Jump bb12
+
+bb12:
+  Eval t24 = $n == 3
+  Branch cond=t24 true=bb13 false=bb14
+
+bb13:
+  EnterFrame kind=if-branch
+  ExitLoop
+
+bb14:
+  Jump bb16
+
+bb15:
+  ExitFrame
+  Jump bb16
+
+bb16:
+  BuildArgs t25 = [print $n]
+  DispatchCommand argv=t25 policy=def-then-exec-command lane=builtin(print)
+  ForEachContinue
+
+bb17:
+  BuildArgs t27 = [echo $n]
+  DispatchBind t28 = t27 policy=def-then-exec-bind lane=exec
+  CollectProduce t28
+
+bb18:
+  BeginPoll timeout=5s every=1s attempt=bb19 timeout=bb20 success=bb21
+
+bb19:
+  EnterFrame kind=poll-attempt
+  EnterDeferScope kind=poll-attempt
+  Eval t29 = $ok.ok
+  Branch cond=t29 true=bb22 false=bb23
+
+bb20:
+  PropagateError
+
+bb21:
+  Assert $ok matches { ok: true }
+  Assert ok echo done
+  Require $sum > 0
+  Eval t31 = $nums |> jq length
+  BindName piped = t31
+  BuildArgs t32 = [cat file:$first]
+  DispatchBind t33 = t32 policy=def-then-exec-bind lane=exec
+  ApplyBind src=t33 argv=t32 primary=_ rc=_ guard=false
+  RunDefers policy=program
+  Stop
+
+bb22:
+  RunDefers policy=attempt-fatal
+  ExitFrame
+  Jump bb21
+
+bb23:
+  Eval t30 = "waiting for the command to report ok"
+  RunDefers policy=attempt-fatal
+  ExitFrame
+  RetryPoll message=t30
+
+bb24:
