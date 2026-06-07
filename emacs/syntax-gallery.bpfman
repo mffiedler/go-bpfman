@@ -1,10 +1,26 @@
-# -*- mode: bpfman -*-
+# -*- mode: bpfman; bpfman-format-on-save: nil -*-
 # Syntax gallery for bpfman-mode.el highlighting.
 #
 # This file is NOT intended to be evaluated. It exists so every
 # construct in the bpfman-shell language has a representative line to
 # stress-test the Emacs major mode. Open it, scan top to bottom, and
 # confirm every token is fontified according to its role.
+#
+# This file is deliberately not canonical and must not be reformatted.
+# It shows valid forms that the formatter rewrites to one canonical
+# spelling, and the highlighter must cope with all of them. Treat the
+# canonical spelling as house style; the forms below are valid but not
+# what `bpfman-shell --fmt' emits:
+#
+#   - braces on a varref are optional: ${x} becomes $x
+#   - single-quoted strings become double-quoted: 'a' becomes "a"
+#   - one-line blocks expand: if c { a; b } becomes a multi-line block
+#   - duration 60s becomes 1m0s
+#   - hand-aligned columns collapse to single spaces
+#
+# Because the formatter would strip that variety, bpfman-format-on-save
+# is disabled for this file via the file-local on line 1. Do not run
+# the formatter on it.
 #
 # Expected faces (with Emacs default face mapping):
 #
@@ -19,9 +35,9 @@
 #   flags              font-lock-constant-face    (--flag, -x)
 #
 # Plain arg-position words (file paths, numeric IDs, attach points)
-# stay unfontified. Delimiters ({ } ; ( ) ,) are not highlighted.
-# Brackets [ ] are not DSL syntax; they appear only inside a varref
-# index ($x[0]) or a quoted jq filter string.
+# stay unfontified. Delimiters ({ } ; ( ) [ ]) are not highlighted.
+# Commas are not separators in bpfman-shell binding lists or def
+# parameter lists; use whitespace-separated names.
 
 # ---- 1. Comments and quoting ----
 
@@ -77,6 +93,9 @@ let failing    = false
 let unbounded  = false
 let a          = 1
 let b          = 2
+let pair       = [1 2]
+let pairs      = [[1 10] [2 20]]
+let ids        = [1 2 3]
 
 # ---- 3. Variable references (every form) ----
 
@@ -87,7 +106,18 @@ let deep_path  = $data.maps[0].name
 let braced     = ${prog.record.program_id}
 let braced_idx = ${items[3].field}
 
-# ---- 3a. String interpolation in double-quoted strings ----
+# ---- 3a. Lists and destructuring ----
+
+# List literals are expression syntax. Destructure targets are a
+# whitespace-separated parenthesised name list; '_' discards one
+# slot. Commas are deliberately rejected by the parser.
+let nums       = [1 2 3]
+let nested     = [[1] [2 3]]
+let refs       = [$a $b ($count + 1)]
+let (left right) = $pair
+let (_ kept)      = $pair
+
+# ---- 3b. String interpolation in double-quoted strings ----
 
 # "${EXPR}" splices a scalar value into a double-quoted string.
 # Single-quoted strings never interpolate; a bare '$' inside a
@@ -132,6 +162,12 @@ let (rc2 _) <- ip link del veth-host
 # "run, ignore result, continue regardless" idiom for cleanup.
 let _ <- ip link del bpfman-demo
 guard _ <- ip netns add bpfman-test
+
+# Bind-collect runs a foreach body and collects the last command's
+# primary result for each iteration.
+let collected <- foreach id in $ids {
+    print $id
+}
 
 # ---- 4a. Lifecycle with defer ----
 
@@ -234,7 +270,7 @@ if $ready { bpfman list programs; bpfman link list } else { require fail }
 
 # ---- 12. Top-level commands and registered providers ----
 
-# 'bpfman' and the shell builtins (jq, file, print, source,
+# 'bpfman' and the shell builtins (jq, file, print, tempdir,
 # ...) are registered providers.
 # Any other first word falls through to subprocess execution,
 # so 'ip', 'cat', 'diff' run as host commands without needing
@@ -433,6 +469,11 @@ foreach item in $progs {
     print $item
 }
 
+# Multi-name foreach destructures each item in the iterable.
+foreach (id weight) in $pairs {
+    print $id $weight
+}
+
 # ---- 22. poll / retry ----
 
 # Poll retries only when the script says `retry`. `require`
@@ -519,6 +560,10 @@ def expect_program_load(prog load_tp kernel_tp name) {
 # A def with no parameters.
 def banner() {
     print "running lifecycle checks"
+}
+
+def publish_id(prog) {
+    return $prog.record.program_id
 }
 
 def expect_link(link prog kind) {
