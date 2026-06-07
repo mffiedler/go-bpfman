@@ -50,6 +50,18 @@ E2E_SCRIPTS_TIMELINE_TRACE ?= $(COVERAGE_DIR)/e2e-scripts-timeline.trace.json
 BPFMAN_PROTO_DIR := proto
 BPFMAN_PB_DIR := server/pb
 DOC_PORT ?= 6060
+# Canonical bpfman-shell sources that should be formatter-owned. The
+# e2e corpus is the broad runnable script set; outside e2e, include
+# individual positive fixtures deliberately. Do not glob
+# cmd/bpfman-shell/testdata: it mixes positive fixtures with
+# parser/check/runtime negative cases whose exact source shape matters.
+# Dockerfile.bpfman is a container build file, and
+# emacs/syntax-gallery.bpfman is deliberately non-canonical.
+BPFMAN_SHELL_FORMAT_SOURCES := \
+	e2e/lib.bpfman \
+	$(wildcard e2e/scripts/*.bpfman) \
+	cmd/bpfman-shell/shell/lower/testdata/language.bpfman \
+	cmd/bpfman-shell/shell/lower/testdata/language-lib.bpfman
 
 # ---------------------------------------------------------------------------
 # Image-building tool (docker / podman). Mirrors the bpfman-operator
@@ -634,6 +646,7 @@ help:
 	@echo "Testing:"
 	@printf "  %-31s %s\n" "test" "Run all tests"
 	@printf "  %-31s %s\n" "test-all" "Run every host-side test surface in CI order (pre-push gate)"
+	@printf "  %-31s %s\n" "bpfman-shell-fmt" "Format canonical .bpfman files"
 	@printf "  %-31s %s\n" "update-lowered-goldens" "Regenerate the lowerer golden fixture"
 	@printf "  %-31s %s\n" "test-e2e" "Run e2e tests (requires root)"
 	@printf "  %-31s %s\n" "test-e2e-grpc" "Run the parallel gRPC e2e test against a real bpfman serve daemon (requires root)"
@@ -995,6 +1008,13 @@ $(BIN_DIR)/e2e-scripts.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) | $(BIN
 # not run the manager; the embed prerequisites are for a clean checkout.
 update-lowered-goldens: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS)
 	$(strip go test $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") ./cmd/bpfman-shell/shell/lower -run '^TestLanguageLoweredGolden$$' -update)
+
+bpfman-shell-fmt: bpfman-shell-compile
+	@set -e; \
+	for f in $(BPFMAN_SHELL_FORMAT_SOURCES); do \
+	    printf "  BPFMAN-FMT %s\n" "$$f"; \
+	    $(BIN_DIR)/bpfman-shell fmt -w "$$f"; \
+	done
 
 build-e2e-scripts: bpfman-compile bpfman-shell-compile $(E2E_SCRIPTS_TEST_BIN)
 
@@ -1681,6 +1701,17 @@ ci-check-gofix: ci-image
 	$(CI_RUN) make clean-bpf bpfman-gofix
 	git diff --exit-code
 
+# Reproduce the workflow's check-bpfman-shell-fmt job locally. Formats
+# the canonical .bpfman files inside the CI container -- which supplies
+# the clang and libbpf toolchain bpfman-shell's in-process manager
+# needs to build -- then asserts the tree is unchanged. A non-empty
+# diff means a .bpfman file is not canonically formatted; run
+# `make bpfman-shell-fmt` to apply it. Same bind-mount / host git-diff
+# contract as ci-check-gofix.
+ci-check-bpfman-shell-fmt: ci-image
+	$(CI_RUN) make clean-bpf bpfman-shell-fmt
+	git diff --exit-code
+
 # Reproduce the workflow's unit-test job locally. Source is
 # mounted into the container so the test process sees the
 # current working tree exactly as a host build would. Same Go
@@ -1751,7 +1782,7 @@ ci-test-e2e-grpc:
 # attach failures to shell counter assertions seeing the other
 # suite's events. Don't `make -j ci-test-e2e ci-test-e2e-scripts`
 # locally, and don't run them in two shells at once.
-ci: ci-check-vendor ci-check-fmt ci-check-goimports ci-check-vet ci-check-gofix ci-build ci-lint ci-test ci-test-e2e ci-test-e2e-scripts ci-test-e2e-grpc
+ci: ci-check-vendor ci-check-fmt ci-check-goimports ci-check-vet ci-check-gofix ci-check-bpfman-shell-fmt ci-build ci-lint ci-test ci-test-e2e ci-test-e2e-scripts ci-test-e2e-grpc
 
 # ---------------------------------------------------------------------------
 # gRPC integration test.
@@ -1774,9 +1805,9 @@ bpfman-test-grpc: build-image-dev
 .PHONY: bpfman-e2e-cleanup-build bpfman-e2e-cleanup-compile clean-bpfman-e2e-cleanup
 .PHONY: go-test-timeline-build go-test-timeline-compile clean-go-test-timeline
 .PHONY: build-image build-image-amd64 build-image-arm64 build-image-csi-sanity build-image-dev build-image-nix build-image-openshift build-image-ppc64le build-image-s390x cosign-sign
-.PHONY: ci ci-build ci-check-fmt ci-check-gofix ci-check-goimports ci-check-vendor ci-check-vet ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-grpc ci-test-e2e-scripts
+.PHONY: ci ci-build ci-check-bpfman-shell-fmt ci-check-fmt ci-check-gofix ci-check-goimports ci-check-vendor ci-check-vet ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-grpc ci-test-e2e-scripts
 .PHONY: coverage clean-coverage coverage-func coverage-html coverage-open
 .PHONY: doc doc-text
 .PHONY: print-fedora-version print-go-version print-golangci-lint-version
-.PHONY: build-e2e-grpc build-e2e-scripts $(BIN_DIR)/e2e.test $(BIN_DIR)/e2e-grpc.test $(BIN_DIR)/e2e-scripts.test run-e2e-grpc run-e2e-scripts run-e2e-scripts-timeline update-lowered-goldens test test-timeline test-all test-e2e test-e2e-grpc test-e2e-scripts test-e2e-scripts-file test-e2e-scripts-image test-e2e-scripts-matrix test-e2e-scripts-file-matrix test-e2e-scripts-image-matrix test-e2e-scripts-image-ci test-e2e-published-images test-e2e-scripts-stress test-e2e-scripts-timeline test-examples
+.PHONY: build-e2e-grpc build-e2e-scripts $(BIN_DIR)/e2e.test $(BIN_DIR)/e2e-grpc.test $(BIN_DIR)/e2e-scripts.test run-e2e-grpc run-e2e-scripts run-e2e-scripts-timeline bpfman-shell-fmt update-lowered-goldens test test-timeline test-all test-e2e test-e2e-grpc test-e2e-scripts test-e2e-scripts-file test-e2e-scripts-image test-e2e-scripts-matrix test-e2e-scripts-file-matrix test-e2e-scripts-image-matrix test-e2e-scripts-image-ci test-e2e-published-images test-e2e-scripts-stress test-e2e-scripts-timeline test-examples
 .PHONY: test-nsenter test-nsenter-amd64 test-nsenter-arm64 test-nsenter-cross test-nsenter-ppc64le test-nsenter-s390x

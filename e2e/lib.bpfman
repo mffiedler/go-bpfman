@@ -25,14 +25,14 @@
 #   name:      expected record.meta.name (the user-supplied program name)
 def expect_program_load(prog load_tp kernel_tp name) {
     assert $prog matches {
-        record.load.program_type:    $load_tp
-        status.kernel.program_type:  $kernel_tp
-        record.meta.name:            $name
-        status.kernel.id:            $prog.record.program_id
-        status.kernel.name:          not-empty
-        status.kernel.tag:           not-empty
-        status.kernel.loaded_at:     not-empty
-        record.handles.pin_path:     not-empty
+        record.load.program_type:   $load_tp
+        status.kernel.program_type: $kernel_tp
+        record.meta.name:           $name
+        status.kernel.id:           $prog.record.program_id
+        status.kernel.name:         not-empty
+        status.kernel.tag:          not-empty
+        status.kernel.loaded_at:    not-empty
+        record.handles.pin_path:    not-empty
     }
     # image_source is populated only for image-backed loads, including
     # file loads brokered to images under BPFMAN_E2E_BYTECODE_SOURCE=image;
@@ -53,12 +53,12 @@ def expect_program_load(prog load_tp kernel_tp name) {
 #   prog: the original load response
 def expect_program_round_trip(got prog) {
     assert $got matches {
-        status.kernel.id:            $prog.status.kernel.id
-        status.kernel.program_type:  $prog.status.kernel.program_type
-        status.kernel.name:          $prog.status.kernel.name
-        status.kernel.tag:           $prog.status.kernel.tag
-        record.meta.name:            $prog.record.meta.name
-        record.handles.pin_path:     $prog.record.handles.pin_path
+        status.kernel.id:           $prog.status.kernel.id
+        status.kernel.program_type: $prog.status.kernel.program_type
+        status.kernel.name:         $prog.status.kernel.name
+        status.kernel.tag:          $prog.status.kernel.tag
+        record.meta.name:           $prog.record.meta.name
+        record.handles.pin_path:    $prog.record.handles.pin_path
     }
 }
 
@@ -70,7 +70,7 @@ def inspect_published_image(image program_name) {
     guard inspected <- bpfman image inspect $image
     assert $inspected matches {
         reference: not-empty
-        digest: not-empty
+        digest:    not-empty
     }
 
     # Plain images carry programs/maps/layers at the top level. Image
