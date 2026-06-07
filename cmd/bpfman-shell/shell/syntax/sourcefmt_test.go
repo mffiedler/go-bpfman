@@ -24,7 +24,7 @@ func TestFormatExprSource_AllExpressionFormsRoundTrip(t *testing.T) {
 		{"pure call", `zip [a b] [1 2]`},
 		{"matches", `$prog matches { id: $want }`},
 		{"list", `[1 ($x + 1) (not null $y)]`},
-		{"record", `record { prog: $prog link: $link }`},
+		{"record", `record { prog: $prog link: $link total: ($sum + 1) }`},
 	}
 
 	for _, tc := range tests {

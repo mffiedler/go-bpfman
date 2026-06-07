@@ -137,6 +137,31 @@ func TestFormatSource_PreservesCommentsAndBlankLines(t *testing.T) {
 	}
 }
 
+func TestFormatSource_KeepsCommentAfterBlockAtTopLevel(t *testing.T) {
+	t.Parallel()
+
+	// A comment that follows a closed block belongs to the outer
+	// scope, not inside the block. The input is already canonical, so
+	// a correct formatter is idempotent here.
+	src := strings.Join([]string{
+		`if $x {`,
+		`    print $y`,
+		`}`,
+		``,
+		`# top-level comment after the block`,
+		`print $z`,
+		``,
+	}, "\n")
+	prog, err := parseSource(t, src)
+	if err != nil {
+		t.Fatalf("parse source: %v", err)
+	}
+
+	if got := FormatSource(src, prog); got != src {
+		t.Fatalf("FormatSource() =\n%s\nwant:\n%s", got, src)
+	}
+}
+
 func TestFormatSource_PreservesCommentOnlyFile(t *testing.T) {
 	t.Parallel()
 

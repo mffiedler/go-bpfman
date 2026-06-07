@@ -145,7 +145,7 @@ func writeExprSource(b *strings.Builder, e Expr) {
 			}
 			b.WriteString(field.Name)
 			b.WriteString(": ")
-			writeExprSource(b, field.Expr)
+			writeListElemSource(b, field.Expr)
 		}
 		b.WriteByte('}')
 	default:

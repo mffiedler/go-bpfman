@@ -1358,6 +1358,11 @@ func (p *parser) parseIfStmt() (Stmt, error) {
 	if err != nil {
 		return nil, WrapError("if", err)
 	}
+	// Capture the end at each block's closing brace before the
+	// elif/else lookahead below advances past trailing separators, so
+	// the statement span ends at `}` and a comment following the block
+	// is not pulled inside it.
+	end := p.spanFrom(ifTok.Pos).End
 	var elifs []IfBranch
 	var els []Stmt
 	for {
@@ -1382,7 +1387,9 @@ func (p *parser) parseIfStmt() (Stmt, error) {
 			if err != nil {
 				return nil, WrapError("elif", err)
 			}
-			elifs = append(elifs, IfBranch{Cond: ec, Body: eb, Span: p.spanFrom(elifTok.Pos)})
+			branch := p.spanFrom(elifTok.Pos)
+			elifs = append(elifs, IfBranch{Cond: ec, Body: eb, Span: branch})
+			end = branch.End
 		case "else":
 			p.advance()
 			eb, err := p.parseBlock()
@@ -1390,12 +1397,13 @@ func (p *parser) parseIfStmt() (Stmt, error) {
 				return nil, WrapError("else", err)
 			}
 			els = eb
-			return &IfStmt{Cond: cond, Then: then, Elifs: elifs, Else: els, Span: p.spanFrom(ifTok.Pos)}, nil
+			end = p.spanFrom(ifTok.Pos).End
+			return &IfStmt{Cond: cond, Then: then, Elifs: elifs, Else: els, Span: source.Span{Pos: ifTok.Pos, End: end}}, nil
 		default:
-			return &IfStmt{Cond: cond, Then: then, Elifs: elifs, Else: els, Span: p.spanFrom(ifTok.Pos)}, nil
+			return &IfStmt{Cond: cond, Then: then, Elifs: elifs, Else: els, Span: source.Span{Pos: ifTok.Pos, End: end}}, nil
 		}
 	}
-	return &IfStmt{Cond: cond, Then: then, Elifs: elifs, Else: els, Span: p.spanFrom(ifTok.Pos)}, nil
+	return &IfStmt{Cond: cond, Then: then, Elifs: elifs, Else: els, Span: source.Span{Pos: ifTok.Pos, End: end}}, nil
 }
 
 // parseCondition collects tokens up to the next `{` and parses them

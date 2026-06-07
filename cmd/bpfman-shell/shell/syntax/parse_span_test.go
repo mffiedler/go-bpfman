@@ -166,6 +166,78 @@ func TestParseSpans_IfAndNestedCommand(t *testing.T) {
 	assertSpanEqual(t, cmd.Span, source.Span{Pos: source.Pos{Line: 2, Col: 3}, End: source.Pos{Line: 2, Col: 12}})
 }
 
+func TestParseSpans_IfStmtEndsAtClosingBrace(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		src        string
+		want       source.Pos
+		wantElif   source.Pos
+		wantNested source.Pos
+	}{
+		{
+			name: "plain",
+			src:  "if $x {\n  print yes\n}\nprint after",
+			want: source.Pos{Line: 3, Col: 2},
+		},
+		{
+			name: "eof-after-closing-brace",
+			src:  "if $x {\n  print yes\n}",
+			want: source.Pos{Line: 3, Col: 2},
+		},
+		{
+			name: "comment-after-closing-brace",
+			src:  "if $x {\n  print yes\n}\n\n# top-level\nprint after",
+			want: source.Pos{Line: 3, Col: 2},
+		},
+		{
+			name:     "elif",
+			src:      "if $x {\n  print x\n}\nelif $y {\n  print y\n}\nprint after",
+			want:     source.Pos{Line: 6, Col: 2},
+			wantElif: source.Pos{Line: 6, Col: 2},
+		},
+		{
+			name: "else",
+			src:  "if $x {\n  print x\n}\nelse {\n  print y\n}\nprint after",
+			want: source.Pos{Line: 6, Col: 2},
+		},
+		{
+			name:     "elif-else",
+			src:      "if $x {\n  print x\n}\nelif $y {\n  print y\n}\nelse {\n  print z\n}\nprint after",
+			want:     source.Pos{Line: 9, Col: 2},
+			wantElif: source.Pos{Line: 6, Col: 2},
+		},
+		{
+			name:       "nested",
+			src:        "if $outer {\n  if $inner {\n    print inner\n  }\n}\nprint after",
+			want:       source.Pos{Line: 5, Col: 2},
+			wantNested: source.Pos{Line: 4, Col: 4},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			prog, err := parseSource(t, tt.src)
+			require.NoError(t, err)
+			require.NotEmpty(t, prog.Stmts)
+
+			ifStmt := prog.Stmts[0].(*IfStmt)
+			assert.Equal(t, tt.want, ifStmt.Span.End)
+			if tt.wantElif.Line != 0 {
+				require.NotEmpty(t, ifStmt.Elifs)
+				assert.Equal(t, tt.wantElif, ifStmt.Elifs[0].Span.End)
+			}
+			if tt.wantNested.Line != 0 {
+				nested := ifStmt.Then[0].(*IfStmt)
+				assert.Equal(t, tt.wantNested, nested.Span.End)
+			}
+		})
+	}
+}
+
 func TestParseSpans_ForEachAndContinue(t *testing.T) {
 	t.Parallel()
 
