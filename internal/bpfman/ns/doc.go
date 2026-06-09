@@ -1,0 +1,28 @@
+// Package ns provides bpfman's private bpfman-ns transport.
+//
+// This package is not a general namespace library. It owns the wire contract
+// used when bpfman needs a short-lived child process to attach a uprobe within
+// a target process's mount namespace.
+//
+// The most important detail is ordering: when _BPFMAN_MNT_NS is present, the C
+// constructor in nsexec.c calls setns(CLONE_NEWNS) before the Go runtime starts
+// and before any package init or main function runs. Code in the child-side
+// runner therefore starts life already inside the target mount namespace.
+//
+// This package is also the single source of truth for the bpfman-ns inherited
+// file descriptor contract. The parent-side attach code must pass ExtraFiles in
+// the order described by ProgramFD and SocketFD: fd 3 is the BPF program, and
+// fd 4 is the Unix socket used to return the attachment fd. The writer-lock fd
+// is also inherited, but its position is communicated separately via the
+// lock.WriterLockFDEnvVar environment variable because its ExtraFiles slot is
+// not fixed. The lock inheritance is part of the correctness contract:
+// bpfman-ns performs the kernel attach mutation, so it must run under the same
+// writer scope as the parent manager operation rather than as an uncoordinated
+// side process. ModeEnvVar, ModeBPFManNS, MntNsEnvVar, and the fd constants are
+// part of the same private protocol and must stay in step with the parent and
+// runner.
+//
+// The child command implementation lives in internal/bpfman/ns/runner. Keeping
+// it separate lets parent-side attach code import this transport package
+// without also importing the CLI parser and uprobe attach implementation.
+package ns
