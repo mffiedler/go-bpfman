@@ -910,6 +910,18 @@ func TestCheck_StartWithoutCommandReported(t *testing.T) {
 	assert.Contains(t, strings.Join(msgs, " | "), "start: expected at least 1")
 }
 
+func TestCheck_UnknownShortBindHeadDoesNotSuggestDistantDef(t *testing.T) {
+	t.Parallel()
+
+	src := `def main() {
+    return "value"
+}
+let route <- ip route get 198.51.100.2`
+	issues := checkSource(t, src)
+	assert.Empty(t, issues,
+		"short external command names must not pick up distant def suggestions")
+}
+
 func TestCheck_WaitWithoutJobReported(t *testing.T) {
 	t.Parallel()
 

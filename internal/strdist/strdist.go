@@ -50,13 +50,15 @@ func Levenshtein(a, b string) int {
 // Two caps filter the results. An absolute cap of
 // max(len(target)/2, 3) drops entries that are more than half an
 // edit away and keeps nonsense input from yielding unrelated
-// matches. A relative cap of 2 * bestDistance, applied on top,
-// trims the tail when there is a clearly better candidate: if the
-// closest match is a single edit away, a candidate three edits
-// away is almost certainly coincidental (long shared prefix,
-// happens-to-match substring) and is dropped. When the closest
-// match is itself distant, the relative cap relaxes and the
-// absolute cap dominates.
+// matches. Very short targets are capped at one edit; otherwise
+// common external command names such as "ip" or "go" pick up noisy
+// suggestions from unrelated defs. A relative cap of 2 *
+// bestDistance, applied on top, trims the tail when there is a
+// clearly better candidate: if the closest match is a single edit
+// away, a candidate three edits away is almost certainly
+// coincidental (long shared prefix, happens-to-match substring) and
+// is dropped. When the closest match is itself distant, the relative
+// cap relaxes and the absolute cap dominates.
 func Nearest(target string, candidates []string, limit int) []string {
 	if limit <= 0 || len(candidates) == 0 {
 		return nil
@@ -75,7 +77,11 @@ func Nearest(target string, candidates []string, limit int) []string {
 		}
 		return cmp.Compare(a.s, b.s)
 	})
-	maxDist := max(len([]rune(target))/2, 3)
+	targetLen := len([]rune(target))
+	maxDist := max(targetLen/2, 3)
+	if targetLen <= 3 {
+		maxDist = 1
+	}
 	if tight := 2 * scores[0].dist; tight < maxDist {
 		maxDist = tight
 	}

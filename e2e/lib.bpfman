@@ -136,7 +136,7 @@ def assert_link_absent(listed linkID) {
 # is explicit. The long-term fix is to move packet-path tests into
 # isolated test netns pairs rather than depending on host routing.
 def require_host_route_to_peer(pair) {
-    let route <- ip route get $pair.peer_addr
+    let route <- exec ip route get $pair.peer_addr
     if not $route.ok {
         print "host route precheck failed: ip route get ${pair.peer_addr} exited ${route.exit_code}"
         print "stdout: ${route.stdout}"
@@ -144,7 +144,7 @@ def require_host_route_to_peer(pair) {
     }
     require $route.ok
 
-    if not (contains $route.stdout $pair.host_link) {
+    if not contains $route.stdout $pair.host_link {
         print "host route precheck failed: route to ${pair.peer_addr} does not use ${pair.host_link}"
         print "selected route: ${route.stdout}"
         print "This usually means host policy routing or a VPN route table is hijacking the e2e veth reply path."
