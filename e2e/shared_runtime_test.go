@@ -84,7 +84,7 @@ type suiteRuntime struct {
 	// did not clean up before TestMain returned -- exactly the
 	// delta these baselines let us compute.
 	baselinePrograms map[kernel.ProgramID]struct{}
-	baselineLinks    map[kernel.LinkID]struct{}
+	baselineLinks    map[bpfman.LinkID]struct{}
 }
 
 var (
@@ -205,7 +205,7 @@ func buildSuiteRuntime() (*suiteRuntime, error) {
 // the suiteRuntime baseline fields for the rationale. Returns an
 // error if either listing fails; partial baselines would risk
 // flagging inherited residue as a this-run leak.
-func snapshotBaseline(ctx context.Context, mgr *manager.Manager) (map[kernel.ProgramID]struct{}, map[kernel.LinkID]struct{}, error) {
+func snapshotBaseline(ctx context.Context, mgr *manager.Manager) (map[kernel.ProgramID]struct{}, map[bpfman.LinkID]struct{}, error) {
 	progs, err := mgr.ListPrograms(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list programs: %w", err)
@@ -219,7 +219,7 @@ func snapshotBaseline(ctx context.Context, mgr *manager.Manager) (map[kernel.Pro
 	if err != nil {
 		return nil, nil, fmt.Errorf("list links: %w", err)
 	}
-	linkIDs := make(map[kernel.LinkID]struct{}, len(links))
+	linkIDs := make(map[bpfman.LinkID]struct{}, len(links))
 	for _, l := range links {
 		linkIDs[l.ID] = struct{}{}
 	}
@@ -353,17 +353,17 @@ func kernelProgramPresence(ctx context.Context, rt *suiteRuntime, id kernel.Prog
 }
 
 // kernelLinkPresence reports whether the given link is still in the
-// kernel. Synthetic links never had a kernel object so we tag them
-// explicitly. See kernelProgramPresence for the shape of the
-// returned values.
+// kernel. Links without a captured kernel bpf_link ID cannot be
+// correlated through bpftool-style kernel lookup. See
+// kernelProgramPresence for the shape of the returned values.
 func kernelLinkPresence(ctx context.Context, rt *suiteRuntime, l bpfman.LinkRecord) string {
 	if rt.kernel == nil {
 		return "?"
 	}
-	if l.IsSynthetic() {
-		return "synthetic"
+	if l.KernelLinkID == nil {
+		return "kernel link ID not captured"
 	}
-	if _, err := rt.kernel.GetLinkByID(ctx, l.ID); err == nil {
+	if _, err := rt.kernel.GetLinkByID(ctx, *l.KernelLinkID); err == nil {
 		return "kernel residue too"
 	}
 	return "store ghost"

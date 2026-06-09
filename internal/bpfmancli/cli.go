@@ -321,7 +321,7 @@ func RunWithLockValue[T any](ctx context.Context, c *CLI, fn func(context.Contex
 // RunBatchMutation executes mutate for each ID under the global
 // writer lock, collects errors, and prints failures after releasing
 // the lock. Returns a summary error if any mutations failed.
-func RunBatchMutation[ID ~uint32](
+func RunBatchMutation[ID ~uint32 | ~uint64](
 	ctx context.Context,
 	cli *CLI,
 	ids []ID,

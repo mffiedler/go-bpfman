@@ -98,7 +98,7 @@ func dispatchCommandExternal(ctx context.Context, args []runtime.Arg) (runtime.V
 // ScalarValueArg pass straight through; StructuredValueArg
 // dispatches on the value's origin capability:
 //
-//   - HasKernelLinkID  -> the link ID as decimal text
+//   - HasLinkID          -> the bpfman link ID as decimal text
 //   - HasKernelProgramID -> the program ID as decimal text
 //
 // This mirrors the library backend's parseLinkIDArg /
@@ -125,15 +125,15 @@ func argToCLIText(a runtime.Arg) (string, error) {
 	case runtime.StructuredValueArg:
 		origin := v.Value.Origin()
 		if origin != nil {
-			if x, ok := origin.(bpfman.HasKernelLinkID); ok {
-				return strconv.FormatUint(uint64(x.KernelLinkID()), 10), nil
+			if x, ok := origin.(bpfman.HasLinkID); ok {
+				return strconv.FormatUint(uint64(x.LinkID()), 10), nil
 			}
 			if x, ok := origin.(bpfman.HasKernelProgramID); ok {
 				return strconv.FormatUint(uint64(x.KernelProgramID()), 10), nil
 			}
 		}
 		display := displayName(v.Name)
-		return "", fmt.Errorf("%s is structured but carries no kernel ID capability", display)
+		return "", fmt.Errorf("%s is structured but carries no link or program ID capability", display)
 	}
 	return "", fmt.Errorf("unexpected argument type %T", a)
 }

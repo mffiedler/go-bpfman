@@ -14,6 +14,17 @@ import (
 	pb "github.com/frobware/go-bpfman/server/pb"
 )
 
+func grpcLinkID(id bpfman.LinkID) uint32 {
+	// The legacy gRPC API still carries link handles as uint32. bpfman
+	// handles are now uint64, but the gRPC layer is expected to disappear,
+	// so we accept the temporary narrowing at this boundary.
+	return uint32(id)
+}
+
+func bpfmanLinkID(id uint32) bpfman.LinkID {
+	return bpfman.LinkID(id)
+}
+
 // Attach implements the Attach RPC method.
 func (s *Server) Attach(ctx context.Context, req *pb.AttachRequest) (*pb.AttachResponse, error) {
 	if req.Attach == nil {
@@ -87,7 +98,7 @@ func (s *Server) attachTracepoint(ctx context.Context, writeLock lock.WriterScop
 	}
 
 	return &pb.AttachResponse{
-		LinkId: uint32(link.Record.ID),
+		LinkId: grpcLinkID(link.Record.ID),
 	}, nil
 }
 
@@ -126,7 +137,7 @@ func (s *Server) attachXDP(ctx context.Context, writeLock lock.WriterScope, prog
 	}
 
 	return &pb.AttachResponse{
-		LinkId: uint32(link.Record.ID),
+		LinkId: grpcLinkID(link.Record.ID),
 	}, nil
 }
 
@@ -166,7 +177,7 @@ func (s *Server) attachTC(ctx context.Context, writeLock lock.WriterScope, progr
 	}
 
 	return &pb.AttachResponse{
-		LinkId: uint32(link.Record.ID),
+		LinkId: grpcLinkID(link.Record.ID),
 	}, nil
 }
 
@@ -200,7 +211,7 @@ func (s *Server) attachTCX(ctx context.Context, writeLock lock.WriterScope, prog
 	}
 
 	return &pb.AttachResponse{
-		LinkId: uint32(link.Record.ID),
+		LinkId: grpcLinkID(link.Record.ID),
 	}, nil
 }
 
@@ -230,7 +241,7 @@ func (s *Server) attachKprobe(ctx context.Context, writeLock lock.WriterScope, p
 	}
 
 	return &pb.AttachResponse{
-		LinkId: uint32(link.Record.ID),
+		LinkId: grpcLinkID(link.Record.ID),
 	}, nil
 }
 
@@ -276,7 +287,7 @@ func (s *Server) attachUprobe(ctx context.Context, writeLock lock.WriterScope, p
 	}
 
 	return &pb.AttachResponse{
-		LinkId: uint32(link.Record.ID),
+		LinkId: grpcLinkID(link.Record.ID),
 	}, nil
 }
 
@@ -300,7 +311,7 @@ func (s *Server) attachFentry(ctx context.Context, writeLock lock.WriterScope, p
 	}
 
 	return &pb.AttachResponse{
-		LinkId: uint32(link.Record.ID),
+		LinkId: grpcLinkID(link.Record.ID),
 	}, nil
 }
 
@@ -324,18 +335,17 @@ func (s *Server) attachFexit(ctx context.Context, writeLock lock.WriterScope, pr
 	}
 
 	return &pb.AttachResponse{
-		LinkId: uint32(link.Record.ID),
+		LinkId: grpcLinkID(link.Record.ID),
 	}, nil
 }
 
 // Detach implements the Detach RPC method.
 func (s *Server) Detach(ctx context.Context, req *pb.DetachRequest) (*pb.DetachResponse, error) {
 	return withWriterLock(ctx, s, func(ctx context.Context, writeLock lock.WriterScope) (*pb.DetachResponse, error) {
-		if err := s.mgr.Detach(ctx, writeLock, kernel.LinkID(req.LinkId)); err != nil {
-			var notManaged bpfman.ErrLinkNotManaged
+		if err := s.mgr.Detach(ctx, writeLock, bpfmanLinkID(req.LinkId)); err != nil {
 			var notFound bpfman.ErrLinkNotFound
 			switch {
-			case errors.As(err, &notManaged), errors.As(err, &notFound):
+			case errors.As(err, &notFound):
 				return nil, status.Errorf(codes.NotFound, "%v", err)
 			case errors.Is(err, platform.ErrRecordNotFound):
 				return nil, status.Errorf(codes.NotFound, "link with ID %d not found", req.LinkId)

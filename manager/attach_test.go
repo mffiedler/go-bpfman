@@ -347,6 +347,42 @@ func TestUprobe_AttachSucceeds(t *testing.T) {
 	assert.Equal(t, 1, fix.Kernel.LinkCount(), "should have 1 link in kernel")
 }
 
+func TestUprobe_ContainerAttachStoresNoKernelIDOrPin(t *testing.T) {
+	t.Parallel()
+
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("uprobe.o"), "uprobe_prog", bpfman.ProgramTypeUprobe)
+	require.NoError(t, err)
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err, "Load should succeed")
+
+	attachSpec, err := bpfman.NewUprobeAttachSpec(prog.Record.ProgramID, "/usr/lib/libc.so.6")
+	require.NoError(t, err, "failed to create attach spec")
+	attachSpec = attachSpec.WithFnName("malloc").WithContainerPid(1234)
+
+	link, err := fix.Attach(ctx, attachSpec)
+	require.NoError(t, err, "AttachUprobe container should succeed")
+	require.NotZero(t, link.Record.ID, "bpfman link ID should be non-zero")
+	assert.Nil(t, link.Record.KernelLinkID, "container uprobe should not capture a kernel link ID")
+	assert.Nil(t, link.Record.PinPath, "container uprobe should not record a phantom pin path")
+	assert.False(t, link.Status.KernelSeen, "container uprobe has no captured kernel link to observe")
+	assert.False(t, link.Status.PinPresent, "container uprobe has no bpffs link pin to verify")
+	assert.Equal(t, 0, fix.Kernel.LinkCount(), "container uprobe should not create a fake enumerable kernel link")
+
+	record, err := fix.Store.GetLink(ctx, link.Record.ID)
+	require.NoError(t, err, "stored link should round-trip")
+	assert.Nil(t, record.KernelLinkID, "stored container uprobe should not capture a kernel link ID")
+	assert.Nil(t, record.PinPath, "stored container uprobe should not record a phantom pin path")
+
+	details, ok := record.Details.(bpfman.UprobeDetails)
+	require.True(t, ok, "expected UprobeDetails")
+	assert.Equal(t, int32(1234), details.ContainerPid)
+	assert.Equal(t, "/usr/lib/libc.so.6", details.Target)
+	assert.Equal(t, "malloc", details.FnName)
+}
+
 // TestUprobe_AttachWithoutTarget_Fails verifies that:
 //
 //	Given a loaded uprobe program,
@@ -460,7 +496,7 @@ func TestXDP_MultipleAttachesCreateMultipleLinks(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Attach multiple times
-	var linkIDs []kernel.LinkID
+	var linkIDs []bpfman.LinkID
 	for i := range 3 {
 		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
 		require.NoError(t, err)
@@ -489,7 +525,7 @@ func TestXDP_FullLifecycle(t *testing.T) {
 
 	// Step 2: Attach multiple times
 	numAttachments := 3
-	var linkIDs []kernel.LinkID
+	var linkIDs []bpfman.LinkID
 	for i := range numAttachments {
 		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
 		require.NoError(t, err)
@@ -598,7 +634,7 @@ func TestTC_FullLifecycle(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Step 2: Attach to ingress and egress on multiple interfaces
-	var linkIDs []kernel.LinkID
+	var linkIDs []bpfman.LinkID
 	interfaces := []struct {
 		ifindex int
 		name    string
@@ -720,7 +756,7 @@ func TestTCX_FullLifecycle(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Step 2: Attach to ingress and egress on multiple interfaces
-	var linkIDs []kernel.LinkID
+	var linkIDs []bpfman.LinkID
 	interfaces := []struct {
 		ifindex int
 		name    string
@@ -787,7 +823,7 @@ func TestListLinks_ReturnsAllLinks(t *testing.T) {
 		{"syscalls", "sys_enter_read"},
 	}
 
-	var linkIDs []kernel.LinkID
+	var linkIDs []bpfman.LinkID
 	for _, tp := range tracepoints {
 		attachSpec, err := bpfman.NewTracepointAttachSpecFromString(prog.Record.ProgramID, tp.group+"/"+tp.name)
 		require.NoError(t, err)
@@ -1225,7 +1261,7 @@ func TestXDP_DispatcherStateInStore(t *testing.T) {
 	require.NoError(t, err)
 
 	// Attach two extensions
-	var linkIDs []kernel.LinkID
+	var linkIDs []bpfman.LinkID
 	for range 2 {
 		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
 		require.NoError(t, err)
@@ -1319,7 +1355,7 @@ func TestXDP_ExtensionPositionsAreSequential(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	var linkIDs []kernel.LinkID
+	var linkIDs []bpfman.LinkID
 	for i := range 3 {
 		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
 		require.NoError(t, err)
@@ -1368,7 +1404,7 @@ func TestTC_ExtensionPositionsAreSequential(t *testing.T) {
 	require.NoError(t, err)
 
 	// Attach three times to the same interface/direction
-	var linkIDs []kernel.LinkID
+	var linkIDs []bpfman.LinkID
 	for i := range 3 {
 		attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
 		require.NoError(t, err)
@@ -1507,6 +1543,47 @@ func TestTC_FilterHandleRoundTrip(t *testing.T) {
 
 	// TC filter should be removed
 	assert.Equal(t, 0, fix.Kernel.TCFilterCount(), "TC filter should be removed")
+}
+
+func TestTC_DispatcherRebuildDetachesOldFilterHandle(t *testing.T) {
+	t.Parallel()
+
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	spec1, err := bpfman.NewLoadSpec(fix.BytecodeFile("tc.o"), "tc_pass", bpfman.ProgramTypeTC)
+	require.NoError(t, err)
+	prog1, err := fix.Load(ctx, spec1, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	attach1, err := bpfman.NewTCAttachSpec(prog1.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	require.NoError(t, err)
+	attach1 = attach1.WithPriority(50)
+	_, err = fix.Attach(ctx, attach1)
+	require.NoError(t, err)
+
+	firstHandles := fix.Kernel.TCFilterHandles()
+	require.Len(t, firstHandles, 1)
+	oldHandle := firstHandles[0]
+
+	spec2, err := bpfman.NewLoadSpec(fix.BytecodeFile("tc.o"), "tc_pass", bpfman.ProgramTypeTC)
+	require.NoError(t, err)
+	prog2, err := fix.Load(ctx, spec2, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	attach2, err := bpfman.NewTCAttachSpec(prog2.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	require.NoError(t, err)
+	attach2 = attach2.WithPriority(60)
+	_, err = fix.Attach(ctx, attach2)
+	require.NoError(t, err)
+
+	events := fix.Kernel.TCDetachEvents()
+	require.Len(t, events, 1)
+	assert.Equal(t, oldHandle, events[0].handle, "rebuild must detach the old filter handle")
+
+	currentHandles := fix.Kernel.TCFilterHandles()
+	require.Len(t, currentHandles, 1)
+	assert.NotEqual(t, oldHandle, currentHandles[0], "new dispatcher filter should remain live")
 }
 
 // =============================================================================
@@ -1707,7 +1784,7 @@ func TestXDPDispatcher_MultipleAttachesCreateMultipleLinks(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	var linkIDs []kernel.LinkID
+	var linkIDs []bpfman.LinkID
 	for i := range 3 {
 		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
 		require.NoError(t, err)
@@ -1772,7 +1849,7 @@ func TestXDPDispatcher_FullLifecycle(t *testing.T) {
 
 	// Step 2: Attach multiple times
 	numAttachments := 5
-	var linkIDs []kernel.LinkID
+	var linkIDs []bpfman.LinkID
 	for i := range numAttachments {
 		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
 		require.NoError(t, err)
@@ -1959,12 +2036,12 @@ func TestGetLink_NonExistentLink_ReturnsNotFound(t *testing.T) {
 	ctx := context.Background()
 
 	// Try to get a link that doesn't exist
-	_, err := fix.Manager.GetLink(ctx, kernel.LinkID(99999))
+	_, err := fix.Manager.GetLink(ctx, bpfman.LinkID(99999))
 	require.Error(t, err, "GetLink for non-existent link should fail")
 
 	var notFound bpfman.ErrLinkNotFound
 	assert.True(t, errors.As(err, &notFound), "expected ErrLinkNotFound, got %T: %v", err, err)
-	assert.Equal(t, kernel.LinkID(99999), notFound.LinkID)
+	assert.Equal(t, bpfman.LinkID(99999), notFound.LinkID)
 }
 
 // TestListPrograms_WithMetadataFilter_ReturnsOnlyMatching verifies that:

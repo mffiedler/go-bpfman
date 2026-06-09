@@ -291,14 +291,14 @@ func parseProgramIDText(s string) (kernel.ProgramID, error) {
 }
 
 // parseLinkIDArg resolves a single runtime.Arg directly to a
-// kernel.LinkID, combining argument extraction and ID parsing into
+// bpfman.LinkID, combining argument extraction and ID parsing into
 // one step. For text-bearing args the text is parsed as a link ID.
 // A StructuredValueArg must carry a link origin satisfying
-// HasKernelLinkID, and the ID is read from that capability. There
+// HasLinkID, and the ID is read from that capability. There
 // is no path-lookup fallback: an origin-less structured value
 // (such as a jq-constructed object, whose origin is stripped)
 // carries no such capability and is rejected.
-func parseLinkIDArg(a runtime.Arg) (kernel.LinkID, error) {
+func parseLinkIDArg(a runtime.Arg) (bpfman.LinkID, error) {
 	switch v := a.(type) {
 	case runtime.WordArg:
 		return parseLinkIDText(v.Text)
@@ -313,20 +313,20 @@ func parseLinkIDArg(a runtime.Arg) (kernel.LinkID, error) {
 		}
 		origin := v.Value.Origin()
 		if origin == nil {
-			return 0, fmt.Errorf("%s is structured but carries no kernel ID capability", display)
+			return 0, fmt.Errorf("%s is structured but carries no link ID capability", display)
 		}
-		x, ok := origin.(bpfman.HasKernelLinkID)
+		x, ok := origin.(bpfman.HasLinkID)
 		if !ok {
-			return 0, fmt.Errorf("%s is structured but its origin (%T) does not satisfy HasKernelLinkID", display, origin)
+			return 0, fmt.Errorf("%s is structured but its origin (%T) does not satisfy HasLinkID", display, origin)
 		}
-		return x.KernelLinkID(), nil
+		return x.LinkID(), nil
 	default:
 		return 0, fmt.Errorf("unexpected argument type %T", a)
 	}
 }
 
-// parseLinkIDText parses a link ID from text into a kernel.LinkID.
-func parseLinkIDText(s string) (kernel.LinkID, error) {
+// parseLinkIDText parses a link ID from text into a bpfman.LinkID.
+func parseLinkIDText(s string) (bpfman.LinkID, error) {
 	parsed, err := bpfmancli.ParseLinkID(s)
 	if err != nil {
 		return 0, err
@@ -1334,7 +1334,7 @@ func execLinkAttach(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manage
 // LinkDetachCommand represents a fully parsed "link detach" command
 // with resolved link IDs ready for execution.
 type LinkDetachCommand struct {
-	LinkIDs []kernel.LinkID
+	LinkIDs []bpfman.LinkID
 }
 
 func (*LinkDetachCommand) isCommand() {}
@@ -1347,7 +1347,7 @@ func parseLinkDetach(args []runtime.Arg) (*LinkDetachCommand, error) {
 		return nil, fmt.Errorf("link detach: requires at least one link ID")
 	}
 
-	var ids []kernel.LinkID
+	var ids []bpfman.LinkID
 	for _, a := range args {
 		id, err := parseLinkIDArg(a)
 		if err != nil {
@@ -1363,7 +1363,7 @@ func parseLinkDetach(args []runtime.Arg) (*LinkDetachCommand, error) {
 // link under lock.
 func execLinkDetach(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *LinkDetachCommand) error {
 	return bpfmancli.RunBatchMutation(ctx, cli, cmd.LinkIDs, "link", "detach",
-		func(ctx context.Context, writeLock lock.WriterScope, id kernel.LinkID) error {
+		func(ctx context.Context, writeLock lock.WriterScope, id bpfman.LinkID) error {
 			return mgr.Detach(ctx, writeLock, id)
 		})
 }
@@ -1658,7 +1658,7 @@ func execGetProgram(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manage
 // GetLinkCommand represents a fully parsed "link get" command with a
 // resolved link ID and output format.
 type GetLinkCommand struct {
-	ID     kernel.LinkID
+	ID     bpfman.LinkID
 	Output cliformat.OutputFlags
 }
 
@@ -1844,7 +1844,7 @@ func execDeleteProgram(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Man
 // DeleteLinkCommand represents a fully parsed "link delete" command
 // with resolved link IDs and flags.
 type DeleteLinkCommand struct {
-	LinkIDs   []kernel.LinkID
+	LinkIDs   []bpfman.LinkID
 	Recursive bool
 }
 
@@ -1890,7 +1890,7 @@ func parseDeleteLink(args []runtime.Arg) (*DeleteLinkCommand, error) {
 // link with cascading cleanup under lock.
 func execDeleteLink(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *DeleteLinkCommand) error {
 	type result struct {
-		id  kernel.LinkID
+		id  bpfman.LinkID
 		err error
 	}
 	results := make([]result, 0, len(cmd.LinkIDs))

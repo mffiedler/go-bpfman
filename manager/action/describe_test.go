@@ -30,13 +30,13 @@ func TestDescribe(t *testing.T) {
 			contains: "delete program 42 from store",
 		},
 		{
-			name:     "SaveLink",
-			action:   SaveLink{Record: bpfman.LinkRecord{ID: kernel.LinkID(7)}},
-			contains: "save link 7 to store",
+			name:     "CreateLink",
+			action:   CreateLink{Spec: bpfman.LinkSpec{ProgramID: kernel.ProgramID(7)}},
+			contains: "create link in store",
 		},
 		{
 			name:     "DeleteLink",
-			action:   DeleteLink{LinkID: kernel.LinkID(99)},
+			action:   DeleteLink{LinkID: bpfman.LinkID(99)},
 			contains: "delete link 99 from store",
 		},
 		{
@@ -218,7 +218,7 @@ func TestDescribe_Exhaustive(t *testing.T) {
 	allActions := []Action{
 		SaveProgram{},
 		DeleteProgram{},
-		SaveLink{},
+		CreateLink{},
 		DeleteLink{},
 		GetProgramFromStore{},
 		CheckProgramNotInStore{},

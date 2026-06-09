@@ -33,18 +33,16 @@ func (DeleteProgram) isAction() {}
 
 // Link actions - operations on link metadata
 
-// SaveLink saves a link to the store.
-// Record.ID is the primary key: kernel-assigned for real BPF links,
-// or bpfman-assigned synthetic ID (0x80000000+) for perf_event-based links.
-type SaveLink struct {
-	Record bpfman.LinkRecord
+// CreateLink saves a standalone link to the store and allocates a bpfman ID.
+type CreateLink struct {
+	Spec bpfman.LinkSpec
 }
 
-func (SaveLink) isAction() {}
+func (CreateLink) isAction() {}
 
 // DeleteLink removes a link from the store by link ID.
 type DeleteLink struct {
-	LinkID kernel.LinkID
+	LinkID bpfman.LinkID
 }
 
 func (DeleteLink) isAction() {}
@@ -377,7 +375,7 @@ func (RebuildTCDispatcher) isAction() {}
 // to rebuild with remaining members or remove the empty dispatcher.
 type RebuildDispatcherForDetach struct {
 	Key           dispatcher.Key
-	ExcludeLinkID kernel.LinkID
+	ExcludeLinkID bpfman.LinkID
 }
 
 func (RebuildDispatcherForDetach) isAction() {}

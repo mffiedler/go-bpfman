@@ -86,7 +86,7 @@ func TestLinkRecord_UnmarshalJSON_RoundTripsEveryLinkKind(t *testing.T) {
 			t.Parallel()
 
 			original := bpfman.LinkRecord{
-				ID:        kernel.LinkID(42),
+				ID:        bpfman.LinkID(42),
 				ProgramID: kernel.ProgramID(43),
 				Kind:      tc.kind,
 				PinPath:   &pin,
@@ -106,8 +106,7 @@ func TestLinkRecord_UnmarshalJSON_RoundTripsEveryLinkKind(t *testing.T) {
 }
 
 // TestLinkRecord_UnmarshalJSON_AcceptsNilDetails verifies that a
-// record with no Details (e.g. a synthetic perf_event link)
-// round-trips with Details left nil.
+// record with no Details round-trips with Details left nil.
 func TestLinkRecord_UnmarshalJSON_AcceptsNilDetails(t *testing.T) {
 	t.Parallel()
 

@@ -10,8 +10,8 @@ func Describe(a Action) string {
 		return fmt.Sprintf("save program %d to store", a.ProgramID)
 	case DeleteProgram:
 		return fmt.Sprintf("delete program %d from store", a.ProgramID)
-	case SaveLink:
-		return fmt.Sprintf("save link %d to store", a.Record.ID)
+	case CreateLink:
+		return "create link in store"
 	case DeleteLink:
 		return fmt.Sprintf("delete link %d from store", a.LinkID)
 	case GetProgramFromStore:

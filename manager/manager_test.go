@@ -23,7 +23,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
 )
 
@@ -591,7 +590,7 @@ func TestMultipleLinks_SameProgram_AllDetachable(t *testing.T) {
 		{"syscalls", "sys_enter_open"},
 	}
 
-	var linkIDs []kernel.LinkID
+	var linkIDs []bpfman.LinkID
 	for _, tp := range tracepoints {
 		attachSpec, err := bpfman.NewTracepointAttachSpecFromString(prog.Record.ProgramID, tp.group+"/"+tp.name)
 		require.NoError(t, err, "failed to create attach spec")
@@ -701,8 +700,10 @@ func TestDetach_KernelFailure_ReturnsError(t *testing.T) {
 	link, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err, "Attach failed")
 
-	// Configure kernel to fail on detach for this link ID
-	fix.Kernel.FailOnDetach(link.Record.ID, fmt.Errorf("injected detach failure"))
+	// Configure the fake kernel to fail when detaching this captured
+	// kernel link. The manager still receives the bpfman LinkID below.
+	require.NotNil(t, link.Record.KernelLinkID)
+	fix.Kernel.FailOnDetach(*link.Record.KernelLinkID, fmt.Errorf("injected detach failure"))
 
 	// Attempt to detach - should fail
 	err = fix.Detach(ctx, link.Record.ID)

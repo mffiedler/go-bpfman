@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/internal/cliformat"
 	"github.com/frobware/go-bpfman/kernel"
@@ -116,13 +117,13 @@ func (c *LinkDeleteCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	defer cleanup()
 
 	type result struct {
-		id  kernel.LinkID
+		id  bpfman.LinkID
 		err error
 	}
 	results := make([]result, 0, len(c.LinkIDs))
 
 	lockErr := bpfmancli.RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
-		linkIDs := make([]kernel.LinkID, len(c.LinkIDs))
+		linkIDs := make([]bpfman.LinkID, len(c.LinkIDs))
 		for i, lid := range c.LinkIDs {
 			linkIDs[i] = lid.Value
 		}

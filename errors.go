@@ -7,20 +7,10 @@ import (
 	"github.com/frobware/go-bpfman/kernel"
 )
 
-// ErrLinkNotManaged is returned when attempting to operate on a link
-// that exists in the kernel but is not managed by bpfman.
-type ErrLinkNotManaged struct {
-	LinkID kernel.LinkID `json:"link_id"`
-}
-
-func (e ErrLinkNotManaged) Error() string {
-	return fmt.Sprintf("link %d exists in kernel but is not managed by bpfman", e.LinkID)
-}
-
 // ErrLinkNotFound is returned when attempting to operate on a link
 // that does not exist in either the kernel or bpfman's store.
 type ErrLinkNotFound struct {
-	LinkID kernel.LinkID `json:"link_id"`
+	LinkID LinkID `json:"link_id"`
 }
 
 func (e ErrLinkNotFound) Error() string {

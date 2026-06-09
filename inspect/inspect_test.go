@@ -3,10 +3,13 @@ package inspect_test
 import (
 	"context"
 	"errors"
+	"io"
 	"iter"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,6 +20,7 @@ import (
 	"github.com/frobware/go-bpfman/inspect"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/platform"
+	"github.com/frobware/go-bpfman/platform/store/sqlite"
 )
 
 // fakeStore implements StoreLister for testing.
@@ -24,6 +28,35 @@ type fakeStore struct {
 	programs    map[kernel.ProgramID]bpfman.ProgramRecord
 	links       []bpfman.LinkRecord
 	dispatchers []platform.DispatcherSummary
+}
+
+func ptr[T any](v T) *T { return &v }
+
+func newRealStore(t *testing.T) platform.Store {
+	t.Helper()
+	store, err := sqlite.NewInMemory(context.Background(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, store.Close()) })
+	return store
+}
+
+func saveInspectProgram(t *testing.T, store platform.Store, id kernel.ProgramID, typ bpfman.ProgramType, name string, pinPath bpfman.ProgPinPath) {
+	t.Helper()
+	rec := bpfman.ProgramRecord{
+		Load:      bpfman.TestLoadSpec(typ),
+		Handles:   bpfman.ProgramHandles{PinPath: pinPath},
+		Meta:      bpfman.ProgramMeta{Name: name},
+		CreatedAt: time.Now(),
+	}
+	require.NoError(t, store.Save(context.Background(), id, rec))
+}
+
+func createInspectLink(t *testing.T, store platform.Store, spec bpfman.LinkSpec) bpfman.LinkRecord {
+	t.Helper()
+	record, err := store.CreateLink(context.Background(), spec)
+	require.NoError(t, err)
+	require.NotZero(t, record.ID)
+	return record
 }
 
 func (s *fakeStore) List(ctx context.Context) (map[kernel.ProgramID]bpfman.ProgramRecord, error) {
@@ -41,7 +74,7 @@ func (s *fakeStore) ListLinks(ctx context.Context) ([]bpfman.LinkRecord, error) 
 	return s.links, nil
 }
 
-func (s *fakeStore) GetLink(ctx context.Context, linkID kernel.LinkID) (bpfman.LinkRecord, error) {
+func (s *fakeStore) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkRecord, error) {
 	for _, l := range s.links {
 		if l.ID == linkID {
 			return l, nil
@@ -216,13 +249,21 @@ func TestSnapshot_Links(t *testing.T) {
 	bpfFS := testBPFFS(t)
 	scanner := bpfFS.Scanner()
 
-	store := &fakeStore{
-		links: []bpfman.LinkRecord{
-			// ID is now the kernel link ID for non-synthetic links
-			{ID: kernel.LinkID(10), Kind: bpfman.LinkKindXDP},
-			{ID: kernel.LinkID(20), Kind: bpfman.LinkKindKprobe},
-		},
-	}
+	store := newRealStore(t)
+	saveInspectProgram(t, store, 100, bpfman.ProgramTypeKprobe, "kprobe_prog", "/run/bpfman/fs/prog_100")
+	saveInspectProgram(t, store, 200, bpfman.ProgramTypeTracepoint, "tracepoint_prog", "/run/bpfman/fs/prog_200")
+	createInspectLink(t, store, bpfman.LinkSpec{
+		ProgramID:    100,
+		KernelLinkID: ptr(kernel.LinkID(10)),
+		Kind:         bpfman.LinkKindKprobe,
+		Details:      bpfman.KprobeDetails{FnName: "do_sys_open"},
+	})
+	createInspectLink(t, store, bpfman.LinkSpec{
+		ProgramID:    200,
+		KernelLinkID: ptr(kernel.LinkID(20)),
+		Kind:         bpfman.LinkKindTracepoint,
+		Details:      bpfman.TracepointDetails{Group: "sched", Name: "sched_switch"},
+	})
 
 	kern := &fakeKernelSource{
 		links: []kernel.Link{
@@ -268,18 +309,31 @@ func TestSnapshot_Dispatchers(t *testing.T) {
 	scanner := bpfFS.Scanner()
 
 	linkID := kernel.LinkID(50)
-	store := &fakeStore{
-		dispatchers: []platform.DispatcherSummary{
+	store := newRealStore(t)
+	saveInspectProgram(t, store, 100, bpfman.ProgramTypeXDP, "xdp_prog", "/run/bpfman/fs/prog_100")
+	memberKernelLinkID := kernel.LinkID(51)
+	_, err := store.ReplaceDispatcherSnapshot(context.Background(), platform.DispatcherSnapshotSpec{
+		Key:      dispatcher.Key{Type: dispatcher.DispatcherTypeXDP, Nsid: 1, Ifindex: 1},
+		Revision: 5,
+		Runtime: platform.DispatcherRuntime{
+			ProgramID:    500,
+			KernelLinkID: &linkID,
+		},
+		Members: []platform.DispatcherMemberSpec{
 			{
-				Key:      dispatcher.Key{Type: dispatcher.DispatcherTypeXDP, Nsid: 1, Ifindex: 1},
-				Revision: 5,
-				Runtime: platform.DispatcherRuntime{
-					ProgramID: 500,
-					LinkID:    &linkID,
-				},
+				ProgramID:    100,
+				ProgramName:  "xdp_prog",
+				ProgPinPath:  "/run/bpfman/fs/prog_100",
+				KernelLinkID: &memberKernelLinkID,
+				LinkPinPath:  "/run/bpfman/fs/dispatch/link_0",
+				Position:     0,
+				Priority:     50,
+				ProceedOn:    0x04,
+				Ifname:       "eth0",
 			},
 		},
-	}
+	})
+	require.NoError(t, err)
 
 	kern := &fakeKernelSource{
 		programs: []kernel.Program{{ID: 500}},
@@ -500,26 +554,26 @@ func TestGetLink_FullyPresent(t *testing.T) {
 
 	scanner := bpfFS.Scanner()
 
-	// ID is now the kernel link ID for non-synthetic links
-	store := &fakeStore{
-		links: []bpfman.LinkRecord{
-			{
-				ID:      kernel.LinkID(10), // kernel link ID
-				Kind:    bpfman.LinkKindKprobe,
-				PinPath: bpfman.NewLinkPath(pinPath),
-				Details: bpfman.KprobeDetails{FnName: "do_sys_open"},
-			},
-		},
-	}
+	store := newRealStore(t)
+	saveInspectProgram(t, store, 100, bpfman.ProgramTypeKprobe, "kprobe_prog", "/run/bpfman/fs/prog_100")
+	record := createInspectLink(t, store, bpfman.LinkSpec{
+		ProgramID:    100,
+		KernelLinkID: ptr(kernel.LinkID(10)),
+		Kind:         bpfman.LinkKindKprobe,
+		PinPath:      bpfman.NewLinkPath(pinPath),
+		Details:      bpfman.KprobeDetails{FnName: "do_sys_open"},
+	})
 
 	kern := &fakeKernelSource{
 		links: []kernel.Link{{ID: 10, ProgramID: 100}},
 	}
 
-	info, err := inspect.GetLink(context.Background(), store, kern, scanner, 10) // LinkID 10 (same as kernel link ID)
+	info, err := inspect.GetLink(context.Background(), store, kern, scanner, record.ID)
 	require.NoError(t, err)
 
-	assert.Equal(t, kernel.LinkID(10), info.Record.ID)
+	assert.Equal(t, record.ID, info.Record.ID)
+	require.NotNil(t, info.Record.KernelLinkID)
+	assert.Equal(t, kernel.LinkID(10), *info.Record.KernelLinkID)
 	assert.True(t, info.Presence.InStore)
 	assert.True(t, info.Presence.InKernel)
 	assert.True(t, info.Presence.InFS)
@@ -532,19 +586,21 @@ func TestGetLink_StoreOnly(t *testing.T) {
 	bpfFS := testBPFFS(t)
 	scanner := bpfFS.Scanner()
 
-	// ID is now the kernel link ID for non-synthetic links
-	store := &fakeStore{
-		links: []bpfman.LinkRecord{
-			{ID: kernel.LinkID(20), Kind: bpfman.LinkKindTracepoint},
-		},
-	}
+	store := newRealStore(t)
+	saveInspectProgram(t, store, 100, bpfman.ProgramTypeTracepoint, "tracepoint_prog", "/run/bpfman/fs/prog_100")
+	record := createInspectLink(t, store, bpfman.LinkSpec{
+		ProgramID:    100,
+		KernelLinkID: ptr(kernel.LinkID(20)),
+		Kind:         bpfman.LinkKindTracepoint,
+		Details:      bpfman.TracepointDetails{Group: "sched", Name: "sched_switch"},
+	})
 
 	kern := &fakeKernelSource{} // Link not in kernel
 
-	info, err := inspect.GetLink(context.Background(), store, kern, scanner, 20) // LinkID 20 (same as kernel link ID)
+	info, err := inspect.GetLink(context.Background(), store, kern, scanner, record.ID)
 	require.NoError(t, err)
 
-	assert.Equal(t, kernel.LinkID(20), info.Record.ID)
+	assert.Equal(t, record.ID, info.Record.ID)
 	assert.True(t, info.Presence.InStore)
 	assert.False(t, info.Presence.InKernel)
 	assert.False(t, info.Presence.InFS)
@@ -558,7 +614,7 @@ func TestGetLink_NotInStore(t *testing.T) {
 	bpfFS := testBPFFS(t)
 	scanner := bpfFS.Scanner()
 
-	store := &fakeStore{} // Not in store
+	store := newRealStore(t) // Not in store
 
 	kern := &fakeKernelSource{
 		links: []kernel.Link{{ID: 999}},
@@ -566,7 +622,7 @@ func TestGetLink_NotInStore(t *testing.T) {
 
 	// Even though link 999 exists in kernel, we can't look it up by LinkID 999
 	// because LinkID is a store-assigned durable ID, not a kernel link ID.
-	_, err := inspect.GetLink(context.Background(), store, kern, scanner, 999)
+	_, err := inspect.GetLink(context.Background(), store, kern, scanner, bpfman.LinkID(999))
 	require.Error(t, err)
 	assert.ErrorIs(t, err, inspect.ErrNotFound)
 }
@@ -577,10 +633,10 @@ func TestGetLink_NotFound(t *testing.T) {
 	bpfFS := testBPFFS(t)
 	scanner := bpfFS.Scanner()
 
-	store := &fakeStore{}
+	store := newRealStore(t)
 	kern := &fakeKernelSource{}
 
-	_, err := inspect.GetLink(context.Background(), store, kern, scanner, 12345)
+	_, err := inspect.GetLink(context.Background(), store, kern, scanner, bpfman.LinkID(12345))
 	require.Error(t, err)
 	assert.ErrorIs(t, err, inspect.ErrNotFound)
 }
@@ -593,26 +649,20 @@ func TestSnapshot_LinksHaveDetails(t *testing.T) {
 	bpfFS := testBPFFS(t)
 	scanner := bpfFS.Scanner()
 
-	// Create links WITH details populated (simulating what the real store returns)
-	store := &fakeStore{
-		programs: map[kernel.ProgramID]bpfman.ProgramRecord{
-			100: {ProgramID: 100, Load: bpfman.TestLoadSpec(bpfman.ProgramTypeTracepoint), Meta: bpfman.ProgramMeta{Name: "test_prog"}},
-		},
-		links: []bpfman.LinkRecord{
-			{
-				ID:        kernel.LinkID(10),
-				Kind:      bpfman.LinkKindTracepoint,
-				ProgramID: 100,
-				Details:   bpfman.TracepointDetails{Group: "sched", Name: "sched_switch"},
-			},
-			{
-				ID:        kernel.LinkID(20),
-				Kind:      bpfman.LinkKindKprobe,
-				ProgramID: 100,
-				Details:   bpfman.KprobeDetails{FnName: "do_sys_open"},
-			},
-		},
-	}
+	store := newRealStore(t)
+	saveInspectProgram(t, store, 100, bpfman.ProgramTypeTracepoint, "test_prog", "/run/bpfman/fs/prog_100")
+	tpRecord := createInspectLink(t, store, bpfman.LinkSpec{
+		ProgramID:    100,
+		KernelLinkID: ptr(kernel.LinkID(10)),
+		Kind:         bpfman.LinkKindTracepoint,
+		Details:      bpfman.TracepointDetails{Group: "sched", Name: "sched_switch"},
+	})
+	kpRecord := createInspectLink(t, store, bpfman.LinkSpec{
+		ProgramID:    100,
+		KernelLinkID: ptr(kernel.LinkID(20)),
+		Kind:         bpfman.LinkKindKprobe,
+		Details:      bpfman.KprobeDetails{FnName: "do_sys_open"},
+	})
 
 	kern := &fakeKernelSource{
 		programs: []kernel.Program{{ID: 100}},
@@ -635,18 +685,18 @@ func TestSnapshot_LinksHaveDetails(t *testing.T) {
 	}
 
 	// Verify details are correct types
-	linksByID := make(map[kernel.LinkID]inspect.LinkRow)
+	linksByID := make(map[bpfman.LinkID]inspect.LinkRow)
 	for _, l := range managed {
 		linksByID[l.ID()] = l
 	}
 
-	tpLink := linksByID[kernel.LinkID(10)]
+	tpLink := linksByID[tpRecord.ID]
 	tpDetails, ok := tpLink.Managed.Details.(bpfman.TracepointDetails)
 	require.True(t, ok, "expected TracepointDetails")
 	assert.Equal(t, "sched", tpDetails.Group)
 	assert.Equal(t, "sched_switch", tpDetails.Name)
 
-	kpLink := linksByID[kernel.LinkID(20)]
+	kpLink := linksByID[kpRecord.ID]
 	kpDetails, ok := kpLink.Managed.Details.(bpfman.KprobeDetails)
 	require.True(t, ok, "expected KprobeDetails")
 	assert.Equal(t, "do_sys_open", kpDetails.FnName)
@@ -659,19 +709,14 @@ func TestSnapshot_ProgramLinksHaveDetails(t *testing.T) {
 	bpfFS := testBPFFS(t)
 	scanner := bpfFS.Scanner()
 
-	store := &fakeStore{
-		programs: map[kernel.ProgramID]bpfman.ProgramRecord{
-			100: {ProgramID: 100, Load: bpfman.TestLoadSpec(bpfman.ProgramTypeTracepoint), Meta: bpfman.ProgramMeta{Name: "test_prog"}},
-		},
-		links: []bpfman.LinkRecord{
-			{
-				ID:        kernel.LinkID(10),
-				Kind:      bpfman.LinkKindTracepoint,
-				ProgramID: 100,
-				Details:   bpfman.TracepointDetails{Group: "sched", Name: "sched_switch"},
-			},
-		},
-	}
+	store := newRealStore(t)
+	saveInspectProgram(t, store, 100, bpfman.ProgramTypeTracepoint, "test_prog", "/run/bpfman/fs/prog_100")
+	createInspectLink(t, store, bpfman.LinkSpec{
+		ProgramID:    100,
+		KernelLinkID: ptr(kernel.LinkID(10)),
+		Kind:         bpfman.LinkKindTracepoint,
+		Details:      bpfman.TracepointDetails{Group: "sched", Name: "sched_switch"},
+	})
 
 	kern := &fakeKernelSource{
 		programs: []kernel.Program{{ID: 100}},

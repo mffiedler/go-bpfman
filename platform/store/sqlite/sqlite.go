@@ -199,7 +199,8 @@ type sqliteStore struct {
 	stmtDeleteXDPExtLinks       *sql.Stmt
 	stmtDeleteTCExtLinks        *sql.Stmt
 	stmtUpsertDispatcher        *sql.Stmt
-	stmtUpsertExtLink           *sql.Stmt
+	stmtInsertExtLink           *sql.Stmt
+	stmtInsertExtLinkWithID     *sql.Stmt
 	stmtInsertXDPDetail         *sql.Stmt
 	stmtInsertTCDetail          *sql.Stmt
 	stmtDeleteDispatcher        *sql.Stmt
@@ -423,7 +424,8 @@ func (s *sqliteStore) closeStatements() {
 		s.stmtDeleteXDPExtLinks,
 		s.stmtDeleteTCExtLinks,
 		s.stmtUpsertDispatcher,
-		s.stmtUpsertExtLink,
+		s.stmtInsertExtLink,
+		s.stmtInsertExtLinkWithID,
 		s.stmtInsertXDPDetail,
 		s.stmtInsertTCDetail,
 		s.stmtDeleteDispatcher,
@@ -437,7 +439,14 @@ func (s *sqliteStore) closeStatements() {
 
 // schemaVersion is the current schema version. Increment this when the schema changes.
 // Migrations are supported from version 2 onwards.
-const schemaVersion = 10
+const schemaVersion = 11
+
+// debugLinkIDSequenceSeed makes store-allocated bpfman link handles
+// visually distinct from small kernel bpf_link IDs while the link identity
+// redesign is being reviewed. SQLite AUTOINCREMENT returns seq+1, so the
+// first generated handle is 2123456789. Keep this below uint32 max while the
+// legacy gRPC surface still narrows link IDs to uint32.
+const debugLinkIDSequenceSeed = 2_123_456_788
 
 func (s *sqliteStore) migrate(ctx context.Context) error {
 	// Check current schema version
@@ -474,11 +483,31 @@ func (s *sqliteStore) migrate(ctx context.Context) error {
 		return fmt.Errorf("failed to execute schema: %w", err)
 	}
 
+	if err := s.seedLinkIDSequence(ctx); err != nil {
+		return err
+	}
+
 	// Set schema version
 	if _, err := s.db.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
 		return fmt.Errorf("failed to set schema version: %w", err)
 	}
 
+	return nil
+}
+
+func (s *sqliteStore) seedLinkIDSequence(ctx context.Context) error {
+	const updateSQL = `UPDATE sqlite_sequence SET seq = max(seq, ?) WHERE name = 'links'`
+	if _, err := s.db.ExecContext(ctx, updateSQL, debugLinkIDSequenceSeed); err != nil {
+		return fmt.Errorf("update links AUTOINCREMENT sequence: %w", err)
+	}
+
+	const insertSQL = `
+		INSERT INTO sqlite_sequence(name, seq)
+		SELECT 'links', ?
+		WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'links')`
+	if _, err := s.db.ExecContext(ctx, insertSQL, debugLinkIDSequenceSeed); err != nil {
+		return fmt.Errorf("insert links AUTOINCREMENT sequence: %w", err)
+	}
 	return nil
 }
 
@@ -686,7 +715,8 @@ func (s *sqliteStore) runTransactionAttempt(ctx context.Context, logger *slog.Lo
 		stmtDeleteXDPExtLinks:       tx.StmtContext(ctx, s.stmtDeleteXDPExtLinks),
 		stmtDeleteTCExtLinks:        tx.StmtContext(ctx, s.stmtDeleteTCExtLinks),
 		stmtUpsertDispatcher:        tx.StmtContext(ctx, s.stmtUpsertDispatcher),
-		stmtUpsertExtLink:           tx.StmtContext(ctx, s.stmtUpsertExtLink),
+		stmtInsertExtLink:           tx.StmtContext(ctx, s.stmtInsertExtLink),
+		stmtInsertExtLinkWithID:     tx.StmtContext(ctx, s.stmtInsertExtLinkWithID),
 		stmtInsertXDPDetail:         tx.StmtContext(ctx, s.stmtInsertXDPDetail),
 		stmtInsertTCDetail:          tx.StmtContext(ctx, s.stmtInsertTCDetail),
 		stmtDeleteDispatcher:        tx.StmtContext(ctx, s.stmtDeleteDispatcher),

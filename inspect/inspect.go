@@ -43,7 +43,7 @@ type KernelGetter interface {
 
 // LinkGetter is the subset of platform.Store needed by GetLink.
 type LinkGetter interface {
-	GetLink(ctx context.Context, linkID kernel.LinkID) (bpfman.LinkRecord, error)
+	GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkRecord, error)
 }
 
 // KernelLinkGetter is the subset of platform.KernelSource needed by GetLink.
@@ -176,7 +176,7 @@ type LinkRow struct {
 }
 
 // ID returns the link's durable bpfman ID.
-func (r LinkRow) ID() kernel.LinkID {
+func (r LinkRow) ID() bpfman.LinkID {
 	if r.Managed != nil {
 		return r.Managed.ID
 	}
@@ -184,12 +184,9 @@ func (r LinkRow) ID() kernel.LinkID {
 }
 
 // KernelLinkID returns the kernel link ID if available.
-// For non-synthetic links, the Spec.ID is the kernel link ID.
-// For synthetic links (perf_event-based), returns nil.
 func (r LinkRow) KernelLinkID() *kernel.LinkID {
-	if r.Managed != nil && !r.Managed.IsSynthetic() {
-		id := r.Managed.ID
-		return &id
+	if r.Managed != nil {
+		return r.Managed.KernelLinkID
 	}
 	if r.Kernel != nil {
 		return &r.Kernel.ID
@@ -211,14 +208,6 @@ func (r LinkRow) PinPath() string {
 		return r.Managed.PinPath.String()
 	}
 	return ""
-}
-
-// IsSynthetic returns true if this is a synthetic link (no kernel link ID).
-func (r LinkRow) IsSynthetic() bool {
-	if r.Managed != nil {
-		return r.Managed.IsSynthetic()
-	}
-	return false
 }
 
 // HasPin returns true if this link has a pin path.
@@ -255,11 +244,11 @@ type DispatcherRow struct {
 	// Managed nil means the dispatcher is not recorded in the store (an orphan
 	// dispatcher observed only on the filesystem). Pointer + omitempty encodes
 	// that absence.
-	Managed   *platform.DispatcherSummary `json:"managed,omitempty"`
-	Revision  uint32                      `json:"revision"`
-	ProgramID kernel.ProgramID            `json:"program_id"`
-	LinkID    kernel.LinkID               `json:"link_id"`
-	Priority  uint32                      `json:"priority"`
+	Managed      *platform.DispatcherSummary `json:"managed,omitempty"`
+	Revision     uint32                      `json:"revision"`
+	ProgramID    kernel.ProgramID            `json:"program_id"`
+	KernelLinkID kernel.LinkID               `json:"kernel_link_id"`
+	Priority     uint32                      `json:"priority"`
 
 	// Presence tracks where the dispatcher's components exist
 	ProgPresence Presence `json:"prog_presence"` // dispatcher program
@@ -499,15 +488,14 @@ func Snapshot(
 	seenKernelLinkIDs := make(map[kernel.LinkID]bool)
 	for _, link := range storeLinks {
 		// Track kernel link IDs we've seen from store.
-		// For non-synthetic links, ID is the kernel link ID.
-		if !link.IsSynthetic() {
-			seenKernelLinkIDs[link.ID] = true
+		if link.KernelLinkID != nil {
+			seenKernelLinkIDs[*link.KernelLinkID] = true
 		}
 
 		// Check kernel presence
 		var kernelLink *kernel.Link
-		if !link.IsSynthetic() {
-			if kl, ok := kernelLinks[link.ID]; ok {
+		if link.KernelLinkID != nil {
+			if kl, ok := kernelLinks[*link.KernelLinkID]; ok {
 				kernelLink = &kl
 			}
 		}
@@ -518,8 +506,8 @@ func Snapshot(
 		// tracks whether either source confirmed a live pin.
 		var fsPinPath string
 		var inFS bool
-		if !link.IsSynthetic() {
-			if pin, ok := fsLinkPins[link.ID]; ok {
+		if link.KernelLinkID != nil {
+			if pin, ok := fsLinkPins[*link.KernelLinkID]; ok {
 				fsPinPath = pin
 				inFS = true
 			}
@@ -584,8 +572,8 @@ func Snapshot(
 		}
 
 		var linkID kernel.LinkID
-		if disp.Runtime.LinkID != nil {
-			linkID = *disp.Runtime.LinkID
+		if disp.Runtime.KernelLinkID != nil {
+			linkID = *disp.Runtime.KernelLinkID
 		}
 		var priority uint32
 		if disp.Runtime.FilterPriority != nil {
@@ -596,15 +584,15 @@ func Snapshot(
 		_, linkInKernel := kernelLinks[linkID]
 		d := disp // copy for pointer
 		row := DispatcherRow{
-			DispType:    disp.Key.Type.String(),
-			Nsid:        disp.Key.Nsid,
-			Ifindex:     disp.Key.Ifindex,
-			Managed:     &d,
-			Revision:    disp.Revision,
-			ProgramID:   disp.Runtime.ProgramID,
-			LinkID:      linkID,
-			Priority:    priority,
-			FSLinkCount: fsLinkCount,
+			DispType:     disp.Key.Type.String(),
+			Nsid:         disp.Key.Nsid,
+			Ifindex:      disp.Key.Ifindex,
+			Managed:      &d,
+			Revision:     disp.Revision,
+			ProgramID:    disp.Runtime.ProgramID,
+			KernelLinkID: linkID,
+			Priority:     priority,
+			FSLinkCount:  fsLinkCount,
 			ProgPresence: Presence{
 				InStore:  true,
 				InKernel: progInKernel,
@@ -740,7 +728,7 @@ func GetLink(
 	linkGetter LinkGetter,
 	kern KernelLinkGetter,
 	scanner *fs.Scanner,
-	linkID kernel.LinkID,
+	linkID bpfman.LinkID,
 ) (LinkInfo, error) {
 	info := LinkInfo{}
 
@@ -754,10 +742,9 @@ func GetLink(
 		return LinkInfo{}, err
 	}
 
-	// Try kernel (skip for synthetic links which don't have kernel link IDs).
-	// For non-synthetic links, the Spec.ID is the kernel link ID.
-	if info.Presence.InStore && !record.IsSynthetic() {
-		kl, err := kern.GetLinkByID(ctx, record.ID)
+	// Try kernel when bpfman captured a kernel link ID.
+	if info.Presence.InStore && record.KernelLinkID != nil {
+		kl, err := kern.GetLinkByID(ctx, *record.KernelLinkID)
 		if err == nil {
 			info.Kernel = &kl
 			info.Presence.InKernel = true

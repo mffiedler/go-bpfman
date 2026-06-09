@@ -44,6 +44,24 @@ func testProgram() bpfman.ProgramRecord {
 	}
 }
 
+func ptr[T any](v T) *T {
+	return &v
+}
+
+func createEphemeralLink(t *testing.T, ctx context.Context, store platform.Store, programID kernel.ProgramID, kernelLinkID *kernel.LinkID, details bpfman.LinkDetails) bpfman.LinkRecord {
+	t.Helper()
+	record, err := store.CreateLink(ctx, bpfman.NewEphemeralLinkSpec(programID, kernelLinkID, details))
+	require.NoError(t, err)
+	return record
+}
+
+func createPinnedLink(t *testing.T, ctx context.Context, store platform.Store, programID kernel.ProgramID, kernelLinkID *kernel.LinkID, details bpfman.LinkDetails, pin bpfman.LinkPath) bpfman.LinkRecord {
+	t.Helper()
+	record, err := store.CreateLink(ctx, bpfman.NewPinnedLinkSpec(programID, kernelLinkID, details, pin))
+	require.NoError(t, err)
+	return record
+}
+
 func TestNewRequiresWriterLock(t *testing.T) {
 	t.Parallel()
 
@@ -81,10 +99,10 @@ func TestForeignKey_LinkRequiresProgram(t *testing.T) {
 		Group: "syscalls",
 		Name:  "sys_enter_openat",
 	}
-	linkID := kernel.LinkID(1)
-	spec := bpfman.NewEphemeralLinkRecord(linkID, kernel.ProgramID(999), details, time.Now()) // program 999 does not exist
+	kernelLinkID := kernel.LinkID(1)
+	spec := bpfman.NewEphemeralLinkSpec(kernel.ProgramID(999), &kernelLinkID, details) // program 999 does not exist
 
-	err = store.SaveLink(ctx, spec)
+	_, err = store.CreateLink(ctx, spec)
 	require.Error(t, err, "expected FK constraint violation")
 	assert.True(t, strings.Contains(err.Error(), "FOREIGN KEY constraint failed"), "expected FK constraint error, got: %v", err)
 }
@@ -111,10 +129,8 @@ func TestForeignKey_CascadeDeleteRemovesLinks(t *testing.T) {
 			Offset:   0,
 			Retprobe: false,
 		}
-		linkID := kernel.LinkID(100 + i)
-		spec := bpfman.NewEphemeralLinkRecord(linkID, programID, details, time.Now())
-		err := store.SaveLink(ctx, spec)
-		require.NoError(t, err, "SaveLink failed")
+		kernelLinkID := kernel.LinkID(100 + i)
+		createEphemeralLink(t, ctx, store, programID, &kernelLinkID, details)
 	}
 
 	// Verify links exist.
@@ -266,24 +282,25 @@ func TestLinkRegistry_TracepointRoundTrip(t *testing.T) {
 	require.NoError(t, store.Save(ctx, kernel.ProgramID(42), prog), "Save failed")
 
 	// Create a tracepoint link
-	linkID := kernel.LinkID(100)
+	kernelLinkID := kernel.LinkID(100)
 	details := bpfman.TracepointDetails{
 		Group: "syscalls",
 		Name:  "sys_enter_openat",
 	}
-	spec := bpfman.NewPinnedLinkRecord(linkID, kernel.ProgramID(42), details, bpfman.LinkPath("/sys/fs/bpf/bpfman/test/link"), time.Now())
-
-	err = store.SaveLink(ctx, spec)
-	require.NoError(t, err, "SaveLink failed")
+	pinPath := bpfman.LinkPath("/sys/fs/bpf/bpfman/test/link")
+	record := createPinnedLink(t, ctx, store, kernel.ProgramID(42), &kernelLinkID, details, pinPath)
 
 	// Retrieve and verify
-	gotSpec, err := store.GetLink(ctx, linkID)
+	gotSpec, err := store.GetLink(ctx, record.ID)
 	require.NoError(t, err, "GetLink failed")
 
 	assert.Equal(t, bpfman.LinkKindTracepoint, gotSpec.Kind)
-	assert.Equal(t, linkID, gotSpec.ID)
-	assert.Equal(t, kernel.ProgramID(42), gotSpec.ProgramID, "ProgramID should match the program kernel ID passed to SaveLink")
-	assert.Equal(t, spec.PinPath, gotSpec.PinPath)
+	assert.Equal(t, record.ID, gotSpec.ID)
+	require.NotNil(t, gotSpec.KernelLinkID)
+	assert.Equal(t, kernelLinkID, *gotSpec.KernelLinkID)
+	assert.Equal(t, kernel.ProgramID(42), gotSpec.ProgramID, "ProgramID should match the program kernel ID passed to CreateLink")
+	require.NotNil(t, gotSpec.PinPath)
+	assert.Equal(t, pinPath, *gotSpec.PinPath)
 
 	tpDetails, ok := gotSpec.Details.(bpfman.TracepointDetails)
 	require.True(t, ok, "expected TracepointDetails")
@@ -305,52 +322,58 @@ func TestLinkRegistry_UpsertUpdatesPinPath(t *testing.T) {
 	require.NoError(t, store.Save(ctx, kernel.ProgramID(42), prog), "Save failed")
 
 	// Create dispatcher via snapshot API.
-	linkID := kernel.LinkID(0x80000001)
 	dispLinkID := kernel.LinkID(500)
-	snap := platform.DispatcherSnapshot{
+	memberKernelLinkID := kernel.LinkID(600)
+	snap := platform.DispatcherSnapshotSpec{
 		Key:      dispatcher.Key{Type: dispatcher.DispatcherTypeXDP, Nsid: 0, Ifindex: 2},
 		Revision: 1,
 		Runtime: platform.DispatcherRuntime{
-			ProgramID: kernel.ProgramID(900),
-			LinkID:    &dispLinkID,
+			ProgramID:    kernel.ProgramID(900),
+			KernelLinkID: &dispLinkID,
 		},
-		Members: []platform.DispatcherMember{
+		Members: []platform.DispatcherMemberSpec{
 			{
-				ProgramID:   kernel.ProgramID(42),
-				ProgramName: "test_prog",
-				ProgPinPath: "/sys/fs/bpf/test_prog",
-				LinkID:      linkID,
-				LinkPinPath: "/old/rev/link_0",
-				Position:    0,
-				Priority:    50,
-				ProceedOn:   0x04,
-				Ifname:      "eth0",
+				ProgramID:    kernel.ProgramID(42),
+				ProgramName:  "test_prog",
+				ProgPinPath:  "/sys/fs/bpf/test_prog",
+				KernelLinkID: &memberKernelLinkID,
+				LinkPinPath:  "/old/rev/link_0",
+				Position:     0,
+				Priority:     50,
+				ProceedOn:    0x04,
+				Ifname:       "eth0",
 			},
 		},
 	}
-	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, snap), "ReplaceDispatcherSnapshot failed")
+	completed, err := store.ReplaceDispatcherSnapshot(ctx, snap)
+	require.NoError(t, err, "ReplaceDispatcherSnapshot failed")
+	require.Len(t, completed.Members, 1)
 
 	// Simulate dispatcher rebuild: replace snapshot with updated
 	// pin path and position.
 	snap2 := snap
 	snap2.Revision = 2
-	snap2.Members = []platform.DispatcherMember{
+	rebuiltKernelLinkID := kernel.LinkID(601)
+	snap2.Members = []platform.DispatcherMemberSpec{
 		{
-			ProgramID:   kernel.ProgramID(42),
-			ProgramName: "test_prog",
-			ProgPinPath: "/sys/fs/bpf/test_prog",
-			LinkID:      linkID,
-			LinkPinPath: "/new/rev/link_1",
-			Position:    1,
-			Priority:    50,
-			ProceedOn:   0x04,
-			Ifname:      "eth0",
+			ExistingLinkID: &completed.Members[0].LinkID,
+			ProgramID:      kernel.ProgramID(42),
+			ProgramName:    "test_prog",
+			ProgPinPath:    "/sys/fs/bpf/test_prog",
+			KernelLinkID:   &rebuiltKernelLinkID,
+			LinkPinPath:    "/new/rev/link_1",
+			Position:       1,
+			Priority:       50,
+			ProceedOn:      0x04,
+			Ifname:         "eth0",
 		},
 	}
-	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, snap2), "ReplaceDispatcherSnapshot (rebuild) failed")
+	completed2, err := store.ReplaceDispatcherSnapshot(ctx, snap2)
+	require.NoError(t, err, "ReplaceDispatcherSnapshot (rebuild) failed")
+	assert.Equal(t, completed.Members[0].LinkID, completed2.Members[0].LinkID)
 
 	// Verify pin path was updated in registry.
-	record, err := store.GetLink(ctx, linkID)
+	record, err := store.GetLink(ctx, completed.Members[0].LinkID)
 	require.NoError(t, err, "GetLink failed")
 	require.NotNil(t, record.PinPath, "pin path should not be nil")
 	assert.Equal(t, "/new/rev/link_1", record.PinPath.String(),
@@ -377,19 +400,86 @@ func TestLinkRegistry_CascadeDeleteFromRegistry(t *testing.T) {
 	require.NoError(t, store.Save(ctx, kernel.ProgramID(42), prog), "Save failed")
 
 	// Create a tracepoint link
-	linkID := kernel.LinkID(100)
+	kernelLinkID := kernel.LinkID(100)
 	details := bpfman.TracepointDetails{Group: "syscalls", Name: "sys_enter_openat"}
-	spec := bpfman.NewEphemeralLinkRecord(linkID, kernel.ProgramID(42), details, time.Now())
-
-	err = store.SaveLink(ctx, spec)
-	require.NoError(t, err, "SaveLink failed")
+	record := createEphemeralLink(t, ctx, store, kernel.ProgramID(42), &kernelLinkID, details)
 
 	// Delete the link via registry
-	require.NoError(t, store.DeleteLink(ctx, linkID), "DeleteLink failed")
+	require.NoError(t, store.DeleteLink(ctx, record.ID), "DeleteLink failed")
 
 	// Verify link is gone
-	_, err = store.GetLink(ctx, linkID)
+	_, err = store.GetLink(ctx, record.ID)
 	require.Error(t, err, "expected link to be deleted")
+}
+
+func TestLinkRegistry_IDsAreNeverReusedAfterDelete(t *testing.T) {
+	t.Parallel()
+
+	store, err := sqlite.NewInMemory(context.Background(), testLogger())
+	require.NoError(t, err, "failed to create store")
+	defer store.Close()
+
+	ctx := context.Background()
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(42), testProgram()), "Save failed")
+
+	first := createEphemeralLink(t, ctx, store, kernel.ProgramID(42), ptr(kernel.LinkID(100)),
+		bpfman.TracepointDetails{Group: "syscalls", Name: "sys_enter_openat"})
+	require.NoError(t, store.DeleteLink(ctx, first.ID), "DeleteLink failed")
+
+	second := createEphemeralLink(t, ctx, store, kernel.ProgramID(42), ptr(kernel.LinkID(101)),
+		bpfman.TracepointDetails{Group: "syscalls", Name: "sys_exit_openat"})
+
+	assert.Greater(t, second.ID, first.ID,
+		"links.id is AUTOINCREMENT and must not reuse deleted bpfman handles")
+}
+
+func TestLinkRegistry_IDsStartInDiagnosticRange(t *testing.T) {
+	t.Parallel()
+
+	store, err := sqlite.NewInMemory(context.Background(), testLogger())
+	require.NoError(t, err, "failed to create store")
+	defer store.Close()
+
+	ctx := context.Background()
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(42), testProgram()), "Save failed")
+
+	record := createEphemeralLink(t, ctx, store, kernel.ProgramID(42), ptr(kernel.LinkID(100)),
+		bpfman.TracepointDetails{Group: "syscalls", Name: "sys_enter_openat"})
+
+	assert.Equal(t, bpfman.LinkID(2_123_456_789), record.ID,
+		"bpfman link handles should be visually distinct from small kernel link IDs")
+}
+
+func TestLinkRegistry_KernelLinkIDPartialUniqueIndex(t *testing.T) {
+	t.Parallel()
+
+	store, err := sqlite.NewInMemory(context.Background(), testLogger())
+	require.NoError(t, err, "failed to create store")
+	defer store.Close()
+
+	ctx := context.Background()
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(42), testProgram()), "Save failed")
+
+	kernelLinkID := kernel.LinkID(100)
+	createEphemeralLink(t, ctx, store, kernel.ProgramID(42), &kernelLinkID,
+		bpfman.TracepointDetails{Group: "syscalls", Name: "sys_enter_openat"})
+
+	_, err = store.CreateLink(ctx, bpfman.NewEphemeralLinkSpec(
+		kernel.ProgramID(42),
+		&kernelLinkID,
+		bpfman.TracepointDetails{Group: "syscalls", Name: "sys_exit_openat"},
+	))
+	require.Error(t, err, "duplicate non-null kernel_link_id should fail")
+	assert.Contains(t, err.Error(), "UNIQUE constraint failed")
+
+	createEphemeralLink(t, ctx, store, kernel.ProgramID(42), nil,
+		bpfman.TracepointDetails{Group: "syscalls", Name: "no_kernel_id_a"})
+	createEphemeralLink(t, ctx, store, kernel.ProgramID(42), nil,
+		bpfman.TracepointDetails{Group: "syscalls", Name: "no_kernel_id_b"})
+
+	links, err := store.ListLinks(ctx)
+	require.NoError(t, err)
+	require.Len(t, links, 3, "partial unique index should allow multiple NULL kernel_link_id rows")
 }
 
 func TestDeleteLink_RejectsDispatcherBackedLinks(t *testing.T) {
@@ -407,28 +497,31 @@ func TestDeleteLink_RejectsDispatcherBackedLinks(t *testing.T) {
 
 	// Create an XDP dispatcher with one member.
 	dispLinkID := kernel.LinkID(500)
-	memberLinkID := kernel.LinkID(0x80000001)
-	snap := platform.DispatcherSnapshot{
+	memberKernelLinkID := kernel.LinkID(501)
+	snap := platform.DispatcherSnapshotSpec{
 		Key:      dispatcher.Key{Type: dispatcher.DispatcherTypeXDP, Nsid: 0, Ifindex: 2},
 		Revision: 1,
 		Runtime: platform.DispatcherRuntime{
-			ProgramID: kernel.ProgramID(900),
-			LinkID:    &dispLinkID,
+			ProgramID:    kernel.ProgramID(900),
+			KernelLinkID: &dispLinkID,
 		},
-		Members: []platform.DispatcherMember{
+		Members: []platform.DispatcherMemberSpec{
 			{
-				ProgramID:   kernel.ProgramID(42),
-				ProgramName: "test_program",
-				ProgPinPath: "/sys/fs/bpf/test",
-				LinkID:      memberLinkID,
-				Position:    0,
-				Priority:    50,
-				ProceedOn:   0x04,
-				Ifname:      "eth0",
+				ProgramID:    kernel.ProgramID(42),
+				ProgramName:  "test_program",
+				ProgPinPath:  "/sys/fs/bpf/test",
+				KernelLinkID: &memberKernelLinkID,
+				Position:     0,
+				Priority:     50,
+				ProceedOn:    0x04,
+				Ifname:       "eth0",
 			},
 		},
 	}
-	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, snap), "ReplaceDispatcherSnapshot failed")
+	completed, err := store.ReplaceDispatcherSnapshot(ctx, snap)
+	require.NoError(t, err, "ReplaceDispatcherSnapshot failed")
+	require.Len(t, completed.Members, 1)
+	memberLinkID := completed.Members[0].LinkID
 
 	// Attempting to delete the dispatcher-backed XDP link should fail.
 	err = store.DeleteLink(ctx, memberLinkID)
@@ -438,6 +531,36 @@ func TestDeleteLink_RejectsDispatcherBackedLinks(t *testing.T) {
 	// The link should still exist.
 	_, err = store.GetLink(ctx, memberLinkID)
 	require.NoError(t, err, "link should still exist after rejected delete")
+}
+
+func TestCreateLink_RejectsDispatcherBackedKinds(t *testing.T) {
+	t.Parallel()
+
+	store, err := sqlite.NewInMemory(context.Background(), testLogger())
+	require.NoError(t, err, "failed to create store")
+	defer store.Close()
+
+	ctx := context.Background()
+	prog := testProgram()
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(42), prog), "Save failed")
+
+	_, err = store.CreateLink(ctx, bpfman.NewPinnedLinkSpec(
+		kernel.ProgramID(42),
+		ptr(kernel.LinkID(500)),
+		bpfman.XDPDetails{Interface: "eth0", Ifindex: 2},
+		"/sys/fs/bpf/xdp",
+	))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "dispatcher-backed")
+
+	_, err = store.CreateLink(ctx, bpfman.NewPinnedLinkSpec(
+		kernel.ProgramID(42),
+		ptr(kernel.LinkID(501)),
+		bpfman.TCDetails{Interface: "eth0", Ifindex: 2, Direction: bpfman.TCDirectionIngress},
+		"/sys/fs/bpf/tc",
+	))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "dispatcher-backed")
 }
 
 // ----------------------------------------------------------------------------
@@ -662,10 +785,8 @@ func TestListTCXLinksByInterface_OrderByPriority(t *testing.T) {
 			Priority:  link.priority,
 			Nsid:      nsid,
 		}
-		linkID := kernel.LinkID(link.linkID)
-		spec := bpfman.NewPinnedLinkRecord(linkID, progID, details, bpfman.LinkPath("/sys/fs/bpf/link_"+string(rune(link.linkID))), time.Now())
-		err := store.SaveLink(ctx, spec)
-		require.NoError(t, err, "SaveLink failed for link %d", link.linkID)
+		kernelLinkID := kernel.LinkID(link.linkID)
+		createPinnedLink(t, ctx, store, progID, &kernelLinkID, details, bpfman.LinkPath("/sys/fs/bpf/link_"+string(rune(link.linkID))))
 	}
 
 	// Query links - they should be ordered by priority ASC.
@@ -728,10 +849,8 @@ func TestListTCXLinksByInterface_FiltersByInterfaceAndDirection(t *testing.T) {
 			Priority:  link.priority,
 			Nsid:      nsid,
 		}
-		linkID := kernel.LinkID(link.linkID)
-		spec := bpfman.NewEphemeralLinkRecord(linkID, progID, details, time.Now())
-		err := store.SaveLink(ctx, spec)
-		require.NoError(t, err, "SaveLink failed for link %d", link.linkID)
+		kernelLinkID := kernel.LinkID(link.linkID)
+		createEphemeralLink(t, ctx, store, progID, &kernelLinkID, details)
 	}
 
 	// Query for ifindex=2, ingress - should return only 2 links.
@@ -864,17 +983,19 @@ func TestStoreGC_StaleDispatcherDeletion(t *testing.T) {
 
 	xdpKey := dispatcher.Key{Type: dispatcher.DispatcherTypeXDP, Nsid: 4026531840, Ifindex: 2}
 	xdpLinkID := kernel.LinkID(200)
-	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshot{
+	_, err = store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshotSpec{
 		Key: xdpKey, Revision: 1,
-		Runtime: platform.DispatcherRuntime{ProgramID: 100, LinkID: &xdpLinkID},
-	}))
+		Runtime: platform.DispatcherRuntime{ProgramID: 100, KernelLinkID: &xdpLinkID},
+	})
+	require.NoError(t, err)
 
 	tcKey := dispatcher.Key{Type: dispatcher.DispatcherTypeTCIngress, Nsid: 4026531840, Ifindex: 3}
 	tcPri := uint16(50)
-	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshot{
+	_, err = store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshotSpec{
 		Key: tcKey, Revision: 1,
 		Runtime: platform.DispatcherRuntime{ProgramID: 101, FilterPriority: &tcPri},
-	}))
+	})
+	require.NoError(t, err)
 
 	// Delete the TC dispatcher, keep the XDP one.
 	require.NoError(t, store.DeleteDispatcherSnapshot(ctx, tcKey))
@@ -899,20 +1020,18 @@ func TestStoreGC_StaleLinkDeletion(t *testing.T) {
 	require.NoError(t, store.Save(ctx, kernel.ProgramID(100), prog))
 
 	details1 := bpfman.TracepointDetails{Group: "syscalls", Name: "sys_enter_openat"}
-	spec1 := bpfman.NewEphemeralLinkRecord(kernel.LinkID(200), kernel.ProgramID(100), details1, time.Now())
-	require.NoError(t, store.SaveLink(ctx, spec1))
+	link1 := createEphemeralLink(t, ctx, store, kernel.ProgramID(100), ptr(kernel.LinkID(200)), details1)
 
 	details2 := bpfman.TracepointDetails{Group: "syscalls", Name: "sys_exit_openat"}
-	spec2 := bpfman.NewEphemeralLinkRecord(kernel.LinkID(201), kernel.ProgramID(100), details2, time.Now())
-	require.NoError(t, store.SaveLink(ctx, spec2))
+	link2 := createEphemeralLink(t, ctx, store, kernel.ProgramID(100), ptr(kernel.LinkID(201)), details2)
 
-	// Delete link 201, keep 200.
-	require.NoError(t, store.DeleteLink(ctx, kernel.LinkID(201)))
+	// Delete link2, keep link1.
+	require.NoError(t, store.DeleteLink(ctx, link2.ID))
 
 	links, err := store.ListLinks(ctx)
 	require.NoError(t, err)
 	require.Len(t, links, 1)
-	assert.Equal(t, kernel.LinkID(200), links[0].ID)
+	assert.Equal(t, link1.ID, links[0].ID)
 }
 
 func TestStoreGC_OrphanedDispatcherAfterLinkDeletion(t *testing.T) {
@@ -931,22 +1050,24 @@ func TestStoreGC_OrphanedDispatcherAfterLinkDeletion(t *testing.T) {
 
 	key := dispatcher.Key{Type: dispatcher.DispatcherTypeXDP, Nsid: 4026531840, Ifindex: 2}
 	dispLinkID := kernel.LinkID(501)
-	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshot{
+	memberKernelLinkID := kernel.LinkID(601)
+	_, err = store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshotSpec{
 		Key: key, Revision: 1,
-		Runtime: platform.DispatcherRuntime{ProgramID: 500, LinkID: &dispLinkID},
-		Members: []platform.DispatcherMember{
+		Runtime: platform.DispatcherRuntime{ProgramID: 500, KernelLinkID: &dispLinkID},
+		Members: []platform.DispatcherMemberSpec{
 			{
-				ProgramID:   kernel.ProgramID(100),
-				ProgramName: "test_prog",
-				ProgPinPath: "/sys/fs/bpf/test_prog",
-				LinkID:      kernel.LinkID(0x80000001),
-				Position:    0,
-				Priority:    50,
-				ProceedOn:   0x04,
-				Ifname:      "eth0",
+				ProgramID:    kernel.ProgramID(100),
+				ProgramName:  "test_prog",
+				ProgPinPath:  "/sys/fs/bpf/test_prog",
+				KernelLinkID: &memberKernelLinkID,
+				Position:     0,
+				Priority:     50,
+				ProceedOn:    0x04,
+				Ifname:       "eth0",
 			},
 		},
-	}))
+	})
+	require.NoError(t, err)
 
 	// Before removal, dispatcher has one member.
 	snap, err := store.GetDispatcherSnapshot(ctx, key)
@@ -954,10 +1075,11 @@ func TestStoreGC_OrphanedDispatcherAfterLinkDeletion(t *testing.T) {
 	assert.Equal(t, 1, len(snap.Members))
 
 	// Replace with zero members (simulating detach of last extension).
-	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshot{
+	_, err = store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshotSpec{
 		Key: key, Revision: 2,
-		Runtime: platform.DispatcherRuntime{ProgramID: 500, LinkID: &dispLinkID},
-	}))
+		Runtime: platform.DispatcherRuntime{ProgramID: 500, KernelLinkID: &dispLinkID},
+	})
+	require.NoError(t, err)
 
 	// After replacement, dispatcher has zero members.
 	snap, err = store.GetDispatcherSnapshot(ctx, key)
@@ -988,14 +1110,14 @@ func TestStoreGC_TransactionalAtomicity(t *testing.T) {
 
 	tcKey := dispatcher.Key{Type: dispatcher.DispatcherTypeTCIngress, Nsid: 4026531840, Ifindex: 3}
 	tcPri := uint16(50)
-	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshot{
+	_, err = store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshotSpec{
 		Key: tcKey, Revision: 1,
 		Runtime: platform.DispatcherRuntime{ProgramID: 101, FilterPriority: &tcPri},
-	}))
+	})
+	require.NoError(t, err)
 
 	details := bpfman.TracepointDetails{Group: "syscalls", Name: "test"}
-	spec := bpfman.NewEphemeralLinkRecord(kernel.LinkID(400), kernel.ProgramID(100), details, time.Now())
-	require.NoError(t, store.SaveLink(ctx, spec))
+	link := createEphemeralLink(t, ctx, store, kernel.ProgramID(100), ptr(kernel.LinkID(400)), details)
 
 	err = store.RunInTransaction(ctx, "test", func(tx platform.Store) error {
 		if err := tx.Delete(ctx, kernel.ProgramID(101)); err != nil {
@@ -1004,7 +1126,7 @@ func TestStoreGC_TransactionalAtomicity(t *testing.T) {
 		if err := tx.DeleteDispatcherSnapshot(ctx, tcKey); err != nil {
 			return err
 		}
-		return tx.DeleteLink(ctx, kernel.LinkID(400))
+		return tx.DeleteLink(ctx, link.ID)
 	})
 	require.NoError(t, err)
 
@@ -1061,33 +1183,27 @@ func TestStoreGC_ComprehensiveFourPhaseTransaction(t *testing.T) {
 	// Dispatchers.
 	xdpKey := dispatcher.Key{Type: dispatcher.DispatcherTypeXDP, Nsid: 4026531840, Ifindex: 2}
 	xdpLinkID := kernel.LinkID(300)
-	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshot{
+	_, err = store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshotSpec{
 		Key: xdpKey, Revision: 1,
-		Runtime: platform.DispatcherRuntime{ProgramID: 100, LinkID: &xdpLinkID},
-	}))
+		Runtime: platform.DispatcherRuntime{ProgramID: 100, KernelLinkID: &xdpLinkID},
+	})
+	require.NoError(t, err)
 
 	tcKey := dispatcher.Key{Type: dispatcher.DispatcherTypeTCIngress, Nsid: 4026531840, Ifindex: 3}
 	tcPri := uint16(50)
-	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshot{
+	_, err = store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshotSpec{
 		Key: tcKey, Revision: 1,
 		Runtime: platform.DispatcherRuntime{ProgramID: 101, FilterPriority: &tcPri},
-	}))
+	})
+	require.NoError(t, err)
 
 	// Links (tracepoints, not XDP extensions -- so the XDP
 	// dispatcher has zero extension links from the start).
-	aliveLink := bpfman.NewEphemeralLinkRecord(
-		kernel.LinkID(400), kernel.ProgramID(100),
-		bpfman.TracepointDetails{Group: "syscalls", Name: "test"},
-		time.Now(),
-	)
-	require.NoError(t, store.SaveLink(ctx, aliveLink))
+	aliveLink := createEphemeralLink(t, ctx, store, kernel.ProgramID(100), ptr(kernel.LinkID(400)),
+		bpfman.TracepointDetails{Group: "syscalls", Name: "test"})
 
-	staleLink := bpfman.NewEphemeralLinkRecord(
-		kernel.LinkID(401), kernel.ProgramID(100),
-		bpfman.TracepointDetails{Group: "syscalls", Name: "test2"},
-		time.Now(),
-	)
-	require.NoError(t, store.SaveLink(ctx, staleLink))
+	staleLink := createEphemeralLink(t, ctx, store, kernel.ProgramID(100), ptr(kernel.LinkID(401)),
+		bpfman.TracepointDetails{Group: "syscalls", Name: "test2"})
 
 	// Execute all four phases in a single transaction.
 	err = store.RunInTransaction(ctx, "test", func(tx platform.Store) error {
@@ -1105,7 +1221,7 @@ func TestStoreGC_ComprehensiveFourPhaseTransaction(t *testing.T) {
 		}
 
 		// Phase 3: delete stale link.
-		if err := tx.DeleteLink(ctx, kernel.LinkID(401)); err != nil {
+		if err := tx.DeleteLink(ctx, staleLink.ID); err != nil {
 			return err
 		}
 
@@ -1138,40 +1254,7 @@ func TestStoreGC_ComprehensiveFourPhaseTransaction(t *testing.T) {
 	links, err := store.ListLinks(ctx)
 	require.NoError(t, err)
 	assert.Len(t, links, 1, "should have 1 link remaining")
-	assert.Equal(t, kernel.LinkID(400), links[0].ID)
-}
-
-func TestStoreGC_SyntheticLinkNotAffectedByDeletion(t *testing.T) {
-	t.Parallel()
-
-	// Synthetic links (perf_event-based) should be preserved when
-	// non-synthetic links are deleted. This verifies the store
-	// correctly handles both ID ranges.
-	store, err := sqlite.NewInMemory(context.Background(), testLogger())
-	require.NoError(t, err)
-	defer store.Close()
-
-	ctx := context.Background()
-
-	prog := testProgram()
-	require.NoError(t, store.Save(ctx, kernel.ProgramID(100), prog))
-
-	realDetails := bpfman.UprobeDetails{Target: "/usr/bin/test", FnName: "main"}
-	realSpec := bpfman.NewEphemeralLinkRecord(kernel.LinkID(200), kernel.ProgramID(100), realDetails, time.Now())
-	require.NoError(t, store.SaveLink(ctx, realSpec))
-
-	syntheticDetails := bpfman.UprobeDetails{Target: "/app/binary", FnName: "handler", ContainerPid: 12345}
-	syntheticSpec := bpfman.NewEphemeralLinkRecord(kernel.LinkID(0x80000001), kernel.ProgramID(100), syntheticDetails, time.Now())
-	require.NoError(t, store.SaveLink(ctx, syntheticSpec))
-
-	// Delete only the real link.
-	require.NoError(t, store.DeleteLink(ctx, kernel.LinkID(200)))
-
-	links, err := store.ListLinks(ctx)
-	require.NoError(t, err)
-	require.Len(t, links, 1)
-	assert.Equal(t, kernel.LinkID(0x80000001), links[0].ID)
-	assert.True(t, links[0].IsSynthetic())
+	assert.Equal(t, aliveLink.ID, links[0].ID)
 }
 
 func TestListLinks_ReturnsDetails(t *testing.T) {
@@ -1193,18 +1276,48 @@ func TestListLinks_ReturnsDetails(t *testing.T) {
 
 	// Create dispatchers for XDP and TC links (FK requirement for their details)
 	xdpLinkID := kernel.LinkID(501)
-	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshot{
+	xdpMemberLinkID := kernel.LinkID(60)
+	_, err = store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshotSpec{
 		Key:      dispatcher.Key{Type: dispatcher.DispatcherTypeXDP, Nsid: 4026531840, Ifindex: 2},
 		Revision: 1,
-		Runtime:  platform.DispatcherRuntime{ProgramID: 500, LinkID: &xdpLinkID},
-	}), "ReplaceDispatcherSnapshot XDP failed")
+		Runtime:  platform.DispatcherRuntime{ProgramID: 500, KernelLinkID: &xdpLinkID},
+		Members: []platform.DispatcherMemberSpec{
+			{
+				ProgramID:    kernel.ProgramID(100),
+				ProgramName:  "xdp_prog",
+				ProgPinPath:  "/sys/fs/bpf/xdp_prog",
+				KernelLinkID: &xdpMemberLinkID,
+				LinkPinPath:  "/sys/fs/bpf/xdp_link",
+				Position:     1,
+				Priority:     50,
+				ProceedOn:    uint32(1<<2 | 1<<31),
+				Ifname:       "eth0",
+			},
+		},
+	})
+	require.NoError(t, err, "ReplaceDispatcherSnapshot XDP failed")
 
 	tcFilterPriority := uint16(50)
-	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshot{
+	tcMemberLinkID := kernel.LinkID(70)
+	_, err = store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshotSpec{
 		Key:      dispatcher.Key{Type: dispatcher.DispatcherTypeTCIngress, Nsid: 4026531840, Ifindex: 3},
 		Revision: 1,
 		Runtime:  platform.DispatcherRuntime{ProgramID: 502, FilterPriority: &tcFilterPriority},
-	}), "ReplaceDispatcherSnapshot TC failed")
+		Members: []platform.DispatcherMemberSpec{
+			{
+				ProgramID:    kernel.ProgramID(100),
+				ProgramName:  "tc_prog",
+				ProgPinPath:  "/sys/fs/bpf/tc_prog",
+				KernelLinkID: &tcMemberLinkID,
+				LinkPinPath:  "/sys/fs/bpf/tc_link",
+				Position:     1,
+				Priority:     100,
+				ProceedOn:    uint32(1<<0 | 1<<3),
+				Ifname:       "eth1",
+			},
+		},
+	})
+	require.NoError(t, err, "ReplaceDispatcherSnapshot TC failed")
 
 	// Create links with ALL detail types
 	testCases := []struct {
@@ -1235,7 +1348,7 @@ func TestListLinks_ReturnsDetails(t *testing.T) {
 		},
 		{
 			linkID:  30,
-			details: bpfman.UprobeDetails{Target: "/usr/bin/test", FnName: "main", Offset: 128, PID: 1234, Retprobe: false},
+			details: bpfman.UprobeDetails{Target: "/usr/bin/test", FnName: "main", Offset: 128, PID: 1234, Retprobe: false, ContainerPid: 5678},
 			check: func(t *testing.T, got bpfman.LinkDetails) {
 				d, ok := got.(bpfman.UprobeDetails)
 				require.True(t, ok, "expected UprobeDetails, got %T", got)
@@ -1243,6 +1356,7 @@ func TestListLinks_ReturnsDetails(t *testing.T) {
 				assert.Equal(t, "main", d.FnName)
 				assert.Equal(t, uint64(128), d.Offset)
 				assert.Equal(t, int32(1234), d.PID)
+				assert.Equal(t, int32(5678), d.ContainerPid)
 				assert.False(t, d.Retprobe)
 			},
 		},
@@ -1285,7 +1399,7 @@ func TestListLinks_ReturnsDetails(t *testing.T) {
 				assert.Equal(t, int32(50), d.Priority)
 				assert.Equal(t, int32(1), d.Position)
 				assert.Equal(t, []int32{2, 31}, d.ProceedOn)
-				assert.Equal(t, "/proc/1/ns/net", d.Netns)
+				assert.Equal(t, "", d.Netns)
 				assert.Equal(t, uint64(4026531840), d.Nsid)
 				assert.Equal(t, kernel.ProgramID(500), d.DispatcherID)
 				assert.Equal(t, uint32(1), d.Revision)
@@ -1314,7 +1428,7 @@ func TestListLinks_ReturnsDetails(t *testing.T) {
 				assert.Equal(t, int32(100), d.Priority)
 				assert.Equal(t, int32(1), d.Position)
 				assert.Equal(t, []int32{0, 3}, d.ProceedOn)
-				assert.Equal(t, "/proc/1/ns/net", d.Netns)
+				assert.Equal(t, "", d.Netns)
 				assert.Equal(t, uint64(4026531840), d.Nsid)
 			},
 		},
@@ -1343,8 +1457,12 @@ func TestListLinks_ReturnsDetails(t *testing.T) {
 
 	// Save all links
 	for _, tc := range testCases {
-		spec := bpfman.NewEphemeralLinkRecord(tc.linkID, kernel.ProgramID(100), tc.details, time.Now())
-		require.NoError(t, store.SaveLink(ctx, spec), "SaveLink %d failed", tc.linkID)
+		switch tc.details.Kind() {
+		case bpfman.LinkKindXDP, bpfman.LinkKindTC:
+			continue
+		}
+		kernelLinkID := tc.linkID
+		createEphemeralLink(t, ctx, store, kernel.ProgramID(100), &kernelLinkID, tc.details)
 	}
 
 	// ListLinks should return links WITH details populated
@@ -1355,7 +1473,8 @@ func TestListLinks_ReturnsDetails(t *testing.T) {
 	// Build a map for easier lookup
 	linksByID := make(map[kernel.LinkID]bpfman.LinkRecord)
 	for _, l := range links {
-		linksByID[l.ID] = l
+		require.NotNil(t, l.KernelLinkID)
+		linksByID[*l.KernelLinkID] = l
 	}
 
 	// Verify each link's details
@@ -1387,14 +1506,14 @@ func TestListLinksByProgram_ReturnsDetails(t *testing.T) {
 
 	// Create links for program 100
 	tp1 := bpfman.TracepointDetails{Group: "syscalls", Name: "sys_enter_read"}
-	require.NoError(t, store.SaveLink(ctx, bpfman.NewEphemeralLinkRecord(kernel.LinkID(10), kernel.ProgramID(100), tp1, time.Now())))
+	createEphemeralLink(t, ctx, store, kernel.ProgramID(100), ptr(kernel.LinkID(10)), tp1)
 
 	tp2 := bpfman.TracepointDetails{Group: "syscalls", Name: "sys_exit_read"}
-	require.NoError(t, store.SaveLink(ctx, bpfman.NewEphemeralLinkRecord(kernel.LinkID(11), kernel.ProgramID(100), tp2, time.Now())))
+	createEphemeralLink(t, ctx, store, kernel.ProgramID(100), ptr(kernel.LinkID(11)), tp2)
 
 	// Create link for program 200
 	tp3 := bpfman.TracepointDetails{Group: "syscalls", Name: "sys_enter_write"}
-	require.NoError(t, store.SaveLink(ctx, bpfman.NewEphemeralLinkRecord(kernel.LinkID(20), kernel.ProgramID(200), tp3, time.Now())))
+	createEphemeralLink(t, ctx, store, kernel.ProgramID(200), ptr(kernel.LinkID(20)), tp3)
 
 	// ListLinksByProgram for program 100 should return 2 links with details
 	links, err := store.ListLinksByProgram(ctx, kernel.ProgramID(100))

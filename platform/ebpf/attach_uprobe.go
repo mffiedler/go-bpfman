@@ -43,9 +43,9 @@ func (k *kernelAdapter) AttachUprobeLocal(ctx context.Context, progPinPath bpfma
 	}
 
 	return bpfman.AttachOutput{
-		LinkID:     linkID,
-		KernelLink: kernelLink,
-		PinPath:    linkPinPath,
+		KernelLinkID: &linkID,
+		KernelLink:   kernelLink,
+		PinPath:      linkPinPath,
 	}, nil
 }
 
@@ -70,22 +70,18 @@ func (k *kernelAdapter) AttachUprobeContainer(ctx context.Context, scope lock.Wr
 	}
 	defer prog.Close()
 
-	// Use bpfman-ns helper for container uprobes
-	// scope is required - compiler enforces it (not nil)
-	// Note: syntheticID is returned, not a kernel link ID (container uprobes use perf_event)
-	syntheticID, err := k.attachUprobeViaHelper(scope, progPinPath.String(), target, fnName, offset, retprobe, linkPin, containerPid)
+	// Use bpfman-ns helper for container uprobes. The helper keeps the
+	// perf-event link FD in memory; it does not give bpfman a durable
+	// kernel link ID or a bpffs pin to correlate later.
+	err = k.attachUprobeViaHelper(scope, progPinPath.String(), target, fnName, offset, retprobe, linkPin, containerPid)
 	if err != nil {
 		return bpfman.AttachOutput{}, fmt.Errorf("attach uprobe via helper: %w", err)
 	}
 
-	// Container uprobes use perf_event-based links which don't have kernel link IDs.
-	// The syntheticID is stored as the durable ID in the database.
-	// We also can't load the pinned link for container uprobes (they can't be pinned).
 	return bpfman.AttachOutput{
-		LinkID:     syntheticID,
-		KernelLink: nil, // No kernel link for perf_event-based uprobes
-		PinPath:    linkPinPath,
-		Synthetic:  true,
+		KernelLinkID: nil,
+		KernelLink:   nil,
+		PinPath:      "",
 	}, nil
 }
 
@@ -162,19 +158,19 @@ func (k *kernelAdapter) doAttachUprobeLocal(progPinPath, target, fnName string, 
 // 9. Child uses inherited program fd to attach uprobe
 // 10. Child sends link fd back to parent via socket (SCM_RIGHTS)
 // 11. Parent receives link fd, keeps it open to maintain the uprobe
-func (k *kernelAdapter) attachUprobeViaHelper(scope lock.WriterScope, progPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath string, containerPid int32) (kernel.LinkID, error) {
+func (k *kernelAdapter) attachUprobeViaHelper(scope lock.WriterScope, progPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath string, containerPid int32) error {
 	// Find the bpfman binary (which also serves as bpfman-ns)
 	bpfmanPath, err := os.Executable()
 	if err != nil {
 		k.logger.Error("failed to get executable path", "error", err)
-		return 0, fmt.Errorf("get executable path: %w", err)
+		return fmt.Errorf("get executable path: %w", err)
 	}
 
 	// Load pinned program - we'll pass the fd to the child
 	prog, err := ebpf.LoadPinnedProgram(progPinPath, nil)
 	if err != nil {
 		k.logger.Error("failed to load pinned program", "path", progPinPath, "error", err)
-		return 0, fmt.Errorf("load pinned program %s: %w", progPinPath, err)
+		return fmt.Errorf("load pinned program %s: %w", progPinPath, err)
 	}
 	defer prog.Close()
 
@@ -187,7 +183,7 @@ func (k *kernelAdapter) attachUprobeViaHelper(scope lock.WriterScope, progPinPat
 	dupFd, err := syscall.Dup(progFd)
 	if err != nil {
 		k.logger.Error("failed to dup program fd", "fd", progFd, "error", err)
-		return 0, fmt.Errorf("dup program fd: %w", err)
+		return fmt.Errorf("dup program fd: %w", err)
 	}
 	progFile := os.NewFile(uintptr(dupFd), "bpf-program")
 	defer progFile.Close()
@@ -197,7 +193,7 @@ func (k *kernelAdapter) attachUprobeViaHelper(scope lock.WriterScope, progPinPat
 	parentSocket, childSocket, err := nsenter.Socketpair()
 	if err != nil {
 		k.logger.Error("failed to create socketpair", "error", err)
-		return 0, fmt.Errorf("create socketpair: %w", err)
+		return fmt.Errorf("create socketpair: %w", err)
 	}
 	defer parentSocket.Close()
 	defer childSocket.Close()
@@ -215,7 +211,7 @@ func (k *kernelAdapter) attachUprobeViaHelper(scope lock.WriterScope, progPinPat
 				"tried_paths", []string{nsPath, altPath},
 				"error", err,
 				"hint", "ensure container PID is valid and /proc or /host/proc is accessible")
-			return 0, fmt.Errorf("container namespace for PID %d not accessible (tried %s and %s): %w", containerPid, nsPath, altPath, err)
+			return fmt.Errorf("container namespace for PID %d not accessible (tried %s and %s): %w", containerPid, nsPath, altPath, err)
 		}
 		nsPath = altPath
 	}
@@ -257,7 +253,7 @@ func (k *kernelAdapter) attachUprobeViaHelper(scope lock.WriterScope, progPinPat
 	lockFile, err := scope.DupFD()
 	if err != nil {
 		k.logger.Error("failed to dup lock fd for helper", "error", err)
-		return 0, fmt.Errorf("dup lock fd for helper: %w", err)
+		return fmt.Errorf("dup lock fd for helper: %w", err)
 	}
 	defer lockFile.Close() // Close parent's dup after child starts
 
@@ -287,7 +283,7 @@ func (k *kernelAdapter) attachUprobeViaHelper(scope lock.WriterScope, progPinPat
 			"error", err,
 			"container_pid", containerPid,
 			"ns_path", nsPath)
-		return 0, fmt.Errorf("start bpfman-ns for container %d: %w", containerPid, err)
+		return fmt.Errorf("start bpfman-ns for container %d: %w", containerPid, err)
 	}
 
 	// Close child's socket end in parent - child has its own copy via ExtraFiles
@@ -302,7 +298,7 @@ func (k *kernelAdapter) attachUprobeViaHelper(scope lock.WriterScope, progPinPat
 			"container_pid", containerPid)
 		cmd.Process.Kill()
 		cmd.Wait()
-		return 0, fmt.Errorf("receive link fd from child: %w", err)
+		return fmt.Errorf("receive link fd from child: %w", err)
 	}
 	k.logger.Debug("received link fd from child",
 		"link_fd", linkFd,
@@ -319,13 +315,13 @@ func (k *kernelAdapter) attachUprobeViaHelper(scope lock.WriterScope, progPinPat
 				"fn_name", fnName,
 				"ns_path", nsPath)
 			syscall.Close(linkFd) // Clean up received fd
-			return 0, fmt.Errorf("bpfman-ns failed attaching %s to %q in container %d (exit %d)", fnName, target, containerPid, exitErr.ExitCode())
+			return fmt.Errorf("bpfman-ns failed attaching %s to %q in container %d (exit %d)", fnName, target, containerPid, exitErr.ExitCode())
 		}
 		k.logger.Error("failed to wait for bpfman-ns helper",
 			"error", err,
 			"container_pid", containerPid)
 		syscall.Close(linkFd)
-		return 0, fmt.Errorf("wait for bpfman-ns: %w", err)
+		return fmt.Errorf("wait for bpfman-ns: %w", err)
 	}
 
 	// We now have the link fd. For perf_event-based uprobes, we cannot pin them.
@@ -343,18 +339,10 @@ func (k *kernelAdapter) attachUprobeViaHelper(scope lock.WriterScope, progPinPat
 	linkKey := fmt.Sprintf("%d:%s:%s", containerPid, target, fnName)
 	k.linkFds.Store(linkKey, linkFd)
 
-	// Generate a synthetic link ID for database storage. Real kernel link IDs
-	// are small sequential numbers; synthetic IDs are in range 0x80000000+ to
-	// avoid collision. This allows the database to maintain a unique constraint
-	// on link IDs while supporting perf_event-based attachments that lack
-	// kernel link IDs.
-	syntheticID := generateSyntheticLinkID()
-
 	k.logger.Info("stored link fd for container uprobe",
 		"key", linkKey,
 		"link_fd", linkFd,
-		"synthetic_link_id", syntheticID,
 		"note", "perf_event links cannot be pinned; link will be released when daemon exits")
 
-	return syntheticID, nil
+	return nil
 }

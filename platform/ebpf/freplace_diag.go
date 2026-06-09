@@ -29,7 +29,7 @@ func (k *kernelAdapter) ExtensionLinkInfo(ctx context.Context, linkPinPath bpfma
 	}
 
 	out := platform.ExtensionLinkInfo{
-		LinkID: kernel.LinkID(info.ID),
+		KernelLinkID: kernel.LinkID(info.ID),
 	}
 	if t := info.Tracing(); t != nil {
 		out.TargetProgID = kernel.ProgramID(t.TargetObjId)

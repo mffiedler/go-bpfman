@@ -11,20 +11,8 @@ import (
 	"github.com/frobware/go-bpfman/kernel"
 )
 
-// SyntheticLinkIDBase is the base value for synthetic link IDs.
-// Synthetic IDs are generated in the range 0x80000000-0xFFFFFFFF for
-// perf_event-based links (e.g., container uprobes) that lack kernel link IDs.
-// Real kernel link IDs are small sequential numbers, so this range avoids
-// collision. GC should skip links with synthetic IDs since they can't be
-// enumerated via the kernel's link iterator.
-const SyntheticLinkIDBase = 0x80000000
-
-// IsSyntheticLinkID returns true if the link ID is synthetic (not from kernel).
-// Synthetic IDs are used for perf_event-based links that cannot be pinned
-// and don't have real kernel link IDs.
-func IsSyntheticLinkID(id kernel.LinkID) bool {
-	return id >= SyntheticLinkIDBase
-}
+// LinkID uniquely identifies a bpfman-managed attachment.
+type LinkID uint64
 
 // TCXAttachOrder specifies where to insert a TCX program in the chain.
 // Programs are ordered by priority, with lower priority values running first.
@@ -379,13 +367,24 @@ func ParseLinkKind(s string) (LinkKind, error) {
 	}
 }
 
-// LinkRecord is the stored record of an attached link (DB-backed).
-// ID is the user-facing identity: kernel-assigned for real BPF links,
-// or bpfman-assigned (0x80000000+) for synthetic/perf_event links.
+// LinkSpec is the requested managed-link row before the store has allocated a
+// bpfman LinkID.
+type LinkSpec struct {
+	ProgramID    kernel.ProgramID `json:"program_id"`
+	KernelLinkID *kernel.LinkID   `json:"kernel_link_id"`
+	Kind         LinkKind         `json:"kind"`
+	PinPath      *LinkPath        `json:"pin_path"`
+	Details      LinkDetails      `json:"details"`
+}
+
+// LinkRecord is the stored record of an attached link. ID is the bpfman-owned
+// management handle. KernelLinkID is the captured kernel bpf_link ID, if the
+// attach path observed one.
 type LinkRecord struct {
-	ID        kernel.LinkID    `json:"id"`
-	ProgramID kernel.ProgramID `json:"program_id"` // program this attaches to
-	Kind      LinkKind         `json:"kind"`
+	ID           LinkID           `json:"id"`
+	ProgramID    kernel.ProgramID `json:"program_id"` // program this attaches to
+	KernelLinkID *kernel.LinkID   `json:"kernel_link_id"`
+	Kind         LinkKind         `json:"kind"`
 	// PinPath nil distinguishes an ephemeral link from one with a pin. Always
 	// emitted as JSON null in the ephemeral case so the consumer schema is stable.
 	PinPath *LinkPath `json:"pin_path"`
@@ -488,12 +487,13 @@ func LinkAttachKindDetailsType(attachKind string) reflect.Type {
 // not *bpfman.TCDetails).
 func (r *LinkRecord) UnmarshalJSON(data []byte) error {
 	type alias struct {
-		ID        kernel.LinkID    `json:"id"`
-		ProgramID kernel.ProgramID `json:"program_id"`
-		Kind      LinkKind         `json:"kind"`
-		PinPath   *LinkPath        `json:"pin_path"`
-		Details   json.RawMessage  `json:"details"`
-		CreatedAt time.Time        `json:"created_at"`
+		ID           LinkID           `json:"id"`
+		ProgramID    kernel.ProgramID `json:"program_id"`
+		KernelLinkID *kernel.LinkID   `json:"kernel_link_id"`
+		Kind         LinkKind         `json:"kind"`
+		PinPath      *LinkPath        `json:"pin_path"`
+		Details      json.RawMessage  `json:"details"`
+		CreatedAt    time.Time        `json:"created_at"`
 	}
 	var a alias
 	if err := json.Unmarshal(data, &a); err != nil {
@@ -501,6 +501,7 @@ func (r *LinkRecord) UnmarshalJSON(data []byte) error {
 	}
 	r.ID = a.ID
 	r.ProgramID = a.ProgramID
+	r.KernelLinkID = a.KernelLinkID
 	r.Kind = a.Kind
 	r.PinPath = a.PinPath
 	r.CreatedAt = a.CreatedAt
@@ -582,35 +583,31 @@ func WithProgramID(id kernel.ProgramID) LinkListOption {
 	}
 }
 
-// IsSynthetic returns true if this is a synthetic link (perf_event-based, no kernel link).
-func (r LinkRecord) IsSynthetic() bool { return IsSyntheticLinkID(r.ID) }
-
 // HasPin returns true if this link has a pin path.
 func (r LinkRecord) HasPin() bool { return r.PinPath != nil }
 
 // LinkStatus is observed state (kernel + fs).
 // This is "what actually exists right now".
 type LinkStatus struct {
-	// Kernel nil means the link is not currently in the kernel's link list or is
-	// a synthetic perf_event link with no kernel link ID. Always emitted as JSON
-	// null in that case; a present pointer carries the kernel-reported view.
+	// Kernel nil means the link is not currently in the kernel's link list, or
+	// bpfman did not capture a kernel link ID for this managed attachment.
+	// Always emitted as JSON null in that case; a present pointer carries the
+	// kernel-reported view.
 	Kernel     *kernel.Link `json:"kernel"`
 	KernelSeen bool         `json:"kernel_seen"` // true if kernel enumeration succeeded (distinguishes "not found" from "unknown")
 	PinPresent bool         `json:"pin_present"` // true if pin path exists on filesystem
 }
 
-// HasKernelLinkID is a capability interface for domain objects that
-// carry a kernel-assigned link ID. The typed argument parsers use
-// this to extract a link ID from an origin-backed structured value
-// without depending on a concrete type.
-type HasKernelLinkID interface {
-	KernelLinkID() kernel.LinkID
+// HasLinkID is a capability interface for domain objects that carry a bpfman
+// management handle.
+type HasLinkID interface {
+	LinkID() LinkID
 }
 
 // Compile-time interface assertions.
 var (
-	_ HasKernelLinkID = Link{}
-	_ HasKernelLinkID = LinkRecord{}
+	_ HasLinkID = Link{}
+	_ HasLinkID = LinkRecord{}
 )
 
 // Link is the canonical domain object combining record and status.
@@ -621,11 +618,11 @@ type Link struct {
 	Status LinkStatus `json:"status"`
 }
 
-// KernelLinkID returns the link's kernel-assigned ID.
-func (l Link) KernelLinkID() kernel.LinkID { return l.Record.ID }
+// LinkID returns the link's bpfman management handle.
+func (l Link) LinkID() LinkID { return l.Record.ID }
 
-// KernelLinkID returns the record's kernel-assigned link ID.
-func (r LinkRecord) KernelLinkID() kernel.LinkID { return r.ID }
+// LinkID returns the record's bpfman management handle.
+func (r LinkRecord) LinkID() LinkID { return r.ID }
 
 // AttachOutput is the raw result of a kernel attach operation.
 // This is transient I/O boundary data - the manager uses it along with
@@ -634,33 +631,30 @@ func (r LinkRecord) KernelLinkID() kernel.LinkID { return r.ID }
 // AttachOutput parallels LoadOutput for programs: it captures what the
 // kernel returned without mixing in user-provided metadata.
 type AttachOutput struct {
-	LinkID     kernel.LinkID // kernel-assigned link ID, or synthetic ID for perf_event
-	KernelLink *kernel.Link  // kernel info, nil for synthetic links
-	PinPath    LinkPath      // where link was pinned, empty if ephemeral
-	Synthetic  bool          // true if this is a synthetic link (no kernel link)
+	KernelLinkID *kernel.LinkID // captured kernel link ID, if observed
+	KernelLink   *kernel.Link   // kernel info, nil when no kernel ID was captured
+	PinPath      LinkPath       // actual bpffs link pin, empty if none was created
 }
 
-// NewPinnedLinkRecord creates a fully-detailed record for a pinned link.
+// NewPinnedLinkSpec creates a fully-detailed spec for a pinned link.
 // Kind is derived from details to enforce the invariant.
-func NewPinnedLinkRecord(id kernel.LinkID, programID kernel.ProgramID, details LinkDetails, pin LinkPath, createdAt time.Time) LinkRecord {
-	return LinkRecord{
-		ID:        id,
-		ProgramID: programID,
-		Kind:      details.Kind(),
-		PinPath:   &pin,
-		Details:   details,
-		CreatedAt: createdAt,
+func NewPinnedLinkSpec(programID kernel.ProgramID, kernelLinkID *kernel.LinkID, details LinkDetails, pin LinkPath) LinkSpec {
+	return LinkSpec{
+		ProgramID:    programID,
+		KernelLinkID: kernelLinkID,
+		Kind:         details.Kind(),
+		PinPath:      &pin,
+		Details:      details,
 	}
 }
 
-// NewEphemeralLinkRecord creates a fully-detailed record for an ephemeral (unpinned) link.
+// NewEphemeralLinkSpec creates a fully-detailed spec for an unpinned link.
 // Kind is derived from details to enforce the invariant.
-func NewEphemeralLinkRecord(id kernel.LinkID, programID kernel.ProgramID, details LinkDetails, createdAt time.Time) LinkRecord {
-	return LinkRecord{
-		ID:        id,
-		ProgramID: programID,
-		Kind:      details.Kind(),
-		Details:   details,
-		CreatedAt: createdAt,
+func NewEphemeralLinkSpec(programID kernel.ProgramID, kernelLinkID *kernel.LinkID, details LinkDetails) LinkSpec {
+	return LinkSpec{
+		ProgramID:    programID,
+		KernelLinkID: kernelLinkID,
+		Kind:         details.Kind(),
+		Details:      details,
 	}
 }

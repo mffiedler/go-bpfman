@@ -30,7 +30,7 @@ func structuredProgram(name string, progID kernel.ProgramID) runtime.Arg {
 	return runtime.StructuredValueArg{Name: name, Value: val.WithKind(semantics.OriginProgram)}
 }
 
-func structuredLink(name string, linkID kernel.LinkID) runtime.Arg {
+func structuredLink(name string, linkID bpfman.LinkID) runtime.Arg {
 	val, err := runtime.ValueFromStruct(bpfman.Link{
 		Record: bpfman.LinkRecord{ID: linkID},
 	})
@@ -211,7 +211,7 @@ func TestParseShowProgram(t *testing.T) {
 
 	linkVal, err := runtime.ValueFromStruct(bpfman.Link{
 		Record: bpfman.LinkRecord{
-			ID:        kernel.LinkID(10),
+			ID:        bpfman.LinkID(10),
 			ProgramID: kernel.ProgramID(42),
 		},
 	})
@@ -1108,23 +1108,23 @@ func TestParseLinkDetach(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    []runtime.Arg
-		wantIDs []kernel.LinkID
+		wantIDs []bpfman.LinkID
 		wantErr string
 	}{
 		{
 			name:    "single numeric ID",
 			args:    []runtime.Arg{word("42")},
-			wantIDs: []kernel.LinkID{42},
+			wantIDs: []bpfman.LinkID{42},
 		},
 		{
 			name:    "multiple numeric IDs",
 			args:    []runtime.Arg{word("10"), word("20"), word("30")},
-			wantIDs: []kernel.LinkID{10, 20, 30},
+			wantIDs: []bpfman.LinkID{10, 20, 30},
 		},
 		{
 			name:    "structured variable ref",
 			args:    []runtime.Arg{structuredLink("lnk", 77)},
-			wantIDs: []kernel.LinkID{77},
+			wantIDs: []bpfman.LinkID{77},
 		},
 		{
 			name: "mixed numeric and structured",
@@ -1132,7 +1132,7 @@ func TestParseLinkDetach(t *testing.T) {
 				word("5"),
 				structuredLink("lnk", 99),
 			},
-			wantIDs: []kernel.LinkID{5, 99},
+			wantIDs: []bpfman.LinkID{5, 99},
 		},
 		{
 			name:    "no arguments",
@@ -1178,7 +1178,7 @@ func TestParseLinkIDArg_RecordFieldRequiredForTypedHandle(t *testing.T) {
 		Value: record,
 	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "$loaded is structured but carries no kernel ID capability")
+	assert.Contains(t, err.Error(), "$loaded is structured but carries no link ID capability")
 
 	field, err := record.LookupValue("loaded", "link")
 	require.NoError(t, err)
@@ -1188,7 +1188,7 @@ func TestParseLinkIDArg_RecordFieldRequiredForTypedHandle(t *testing.T) {
 		Value: field,
 	})
 	require.NoError(t, err)
-	assert.Equal(t, kernel.LinkID(77), id)
+	assert.Equal(t, bpfman.LinkID(77), id)
 }
 
 func TestParseGetProgram(t *testing.T) {
@@ -1202,7 +1202,7 @@ func TestParseGetProgram(t *testing.T) {
 
 	linkVal, err := runtime.ValueFromStruct(bpfman.Link{
 		Record: bpfman.LinkRecord{
-			ID:        kernel.LinkID(10),
+			ID:        bpfman.LinkID(10),
 			ProgramID: kernel.ProgramID(42),
 		},
 	})
@@ -1312,7 +1312,7 @@ func TestParseGetLink(t *testing.T) {
 	t.Parallel()
 
 	structuredVal, err := runtime.ValueFromStruct(bpfman.Link{
-		Record: bpfman.LinkRecord{ID: kernel.LinkID(77)},
+		Record: bpfman.LinkRecord{ID: bpfman.LinkID(77)},
 	})
 	require.NoError(t, err)
 	structuredVal = structuredVal.WithKind(semantics.OriginLink)
@@ -1326,7 +1326,7 @@ func TestParseGetLink(t *testing.T) {
 	tests := []struct {
 		name       string
 		args       []runtime.Arg
-		wantID     kernel.LinkID
+		wantID     bpfman.LinkID
 		wantOutput string
 		wantErr    string
 	}{

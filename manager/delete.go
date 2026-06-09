@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
 )
@@ -27,7 +28,7 @@ type DeleteLinksOpts struct {
 
 // DeleteLinkResult records the outcome for one requested link.
 type DeleteLinkResult struct {
-	LinkID kernel.LinkID
+	LinkID bpfman.LinkID
 	Err    error
 }
 
@@ -67,7 +68,7 @@ func (m *Manager) DeletePrograms(ctx context.Context, writeLock lock.WriterScope
 	batch := deleteBatch{
 		dependentsByOwner: dependentsByOwner,
 		removedPrograms:   make(map[kernel.ProgramID]bool, len(ids)),
-		removedLinks:      make(map[kernel.LinkID]bool),
+		removedLinks:      make(map[bpfman.LinkID]bool),
 	}
 
 	for _, id := range orderProgramDeletes(ids, dependentsByOwner) {
@@ -84,7 +85,7 @@ func (m *Manager) DeletePrograms(ctx context.Context, writeLock lock.WriterScope
 // DeleteLinks detaches each link and unloads the owning program if the
 // detach leaves it without remaining links. With Recursive, map-owner
 // dependants of the orphaned program are deleted first.
-func (m *Manager) DeleteLinks(ctx context.Context, writeLock lock.WriterScope, ids []kernel.LinkID, opts DeleteLinksOpts) []DeleteLinkResult {
+func (m *Manager) DeleteLinks(ctx context.Context, writeLock lock.WriterScope, ids []bpfman.LinkID, opts DeleteLinksOpts) []DeleteLinkResult {
 	results := make([]DeleteLinkResult, 0, len(ids))
 	dependentsByOwner, err := m.programDependentsByOwner(ctx, opts.Recursive)
 	if err != nil {
@@ -96,7 +97,7 @@ func (m *Manager) DeleteLinks(ctx context.Context, writeLock lock.WriterScope, i
 	batch := deleteBatch{
 		dependentsByOwner: dependentsByOwner,
 		removedPrograms:   make(map[kernel.ProgramID]bool),
-		removedLinks:      make(map[kernel.LinkID]bool, len(ids)),
+		removedLinks:      make(map[bpfman.LinkID]bool, len(ids)),
 	}
 
 	for _, id := range ids {
@@ -113,10 +114,10 @@ func (m *Manager) DeleteLinks(ctx context.Context, writeLock lock.WriterScope, i
 type deleteBatch struct {
 	dependentsByOwner map[kernel.ProgramID][]kernel.ProgramID
 	removedPrograms   map[kernel.ProgramID]bool
-	removedLinks      map[kernel.LinkID]bool
+	removedLinks      map[bpfman.LinkID]bool
 }
 
-func (m *Manager) deleteLink(ctx context.Context, writeLock lock.WriterScope, linkID kernel.LinkID, recursive bool, batch deleteBatch) (deleteOutcome, error) {
+func (m *Manager) deleteLink(ctx context.Context, writeLock lock.WriterScope, linkID bpfman.LinkID, recursive bool, batch deleteBatch) (deleteOutcome, error) {
 	if batch.removedLinks[linkID] {
 		return deleteOutcome{}, nil
 	}
@@ -138,7 +139,7 @@ func (m *Manager) deleteLink(ctx context.Context, writeLock lock.WriterScope, li
 		return deleteOutcome{}, fmt.Errorf("list links for program %d: %w", programID, err)
 	}
 
-	deleted := deleteOutcome{links: []kernel.LinkID{linkID}}
+	deleted := deleteOutcome{links: []bpfman.LinkID{linkID}}
 	if len(links) == 0 {
 		orphaned, err := m.deleteProgram(ctx, writeLock, programID, recursive, batch)
 		deleted = deleted.merge(orphaned)
@@ -152,7 +153,7 @@ func (m *Manager) deleteLink(ctx context.Context, writeLock lock.WriterScope, li
 
 type deleteOutcome struct {
 	programs []kernel.ProgramID
-	links    []kernel.LinkID
+	links    []bpfman.LinkID
 }
 
 func (d deleteOutcome) merge(other deleteOutcome) deleteOutcome {

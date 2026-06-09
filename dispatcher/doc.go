@@ -33,27 +33,23 @@
 // single transaction, then remove the old revision's pins.
 //
 // The critical consequence is that every extension link gets a new
-// kernel link ID on every rebuild. Between re-attachment and the
-// store transaction commit the stored link IDs are stale. Once the
-// transaction commits the store is consistent again, but the next
-// rebuild will invalidate the IDs once more. Extension link IDs
-// are not stable across rebuilds and must not be treated as durable
-// identity.
+// kernel link ID on every rebuild. The bpfman link ID is the stable
+// management handle for the dispatcher member; the captured kernel
+// link ID is refreshed from the newly-created extension link during
+// each snapshot replacement.
 //
-// # GC invariant
+// # Store invariant
 //
-// GC must not delete extension link records merely because their
-// stored kernel link IDs are absent from the alive set. Instead, GC
-// treats extension rows under a live dispatcher as live:
-// if the dispatcher's current program ID is alive in the kernel,
-// all its extension records are preserved regardless of stored link
-// IDs. See dispatcher-gc.md for the full rationale.
+// Dispatcher snapshot replacement must preserve existing bpfman link
+// IDs and overwrite captured kernel link IDs. New members receive
+// bpfman link IDs from the store in the same transaction that persists
+// the snapshot.
 //
 // # Types
 //
 // [Key] identifies a dispatcher by (Type, Nsid, Ifindex). [State]
-// records runtime state: revision, kernel program ID, link ID (XDP
-// only), and TC filter priority.
+// records runtime state: revision, kernel program ID, kernel link ID
+// (XDP only), and TC filter priority.
 //
 // [XDPConfig] and [TCConfig] define .rodata structures.
 // [LoadXDPDispatcher] and [LoadTCDispatcher] inject configuration

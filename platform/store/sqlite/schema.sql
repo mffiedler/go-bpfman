@@ -23,7 +23,7 @@
 --
 --     DELETE managed_programs
 --       -> CASCADE to links (via kernel_prog_id FK)
---         -> CASCADE to link_*_details (via link_id FK)
+--         -> CASCADE to link_*_details (via id FK)
 --
 --   A single DELETE on managed_programs cleans up the base link row
 --   and its type-specific detail row automatically.
@@ -38,16 +38,14 @@
 -- The links table is a polymorphic registry. Every link gets a row
 -- here regardless of type, with a "kind" discriminator column that
 -- indicates which detail table holds the type-specific data. Each
--- detail table has a 1:1 relationship with links, joined on link_id.
+-- detail table has a 1:1 relationship with links, joined on id.
 -- This avoids a single wide nullable table and lets each type enforce
 -- its own constraints.
 --
 -- CREATE: A link row is inserted into both the base links table and
---   the appropriate detail table in a single transaction. The link_id
---   is either kernel-assigned (for real BPF links) or
---   bpfman-assigned in the synthetic range (>= 0x80000000) for
---   attach types like perf_event where the kernel does not provide a
---   link FD/ID.
+--   the appropriate detail table in a single transaction. The id is
+--   the bpfman-owned management handle. kernel_link_id is populated
+--   only when bpfman captured a kernel bpf_link ID for the attachment.
 --
 -- UPDATE: Non-dispatcher detail rows are generally stable after
 --   creation. Dispatcher-backed link rows are replaced as part of
@@ -182,26 +180,18 @@ CREATE TABLE IF NOT EXISTS managed_programs (
 --------------------------------------------------------------------------------
 
 -- links contains all common fields for managed links.
--- link_id is the primary key: kernel-assigned for real BPF links,
--- or bpfman-assigned (0x80000000+) for synthetic/perf_event links.
--- This matches the ID users see in CLI and bpftool.
+-- id is the bpfman-managed attachment handle. kernel_link_id is the
+-- captured kernel bpf_link ID, if the attach path observed one.
 CREATE TABLE IF NOT EXISTS links (
-    link_id         INTEGER PRIMARY KEY,  -- kernel ID or synthetic ID
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
     kind            TEXT NOT NULL CHECK (kind IN (
                         'tracepoint','kprobe','kretprobe','uprobe','uretprobe',
                         'fentry','fexit','xdp','tc','tcx'
                     )),        -- LinkKind discriminator
     kernel_prog_id  INTEGER NOT NULL,     -- useful for queries
+    kernel_link_id  INTEGER,
     pin_path        TEXT,
-    is_synthetic    INTEGER NOT NULL DEFAULT 0 CHECK (is_synthetic IN (0, 1)),
     created_at      TEXT NOT NULL,
-
-    -- Enforce synthetic ID range: synthetic links must have ID >= 0x80000000
-    CHECK (
-        (is_synthetic = 1 AND link_id >= 2147483648)
-        OR
-        (is_synthetic = 0 AND link_id < 2147483648)
-    ),
 
     -- Deleting a program cascades here, removing all its links.
     -- This in turn cascades to the type-specific detail tables.
@@ -211,71 +201,73 @@ CREATE TABLE IF NOT EXISTS links (
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS idx_links_by_prog ON links(kernel_prog_id);
-CREATE INDEX IF NOT EXISTS idx_links_by_kind ON links(kind);
-CREATE INDEX IF NOT EXISTS idx_links_by_pin ON links(pin_path);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_links_kernel_link_id
+    ON links(kernel_link_id)
+    WHERE kernel_link_id IS NOT NULL;
 
 --------------------------------------------------------------------------------
 -- Type-Specific Detail Tables
 --------------------------------------------------------------------------------
--- Each link kind has a 1:1 detail table joined on link_id. This avoids a
+-- Each link kind has a 1:1 detail table joined on id. This avoids a
 -- single wide nullable table; each detail table contains only the columns
 -- relevant to its type. All detail tables cascade on delete from links,
 -- which in turn cascades from managed_programs.
 
 -- Tracepoint links
 CREATE TABLE IF NOT EXISTS link_tracepoint_details (
-    link_id INTEGER PRIMARY KEY,
+    id INTEGER PRIMARY KEY,
     tp_group TEXT NOT NULL,
     tp_name TEXT NOT NULL,
 
-    FOREIGN KEY (link_id)
-        REFERENCES links(link_id)
+    FOREIGN KEY (id)
+        REFERENCES links(id)
         ON DELETE CASCADE
 ) STRICT;
 
 -- Kprobe/Kretprobe links
 CREATE TABLE IF NOT EXISTS link_kprobe_details (
-    link_id INTEGER PRIMARY KEY,
+    id INTEGER PRIMARY KEY,
     fn_name TEXT NOT NULL,
     offset INTEGER NOT NULL DEFAULT 0 CHECK (offset >= 0),
     retprobe INTEGER NOT NULL DEFAULT 0 CHECK (retprobe IN (0, 1)),
 
-    FOREIGN KEY (link_id)
-        REFERENCES links(link_id)
+    FOREIGN KEY (id)
+        REFERENCES links(id)
         ON DELETE CASCADE
 ) STRICT;
 
 -- Uprobe/Uretprobe links
 CREATE TABLE IF NOT EXISTS link_uprobe_details (
-    link_id INTEGER PRIMARY KEY,
+    id INTEGER PRIMARY KEY,
     target TEXT NOT NULL,
     fn_name TEXT,
     offset INTEGER NOT NULL DEFAULT 0 CHECK (offset >= 0),
     pid INTEGER,
+    container_pid INTEGER,
     retprobe INTEGER NOT NULL DEFAULT 0 CHECK (retprobe IN (0, 1)),
 
-    FOREIGN KEY (link_id)
-        REFERENCES links(link_id)
+    FOREIGN KEY (id)
+        REFERENCES links(id)
         ON DELETE CASCADE
 ) STRICT;
 
 -- Fentry links
 CREATE TABLE IF NOT EXISTS link_fentry_details (
-    link_id INTEGER PRIMARY KEY,
+    id INTEGER PRIMARY KEY,
     fn_name TEXT NOT NULL,
 
-    FOREIGN KEY (link_id)
-        REFERENCES links(link_id)
+    FOREIGN KEY (id)
+        REFERENCES links(id)
         ON DELETE CASCADE
 ) STRICT;
 
 -- Fexit links
 CREATE TABLE IF NOT EXISTS link_fexit_details (
-    link_id INTEGER PRIMARY KEY,
+    id INTEGER PRIMARY KEY,
     fn_name TEXT NOT NULL,
 
-    FOREIGN KEY (link_id)
-        REFERENCES links(link_id)
+    FOREIGN KEY (id)
+        REFERENCES links(id)
         ON DELETE CASCADE
 ) STRICT;
 
@@ -302,19 +294,19 @@ CREATE TABLE IF NOT EXISTS dispatchers (
     ifindex INTEGER NOT NULL,
     revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
     program_id INTEGER NOT NULL UNIQUE,
-    link_id INTEGER,
+    kernel_link_id INTEGER,
     priority INTEGER CHECK (priority >= 0),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
 
     PRIMARY KEY (type, nsid, ifindex),
 
-    -- XDP dispatchers have a link but no filter priority.
-    -- TC dispatchers have a filter priority but no link (uses netlink filters).
+    -- XDP dispatchers have a kernel link but no filter priority.
+    -- TC dispatchers have a filter priority but no kernel link (uses netlink filters).
     CHECK (
-        (type = 'xdp' AND link_id IS NOT NULL AND priority IS NULL)
+        (type = 'xdp' AND kernel_link_id IS NOT NULL AND priority IS NULL)
         OR
-        (type IN ('tc-ingress', 'tc-egress') AND link_id IS NULL AND priority IS NOT NULL)
+        (type IN ('tc-ingress', 'tc-egress') AND kernel_link_id IS NULL AND priority IS NOT NULL)
     )
 ) STRICT;
 
@@ -326,7 +318,7 @@ CREATE TABLE IF NOT EXISTS dispatchers (
 -- Revision is not stored here; it is a snapshot-header fact owned by
 -- the dispatchers table. Read paths JOIN to dispatchers to derive it.
 CREATE TABLE IF NOT EXISTS link_xdp_details (
-    link_id INTEGER PRIMARY KEY,
+    id INTEGER PRIMARY KEY,
     interface TEXT NOT NULL,
     ifindex INTEGER NOT NULL,
     priority INTEGER NOT NULL CHECK (priority >= 0),
@@ -336,8 +328,8 @@ CREATE TABLE IF NOT EXISTS link_xdp_details (
     nsid INTEGER NOT NULL,
     dispatcher_program_id INTEGER NOT NULL,
 
-    FOREIGN KEY (link_id)
-        REFERENCES links(link_id)
+    FOREIGN KEY (id)
+        REFERENCES links(id)
         ON DELETE CASCADE,
     FOREIGN KEY (dispatcher_program_id)
         REFERENCES dispatchers(program_id)
@@ -355,7 +347,7 @@ CREATE INDEX IF NOT EXISTS idx_link_xdp_by_attach_point
 -- Revision is not stored here; it is a snapshot-header fact owned by
 -- the dispatchers table. Read paths JOIN to dispatchers to derive it.
 CREATE TABLE IF NOT EXISTS link_tc_details (
-    link_id INTEGER PRIMARY KEY,
+    id INTEGER PRIMARY KEY,
     interface TEXT NOT NULL,
     ifindex INTEGER NOT NULL,
     direction TEXT NOT NULL CHECK (direction IN ('ingress', 'egress')),
@@ -366,8 +358,8 @@ CREATE TABLE IF NOT EXISTS link_tc_details (
     nsid INTEGER NOT NULL,
     dispatcher_program_id INTEGER NOT NULL,
 
-    FOREIGN KEY (link_id)
-        REFERENCES links(link_id)
+    FOREIGN KEY (id)
+        REFERENCES links(id)
         ON DELETE CASCADE,
     FOREIGN KEY (dispatcher_program_id)
         REFERENCES dispatchers(program_id)
@@ -387,7 +379,7 @@ CREATE INDEX IF NOT EXISTS idx_link_tc_by_attach_point
 -- no dispatcher cascade behaviour. Cleaned up solely by the links
 -- cascade from managed_programs.
 CREATE TABLE IF NOT EXISTS link_tcx_details (
-    link_id INTEGER PRIMARY KEY,
+    id INTEGER PRIMARY KEY,
     interface TEXT NOT NULL,
     ifindex INTEGER NOT NULL,
     direction TEXT NOT NULL CHECK (direction IN ('ingress', 'egress')),
@@ -395,8 +387,8 @@ CREATE TABLE IF NOT EXISTS link_tcx_details (
     netns TEXT,
     nsid INTEGER NOT NULL,
 
-    FOREIGN KEY (link_id)
-        REFERENCES links(link_id)
+    FOREIGN KEY (id)
+        REFERENCES links(id)
         ON DELETE CASCADE
 ) STRICT;
 

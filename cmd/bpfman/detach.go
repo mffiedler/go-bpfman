@@ -8,7 +8,6 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/internal/cliformat"
-	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
 )
 
@@ -27,12 +26,12 @@ func (c *DetachCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	}
 	defer cleanup()
 
-	ids := make([]kernel.LinkID, len(c.LinkIDs))
+	ids := make([]bpfman.LinkID, len(c.LinkIDs))
 	for i, lid := range c.LinkIDs {
 		ids[i] = lid.Value
 	}
 	return bpfmancli.RunBatchMutation(ctx, cli, ids, "link", "detach",
-		func(ctx context.Context, writeLock lock.WriterScope, id kernel.LinkID) error {
+		func(ctx context.Context, writeLock lock.WriterScope, id bpfman.LinkID) error {
 			err := mgr.Detach(ctx, writeLock, id)
 			if err != nil && c.IgnoreMissing {
 				var notFound bpfman.ErrLinkNotFound

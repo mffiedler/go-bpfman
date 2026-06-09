@@ -96,7 +96,7 @@ func (s *Server) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, 
 
 	kp := prog.Status.Kernel
 
-	// Link IDs from the program's status
+	// Managed link IDs from the program's status.
 	linkIDs := make([]uint32, 0, len(prog.Status.Links))
 	for _, link := range prog.Status.Links {
 		linkIDs = append(linkIDs, uint32(link.Record.ID))
@@ -157,8 +157,8 @@ func (s *Server) ListLinks(ctx context.Context, req *pb.ListLinksRequest) (*pb.L
 
 	for _, record := range records {
 		var kernelLinkID uint32
-		if !record.IsSynthetic() {
-			kernelLinkID = uint32(record.ID)
+		if record.KernelLinkID != nil {
+			kernelLinkID = uint32(*record.KernelLinkID)
 		}
 
 		resp.Links = append(resp.Links, &pb.LinkInfo{
@@ -176,7 +176,11 @@ func (s *Server) ListLinks(ctx context.Context, req *pb.ListLinksRequest) (*pb.L
 
 // GetLink implements the GetLink RPC method.
 func (s *Server) GetLink(ctx context.Context, req *pb.GetLinkRequest) (*pb.GetLinkResponse, error) {
-	linkID := kernel.LinkID(req.KernelLinkId)
+	// The legacy protobuf field is named kernel_link_id, but the server
+	// has moved to bpfman-managed link handles. The gRPC layer is expected
+	// to disappear, so keep the wire shape and interpret this field as the
+	// bpfman LinkID at the boundary.
+	linkID := bpfman.LinkID(req.KernelLinkId)
 	info, err := s.mgr.GetLinkInfo(ctx, linkID)
 	if errors.Is(err, inspect.ErrNotFound) {
 		return nil, status.Errorf(codes.NotFound, "link with ID %d not found", req.KernelLinkId)
@@ -199,7 +203,7 @@ func (s *Server) GetLink(ctx context.Context, req *pb.GetLinkRequest) (*pb.GetLi
 		kernelProgramID = uint32(info.Kernel.ProgramID)
 	}
 
-	s.logger.InfoContext(ctx, "GetLink", "link_id", req.KernelLinkId, "type", info.Record.Kind, "program_id", kernelProgramID)
+	s.logger.InfoContext(ctx, "GetLink", "bpfman_link_id", req.KernelLinkId, "type", info.Record.Kind, "program_id", kernelProgramID)
 
 	return &pb.GetLinkResponse{
 		Link: &pb.LinkInfo{
@@ -211,10 +215,9 @@ func (s *Server) GetLink(ctx context.Context, req *pb.GetLinkRequest) (*pb.GetLi
 
 // linkRecordToProtoSummary converts a bpfman.LinkRecord to protobuf LinkSummary.
 func linkRecordToProtoSummary(r bpfman.LinkRecord, k *kernel.Link) *pb.LinkSummary {
-	// For non-synthetic links, ID is the kernel link ID
 	var kernelLinkID uint32
-	if !r.IsSynthetic() {
-		kernelLinkID = uint32(r.ID)
+	if r.KernelLinkID != nil {
+		kernelLinkID = uint32(*r.KernelLinkID)
 	}
 	// Use program ID from record (stored in DB), with kernel as verification
 	kernelProgramID := uint32(r.ProgramID)

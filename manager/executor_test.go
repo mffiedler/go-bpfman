@@ -64,16 +64,16 @@ func (s *stubStore) CountDependentPrograms(ctx context.Context, programID kernel
 }
 
 // LinkWriter
-func (s *stubStore) SaveLink(ctx context.Context, record bpfman.LinkRecord) error {
-	panic("stubStore.SaveLink not implemented")
+func (s *stubStore) CreateLink(ctx context.Context, spec bpfman.LinkSpec) (bpfman.LinkRecord, error) {
+	panic("stubStore.CreateLink not implemented")
 }
 
-func (s *stubStore) DeleteLink(ctx context.Context, linkID kernel.LinkID) error {
+func (s *stubStore) DeleteLink(ctx context.Context, linkID bpfman.LinkID) error {
 	panic("stubStore.DeleteLink not implemented")
 }
 
 // LinkReader
-func (s *stubStore) GetLink(ctx context.Context, linkID kernel.LinkID) (bpfman.LinkRecord, error) {
+func (s *stubStore) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkRecord, error) {
 	panic("stubStore.GetLink not implemented")
 }
 
@@ -99,7 +99,7 @@ func (s *stubStore) ListDispatcherSummaries(ctx context.Context) ([]platform.Dis
 	panic("stubStore.ListDispatcherSummaries not implemented")
 }
 
-func (s *stubStore) ReplaceDispatcherSnapshot(ctx context.Context, snap platform.DispatcherSnapshot) error {
+func (s *stubStore) ReplaceDispatcherSnapshot(ctx context.Context, snap platform.DispatcherSnapshotSpec) (platform.DispatcherSnapshot, error) {
 	panic("stubStore.ReplaceDispatcherSnapshot not implemented")
 }
 

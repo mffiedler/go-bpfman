@@ -72,8 +72,17 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 	case action.DeleteProgram:
 		return nil, e.store.Delete(ctx, a.ProgramID)
 
-	case action.SaveLink:
-		return nil, e.store.SaveLink(ctx, a.Record)
+	case action.CreateLink:
+		var record bpfman.LinkRecord
+		err := e.store.RunInTransaction(ctx, "create_link", func(tx platform.Store) error {
+			var err error
+			record, err = tx.CreateLink(ctx, a.Spec)
+			return err
+		})
+		if err != nil {
+			return nil, err
+		}
+		return record, nil
 
 	case action.DeleteLink:
 		return nil, e.store.DeleteLink(ctx, a.LinkID)

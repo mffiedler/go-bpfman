@@ -247,15 +247,15 @@ func (m *Manager) attachTCXPlan(
 			}),
 		),
 
-		saveLinkNode(programID, target, func(b *operation.Bindings) (kernel.LinkID, bpfman.LinkDetails, bpfman.LinkPath, bpfman.AttachOutput) {
+		saveLinkNode(programID, target, func(b *operation.Bindings) (bpfman.LinkDetails, bpfman.AttachOutput) {
 			out := operation.Get(b, attachOutKey)
-			return out.LinkID, bpfman.TCXDetails{
+			return bpfman.TCXDetails{
 				Interface: ifname,
 				Ifindex:   uint32(ifindex),
 				Direction: direction,
 				Priority:  int32(priority),
 				Nsid:      nsid,
-			}, linkPinPath, out
+			}, out
 		}),
 	)
 }

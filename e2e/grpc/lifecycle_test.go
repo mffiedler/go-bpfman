@@ -326,14 +326,25 @@ func runOneLifecycle(t *testing.T, spec typeSpec, buildAttach func() *pb.AttachI
 		return fmt.Errorf("Attach %d: %w", progID, err)
 	}
 	linkID := attachResp.LinkId
+	if linkID == 0 {
+		return fmt.Errorf("Attach %d: returned zero bpfman link id", progID)
+	}
 
+	// The legacy protobuf field name is kernel_link_id, but the server
+	// interprets it as the bpfman-managed link handle.
 	getLinkResp, err := client.GetLink(ctx, &pb.GetLinkRequest{KernelLinkId: linkID})
 	if err != nil {
 		return fmt.Errorf("GetLink %d: %w", linkID, err)
 	}
-	if getLinkResp.Link == nil || getLinkResp.Link.Summary == nil ||
-		getLinkResp.Link.Summary.KernelLinkId != linkID {
-		return fmt.Errorf("GetLink %d: link id mismatch", linkID)
+	if getLinkResp.Link == nil || getLinkResp.Link.Summary == nil {
+		return fmt.Errorf("GetLink %d: missing link summary", linkID)
+	}
+	if getLinkResp.Link.Summary.KernelLinkId == 0 {
+		return fmt.Errorf("GetLink %d: missing captured kernel link id", linkID)
+	}
+	if getLinkResp.Link.Summary.KernelProgramId != progID {
+		return fmt.Errorf("GetLink %d: program id mismatch: got %d want %d",
+			linkID, getLinkResp.Link.Summary.KernelProgramId, progID)
 	}
 
 	listResp, err := client.ListLinks(ctx, &pb.ListLinksRequest{ProgramId: &progID})
@@ -342,7 +353,7 @@ func runOneLifecycle(t *testing.T, spec typeSpec, buildAttach func() *pb.AttachI
 	}
 	found := false
 	for _, l := range listResp.Links {
-		if l.Summary != nil && l.Summary.KernelLinkId == linkID {
+		if l.Summary != nil && l.Summary.KernelProgramId == progID {
 			found = true
 			break
 		}

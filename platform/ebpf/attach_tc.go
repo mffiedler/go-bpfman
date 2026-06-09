@@ -417,10 +417,11 @@ func (k *kernelAdapter) AttachTCExtension(ctx context.Context, spec dispatcher.T
 	lnk.Close()
 	success = true
 
+	kernelLinkID := kernel.LinkID(linkInfo.ID)
 	return bpfman.AttachOutput{
-		LinkID:     kernel.LinkID(linkInfo.ID),
-		KernelLink: ToKernelLink(linkInfo),
-		PinPath:    spec.LinkPinPath,
+		KernelLinkID: &kernelLinkID,
+		KernelLink:   ToKernelLink(linkInfo),
+		PinPath:      spec.LinkPinPath,
 	}, nil
 }
 
@@ -514,10 +515,11 @@ func (k *kernelAdapter) AttachTCX(ctx context.Context, ifindex int, direction st
 		// fully releasing the link.
 		lnk.Close()
 		success = true
+		kernelLinkID := kernel.LinkID(linkInfo.ID)
 		result = bpfman.AttachOutput{
-			LinkID:     kernel.LinkID(linkInfo.ID),
-			KernelLink: ToKernelLink(linkInfo),
-			PinPath:    linkPinPath,
+			KernelLinkID: &kernelLinkID,
+			KernelLink:   ToKernelLink(linkInfo),
+			PinPath:      linkPinPath,
 		}
 		return nil
 	})

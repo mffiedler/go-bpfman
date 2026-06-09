@@ -140,18 +140,18 @@ func TestDeleteLinksRecursiveTreatsBatchDependentsAsDeleted(t *testing.T) {
 
 	tests := []struct {
 		name string
-		ids  func(ownerLink, dependentLink kernel.LinkID) []kernel.LinkID
+		ids  func(ownerLink, dependentLink bpfman.LinkID) []bpfman.LinkID
 	}{
 		{
 			name: "owner first",
-			ids: func(ownerLink, dependentLink kernel.LinkID) []kernel.LinkID {
-				return []kernel.LinkID{ownerLink, dependentLink}
+			ids: func(ownerLink, dependentLink bpfman.LinkID) []bpfman.LinkID {
+				return []bpfman.LinkID{ownerLink, dependentLink}
 			},
 		},
 		{
 			name: "dependent first",
-			ids: func(ownerLink, dependentLink kernel.LinkID) []kernel.LinkID {
-				return []kernel.LinkID{dependentLink, ownerLink}
+			ids: func(ownerLink, dependentLink bpfman.LinkID) []bpfman.LinkID {
+				return []bpfman.LinkID{dependentLink, ownerLink}
 			},
 		},
 	}

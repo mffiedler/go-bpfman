@@ -1022,7 +1022,7 @@ func TestTC_PinByNameMapSharing(t *testing.T) {
 	// proceed-on including TC_ACT_OK so both execute.
 	proceedOn := []int32{0, 3, 30} // TC_ACT_OK, TC_ACT_PIPE, DispatcherReturn
 
-	var linkIDs []kernel.LinkID
+	var linkIDs []bpfman.LinkID
 	for i, p := range []prog{progA, progB} {
 		tcSpec, err := bpfman.NewTCAttachSpec(
 			p.kernelID, veth.A.Name,

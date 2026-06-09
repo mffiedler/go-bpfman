@@ -107,11 +107,12 @@ func (m *Manager) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.P
 			link.Status.PinPresent = scanner.PathExists(record.PinPath.String())
 		}
 
-		// Fetch kernel link if non-synthetic
-		if !record.IsSynthetic() {
-			kl, err := m.kernel.GetLinkByID(ctx, record.ID)
+		// Fetch kernel link if bpfman captured a kernel link ID.
+		if record.KernelLinkID != nil {
+			kl, err := m.kernel.GetLinkByID(ctx, *record.KernelLinkID)
 			if err == nil {
 				link.Status.Kernel = &kl
+				link.Status.KernelSeen = true
 			}
 		}
 
@@ -276,7 +277,7 @@ func (m *Manager) DeleteDispatcherSnapshot(ctx context.Context, writeLock lock.W
 }
 
 // GetLink retrieves a link by link ID, returning the full record with details.
-func (m *Manager) GetLink(ctx context.Context, linkID kernel.LinkID) (bpfman.LinkRecord, error) {
+func (m *Manager) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkRecord, error) {
 	record, err := m.getLink(ctx, linkID)
 	if err != nil {
 		return bpfman.LinkRecord{}, err
@@ -285,7 +286,7 @@ func (m *Manager) GetLink(ctx context.Context, linkID kernel.LinkID) (bpfman.Lin
 }
 
 // GetLinkInfo retrieves a link with presence information across store, kernel, and filesystem.
-func (m *Manager) GetLinkInfo(ctx context.Context, linkID kernel.LinkID) (inspect.LinkInfo, error) {
+func (m *Manager) GetLinkInfo(ctx context.Context, linkID bpfman.LinkID) (inspect.LinkInfo, error) {
 	scanner := m.rt.BPFFS().Scanner()
 	info, err := inspect.GetLink(ctx, m.store, m.kernel, scanner, linkID)
 	if err != nil {

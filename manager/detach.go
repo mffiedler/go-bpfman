@@ -2,12 +2,10 @@ package manager
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/operation"
@@ -25,18 +23,12 @@ import (
 //
 // Preflight failures (store lookup, not-managed check, dispatcher key
 // extraction) return plain errors.
-func (m *Manager) Detach(ctx context.Context, writeLock lock.WriterScope, linkID kernel.LinkID) error {
+func (m *Manager) Detach(ctx context.Context, writeLock lock.WriterScope, linkID bpfman.LinkID) error {
 	_ = writeLock // reserved for symmetry with other mutating methods
 
 	// Preflight: get link record.
 	record, err := m.getLink(ctx, linkID)
 	if err != nil {
-		var notFound bpfman.ErrLinkNotFound
-		if errors.As(err, &notFound) {
-			if _, kerr := m.kernel.GetLinkByID(ctx, linkID); kerr == nil {
-				return bpfman.ErrLinkNotManaged{LinkID: linkID}
-			}
-		}
 		return err
 	}
 

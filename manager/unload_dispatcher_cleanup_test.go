@@ -158,7 +158,8 @@ func TestUnload_PreDetachFailure_LeavesDispatcherInPlace(t *testing.T) {
 	require.Len(t, summaries, 1)
 
 	detachErr := errors.New("simulated detach failure")
-	fix.Kernel.FailOnDetach(link.Record.ID, detachErr)
+	require.NotNil(t, link.Record.KernelLinkID)
+	fix.Kernel.FailOnDetach(*link.Record.KernelLinkID, detachErr)
 
 	err = fix.Unload(ctx, prog.Record.ProgramID)
 	require.Error(t, err, "Unload should fail when kernel detach fails")

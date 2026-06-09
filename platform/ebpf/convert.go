@@ -2,7 +2,6 @@ package ebpf
 
 import (
 	"fmt"
-	"math/rand"
 	"os"
 	"strings"
 	"time"
@@ -13,15 +12,6 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/kernel"
 )
-
-// generateSyntheticLinkID creates a unique ID for perf_event-based links that
-// lack kernel link IDs (e.g., container uprobes on kernels < 5.15). IDs are
-// generated in the range 0x80000000-0xFFFFFFFF to avoid collision with real
-// kernel link IDs which are small sequential numbers.
-func generateSyntheticLinkID() kernel.LinkID {
-	// Generate random ID in high range (SyntheticLinkIDBase+)
-	return kernel.LinkID(bpfman.SyntheticLinkIDBase | rand.Uint32())
-}
 
 // inferProgramType returns the program type based on the ELF section name.
 // This follows the Rust bpfman approach of deriving the type from bytecode

@@ -59,9 +59,8 @@ import (
 // enforce this; do not "simplify" the trim away.
 //
 // The data is marshalled to JSON and back to ensure consistent
-// field access. UseNumber is enabled so that large integers (e.g.
-// synthetic link IDs) render as decimal rather than scientific
-// notation.
+// field access. UseNumber is enabled so that large integer IDs render as
+// decimal rather than scientific notation.
 func executeJSONPath(data any, expr string) (string, error) {
 	jp := jsonpath.New("output")
 	if err := jp.Parse(expr); err != nil {
@@ -965,12 +964,12 @@ func formatDispatcherListTable(summaries []platform.DispatcherSummary) string {
 	var b strings.Builder
 	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
 
-	fmt.Fprintln(w, "TYPE\tNSID\tIFINDEX\tREVISION\tPROGRAM_ID\tLINK_ID\tPRIORITY\tMEMBERS")
+	fmt.Fprintln(w, "TYPE\tNSID\tIFINDEX\tREVISION\tPROGRAM_ID\tKERNEL_LINK_ID\tPRIORITY\tMEMBERS")
 
 	for _, s := range summaries {
 		linkID := "-"
-		if s.Runtime.LinkID != nil {
-			linkID = fmt.Sprintf("%d", *s.Runtime.LinkID)
+		if s.Runtime.KernelLinkID != nil {
+			linkID = fmt.Sprintf("%d", *s.Runtime.KernelLinkID)
 		}
 		priority := "-"
 		if s.Runtime.FilterPriority != nil {
@@ -1015,8 +1014,8 @@ func formatDispatcherSnapshotTable(snap platform.DispatcherSnapshot) string {
 	fmt.Fprintf(&b, "Dispatcher: %s nsid=%d ifindex=%d\n", snap.Key.Type, snap.Key.Nsid, snap.Key.Ifindex)
 	fmt.Fprintf(&b, "  Revision:    %d\n", snap.Revision)
 	fmt.Fprintf(&b, "  Program ID:  %d\n", snap.Runtime.ProgramID)
-	if snap.Runtime.LinkID != nil {
-		fmt.Fprintf(&b, "  Link ID:     %d\n", *snap.Runtime.LinkID)
+	if snap.Runtime.KernelLinkID != nil {
+		fmt.Fprintf(&b, "  Kernel Link ID: %d\n", *snap.Runtime.KernelLinkID)
 	}
 	if snap.Runtime.FilterPriority != nil {
 		fmt.Fprintf(&b, "  Priority:    %d\n", *snap.Runtime.FilterPriority)

@@ -22,7 +22,7 @@ import (
 func (s *sqliteStore) prepareDispatcherStatements(ctx context.Context) error {
 	var err error
 
-	const getDispatcherSQL = `SELECT revision, program_id, link_id, priority
+	const getDispatcherSQL = `SELECT revision, program_id, kernel_link_id, priority
 		FROM dispatchers WHERE type = ? AND nsid = ? AND ifindex = ?`
 
 	s.stmtGetDispatcher, err = s.db.PrepareContext(ctx, getDispatcherSQL)
@@ -32,9 +32,9 @@ func (s *sqliteStore) prepareDispatcherStatements(ctx context.Context) error {
 
 	const getXDPMembersSQL = `
 		SELECT d.position, d.priority, p.program_name, d.proceed_on,
-		       p.pin_path, l.link_id, l.kernel_prog_id, l.pin_path, d.interface
+		       p.pin_path, l.id, l.kernel_link_id, l.kernel_prog_id, l.pin_path, d.interface
 		FROM link_xdp_details d
-		JOIN links l ON d.link_id = l.link_id
+		JOIN links l ON d.id = l.id
 		JOIN managed_programs p ON l.kernel_prog_id = p.program_id
 		WHERE d.nsid = ? AND d.ifindex = ?
 		ORDER BY d.priority ASC, p.program_name ASC`
@@ -46,9 +46,9 @@ func (s *sqliteStore) prepareDispatcherStatements(ctx context.Context) error {
 
 	const getTCMembersSQL = `
 		SELECT d.position, d.priority, p.program_name, d.proceed_on,
-		       p.pin_path, l.link_id, l.kernel_prog_id, l.pin_path, d.interface
+		       p.pin_path, l.id, l.kernel_link_id, l.kernel_prog_id, l.pin_path, d.interface
 		FROM link_tc_details d
-		JOIN links l ON d.link_id = l.link_id
+		JOIN links l ON d.id = l.id
 		JOIN managed_programs p ON l.kernel_prog_id = p.program_id
 		WHERE d.nsid = ? AND d.ifindex = ? AND d.direction = ?
 		ORDER BY d.priority ASC, p.program_name ASC`
@@ -59,7 +59,7 @@ func (s *sqliteStore) prepareDispatcherStatements(ctx context.Context) error {
 	}
 
 	const listDispatcherSummariesSQL = `
-		SELECT d.type, d.nsid, d.ifindex, d.revision, d.program_id, d.link_id,
+		SELECT d.type, d.nsid, d.ifindex, d.revision, d.program_id, d.kernel_link_id,
 		       d.priority,
 		    (SELECT COUNT(*) FROM link_xdp_details x
 		     WHERE x.nsid = d.nsid AND x.ifindex = d.ifindex
@@ -77,28 +77,28 @@ func (s *sqliteStore) prepareDispatcherStatements(ctx context.Context) error {
 		return fmt.Errorf("prepare ListDispatcherSummaries: %w", err)
 	}
 
-	const deleteXDPExtLinksSQL = `DELETE FROM links WHERE link_id IN
-		(SELECT link_id FROM link_xdp_details WHERE nsid = ? AND ifindex = ?)`
+	const deleteXDPExtLinksSQL = `DELETE FROM links WHERE id IN
+		(SELECT id FROM link_xdp_details WHERE nsid = ? AND ifindex = ?)`
 
 	s.stmtDeleteXDPExtLinks, err = s.db.PrepareContext(ctx, deleteXDPExtLinksSQL)
 	if err != nil {
 		return fmt.Errorf("prepare DeleteXDPExtLinks: %w", err)
 	}
 
-	const deleteTCExtLinksSQL = `DELETE FROM links WHERE link_id IN
-		(SELECT link_id FROM link_tc_details WHERE nsid = ? AND ifindex = ? AND direction = ?)`
+	const deleteTCExtLinksSQL = `DELETE FROM links WHERE id IN
+		(SELECT id FROM link_tc_details WHERE nsid = ? AND ifindex = ? AND direction = ?)`
 
 	s.stmtDeleteTCExtLinks, err = s.db.PrepareContext(ctx, deleteTCExtLinksSQL)
 	if err != nil {
 		return fmt.Errorf("prepare DeleteTCExtLinks: %w", err)
 	}
 
-	const upsertDispatcherSQL = `INSERT INTO dispatchers (type, nsid, ifindex, revision, program_id, link_id, priority, created_at, updated_at)
+	const upsertDispatcherSQL = `INSERT INTO dispatchers (type, nsid, ifindex, revision, program_id, kernel_link_id, priority, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(type, nsid, ifindex) DO UPDATE SET
 		  revision = excluded.revision,
 		  program_id = excluded.program_id,
-		  link_id = excluded.link_id,
+		  kernel_link_id = excluded.kernel_link_id,
 		  priority = excluded.priority,
 		  updated_at = excluded.updated_at`
 
@@ -107,17 +107,26 @@ func (s *sqliteStore) prepareDispatcherStatements(ctx context.Context) error {
 		return fmt.Errorf("prepare UpsertDispatcher: %w", err)
 	}
 
-	const upsertExtLinkSQL = `INSERT INTO links (link_id, kind, kernel_prog_id, pin_path, is_synthetic, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)
-		ON CONFLICT(link_id) DO UPDATE SET pin_path = excluded.pin_path`
+	const insertExtLinkSQL = `INSERT INTO links (kind, kernel_prog_id, kernel_link_id, pin_path, created_at)
+		VALUES (?, ?, ?, ?, ?)
+		RETURNING id, kind, kernel_prog_id, kernel_link_id, pin_path, created_at`
 
-	s.stmtUpsertExtLink, err = s.db.PrepareContext(ctx, upsertExtLinkSQL)
+	s.stmtInsertExtLink, err = s.db.PrepareContext(ctx, insertExtLinkSQL)
 	if err != nil {
-		return fmt.Errorf("prepare UpsertExtLink: %w", err)
+		return fmt.Errorf("prepare InsertExtLink: %w", err)
+	}
+
+	const insertExtLinkWithIDSQL = `INSERT INTO links (id, kind, kernel_prog_id, kernel_link_id, pin_path, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		RETURNING id, kind, kernel_prog_id, kernel_link_id, pin_path, created_at`
+
+	s.stmtInsertExtLinkWithID, err = s.db.PrepareContext(ctx, insertExtLinkWithIDSQL)
+	if err != nil {
+		return fmt.Errorf("prepare InsertExtLinkWithID: %w", err)
 	}
 
 	const insertXDPDetailSQL = `INSERT INTO link_xdp_details
-		(link_id, interface, ifindex, priority, position, proceed_on, netns, nsid, dispatcher_program_id)
+		(id, interface, ifindex, priority, position, proceed_on, netns, nsid, dispatcher_program_id)
 		VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)`
 
 	s.stmtInsertXDPDetail, err = s.db.PrepareContext(ctx, insertXDPDetailSQL)
@@ -126,7 +135,7 @@ func (s *sqliteStore) prepareDispatcherStatements(ctx context.Context) error {
 	}
 
 	const insertTCDetailSQL = `INSERT INTO link_tc_details
-		(link_id, interface, ifindex, direction, priority, position, proceed_on, netns, nsid, dispatcher_program_id)
+		(id, interface, ifindex, direction, priority, position, proceed_on, netns, nsid, dispatcher_program_id)
 		VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`
 
 	s.stmtInsertTCDetail, err = s.db.PrepareContext(ctx, insertTCDetailSQL)
@@ -164,7 +173,7 @@ func scanDispatcherRuntime(programID kernel.ProgramID, nullLinkID sql.NullInt64,
 	rt := platform.DispatcherRuntime{ProgramID: programID}
 	if nullLinkID.Valid {
 		lid := kernel.LinkID(nullLinkID.Int64)
-		rt.LinkID = &lid
+		rt.KernelLinkID = &lid
 	}
 	if priority.Valid {
 		p := uint16(priority.Int64)
@@ -219,10 +228,15 @@ func (s *sqliteStore) GetDispatcherSnapshot(ctx context.Context, key dispatcher.
 	for rows.Next() {
 		var m platform.DispatcherMember
 		var proceedOnJSON string
+		var kernelLinkID sql.NullInt64
 		var linkPinPath sql.NullString
 		if err := rows.Scan(&m.Position, &m.Priority, &m.ProgramName, &proceedOnJSON,
-			&m.ProgPinPath, &m.LinkID, &m.ProgramID, &linkPinPath, &m.Ifname); err != nil {
+			&m.ProgPinPath, &m.LinkID, &kernelLinkID, &m.ProgramID, &linkPinPath, &m.Ifname); err != nil {
 			return platform.DispatcherSnapshot{}, fmt.Errorf("scan dispatcher member: %w", err)
+		}
+		if kernelLinkID.Valid {
+			id := kernel.LinkID(kernelLinkID.Int64)
+			m.KernelLinkID = &id
 		}
 		if linkPinPath.Valid {
 			m.LinkPinPath = bpfman.LinkPath(linkPinPath.String)
@@ -296,29 +310,34 @@ func (s *sqliteStore) ListDispatcherSummaries(ctx context.Context) ([]platform.D
 // for a dispatcher's attach point. Deletes old extension link records
 // by attach point, upserts the dispatcher row, and inserts new
 // member link records.
-func (s *sqliteStore) ReplaceDispatcherSnapshot(ctx context.Context, snap platform.DispatcherSnapshot) error {
+func (s *sqliteStore) ReplaceDispatcherSnapshot(ctx context.Context, snap platform.DispatcherSnapshotSpec) (platform.DispatcherSnapshot, error) {
 	start := time.Now()
 	now := time.Now().UTC().Format(time.RFC3339)
+	completed := platform.DispatcherSnapshot{
+		Key:      snap.Key,
+		Revision: snap.Revision,
+		Runtime:  snap.Runtime,
+	}
 
 	// Step 1: Delete old extension link base rows by attach point.
 	// CASCADE from links -> detail tables removes the detail rows.
 	if snap.Key.Type == dispatcher.DispatcherTypeXDP {
 		if _, err := s.stmtDeleteXDPExtLinks.ExecContext(ctx,
 			snap.Key.Nsid, snap.Key.Ifindex); err != nil {
-			return fmt.Errorf("delete old XDP extension links: %w", err)
+			return platform.DispatcherSnapshot{}, fmt.Errorf("delete old XDP extension links: %w", err)
 		}
 	} else {
 		dir := dispatcherDirection(snap.Key.Type)
 		if _, err := s.stmtDeleteTCExtLinks.ExecContext(ctx,
 			snap.Key.Nsid, snap.Key.Ifindex, dir); err != nil {
-			return fmt.Errorf("delete old TC extension links: %w", err)
+			return platform.DispatcherSnapshot{}, fmt.Errorf("delete old TC extension links: %w", err)
 		}
 	}
 
 	// Step 2: Upsert dispatcher row.
 	var linkID any
-	if snap.Runtime.LinkID != nil {
-		linkID = *snap.Runtime.LinkID
+	if snap.Runtime.KernelLinkID != nil {
+		linkID = *snap.Runtime.KernelLinkID
 	}
 	var priority any
 	if snap.Runtime.FilterPriority != nil {
@@ -328,54 +347,75 @@ func (s *sqliteStore) ReplaceDispatcherSnapshot(ctx context.Context, snap platfo
 		snap.Key.Type.String(), snap.Key.Nsid, snap.Key.Ifindex,
 		snap.Revision, snap.Runtime.ProgramID, linkID,
 		priority, now, now); err != nil {
-		return fmt.Errorf("upsert dispatcher: %w", err)
+		return platform.DispatcherSnapshot{}, fmt.Errorf("upsert dispatcher: %w", err)
 	}
 
 	// Step 3: Insert base link row and detail row for each member.
-	for _, m := range snap.Members {
+	for _, spec := range snap.Members {
 		// Insert base link row.
 		kind := "xdp"
 		if snap.Key.Type != dispatcher.DispatcherTypeXDP {
 			kind = "tc"
 		}
 		var pinPath any
-		if m.LinkPinPath != "" {
-			pinPath = m.LinkPinPath
+		if spec.LinkPinPath != "" {
+			pinPath = spec.LinkPinPath
 		}
-		isSynthetic := 0
-		if bpfman.IsSyntheticLinkID(m.LinkID) {
-			isSynthetic = 1
+		var kernelLinkID sql.NullInt64
+		if spec.KernelLinkID != nil {
+			kernelLinkID = sql.NullInt64{Int64: int64(*spec.KernelLinkID), Valid: true}
 		}
-		if _, err := s.stmtUpsertExtLink.ExecContext(ctx,
-			m.LinkID, kind, m.ProgramID, pinPath, isSynthetic, now); err != nil {
-			return fmt.Errorf("insert extension link %d: %w", m.LinkID, err)
+		var record bpfman.LinkRecord
+		var err error
+		if spec.ExistingLinkID != nil {
+			record, err = s.scanLinkRecord(s.stmtInsertExtLinkWithID.QueryRowContext(ctx,
+				*spec.ExistingLinkID, kind, spec.ProgramID, kernelLinkID, pinPath, now))
+		} else {
+			record, err = s.scanLinkRecord(s.stmtInsertExtLink.QueryRowContext(ctx,
+				kind, spec.ProgramID, kernelLinkID, pinPath, now))
+		}
+		if err != nil {
+			return platform.DispatcherSnapshot{}, fmt.Errorf("insert extension link: %w", err)
+		}
+		m := platform.DispatcherMember{
+			ProgramID:    spec.ProgramID,
+			ProgramName:  spec.ProgramName,
+			ProgPinPath:  spec.ProgPinPath,
+			LinkID:       record.ID,
+			KernelLinkID: spec.KernelLinkID,
+			LinkPinPath:  spec.LinkPinPath,
+			Position:     spec.Position,
+			Priority:     spec.Priority,
+			ProceedOn:    spec.ProceedOn,
+			Ifname:       spec.Ifname,
 		}
 
 		// Insert detail row.
 		proceedOnJSON, err := proceedOnToJSON(m.ProceedOn)
 		if err != nil {
-			return fmt.Errorf("marshal proceed_on for link %d: %w", m.LinkID, err)
+			return platform.DispatcherSnapshot{}, fmt.Errorf("marshal proceed_on for link %d: %w", m.LinkID, err)
 		}
 
 		if snap.Key.Type == dispatcher.DispatcherTypeXDP {
 			if _, err := s.stmtInsertXDPDetail.ExecContext(ctx,
 				m.LinkID, m.Ifname, snap.Key.Ifindex, m.Priority, m.Position,
 				proceedOnJSON, snap.Key.Nsid, snap.Runtime.ProgramID); err != nil {
-				return fmt.Errorf("insert XDP detail for link %d: %w", m.LinkID, err)
+				return platform.DispatcherSnapshot{}, fmt.Errorf("insert XDP detail for link %d: %w", m.LinkID, err)
 			}
 		} else {
 			dir := dispatcherDirection(snap.Key.Type)
 			if _, err := s.stmtInsertTCDetail.ExecContext(ctx,
 				m.LinkID, m.Ifname, snap.Key.Ifindex, dir, m.Priority, m.Position,
 				proceedOnJSON, snap.Key.Nsid, snap.Runtime.ProgramID); err != nil {
-				return fmt.Errorf("insert TC detail for link %d: %w", m.LinkID, err)
+				return platform.DispatcherSnapshot{}, fmt.Errorf("insert TC detail for link %d: %w", m.LinkID, err)
 			}
 		}
+		completed.Members = append(completed.Members, m)
 	}
 
 	s.logger.Debug("sql", "stmt", "ReplaceDispatcherSnapshot", "args", []any{snap.Key, snap.Revision},
 		"duration_ms", msec(time.Since(start)), "members", len(snap.Members))
-	return nil
+	return completed, nil
 }
 
 // DeleteDispatcherSnapshot removes a dispatcher and all its extension

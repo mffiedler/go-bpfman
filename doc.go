@@ -47,13 +47,14 @@
 //
 //	Link              - The complete domain object combining Record and Status
 //	├── LinkRecord    - DB-backed stored record (what bpfman manages)
-//	│   ├── ID        - Kernel-assigned or synthetic link ID
+//	│   ├── ID        - bpfman management handle allocated by the store
 //	│   ├── ProgramID - The program this link attaches
+//	│   ├── KernelLinkID - Optional captured kernel bpf_link ID
 //	│   ├── Kind      - Link type (tracepoint, kprobe, xdp, tc, etc.)
 //	│   ├── PinPath   - Optional bpffs pin path
 //	│   └── Details   - Type-specific details (sealed interface)
 //	└── LinkStatus    - Observed runtime state
-//	    ├── Kernel    - Live kernel link info (nil if synthetic/not present)
+//	    ├── Kernel    - Live kernel link info, if captured and still present
 //	    ├── KernelSeen - Whether kernel enumeration found the link
 //	    └── PinPresent - Whether the pin path exists on filesystem
 //
@@ -64,40 +65,37 @@
 // the program ID and type-specific parameters.
 //
 // 2. AttachOutput: Transient result from kernel attach operation. Contains
-// kernel-assigned link ID, kernel link info, and pin path. Not stored - just
-// passes data from I/O boundary to manager.
+// the captured kernel bpf_link ID, kernel link info, and actual pin path, if
+// those exist. Not stored directly - just passes data from the I/O boundary
+// to the manager.
 //
 //	AttachOutput {
-//	    LinkID     kernel.LinkID // kernel-assigned or synthetic
-//	    KernelLink *kernel.Link  // nil for synthetic links
-//	    PinPath    string        // where link was pinned
-//	    Synthetic  bool          // true for perf_event-based links
+//	    KernelLinkID *kernel.LinkID // captured kernel bpf_link ID, if any
+//	    KernelLink   *kernel.Link   // nil when no kernel ID was captured
+//	    PinPath      LinkPath       // actual bpffs pin, empty if none
 //	}
 //
-// 3. LinkRecord: Manager combines *AttachSpec + AttachOutput and stores it in
-// the database. The manager constructs the LinkRecord using the attach spec's
-// details and the kernel-returned IDs/paths.
+// 3. LinkSpec: Manager combines *AttachSpec + AttachOutput into a store input
+// with no bpfman link ID. The store creates the LinkRecord and allocates the
+// bpfman management handle.
 //
-// 4. LinkStatus: Observed by querying kernel and filesystem. For synthetic
-// links (container uprobes), the kernel link is nil and KernelSeen is false.
+// 4. LinkRecord: Stored output from CreateLink or a dispatcher snapshot
+// replacement. The bpfman ID is distinct from the optional captured kernel
+// bpf_link ID.
 //
-// 5. Link: Combines Record + Status. The coherency and GC systems compare
-// these to detect drift and generate remediation actions.
+// 5. LinkStatus: Observed by querying kernel and filesystem. A nil
+// KernelLinkID means bpfman did not capture a kernel bpf_link ID for this
+// attachment; PinPath is nil unless a real bpffs pin was created.
 //
-// # Synthetic Links
-//
-// Some attach types (e.g., container uprobes) use perf_event-based mechanisms
-// that cannot be pinned and don't have kernel link IDs. For these, bpfman
-// generates synthetic link IDs in the range 0x80000000-0xFFFFFFFF to avoid
-// collision with real kernel link IDs. The IsSyntheticLinkID() function
-// identifies these.
+// 6. Link: Combines Record + Status. The coherency paths compare these to
+// detect drift and generate remediation actions.
 //
 // # Key Distinctions
 //
 // LoadSpec is input (what to load), ProgramRecord is stored output (what was
 // loaded). They share some fields but serve different purposes.
 //
-// Similarly, *AttachSpec is input (what to attach), LinkRecord is stored output
-// (what was attached). The AttachOutput bridges the I/O boundary, carrying
-// kernel-assigned IDs to the manager for LinkRecord construction.
+// Similarly, *AttachSpec is user input, LinkSpec is store input, and LinkRecord
+// is stored output. AttachOutput bridges the I/O boundary, carrying observed
+// kernel IDs and pin paths to the manager without assigning bpfman handles.
 package bpfman

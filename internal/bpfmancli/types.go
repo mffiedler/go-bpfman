@@ -45,7 +45,7 @@ func ParseProgramID(s string) (ProgramID, error) {
 
 // LinkID wraps a link ID with hex support.
 type LinkID struct {
-	Value kernel.LinkID
+	Value bpfman.LinkID
 }
 
 // ParseLinkID parses a link ID from string, supporting hex (0x) prefix
@@ -63,16 +63,16 @@ func ParseLinkID(s string) (LinkID, error) {
 	var err error
 
 	if strings.HasPrefix(s, "0x") || strings.HasPrefix(s, "0X") {
-		val, err = strconv.ParseUint(s[2:], 16, 32)
+		val, err = strconv.ParseUint(s[2:], 16, 64)
 	} else {
-		val, err = strconv.ParseUint(s, 10, 32)
+		val, err = strconv.ParseUint(s, 10, 64)
 	}
 
 	if err != nil {
 		return LinkID{}, fmt.Errorf("invalid link ID %q: %w", s, err)
 	}
 
-	return LinkID{Value: kernel.LinkID(val)}, nil
+	return LinkID{Value: bpfman.LinkID(val)}, nil
 }
 
 // KeyValue represents a KEY=VALUE metadata pair.

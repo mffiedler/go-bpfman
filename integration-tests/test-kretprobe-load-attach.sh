@@ -176,12 +176,12 @@ verify_links() {
 verify_database() {
     log_info "Step 4: Verifying database entries..."
 
-    # Check link_registry has correct type
+    # Check links has correct type.
     local link_type
-    link_type=$(sqlite3 "$DB_PATH" "SELECT kind FROM links WHERE link_id = $LINK_ID;")
+    link_type=$(sqlite3 "$DB_PATH" "SELECT kind FROM links WHERE id = $LINK_ID;")
     assert_eq "kretprobe" "$link_type" "Database link_type should be kretprobe"
 
-    # Check kprobe_link_details has retprobe=1
+    # Check kprobe link details has retprobe=1.
     local retprobe_val
     retprobe_val=$(sqlite3 "$DB_PATH" "SELECT retprobe FROM link_kprobe_details WHERE link_id = $LINK_ID;")
     assert_eq "1" "$retprobe_val" "Database retprobe should be 1"

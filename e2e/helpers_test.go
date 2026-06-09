@@ -74,7 +74,7 @@ type TestEnv struct {
 	// correct).
 	scopeMu       sync.Mutex
 	scopePrograms map[kernel.ProgramID]struct{}
-	scopeLinks    map[kernel.LinkID]struct{}
+	scopeLinks    map[bpfman.LinkID]struct{}
 }
 
 // NewTestEnv creates an isolated test environment for e2e testing.
@@ -107,7 +107,7 @@ func NewTestEnv(t *testing.T) *TestEnv {
 			closeEnv:      nil,
 			shared:        true,
 			scopePrograms: make(map[kernel.ProgramID]struct{}),
-			scopeLinks:    make(map[kernel.LinkID]struct{}),
+			scopeLinks:    make(map[bpfman.LinkID]struct{}),
 		}
 		t.Cleanup(env.cleanup)
 		return env
@@ -407,7 +407,7 @@ func (e *TestEnv) Attach(ctx context.Context, spec bpfman.AttachSpec) (bpfman.Li
 }
 
 // Detach detaches a link.
-func (e *TestEnv) Detach(ctx context.Context, linkID kernel.LinkID) error {
+func (e *TestEnv) Detach(ctx context.Context, linkID bpfman.LinkID) error {
 	err := e.runWithLock(ctx, func(ctx context.Context, writeLock lock.WriterScope) error {
 		return e.Manager.Detach(ctx, writeLock, linkID)
 	})
@@ -444,16 +444,16 @@ func (e *TestEnv) untrackProgram(id kernel.ProgramID) {
 	delete(e.scopePrograms, id)
 }
 
-func (e *TestEnv) trackLink(id kernel.LinkID) {
+func (e *TestEnv) trackLink(id bpfman.LinkID) {
 	e.scopeMu.Lock()
 	defer e.scopeMu.Unlock()
 	if e.scopeLinks == nil {
-		e.scopeLinks = make(map[kernel.LinkID]struct{})
+		e.scopeLinks = make(map[bpfman.LinkID]struct{})
 	}
 	e.scopeLinks[id] = struct{}{}
 }
 
-func (e *TestEnv) untrackLink(id kernel.LinkID) {
+func (e *TestEnv) untrackLink(id bpfman.LinkID) {
 	e.scopeMu.Lock()
 	defer e.scopeMu.Unlock()
 	delete(e.scopeLinks, id)
@@ -471,7 +471,7 @@ func (e *TestEnv) scopeLinkCount() int {
 	return len(e.scopeLinks)
 }
 
-func (e *TestEnv) scopeContainsLink(id kernel.LinkID) bool {
+func (e *TestEnv) scopeContainsLink(id bpfman.LinkID) bool {
 	e.scopeMu.Lock()
 	defer e.scopeMu.Unlock()
 	_, ok := e.scopeLinks[id]
@@ -498,7 +498,7 @@ func (e *TestEnv) ListLinks(ctx context.Context) ([]bpfman.LinkRecord, error) {
 }
 
 // GetLink returns detailed information about a link.
-func (e *TestEnv) GetLink(ctx context.Context, linkID kernel.LinkID) (bpfman.LinkRecord, bpfman.LinkDetails, error) {
+func (e *TestEnv) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkRecord, bpfman.LinkDetails, error) {
 	record, err := e.Manager.GetLink(ctx, linkID)
 	if err != nil {
 		return bpfman.LinkRecord{}, nil, err

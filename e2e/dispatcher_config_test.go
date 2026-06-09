@@ -82,7 +82,7 @@ func (h *dispatcherTestHarness) memberCount(t *testing.T) int {
 
 // linkPosition returns the dispatcher position stored in the link
 // details for the given link ID.
-func (h *dispatcherTestHarness) linkPosition(t *testing.T, linkID kernel.LinkID) int32 {
+func (h *dispatcherTestHarness) linkPosition(t *testing.T, linkID bpfman.LinkID) int32 {
 	t.Helper()
 	_, details, err := h.env.GetLink(context.Background(), linkID)
 	require.NoError(t, err)
@@ -99,7 +99,7 @@ func (h *dispatcherTestHarness) linkPosition(t *testing.T, linkID kernel.LinkID)
 
 // linkPriority returns the priority stored in the link details for the
 // given link ID.
-func (h *dispatcherTestHarness) linkPriority(t *testing.T, linkID kernel.LinkID) int32 {
+func (h *dispatcherTestHarness) linkPriority(t *testing.T, linkID bpfman.LinkID) int32 {
 	t.Helper()
 	_, details, err := h.env.GetLink(context.Background(), linkID)
 	require.NoError(t, err)
@@ -366,7 +366,7 @@ func TestTCX_PriorityOrdering(t *testing.T) {
 	// directly when the assertion fails.
 	type linkDump struct {
 		index     int
-		linkID    kernel.LinkID
+		linkID    bpfman.LinkID
 		priority  int32
 		ifindex   uint32
 		direction bpfman.TCDirection

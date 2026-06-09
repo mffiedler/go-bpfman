@@ -93,10 +93,11 @@ func (k *kernelAdapter) AttachXDP(ctx context.Context, progPinPath bpfman.ProgPi
 	lnk.Close()
 	success = true
 
+	kernelLinkID := kernel.LinkID(linkInfo.ID)
 	return bpfman.AttachOutput{
-		LinkID:     kernel.LinkID(linkInfo.ID),
-		KernelLink: ToKernelLink(linkInfo),
-		PinPath:    linkPinPath,
+		KernelLinkID: &kernelLinkID,
+		KernelLink:   ToKernelLink(linkInfo),
+		PinPath:      linkPinPath,
 	}, nil
 }
 
@@ -175,7 +176,7 @@ func (k *kernelAdapter) AttachXDPDispatcher(ctx context.Context, spec dispatcher
 			lnk.Close()
 			return fmt.Errorf("get dispatcher link info: %w", err)
 		}
-		result.LinkID = kernel.LinkID(linkInfo.ID)
+		result.KernelLinkID = kernel.LinkID(linkInfo.ID)
 
 		// Pin dispatcher program to the revision-specific path.
 		if err := pinWithRetry(spec.ProgPinPath, dispatcherProg.Pin); err != nil {
@@ -334,7 +335,7 @@ func (k *kernelAdapter) CreateXDPLink(ctx context.Context, progPinPath bpfman.Pr
 		lnk.Close()
 		result = &platform.XDPDispatcherResult{
 			DispatcherID:  kernel.ProgramID(progID),
-			LinkID:        kernel.LinkID(linkInfo.ID),
+			KernelLinkID:  kernel.LinkID(linkInfo.ID),
 			DispatcherPin: progPinPath,
 			LinkPin:       linkPinPath,
 		}
@@ -415,9 +416,10 @@ func (k *kernelAdapter) AttachXDPExtension(ctx context.Context, spec dispatcher.
 	lnk.Close()
 	success = true
 
+	kernelLinkID := kernel.LinkID(linkInfo.ID)
 	return bpfman.AttachOutput{
-		LinkID:     kernel.LinkID(linkInfo.ID),
-		KernelLink: ToKernelLink(linkInfo),
-		PinPath:    spec.LinkPinPath,
+		KernelLinkID: &kernelLinkID,
+		KernelLink:   ToKernelLink(linkInfo),
+		PinPath:      spec.LinkPinPath,
 	}, nil
 }

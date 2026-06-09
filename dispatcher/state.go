@@ -40,9 +40,9 @@ type State struct {
 	// ProgramID is the kernel program ID of the dispatcher.
 	ProgramID kernel.ProgramID `json:"program_id"`
 
-	// LinkID is the kernel link ID (XDP link for XDP dispatchers).
+	// KernelLinkID is the kernel link ID (XDP link for XDP dispatchers).
 	// Zero for TC dispatchers which use legacy netlink instead of BPF links.
-	LinkID kernel.LinkID `json:"link_id"`
+	KernelLinkID kernel.LinkID `json:"kernel_link_id"`
 
 	// Priority is the tc filter priority.
 	// Only set for TC dispatchers (legacy netlink). Zero for XDP.

@@ -58,10 +58,11 @@ func (k *kernelAdapter) AttachTracepoint(ctx context.Context, progPinPath bpfman
 		lnk.Close()
 	}
 
+	kernelLinkID := kernel.LinkID(linkInfo.ID)
 	return bpfman.AttachOutput{
-		LinkID:     kernel.LinkID(linkInfo.ID),
-		KernelLink: ToKernelLink(linkInfo),
-		PinPath:    linkPinPath,
+		KernelLinkID: &kernelLinkID,
+		KernelLink:   ToKernelLink(linkInfo),
+		PinPath:      linkPinPath,
 	}, nil
 }
 
@@ -121,10 +122,11 @@ func (k *kernelAdapter) AttachKprobe(ctx context.Context, progPinPath bpfman.Pro
 		lnk.Close()
 	}
 
+	kernelLinkID := kernel.LinkID(linkInfo.ID)
 	return bpfman.AttachOutput{
-		LinkID:     kernel.LinkID(linkInfo.ID),
-		KernelLink: ToKernelLink(linkInfo),
-		PinPath:    linkPinPath,
+		KernelLinkID: &kernelLinkID,
+		KernelLink:   ToKernelLink(linkInfo),
+		PinPath:      linkPinPath,
 	}, nil
 }
 
@@ -184,9 +186,10 @@ func (k *kernelAdapter) attachTracing(ctx context.Context, progPinPath bpfman.Pr
 		lnk.Close()
 	}
 
+	kernelLinkID := kernel.LinkID(linkInfo.ID)
 	return bpfman.AttachOutput{
-		LinkID:     kernel.LinkID(linkInfo.ID),
-		KernelLink: ToKernelLink(linkInfo),
-		PinPath:    linkPinPath,
+		KernelLinkID: &kernelLinkID,
+		KernelLink:   ToKernelLink(linkInfo),
+		PinPath:      linkPinPath,
 	}, nil
 }

@@ -26,23 +26,24 @@ func TestDetach_NonExistentLink_ReturnsNotFound(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
-	err := fix.Detach(ctx, kernel.LinkID(999))
+	err := fix.Detach(ctx, bpfman.LinkID(999))
 	require.Error(t, err, "Detach of non-existent link should fail")
 
 	var notFound bpfman.ErrLinkNotFound
 	assert.True(t, errors.As(err, &notFound), "expected ErrLinkNotFound, got %T", err)
-	assert.Equal(t, kernel.LinkID(999), notFound.LinkID)
+	assert.Equal(t, bpfman.LinkID(999), notFound.LinkID)
 }
 
-// TestDetach_KernelOnlyLink_ReturnsNotManaged verifies that:
+// TestDetach_KernelOnlyLinkID_ReturnsNotFound verifies that:
 //
 //	Given a link that exists in the kernel but is not managed by bpfman,
-//	When I attempt to detach it,
-//	Then the manager returns ErrLinkNotManaged as a plain error.
+//	When I attempt to detach using the same numeric value,
+//	Then the manager treats that value as a bpfman LinkID and returns
+//	ErrLinkNotFound.
 //
 // Preflight failures from Detach return plain errors because no
 // operation state is created until the plan executes.
-func TestDetach_KernelOnlyLink_ReturnsNotManaged(t *testing.T) {
+func TestDetach_KernelOnlyLinkID_ReturnsNotFound(t *testing.T) {
 	t.Parallel()
 
 	fix := newTestFixture(t)
@@ -52,12 +53,12 @@ func TestDetach_KernelOnlyLink_ReturnsNotManaged(t *testing.T) {
 	const kernelOnlyLinkID = 42
 	fix.Kernel.InjectKernelLink(kernelOnlyLinkID, bpfman.LinkKindTracepoint)
 
-	err := fix.Detach(ctx, kernel.LinkID(kernelOnlyLinkID))
+	err := fix.Detach(ctx, bpfman.LinkID(kernelOnlyLinkID))
 	require.Error(t, err, "Detach of kernel-only link should fail")
 
-	var notManaged bpfman.ErrLinkNotManaged
-	assert.True(t, errors.As(err, &notManaged), "expected ErrLinkNotManaged, got %T", err)
-	assert.Equal(t, kernel.LinkID(kernelOnlyLinkID), notManaged.LinkID)
+	var notFound bpfman.ErrLinkNotFound
+	assert.True(t, errors.As(err, &notFound), "expected ErrLinkNotFound, got %T", err)
+	assert.Equal(t, bpfman.LinkID(kernelOnlyLinkID), notFound.LinkID)
 }
 
 // TestUnload_NonExistentProgram_ReturnsNotFound verifies that:

@@ -3,7 +3,6 @@ package manager
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/kernel"
@@ -118,43 +117,44 @@ func (m *Manager) simpleAttachPlan(p attachParams) operation.Plan {
 			}),
 		),
 
-		saveLinkNode(p.programID, p.defaultTarget, func(b *operation.Bindings) (kernel.LinkID, bpfman.LinkDetails, bpfman.LinkPath, bpfman.AttachOutput) {
+		saveLinkNode(p.programID, p.defaultTarget, func(b *operation.Bindings) (bpfman.LinkDetails, bpfman.AttachOutput) {
 			pa := operation.Get(b, preparedKey)
 			out := operation.Get(b, attachOutKey)
-			return out.LinkID, pa.plan.details, pa.linkPinPath, out
+			return pa.plan.details, out
 		}),
 	)
 }
 
-// saveLinkNode builds a Produce node that constructs a LinkRecord,
-// persists it via SaveLink, and returns the completed bpfman.Link.
+// saveLinkNode builds a Produce node that constructs a LinkSpec,
+// persists it via CreateLink, and returns the completed bpfman.Link.
 // The extract closure reads bindings to supply the four variable
 // parts: link ID, link details, pin path, and attach output.
 func saveLinkNode(
 	programID kernel.ProgramID,
 	target string,
-	extract func(*operation.Bindings) (kernel.LinkID, bpfman.LinkDetails, bpfman.LinkPath, bpfman.AttachOutput),
+	extract func(*operation.Bindings) (bpfman.LinkDetails, bpfman.AttachOutput),
 ) operation.Node {
 	return operation.Produce(linkKey, target,
 		func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) (bpfman.Link, error) {
-			linkID, details, pinPath, out := extract(b)
-			record := bpfman.NewPinnedLinkRecord(
-				linkID,
-				programID,
-				details,
-				*bpfman.NewLinkPath(pinPath),
-				time.Now(),
-			)
+			details, out := extract(b)
+			spec := bpfman.LinkSpec{
+				ProgramID:    programID,
+				KernelLinkID: out.KernelLinkID,
+				Kind:         details.Kind(),
+				PinPath:      bpfman.NewLinkPath(out.PinPath),
+				Details:      details,
+			}
+			record, err := action.Produce[bpfman.LinkRecord](ctx, exec, action.CreateLink{Spec: spec})
+			if err != nil {
+				return bpfman.Link{}, fmt.Errorf("save link metadata: %w", err)
+			}
 			link := bpfman.Link{
 				Record: record,
 				Status: bpfman.LinkStatus{
 					Kernel:     out.KernelLink,
 					KernelSeen: out.KernelLink != nil,
-					PinPresent: out.PinPath != "" && !out.Synthetic,
+					PinPresent: out.PinPath != "",
 				},
-			}
-			if err := exec.Execute(ctx, action.SaveLink{Record: record}); err != nil {
-				return bpfman.Link{}, fmt.Errorf("save link metadata: %w", err)
 			}
 			return link, nil
 		},

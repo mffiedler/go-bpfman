@@ -67,7 +67,7 @@ func tcIngressKey() dispatcher.Key {
 
 // setupXDPSnapshot creates managed programs and returns a snapshot
 // ready for ReplaceDispatcherSnapshot.
-func setupXDPSnapshot(t *testing.T, ctx context.Context, store platform.Store) platform.DispatcherSnapshot {
+func setupXDPSnapshot(t *testing.T, ctx context.Context, store platform.Store) platform.DispatcherSnapshotSpec {
 	t.Helper()
 
 	// Create two managed programs that will be extensions.
@@ -79,35 +79,37 @@ func setupXDPSnapshot(t *testing.T, ctx context.Context, store platform.Store) p
 	dispProgramID := kernel.ProgramID(500)
 	linkID := kernel.LinkID(501)
 
-	return platform.DispatcherSnapshot{
+	member1KernelLinkID := kernel.LinkID(701)
+	member2KernelLinkID := kernel.LinkID(702)
+	return platform.DispatcherSnapshotSpec{
 		Key:      xdpKey(),
 		Revision: 1,
 		Runtime: platform.DispatcherRuntime{
-			ProgramID: dispProgramID,
-			LinkID:    &linkID,
+			ProgramID:    dispProgramID,
+			KernelLinkID: &linkID,
 		},
-		Members: []platform.DispatcherMember{
+		Members: []platform.DispatcherMemberSpec{
 			{
-				ProgramID:   prog1ID,
-				ProgramName: "xdp_prog1",
-				ProgPinPath: "/sys/fs/bpf/xdp_prog1",
-				LinkID:      kernel.LinkID(0x80000001),
-				LinkPinPath: "/sys/fs/bpf/dispatch/r1/link0",
-				Position:    0,
-				Priority:    50,
-				ProceedOn:   0x04, // XDP_PASS
-				Ifname:      "eth0",
+				ProgramID:    prog1ID,
+				ProgramName:  "xdp_prog1",
+				ProgPinPath:  "/sys/fs/bpf/xdp_prog1",
+				KernelLinkID: &member1KernelLinkID,
+				LinkPinPath:  "/sys/fs/bpf/dispatch/r1/link0",
+				Position:     0,
+				Priority:     50,
+				ProceedOn:    0x04, // XDP_PASS
+				Ifname:       "eth0",
 			},
 			{
-				ProgramID:   prog2ID,
-				ProgramName: "xdp_prog2",
-				ProgPinPath: "/sys/fs/bpf/xdp_prog2",
-				LinkID:      kernel.LinkID(0x80000002),
-				LinkPinPath: "/sys/fs/bpf/dispatch/r1/link1",
-				Position:    1,
-				Priority:    100,
-				ProceedOn:   0x06, // XDP_PASS | XDP_DROP
-				Ifname:      "eth0",
+				ProgramID:    prog2ID,
+				ProgramName:  "xdp_prog2",
+				ProgPinPath:  "/sys/fs/bpf/xdp_prog2",
+				KernelLinkID: &member2KernelLinkID,
+				LinkPinPath:  "/sys/fs/bpf/dispatch/r1/link1",
+				Position:     1,
+				Priority:     100,
+				ProceedOn:    0x06, // XDP_PASS | XDP_DROP
+				Ifname:       "eth0",
 			},
 		},
 	}
@@ -124,7 +126,8 @@ func TestSnapshotStore_ReplaceAndGet_XDP(t *testing.T) {
 	snap := setupXDPSnapshot(t, ctx, store)
 
 	// Replace (first time = create).
-	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, snap))
+	completed, err := store.ReplaceDispatcherSnapshot(ctx, snap)
+	require.NoError(t, err)
 
 	// Get the snapshot back.
 	got, err := store.GetDispatcherSnapshot(ctx, xdpKey())
@@ -133,9 +136,12 @@ func TestSnapshotStore_ReplaceAndGet_XDP(t *testing.T) {
 	assert.Equal(t, snap.Key, got.Key)
 	assert.Equal(t, snap.Revision, got.Revision)
 	assert.Equal(t, snap.Runtime.ProgramID, got.Runtime.ProgramID)
-	require.NotNil(t, got.Runtime.LinkID)
-	assert.Equal(t, *snap.Runtime.LinkID, *got.Runtime.LinkID)
+	require.NotNil(t, got.Runtime.KernelLinkID)
+	assert.Equal(t, *snap.Runtime.KernelLinkID, *got.Runtime.KernelLinkID)
 	require.Len(t, got.Members, 2)
+	require.Len(t, completed.Members, 2)
+	assert.NotZero(t, completed.Members[0].LinkID)
+	assert.NotZero(t, completed.Members[1].LinkID)
 
 	// Members should be ordered by priority.
 	assert.Equal(t, "xdp_prog1", got.Members[0].ProgramName)
@@ -143,7 +149,8 @@ func TestSnapshotStore_ReplaceAndGet_XDP(t *testing.T) {
 	assert.Equal(t, 50, got.Members[0].Priority)
 	assert.Equal(t, uint32(0x04), got.Members[0].ProceedOn)
 	assert.Equal(t, "eth0", got.Members[0].Ifname)
-	assert.Equal(t, kernel.LinkID(0x80000001), got.Members[0].LinkID)
+	require.NotNil(t, got.Members[0].KernelLinkID)
+	assert.Equal(t, kernel.LinkID(701), *got.Members[0].KernelLinkID)
 
 	assert.Equal(t, "xdp_prog2", got.Members[1].ProgramName)
 	assert.Equal(t, 1, got.Members[1].Position)
@@ -161,7 +168,8 @@ func TestSnapshotStore_ReplaceRemovesOldMembership(t *testing.T) {
 	snap := setupXDPSnapshot(t, ctx, store)
 
 	// Initial replace with two members.
-	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, snap))
+	completed, err := store.ReplaceDispatcherSnapshot(ctx, snap)
+	require.NoError(t, err)
 
 	got, err := store.GetDispatcherSnapshot(ctx, xdpKey())
 	require.NoError(t, err)
@@ -171,29 +179,32 @@ func TestSnapshotStore_ReplaceRemovesOldMembership(t *testing.T) {
 	// New dispatcher program ID from rebuild.
 	newDispProgramID := kernel.ProgramID(600)
 	newLinkID := kernel.LinkID(601)
-	snap2 := platform.DispatcherSnapshot{
+	memberKernelLinkID := kernel.LinkID(703)
+	snap2 := platform.DispatcherSnapshotSpec{
 		Key:      xdpKey(),
 		Revision: 2,
 		Runtime: platform.DispatcherRuntime{
-			ProgramID: newDispProgramID,
-			LinkID:    &newLinkID,
+			ProgramID:    newDispProgramID,
+			KernelLinkID: &newLinkID,
 		},
-		Members: []platform.DispatcherMember{
+		Members: []platform.DispatcherMemberSpec{
 			{
-				ProgramID:   kernel.ProgramID(1001),
-				ProgramName: "xdp_prog1",
-				ProgPinPath: "/sys/fs/bpf/xdp_prog1",
-				LinkID:      kernel.LinkID(0x80000003),
-				LinkPinPath: "/sys/fs/bpf/dispatch/r2/link0",
-				Position:    0,
-				Priority:    50,
-				ProceedOn:   0x04,
-				Ifname:      "eth0",
+				ExistingLinkID: &completed.Members[0].LinkID,
+				ProgramID:      kernel.ProgramID(1001),
+				ProgramName:    "xdp_prog1",
+				ProgPinPath:    "/sys/fs/bpf/xdp_prog1",
+				KernelLinkID:   &memberKernelLinkID,
+				LinkPinPath:    "/sys/fs/bpf/dispatch/r2/link0",
+				Position:       0,
+				Priority:       50,
+				ProceedOn:      0x04,
+				Ifname:         "eth0",
 			},
 		},
 	}
 
-	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, snap2))
+	completed2, err := store.ReplaceDispatcherSnapshot(ctx, snap2)
+	require.NoError(t, err)
 
 	got2, err := store.GetDispatcherSnapshot(ctx, xdpKey())
 	require.NoError(t, err)
@@ -201,13 +212,12 @@ func TestSnapshotStore_ReplaceRemovesOldMembership(t *testing.T) {
 	assert.Equal(t, newDispProgramID, got2.Runtime.ProgramID)
 	require.Len(t, got2.Members, 1)
 	assert.Equal(t, "xdp_prog1", got2.Members[0].ProgramName)
-	assert.Equal(t, kernel.LinkID(0x80000003), got2.Members[0].LinkID)
+	assert.Equal(t, completed.Members[0].LinkID, got2.Members[0].LinkID)
+	assert.Equal(t, completed.Members[0].LinkID, completed2.Members[0].LinkID)
 
 	// Old link records should be gone (the links table cascade
 	// removed old detail rows).
-	_, err = store.GetLink(ctx, kernel.LinkID(0x80000001))
-	require.Error(t, err, "old link should be deleted")
-	_, err = store.GetLink(ctx, kernel.LinkID(0x80000002))
+	_, err = store.GetLink(ctx, completed.Members[1].LinkID)
 	require.Error(t, err, "old link should be deleted")
 }
 
@@ -221,7 +231,8 @@ func TestSnapshotStore_DeleteSnapshot(t *testing.T) {
 	ctx := context.Background()
 	snap := setupXDPSnapshot(t, ctx, store)
 
-	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, snap))
+	completed, err := store.ReplaceDispatcherSnapshot(ctx, snap)
+	require.NoError(t, err)
 
 	// Delete the snapshot.
 	require.NoError(t, store.DeleteDispatcherSnapshot(ctx, xdpKey()))
@@ -232,9 +243,9 @@ func TestSnapshotStore_DeleteSnapshot(t *testing.T) {
 	assert.True(t, errors.Is(err, platform.ErrRecordNotFound))
 
 	// Extension links should be gone.
-	_, err = store.GetLink(ctx, kernel.LinkID(0x80000001))
+	_, err = store.GetLink(ctx, completed.Members[0].LinkID)
 	require.Error(t, err)
-	_, err = store.GetLink(ctx, kernel.LinkID(0x80000002))
+	_, err = store.GetLink(ctx, completed.Members[1].LinkID)
 	require.Error(t, err)
 }
 
@@ -275,7 +286,8 @@ func TestSnapshotStore_TransactionRollback(t *testing.T) {
 	snap := setupXDPSnapshot(t, ctx, store)
 
 	// First, create the snapshot so we have known state.
-	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, snap))
+	_, err = store.ReplaceDispatcherSnapshot(ctx, snap)
+	require.NoError(t, err)
 
 	// Attempt a replacement inside a transaction that rolls back.
 	deliberateErr := errors.New("deliberate rollback")
@@ -283,7 +295,7 @@ func TestSnapshotStore_TransactionRollback(t *testing.T) {
 		snap2 := snap
 		snap2.Revision = 99
 		snap2.Members = nil // empty members
-		if err := txStore.ReplaceDispatcherSnapshot(ctx, snap2); err != nil {
+		if _, err := txStore.ReplaceDispatcherSnapshot(ctx, snap2); err != nil {
 			return err
 		}
 		return deliberateErr
@@ -318,64 +330,69 @@ func TestSnapshotStore_ListSummaries(t *testing.T) {
 
 	// XDP dispatcher with 2 members.
 	xdpLinkID := kernel.LinkID(501)
-	xdpSnap := platform.DispatcherSnapshot{
+	xdpMember1KernelLinkID := kernel.LinkID(801)
+	xdpMember2KernelLinkID := kernel.LinkID(802)
+	xdpSnap := platform.DispatcherSnapshotSpec{
 		Key:      xdpKey(),
 		Revision: 1,
 		Runtime: platform.DispatcherRuntime{
-			ProgramID: kernel.ProgramID(500),
-			LinkID:    &xdpLinkID,
+			ProgramID:    kernel.ProgramID(500),
+			KernelLinkID: &xdpLinkID,
 		},
-		Members: []platform.DispatcherMember{
+		Members: []platform.DispatcherMemberSpec{
 			{
-				ProgramID:   prog1ID,
-				ProgramName: "xdp_prog1",
-				ProgPinPath: "/sys/fs/bpf/xdp_prog1",
-				LinkID:      kernel.LinkID(0x80000001),
-				LinkPinPath: "/sys/fs/bpf/dispatch/xdp/link0",
-				Position:    0,
-				Priority:    50,
-				ProceedOn:   0x04,
-				Ifname:      "eth0",
+				ProgramID:    prog1ID,
+				ProgramName:  "xdp_prog1",
+				ProgPinPath:  "/sys/fs/bpf/xdp_prog1",
+				KernelLinkID: &xdpMember1KernelLinkID,
+				LinkPinPath:  "/sys/fs/bpf/dispatch/xdp/link0",
+				Position:     0,
+				Priority:     50,
+				ProceedOn:    0x04,
+				Ifname:       "eth0",
 			},
 			{
-				ProgramID:   prog2ID,
-				ProgramName: "xdp_prog2",
-				ProgPinPath: "/sys/fs/bpf/xdp_prog2",
-				LinkID:      kernel.LinkID(0x80000002),
-				LinkPinPath: "/sys/fs/bpf/dispatch/xdp/link1",
-				Position:    1,
-				Priority:    100,
-				ProceedOn:   0x04,
-				Ifname:      "eth0",
+				ProgramID:    prog2ID,
+				ProgramName:  "xdp_prog2",
+				ProgPinPath:  "/sys/fs/bpf/xdp_prog2",
+				KernelLinkID: &xdpMember2KernelLinkID,
+				LinkPinPath:  "/sys/fs/bpf/dispatch/xdp/link1",
+				Position:     1,
+				Priority:     100,
+				ProceedOn:    0x04,
+				Ifname:       "eth0",
 			},
 		},
 	}
-	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, xdpSnap))
+	_, err = store.ReplaceDispatcherSnapshot(ctx, xdpSnap)
+	require.NoError(t, err)
 
 	// TC ingress dispatcher with 1 member.
 	tcPriority := uint16(50)
-	tcSnap := platform.DispatcherSnapshot{
+	tcMemberKernelLinkID := kernel.LinkID(803)
+	tcSnap := platform.DispatcherSnapshotSpec{
 		Key:      tcIngressKey(),
 		Revision: 1,
 		Runtime: platform.DispatcherRuntime{
 			ProgramID:      kernel.ProgramID(700),
 			FilterPriority: &tcPriority,
 		},
-		Members: []platform.DispatcherMember{
+		Members: []platform.DispatcherMemberSpec{
 			{
-				ProgramID:   prog3ID,
-				ProgramName: "tc_prog1",
-				ProgPinPath: "/sys/fs/bpf/tc_prog1",
-				LinkID:      kernel.LinkID(0x80000010),
-				LinkPinPath: "/sys/fs/bpf/dispatch/tc/link0",
-				Position:    0,
-				Priority:    50,
-				ProceedOn:   0x04,
-				Ifname:      "eth0",
+				ProgramID:    prog3ID,
+				ProgramName:  "tc_prog1",
+				ProgPinPath:  "/sys/fs/bpf/tc_prog1",
+				KernelLinkID: &tcMemberKernelLinkID,
+				LinkPinPath:  "/sys/fs/bpf/dispatch/tc/link0",
+				Position:     0,
+				Priority:     50,
+				ProceedOn:    0x04,
+				Ifname:       "eth0",
 			},
 		},
 	}
-	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, tcSnap))
+	_, err = store.ReplaceDispatcherSnapshot(ctx, tcSnap)
+	require.NoError(t, err)
 
 	// List summaries.
 	summaries, err := store.ListDispatcherSummaries(ctx)
@@ -391,18 +408,18 @@ func TestSnapshotStore_ListSummaries(t *testing.T) {
 	xdpSummary := byType["xdp"]
 	assert.Equal(t, 2, xdpSummary.MemberCount)
 	assert.Equal(t, kernel.ProgramID(500), xdpSummary.Runtime.ProgramID)
-	require.NotNil(t, xdpSummary.Runtime.LinkID)
-	assert.Equal(t, kernel.LinkID(501), *xdpSummary.Runtime.LinkID)
+	require.NotNil(t, xdpSummary.Runtime.KernelLinkID)
+	assert.Equal(t, kernel.LinkID(501), *xdpSummary.Runtime.KernelLinkID)
 
 	tcSummary := byType["tc-ingress"]
 	assert.Equal(t, 1, tcSummary.MemberCount)
 	assert.Equal(t, kernel.ProgramID(700), tcSummary.Runtime.ProgramID)
-	assert.Nil(t, tcSummary.Runtime.LinkID)
+	assert.Nil(t, tcSummary.Runtime.KernelLinkID)
 	require.NotNil(t, tcSummary.Runtime.FilterPriority)
 	assert.Equal(t, uint16(50), *tcSummary.Runtime.FilterPriority)
 }
 
-func TestSnapshotStore_TC_NullLinkID(t *testing.T) {
+func TestSnapshotStore_TC_NullKernelLinkID(t *testing.T) {
 	t.Parallel()
 
 	store, err := sqlite.NewInMemory(context.Background(), testLogger())
@@ -416,34 +433,36 @@ func TestSnapshotStore_TC_NullLinkID(t *testing.T) {
 	require.NoError(t, store.Save(ctx, progID, testTCProgram("tc_prog")))
 
 	tcPriority := uint16(50)
-	snap := platform.DispatcherSnapshot{
+	memberKernelLinkID := kernel.LinkID(804)
+	snap := platform.DispatcherSnapshotSpec{
 		Key:      tcIngressKey(),
 		Revision: 1,
 		Runtime: platform.DispatcherRuntime{
 			ProgramID:      kernel.ProgramID(700),
 			FilterPriority: &tcPriority,
 		},
-		Members: []platform.DispatcherMember{
+		Members: []platform.DispatcherMemberSpec{
 			{
-				ProgramID:   progID,
-				ProgramName: "tc_prog",
-				ProgPinPath: "/sys/fs/bpf/tc_prog",
-				LinkID:      kernel.LinkID(0x80000010),
-				LinkPinPath: "/sys/fs/bpf/dispatch/tc/link0",
-				Position:    0,
-				Priority:    50,
-				ProceedOn:   0x04,
-				Ifname:      "eth0",
+				ProgramID:    progID,
+				ProgramName:  "tc_prog",
+				ProgPinPath:  "/sys/fs/bpf/tc_prog",
+				KernelLinkID: &memberKernelLinkID,
+				LinkPinPath:  "/sys/fs/bpf/dispatch/tc/link0",
+				Position:     0,
+				Priority:     50,
+				ProceedOn:    0x04,
+				Ifname:       "eth0",
 			},
 		},
 	}
 
-	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, snap))
+	_, err = store.ReplaceDispatcherSnapshot(ctx, snap)
+	require.NoError(t, err)
 
 	// Verify via snapshot API.
 	got, err := store.GetDispatcherSnapshot(ctx, tcIngressKey())
 	require.NoError(t, err)
-	assert.Nil(t, got.Runtime.LinkID, "TC dispatchers should have nil LinkID")
+	assert.Nil(t, got.Runtime.KernelLinkID, "TC dispatchers should have nil KernelLinkID")
 	require.NotNil(t, got.Runtime.FilterPriority)
 	assert.Equal(t, uint16(50), *got.Runtime.FilterPriority)
 	require.Len(t, got.Members, 1)
@@ -461,17 +480,18 @@ func TestSnapshotStore_EmptyMembers(t *testing.T) {
 
 	// Replace with zero members (dispatcher exists but no extensions).
 	linkID := kernel.LinkID(501)
-	snap := platform.DispatcherSnapshot{
+	snap := platform.DispatcherSnapshotSpec{
 		Key:      xdpKey(),
 		Revision: 1,
 		Runtime: platform.DispatcherRuntime{
-			ProgramID: kernel.ProgramID(500),
-			LinkID:    &linkID,
+			ProgramID:    kernel.ProgramID(500),
+			KernelLinkID: &linkID,
 		},
 		Members: nil,
 	}
 
-	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, snap))
+	_, err = store.ReplaceDispatcherSnapshot(ctx, snap)
+	require.NoError(t, err)
 
 	got, err := store.GetDispatcherSnapshot(ctx, xdpKey())
 	require.NoError(t, err)

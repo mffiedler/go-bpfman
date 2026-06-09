@@ -28,22 +28,22 @@ var ErrInterfaceNotFound = errors.New("interface not found")
 // Dispatcher-backed XDP/TC member links are persisted and removed
 // through DispatcherStore snapshot operations, not through LinkWriter.
 type LinkWriter interface {
-	// SaveLink persists a standalone link record and its
-	// type-specific details. Dispatcher-backed XDP/TC member links
-	// are persisted through DispatcherStore.ReplaceDispatcherSnapshot,
-	// not through SaveLink.
-	SaveLink(ctx context.Context, record bpfman.LinkRecord) error
+	// CreateLink persists a standalone link record and its
+	// type-specific details, allocating a bpfman LinkID.
+	// Dispatcher-backed XDP/TC member links are persisted through
+	// DispatcherStore.ReplaceDispatcherSnapshot, not through CreateLink.
+	CreateLink(ctx context.Context, spec bpfman.LinkSpec) (bpfman.LinkRecord, error)
 
 	// DeleteLink removes a standalone link record. Returns an
 	// error if the link is dispatcher-backed (XDP/TC); those must
 	// be removed via DispatcherStore lifecycle operations.
-	DeleteLink(ctx context.Context, linkID kernel.LinkID) error
+	DeleteLink(ctx context.Context, linkID bpfman.LinkID) error
 }
 
 // LinkReader reads link metadata from the store.
 // GetLink performs a two-phase lookup: registry then type-specific details.
 type LinkReader interface {
-	GetLink(ctx context.Context, linkID kernel.LinkID) (bpfman.LinkRecord, error)
+	GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkRecord, error)
 }
 
 // LinkLister lists links from the store.
@@ -78,8 +78,10 @@ type DispatcherStore interface {
 	// state for a dispatcher's attach point. The snapshot must
 	// contain all members (existing and new). Old extension link
 	// records for the attach point are removed and replaced with
-	// the snapshot's members in a single transaction.
-	ReplaceDispatcherSnapshot(ctx context.Context, snap DispatcherSnapshot) error
+	// the snapshot's members in a single transaction. The returned
+	// snapshot is the completed persisted form, including store-
+	// allocated LinkIDs for new members.
+	ReplaceDispatcherSnapshot(ctx context.Context, snap DispatcherSnapshotSpec) (DispatcherSnapshot, error)
 
 	// DeleteDispatcherSnapshot removes a dispatcher and all its
 	// extension link records by attach point key.
@@ -248,7 +250,7 @@ type ProgramAttacher interface {
 // XDPDispatcherResult holds the result of loading an XDP dispatcher.
 type XDPDispatcherResult struct {
 	DispatcherID  kernel.ProgramID   // Kernel program ID of the dispatcher
-	LinkID        kernel.LinkID      // Kernel link ID
+	KernelLinkID  kernel.LinkID      // Kernel link ID
 	DispatcherPin bpfman.ProgPinPath // Pin path for dispatcher program
 	LinkPin       bpfman.LinkPath    // Pin path for link
 }
@@ -269,7 +271,7 @@ type TCDispatcherResult struct {
 // to verify each freplace's trampoline is observably installed before
 // the dispatcher swap.
 type ExtensionLinkInfo struct {
-	LinkID       kernel.LinkID    // Kernel link ID
+	KernelLinkID kernel.LinkID    // Kernel link ID
 	TargetProgID kernel.ProgramID // Kernel program ID of the dispatcher being replaced into
 	TargetBtfID  uint32           // BTF type ID of the stub function being replaced
 	AttachType   uint32           // Kernel attach type

@@ -203,7 +203,7 @@ func (f *testFixture) Attach(ctx context.Context, spec bpfman.AttachSpec) (bpfma
 
 // Detach is a convenience wrapper that acquires the lock and calls
 // Manager.Detach.
-func (f *testFixture) Detach(ctx context.Context, linkID kernel.LinkID) error {
+func (f *testFixture) Detach(ctx context.Context, linkID bpfman.LinkID) error {
 	f.t.Helper()
 	return lock.Run(ctx, f.Layout.LockPath(), func(ctx context.Context, writeLock lock.WriterScope) error {
 		return f.Manager.Detach(ctx, writeLock, linkID)
