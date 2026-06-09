@@ -28,7 +28,6 @@ type rebuildSlot struct {
 	Priority       int // user-specified priority (may be 0 for unspecified)
 	ProceedOn      uint32
 	ExistingLinkID *bpfman.LinkID
-	KernelLinkID   *kernel.LinkID
 	ProgramID      kernel.ProgramID // managed program's kernel ID
 	Ifname         string           // interface name from detail record
 }
@@ -101,7 +100,6 @@ func (e *executor) rebuildXDPDispatcher(
 			Priority:       m.Priority,
 			ProceedOn:      m.ProceedOn,
 			ExistingLinkID: &linkID,
-			KernelLinkID:   m.KernelLinkID,
 			ProgramID:      m.ProgramID,
 			Ifname:         m.Ifname,
 		})
@@ -406,7 +404,6 @@ func (e *executor) rebuildTCDispatcher(
 			Priority:       m.Priority,
 			ProceedOn:      m.ProceedOn,
 			ExistingLinkID: &linkID,
-			KernelLinkID:   m.KernelLinkID,
 			ProgramID:      m.ProgramID,
 			Ifname:         m.Ifname,
 		})
@@ -731,7 +728,6 @@ func (e *executor) rebuildDispatcherForDetach(ctx context.Context, key dispatche
 			Priority:       m.Priority,
 			ProceedOn:      m.ProceedOn,
 			ExistingLinkID: &linkID,
-			KernelLinkID:   m.KernelLinkID,
 			ProgramID:      m.ProgramID,
 			Ifname:         m.Ifname,
 		}
