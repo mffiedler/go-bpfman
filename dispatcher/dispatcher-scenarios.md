@@ -6,8 +6,8 @@ This document complements the reference docs:
 
 - [dispatcher-model.md](dispatcher-model.md) explains the architecture
   and invariants
-- [dispatcher-gc.md](dispatcher-gc.md) explains the GC correctness
-  rule
+- [dispatcher-gc.md](dispatcher-gc.md) explains the coherency
+  correctness rule
 - this document explains what happens for concrete operations
 
 Each scenario shows:
@@ -36,13 +36,14 @@ Unless stated otherwise, scenarios assume:
 - rebuild-on-attach and rebuild-on-detach
 - XDP uses a stable BPF link pin
 - TC uses a stable filter identity (priority + parent handle)
-- the writer lock serialises dispatcher operations and GC
+- the writer lock serialises dispatcher operations and coherency work
 
 ## Notation
 
 - P1, P2, ... -- dispatcher kernel program IDs
 - L1, L2, ... -- XDP kernel link IDs
 - K1, K2, ... -- extension kernel link IDs
+- B1, B2, ... -- bpfman-managed link handles
 - F1, F2, ... -- TC filter identities
 - E1, E2, ... -- attached user programs (extensions)
 - rev 1, rev 2, ... -- dispatcher revision numbers
@@ -99,13 +100,13 @@ Attach XDP program E1 at this attach point.
 |--------|--------|
 | Kernel | dispatcher program P1; extension link K1 (E1 -> P1/prog0); XDP link L1 (P1 -> ifindex) |
 | Bpffs  | `.../dispatcher_{n}_{i}_1/dispatcher`; `.../dispatcher_{n}_{i}_1/link_0`; `.../dispatcher_{n}_{i}_link` |
-| SQLite | dispatchers(type=xdp, nsid, ifindex, rev=1, program_id=P1, link_id=L1); extension row for E1 (position=0, dispatcher_program_id=P1, link_id=K1) |
+| SQLite | dispatchers(type=xdp, nsid, ifindex, rev=1, program_id=P1, kernel_link_id=L1); E1 link row (id=B1, kernel_link_id=K1, position=0, dispatcher_program_id=P1) |
 
 ### Identity
 
 | Category      | Items |
 |---------------|-------|
-| Created       | dispatcher program P1, extension link K1, XDP link L1, rev 1 directory, all store rows |
+| Created       | dispatcher program P1, extension link K1, XDP link L1, bpfman link handle B1, rev 1 directory, all store rows |
 | Stable        | the attach point (type, nsid, ifindex) |
 
 ---
@@ -120,7 +121,7 @@ Dispatcher rev 1 exists with one extension.
 |--------|--------|
 | Kernel | dispatcher P1; extension link K1 for E1; XDP link L1 |
 | Bpffs  | `..._1/dispatcher`; `..._1/link_0`; stable XDP link pin |
-| SQLite | dispatcher row (program_id=P1, link_id=L1, rev=1); extension row for E1 (link_id=K1, position=0) |
+| SQLite | dispatcher row (program_id=P1, kernel_link_id=L1, rev=1); E1 link row (id=B1, kernel_link_id=K1, position=0) |
 
 ### Action
 
@@ -133,8 +134,8 @@ Attach XDP program E2.
    destroyed.
 3. Attach E2 to P2/prog1, creating new link K3.
 4. Update XDP link L1 to point to P2 (atomic, no packet gap).
-5. Persist new dispatcher program ID and new extension link IDs in
-   a single transaction.
+5. Persist the new dispatcher program ID and refreshed captured
+   extension kernel link IDs in a single transaction.
 6. Remove rev 1 pins.
 
 ### Final state
@@ -143,19 +144,20 @@ Attach XDP program E2.
 |--------|--------|
 | Kernel | dispatcher P2; extension links K2 (E1), K3 (E2); XDP link L1, now pointing at P2 |
 | Bpffs  | `..._2/dispatcher`; `..._2/link_0`; `..._2/link_1`; stable XDP link pin unchanged; `..._1/` removed |
-| SQLite | dispatcher row updated (program_id=P2, rev=2, link_id=L1); E1 row updated (link_id=K2, dispatcher_program_id=P2); E2 row inserted (link_id=K3, dispatcher_program_id=P2) |
+| SQLite | dispatcher row updated (program_id=P2, rev=2, kernel_link_id=L1); E1 keeps id=B1 and records kernel_link_id=K2; E2 gets id=B2 and records kernel_link_id=K3 |
 
 ### Identity
 
 | Category      | Items |
 |---------------|-------|
-| Logically same | dispatcher key (xdp, nsid, ifindex); E1 is still attached; XDP link identity L1; stable link pin path |
+| Logically same | dispatcher key (xdp, nsid, ifindex); E1 is still attached as bpfman link B1; XDP link identity L1; stable link pin path |
 | Recreated     | dispatcher program (P1 -> P2); all extension links (K1 -> K2, plus new K3); revision directory (rev 1 -> rev 2) |
 
 ### Key lesson
 
 Adding one extension rebuilds the dispatcher and re-attaches all
-existing extensions. Every extension link gets a new kernel ID.
+existing extensions. Every extension keeps its bpfman link handle,
+but gets a new captured kernel link ID.
 
 ---
 
@@ -180,7 +182,7 @@ Each attach follows the same rebuild pattern:
 2. Re-attach all N existing extensions to the new revision.
 3. Attach the new extension into its assigned slot.
 4. Swap the interface attachment.
-5. Persist the new revision and all new link IDs.
+5. Persist the new revision and all new captured kernel link IDs.
 6. Remove the old revision directory.
 
 ### Final state
@@ -195,8 +197,8 @@ Each attach follows the same rebuild pattern:
 
 Every attach rebuilt the dispatcher and re-attached every existing
 extension. After 10 attaches the dispatcher program has been loaded
-10 times, and the first extension's kernel link ID has been replaced
-9 times.
+10 times, and the first extension's captured kernel link ID has been
+replaced 9 times. Its bpfman link handle has not changed.
 
 ### Attempting the 11th attach
 
@@ -248,20 +250,21 @@ Detach E2.
 |--------|--------|
 | Kernel | new dispatcher program; new extension links K4 (E1), K5 (E3); no link for E2 |
 | Bpffs  | `..._{N+1}/dispatcher`; `..._{N+1}/link_0`; `..._{N+1}/link_1`; `..._{N}/` removed |
-| SQLite | dispatcher row updated (new revision, new program_id); E1 (link_id=K4, possibly new position); E3 (link_id=K5, possibly new position); E2 row deleted |
+| SQLite | dispatcher row updated (new revision, new program_id); E1 keeps id=B1 and records kernel_link_id=K4; E3 keeps id=B3 and records kernel_link_id=K5; E2 link row B2 deleted |
 
 ### Identity
 
 | Category      | Items |
 |---------------|-------|
-| Logically same | dispatcher key; E1 and E3 remain attached |
+| Logically same | dispatcher key; E1 and E3 remain attached with their bpfman link handles |
 | Recreated     | dispatcher program; surviving extension links; revision directory; slot positions may change |
 
 ### Key lesson
 
 Detaching one non-final program still rebuilds the whole dispatcher.
-The surviving programs are re-attached with new kernel link IDs and
-potentially new slot positions.
+The surviving programs preserve their bpfman link handles, but are
+re-attached with new captured kernel link IDs and potentially new
+slot positions.
 
 ---
 
@@ -341,8 +344,8 @@ Attach TC ingress program E1.
 1. Load dispatcher rev 1 as P1.
 2. Attach E1 as extension link K1.
 3. Create tc filter F1 pointing at P1 (fixed filter priority 50).
-4. Persist dispatcher row (program_id=P1, priority=50, link_id=0)
-   and extension row.
+4. Persist dispatcher row (program_id=P1, priority=50,
+   kernel_link_id=NULL) and extension row.
 5. Pin the revision directory.
 
 ### Final state
@@ -351,13 +354,13 @@ Attach TC ingress program E1.
 |--------|--------|
 | Kernel | dispatcher program P1; extension link K1; tc filter F1 (priority 50) |
 | Bpffs  | `.../tc-ingress/dispatcher_{n}_{i}_1/dispatcher`; `.../tc-ingress/dispatcher_{n}_{i}_1/link_0` |
-| SQLite | dispatchers(type=tc-ingress, nsid, ifindex, rev=1, program_id=P1, priority=50, link_id=0); extension row for E1 |
+| SQLite | dispatchers(type=tc-ingress, nsid, ifindex, rev=1, program_id=P1, priority=50, kernel_link_id=NULL); E1 link row (id=B1, kernel_link_id=K1) |
 
 ### Identity
 
 | Category | Items |
 |----------|-------|
-| Created  | dispatcher program P1, extension link K1, tc filter F1, rev 1 directory, all store rows |
+| Created  | dispatcher program P1, extension link K1, bpfman link handle B1, tc filter F1, rev 1 directory, all store rows |
 | Stable   | the attach point (tc-ingress, nsid, ifindex) |
 
 ### What differs from XDP
@@ -366,8 +369,8 @@ Attach TC ingress program E1.
 |----------------|---------------------------|-----------------------------|
 | Link pin       | stable BPF link pin       | no link pin                 |
 | Attachment     | BPF link (atomically updatable) | tc filter (create new, remove old) |
-| link_id column | non-zero (kernel link ID) | 0                           |
-| priority column | 0                        | 50 (fixed filter priority)  |
+| dispatchers.kernel_link_id | non-NULL captured kernel link ID | NULL |
+| priority column | NULL                     | 50 (fixed filter priority)  |
 
 ---
 
@@ -405,7 +408,7 @@ Attach E2.
 |--------|--------|
 | Kernel | dispatcher P2; extension links K2, K3; tc filter F2 |
 | Bpffs  | only rev 2 directory remains |
-| SQLite | dispatcher row updated (program_id=P2, rev=2); extension rows updated with new link IDs |
+| SQLite | dispatcher row updated (program_id=P2, rev=2); extension rows preserve their bpfman link handles and refresh kernel_link_id |
 
 ### Identity
 
@@ -446,7 +449,8 @@ slot positions are assigned sequentially from 0.
 3. Re-attach all extensions according to the new slot/order
    mapping.
 4. Swap interface attachment.
-5. Persist new revision, new link IDs, and new slot positions.
+5. Persist new revision, refreshed captured kernel link IDs, and new
+   slot positions.
 6. Remove old revision directory.
 
 ### Final state
@@ -455,7 +459,7 @@ slot positions are assigned sequentially from 0.
 |--------|--------|
 | Kernel | new dispatcher program; new extension links |
 | Bpffs  | new revision directory; old revision directory removed |
-| SQLite | same set of extension rows, but: new dispatcher_program_id; new link_ids; possibly new positions |
+| SQLite | same bpfman link handles, but: new dispatcher_program_id; refreshed kernel_link_id values; possibly new positions |
 
 ### Identity
 
@@ -472,9 +476,9 @@ dispatcher revision.
 
 ---
 
-# GC and failure scenarios
+# Coherency and failure scenarios
 
-## Scenario 9: GC runs after a normal rebuild
+## Scenario 9: Coherency work runs after a normal rebuild
 
 ### Initial state
 
@@ -482,14 +486,14 @@ A rebuild has committed successfully. The store is consistent.
 
 ### Action
 
-GC runs.
+Coherency work runs.
 
 ### Checks
 
 1. Dispatcher `program_id` is alive in the kernel.
 2. Extension rows reference that live dispatcher via
    `dispatcher_program_id`.
-3. GC sees the post-commit consistent state for this revision.
+3. The check sees the post-commit consistent state for this revision.
 4. No dispatcher or extension rows are removed.
 
 ### Final state
@@ -498,7 +502,7 @@ No change.
 
 ### Key lesson
 
-Normal rebuild followed by GC is safe. No state is lost.
+Normal rebuild followed by coherency work is safe. No state is lost.
 
 ---
 
@@ -511,10 +515,11 @@ is a correctness thought experiment.
 
 - Kernel has finished rebuilding to P4, with new extension links
   K9-K12.
-- Store still points to P3 with extension link IDs K6-K8.
-- GC is (hypothetically) allowed to run concurrently.
+- Store still points to P3 with extension captured kernel link IDs
+  K6-K8.
+- Coherency work is (hypothetically) allowed to run concurrently.
 
-### What GC would do
+### What the coherency check would do
 
 1. Phase 2: P3 is not alive. Dispatcher row deleted.
 2. Phase 3: extension rows reference dead dispatcher. Deleted.
@@ -523,14 +528,14 @@ is a correctness thought experiment.
 
 ### Why this does not happen
 
-Dispatcher rebuild and persist happen under the writer lock. GC
-acquires the same lock. GC can only observe stable post-commit
-state. The serialisation is part of the correctness model, not a
-performance detail.
+Dispatcher rebuild and persist happen under the writer lock.
+Coherency work acquires the same lock. It can only observe stable
+post-commit state. The serialisation is part of the correctness
+model, not a performance detail.
 
 ---
 
-## Scenario 11: Dispatcher externally removed, then GC runs
+## Scenario 11: Dispatcher externally removed, then coherency work runs
 
 ### Initial state
 
@@ -540,14 +545,15 @@ kernel.
 
 ### Action
 
-GC runs.
+Coherency work runs.
 
 ### Steps
 
 1. Phase 2: dispatcher `program_id` is not in the kernel alive set.
    Dispatcher row deleted.
 2. Phase 3: extension rows no longer reference a live dispatcher
-   and their stored link IDs are not alive. Extension rows deleted.
+   and their captured kernel link IDs are not alive. Extension rows
+   deleted.
 3. Phase 4: dispatcher already deleted in phase 2. Skipped.
 
 ### Final state
@@ -603,12 +609,12 @@ correctly tears everything down.
 |--------|------------------|
 | Kernel | dispatcher program, extension links, interface attachment (BPF link or tc filter) |
 | Bpffs  | stable link pin (XDP only), revision directory, extension link pins |
-| SQLite | dispatchers row (program_id, revision, link_id, priority), extension detail rows (link_id, position, dispatcher_program_id) |
+| SQLite | dispatchers row (program_id, revision, kernel_link_id, priority); links rows (id, kernel_link_id); extension detail rows (id as bpfman handle, position, dispatcher_program_id) |
 
 ## Related documents
 
 - [dispatcher-model.md](dispatcher-model.md) -- architecture,
   invariants, rebuild cycle, store schema
-- [dispatcher-gc.md](dispatcher-gc.md) -- GC behaviour and the
-  extension link staleness problem
+- [dispatcher-gc.md](dispatcher-gc.md) -- coherency behaviour and
+  the extension captured-kernel-link staleness problem
 - Package documentation: `go doc ./dispatcher/`

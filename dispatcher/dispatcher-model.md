@@ -2,8 +2,7 @@
 
 This document describes the dispatcher architecture: what dispatchers
 are, how they work, their filesystem and database representation, and
-the rebuild lifecycle. For GC behaviour and the extension link
-staleness problem, see [dispatcher-gc.md](dispatcher-gc.md).
+the rebuild lifecycle.
 
 The package documentation (`go doc ./dispatcher/`) provides a concise
 overview; this document covers the full design.
@@ -25,21 +24,17 @@ is explanation.
    extension links from the previous revision are destroyed.
 
 4. **Extension kernel link IDs are not stable across rebuilds.**
-   During the rebuild window (after re-attachment, before the store
-   transaction commits) the stored extension link IDs do not
-   correspond to live kernel objects. Once the transaction commits
-   the store again reflects the current IDs, but the next rebuild
-   will invalidate them again. Extension link IDs must not be
-   treated as durable identity.
+   Each member has a stable bpfman link ID that is preserved across
+   rebuilds. Its captured kernel link ID is overwritten with the ID
+   returned by the latest freplace attach.
 
 5. **After a rebuild transaction commits, the dispatchers table
    holds the current program ID.** ON UPDATE CASCADE propagates
-   this to all extension detail rows. GC uses this to determine
-   liveness (see [dispatcher-gc.md](dispatcher-gc.md)). The
-   dispatchers table and extension detail rows are only guaranteed
-   consistent at stable observation points, outside the rebuild
-   transaction window. The writer lock ensures GC never
-   observes the mid-rebuild state.
+   this to all extension detail rows. The dispatchers table and
+   extension detail rows are only guaranteed consistent at stable
+   observation points, outside the rebuild transaction window. The
+   writer lock ensures other mutating operations never observe the
+   mid-rebuild state.
 
 6. **Detaching the last extension tears down the dispatcher
    entirely.** No empty dispatchers exist at rest.
@@ -195,17 +190,18 @@ Primary key: `(type, nsid, ifindex)`.
 | `ifindex`    | INTEGER | Network interface index                            |
 | `revision`   | INTEGER | Incremented on each rebuild (>= 1)                 |
 | `program_id` | INTEGER | Kernel program ID of current dispatcher (UNIQUE)   |
-| `link_id`    | INTEGER | Kernel link ID (XDP only; 0 for TC)                |
-| `priority`   | INTEGER | TC filter priority (TC only; 0 for XDP)            |
+| `kernel_link_id` | INTEGER | Captured kernel link ID (XDP only; NULL for TC) |
+| `priority`   | INTEGER | TC filter priority (TC only; NULL for XDP)         |
 
-A CHECK constraint enforces that XDP rows have a non-zero `link_id`
-and TC rows have `link_id = 0`.
+A CHECK constraint enforces that XDP rows have a non-NULL
+`kernel_link_id` and TC rows have `kernel_link_id IS NULL`.
 
 ### Extension detail tables
 
 `link_xdp_details` and `link_tc_details` store per-extension metadata.
-Each row has a `dispatcher_program_id` foreign key referencing
-`dispatchers(program_id)`.
+Each row's `id` is the bpfman-managed link handle and references
+`links(id)`. Each row also has a `dispatcher_program_id` foreign key
+referencing `dispatchers(program_id)`.
 
 | FK action          | Effect                                           |
 |--------------------|--------------------------------------------------|
@@ -230,14 +226,13 @@ Every attach or detach triggers a full rebuild. The sequence:
 | 1    | Load new dispatcher with updated .rodata | New program Pnew loaded               | `{rev_new}/dispatcher` pinned         |
 | 2    | Re-attach all extensions to Pnew      | New extension links created; old destroyed | `{rev_new}/link_0` .. `link_N` pinned |
 | 3    | Swap interface attachment             | XDP: link updated. TC: new filter, old removed | XDP: stable link pin unchanged       |
-| 4    | Persist in transaction                | (none)                                 | Dispatcher row updated to Pnew; extension detail rows updated with new link IDs; ON UPDATE CASCADE propagates dispatcher_program_id |
+| 4    | Persist in transaction                | (none)                                 | Dispatcher row updated to Pnew; member bpfman IDs preserved or allocated; captured kernel link IDs refreshed; ON UPDATE CASCADE propagates dispatcher_program_id |
 | 5    | Remove old revision directory         | Pold ref-count drops                   | `{rev_old}/` deleted                  |
 
 Steps 2 and 3 are the critical consequence: every extension link gets
-a new kernel link ID on every rebuild. The database records for
-extension link IDs become stale immediately after step 2, and remain
-stale until step 4 completes. GC must account for this window (see
-[dispatcher-gc.md](dispatcher-gc.md)).
+a new kernel link ID on every rebuild, even for members the user did
+not touch. The database preserves each member's bpfman link ID and
+refreshes its captured kernel link ID at step 4.
 
 ## Lifecycle timelines
 
@@ -253,23 +248,26 @@ No dispatcher exists for (xdp, nsid, ifindex).
 | 1    | Dispatcher program P1 loaded        | `{type}/dispatcher_{n}_{i}_1/dispatcher` pinned | (nothing yet)                          |
 | 2    | Extension link K1 created (E1 -> P1/prog0) | `{type}/dispatcher_{n}_{i}_1/link_0` pinned | (nothing yet)                          |
 | 3    | XDP link L1 created (P1 -> ifindex) | `{type}/dispatcher_{n}_{i}_link` pinned       | (nothing yet)                          |
-| 4    | (none)                              | (none)                                        | dispatchers: (P1, rev=1, link_id=L1). Extension E1: (position=0, disp_prog_id=P1) |
+| 4    | (none)                              | (none)                                        | dispatchers: (P1, rev=1, kernel_link_id=L1). E1 link row: (id=B1, kernel_link_id=K1, disp_prog_id=P1, position=0) |
 
 ### Second attach: one to two extensions
 
-Dispatcher rev 1 exists with extension E1 at position 0, kernel link K1.
+Dispatcher rev 1 exists with extension E1 at position 0. E1's bpfman
+link handle is B1 and its current captured kernel link ID is K1.
 
 | Step | Kernel                              | Bpffs                                         | Store                                   |
 |------|-------------------------------------|-----------------------------------------------|-----------------------------------------|
 | 1    | New dispatcher P2 loaded            | `..._2/dispatcher` pinned                     | (unchanged)                            |
 | 2    | K1 destroyed. New K2 (E1 -> P2/prog0), K3 (E2 -> P2/prog1) | `..._2/link_0`, `..._2/link_1` pinned | (unchanged)                            |
 | 3    | L1 updated to reference P2 (atomic) | stable link pin unchanged                     | (unchanged)                            |
-| 4    | (none)                              | (none)                                        | dispatchers: (P2, rev=2). E1: (link_id=K2, disp_prog_id=P2, pos=0). E2: (link_id=K3, disp_prog_id=P2, pos=1) |
+| 4    | (none)                              | (none)                                        | dispatchers: (P2, rev=2, kernel_link_id=L1). E1: (id=B1, kernel_link_id=K2, disp_prog_id=P2, pos=0). E2: (id=B2, kernel_link_id=K3, disp_prog_id=P2, pos=1) |
 | 5    | P1 ref-count drops                  | `..._1/` deleted                              | (unchanged)                            |
 
-Between steps 2 and 4 the store still records K1 as E1's kernel link
-ID, but K1 no longer exists in the kernel. K2 and K3 are the live
-links. Step 4 persists the new IDs (K2, K3), restoring consistency.
+Between steps 2 and 4 the store still records K1 as E1's captured
+kernel link ID, but K1 no longer exists in the kernel. B1 remains
+E1's stable bpfman handle throughout the rebuild. K2 and K3 are the
+live kernel links. Step 4 persists the refreshed captured kernel link
+IDs (K2, K3), restoring consistency.
 
 ### Detach middle extension: three to two
 
@@ -280,7 +278,7 @@ Dispatcher rev N with E1 at 0, E2 at 1, E3 at 2.
 | 1    | New dispatcher loaded, 2 slots      | `..._{N+1}/dispatcher` pinned                 | (unchanged)                            |
 | 2    | E1 re-attached to slot 0 (new link K4), E3 to slot 1 (new link K5); positions reassigned by priority/name sort | `..._{N+1}/link_0`, `link_1` pinned | (unchanged) |
 | 3    | Link/filter swapped                 | stable pin unchanged                          | (unchanged)                            |
-| 4    | (none)                              | (none)                                        | E1: (link_id=K4, pos=0). E3: (link_id=K5, pos=1). E2 deleted |
+| 4    | (none)                              | (none)                                        | E1: (id=B1, kernel_link_id=K4, pos=0). E3: (id=B3, kernel_link_id=K5, pos=1). E2 link row B2 deleted |
 | 5    | Old program ref-count drops         | `..._{N}/` deleted                            | (unchanged)                            |
 
 ### Detach last extension: teardown
@@ -299,8 +297,8 @@ No rebuild. The dispatcher is torn down entirely.
 
 ## Related documents
 
-- [dispatcher-gc.md](dispatcher-gc.md) -- GC behaviour and the
-  extension link staleness problem
+- [dispatcher-gc.md](dispatcher-gc.md) -- coherency behaviour and
+  the extension captured-kernel-link staleness problem
 - [dispatcher-scenarios.md](dispatcher-scenarios.md) -- concrete
-  walkthroughs of attach, detach, rebuild, and GC operations
+  walkthroughs of attach, detach, rebuild, and coherency operations
 - Package documentation: `go doc ./dispatcher/`
