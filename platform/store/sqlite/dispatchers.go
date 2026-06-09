@@ -335,13 +335,13 @@ func (s *sqliteStore) ReplaceDispatcherSnapshot(ctx context.Context, snap platfo
 	}
 
 	// Step 2: Upsert dispatcher row.
-	var linkID any
+	var linkID sql.NullInt64
 	if snap.Runtime.KernelLinkID != nil {
-		linkID = *snap.Runtime.KernelLinkID
+		linkID = sql.NullInt64{Int64: int64(*snap.Runtime.KernelLinkID), Valid: true}
 	}
-	var priority any
+	var priority sql.NullInt64
 	if snap.Runtime.FilterPriority != nil {
-		priority = int(*snap.Runtime.FilterPriority)
+		priority = sql.NullInt64{Int64: int64(*snap.Runtime.FilterPriority), Valid: true}
 	}
 	if _, err := s.stmtUpsertDispatcher.ExecContext(ctx,
 		snap.Key.Type.String(), snap.Key.Nsid, snap.Key.Ifindex,
@@ -357,9 +357,9 @@ func (s *sqliteStore) ReplaceDispatcherSnapshot(ctx context.Context, snap platfo
 		if snap.Key.Type != dispatcher.DispatcherTypeXDP {
 			kind = "tc"
 		}
-		var pinPath any
+		var pinPath sql.NullString
 		if spec.LinkPinPath != "" {
-			pinPath = spec.LinkPinPath
+			pinPath = sql.NullString{String: spec.LinkPinPath.String(), Valid: true}
 		}
 		var kernelLinkID sql.NullInt64
 		if spec.KernelLinkID != nil {
