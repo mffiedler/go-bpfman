@@ -36,6 +36,7 @@ let pid = $prog.record.program_id
 
 guard link <- bpfman link attach tracepoint $prog bpfman_e2e/bpfman_e2e_ping
 let linkID = $link.record.id
+expect_pinned_link_identity $link
 
 # Structural shape of the attach response. Tracepoint link details
 # split the attach point into group and name; the kernel addresses
@@ -48,6 +49,7 @@ assert $link.status.kernel_seen
 
 # Get round-trip: same shape, same values.
 guard gotLink <- bpfman link get $linkID
+expect_link_get_identity $gotLink $link $linkID
 assert $gotLink.record.id == $linkID
 assert $gotLink.record.kind == tracepoint
 assert $gotLink.record.program_id == $pid
@@ -56,10 +58,7 @@ assert $gotLink.record.details.name == bpfman_e2e_ping
 
 # List round-trip: link appears in the listing with matching id/kind.
 guard listed <- bpfman link list -o json
-let ourLink = $listed |> jq ".links[] | select(.id == ${linkID})"
-require not null ourLink
-assert $ourLink.id == $linkID
-assert $ourLink.kind == tracepoint
+expect_link_list_identity $listed $link $linkID tracepoint
 
 guard _ <- kfunc fire $fn $events
 

@@ -29,6 +29,7 @@ let weight_c = 43
 
 guard pair <- net veth-pair
 defer net release $pair
+require_host_route_to_peer $pair
 
 guard loaded <- bpfman program load file \
     --path testdata/bpf/multi_prog_tc_param_verdict.bpf.o \

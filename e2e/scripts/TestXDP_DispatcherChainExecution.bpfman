@@ -28,8 +28,11 @@
 #
 # Requires root and bpftool.
 
+import ../lib.bpfman
+
 guard pair <- net veth-pair
 defer net release $pair
+require_host_route_to_peer $pair
 
 # Ten separate loads. xdp_counter.bpf.o is unpinned, so each
 # load gets its own xdp_stats_map. The fused load+attach inside

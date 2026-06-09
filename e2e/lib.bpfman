@@ -126,3 +126,83 @@ def assert_link_absent(listed linkID) {
     let count = $listed |> jq "[.links[] | select(.id == ${linkID})] | length"
     assert $count == 0
 }
+
+# Temporary host-routing precheck for root-netns veth tests. Some
+# hosts install policy routing rules for VPNs such as Tailscale or
+# WireGuard. Those rules can route replies to the peer-side veth
+# address through a tunnel table instead of the freshly-created host
+# veth, causing packet tests to fail before bpfman has loaded or
+# attached anything. Fail early with the selected route so the reason
+# is explicit. The long-term fix is to move packet-path tests into
+# isolated test netns pairs rather than depending on host routing.
+def require_host_route_to_peer(pair) {
+    let route <- ip route get $pair.peer_addr
+    if not $route.ok {
+        print "host route precheck failed: ip route get ${pair.peer_addr} exited ${route.exit_code}"
+        print "stdout: ${route.stdout}"
+        print "stderr: ${route.stderr}"
+    }
+    require $route.ok
+
+    if not (contains $route.stdout $pair.host_link) {
+        print "host route precheck failed: route to ${pair.peer_addr} does not use ${pair.host_link}"
+        print "selected route: ${route.stdout}"
+        print "This usually means host policy routing or a VPN route table is hijacking the e2e veth reply path."
+    }
+    require contains $route.stdout $pair.host_link
+}
+
+# Assert the common identity shape for currently-managed pinned links.
+# `record.id` is the bpfman management handle allocated by SQLite; it
+# must be a real autoincrement value, never the zero value. The
+# `kernel_link_id` is the captured kernel bpf_link ID for attach paths
+# that create and pin one. The two fields live in different namespaces,
+# so tests deliberately avoid asserting numeric inequality between them.
+def expect_pinned_link_identity(link) {
+    assert $link.record.id > 0
+    assert not null $link.record.kernel_link_id
+    assert $link.record.kernel_link_id > 0
+    assert not null $link.record.pin_path
+    assert $link.record.pin_path != ""
+    assert $link.status.kernel_seen
+    assert $link.status.pin_present
+
+    let kernelLinkID = $link.record.kernel_link_id
+    # bpftool can return a non-zero status even while writing the
+    # requested link JSON to stdout. In parallel e2e runs the list
+    # form can also race with unrelated link deletion and fail the
+    # command despite containing the link we care about. Bind with
+    # `let`, print stderr for the temporary diagnostic, and let the
+    # payload assertions below decide whether the correlation is real.
+    let kernelLink <- bpftool link show id $kernelLinkID -j
+    if not $kernelLink.ok {
+        print "bpftool link show id ${kernelLinkID} exited ${kernelLink.exit_code}"
+        print "bpftool stderr: ${kernelLink.stderr}"
+        print "bpftool stdout: ${kernelLink.stdout}"
+    }
+    let bpftoolLinkID = $kernelLink.stdout |> jq "fromjson | .id"
+    let bpftoolProgID = $kernelLink.stdout |> jq "fromjson | .prog_id"
+    assert $bpftoolLinkID == $kernelLinkID
+    assert $bpftoolProgID == $link.record.program_id
+}
+
+# Assert that `bpfman link get` preserved the bpfman handle and the
+# captured kernel/pin metadata from the original attach response.
+def expect_link_get_identity(got original linkID) {
+    assert $got.record.id == $original.record.id
+    assert $got.record.kernel_link_id == $original.record.kernel_link_id
+    assert $got.record.pin_path == $original.record.pin_path
+    assert $got.status.kernel_seen
+    assert $got.status.pin_present
+}
+
+# Assert that `bpfman link list -o json` contains exactly this managed
+# link and reports the same identity fields as the attach response.
+def expect_link_list_identity(listed original linkID kind) {
+    let count = $listed |> jq "[.links[] | select(.id == ${linkID})] | length"
+    assert $count == 1
+    let ourLink = $listed |> jq ".links[] | select(.id == ${linkID})"
+    assert $ourLink.id == $original.record.id
+    assert $ourLink.kind == $kind
+    assert $ourLink.kernel_link_id == $original.record.kernel_link_id
+}

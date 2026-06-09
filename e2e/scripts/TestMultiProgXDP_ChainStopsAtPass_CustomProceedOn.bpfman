@@ -34,6 +34,7 @@ let weight_c = 43
 
 guard pair <- net veth-pair
 defer net release $pair
+require_host_route_to_peer $pair
 
 
 # Verdicts are u32 little-endian. XDP_DROP = 1 -> 0x01000000;

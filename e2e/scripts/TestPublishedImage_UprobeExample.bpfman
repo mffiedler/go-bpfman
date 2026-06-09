@@ -25,6 +25,7 @@ expect_loaded_image_source $prog $image $published.inspected
 
 guard link <- bpfman link attach uprobe --target $target.path --fn-name $target.symbol $prog
 let linkID = $link.record.id
+expect_pinned_link_identity $link
 assert $link.record.kind == uprobe
 assert $link.record.program_id == $pid
 assert $link.record.details.target == $target.path

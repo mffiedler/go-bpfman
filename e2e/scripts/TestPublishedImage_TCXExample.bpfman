@@ -12,6 +12,7 @@ assert $published.manifest.maps.tcx_stats_map == per_cpu_array
 
 guard pair <- net veth-pair
 defer net release $pair
+require_host_route_to_peer $pair
 
 guard loaded <- bpfman program load image \
     --image-url $image \
@@ -26,6 +27,7 @@ expect_loaded_image_source $prog $image $published.inspected
 
 guard link <- bpfman link attach tcx --iface $pair.host_link --direction ingress --priority 50 $prog
 let linkID = $link.record.id
+expect_pinned_link_identity $link
 assert $link.record.kind == tcx
 assert $link.record.program_id == $pid
 assert $link.record.details.interface == $pair.host_link

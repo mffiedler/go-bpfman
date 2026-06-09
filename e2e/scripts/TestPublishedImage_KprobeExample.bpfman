@@ -26,6 +26,7 @@ expect_loaded_image_source $prog $image $published.inspected
 
 guard link <- bpfman link attach kprobe --fn-name $fn.name $prog
 let linkID = $link.record.id
+expect_pinned_link_identity $link
 assert $link.record.kind == kprobe
 assert $link.record.program_id == $pid
 assert $link.record.details.fn_name == $fn.name

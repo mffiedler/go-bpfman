@@ -49,6 +49,7 @@ def main() {
     print "image-build: attaching xdp pid=${pid} iface=${pair.host_link}"
     guard link <- bpfman link attach xdp --iface $pair.host_link $prog
     let linkID = $link.record.id
+    expect_pinned_link_identity $link
     print "image-build: attached link=${linkID}"
     assert $link.record.kind == xdp
     assert $link.record.program_id == $pid

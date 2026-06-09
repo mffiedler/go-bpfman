@@ -52,8 +52,11 @@
 #
 # Requires root and bpftool.
 
+import ../lib.bpfman
+
 guard pair <- net veth-pair
 defer net release $pair
+require_host_route_to_peer $pair
 
 let sumFilter = "fromjson | [.[].formatted.values[].value.rx_packets | tonumber] | add"
 

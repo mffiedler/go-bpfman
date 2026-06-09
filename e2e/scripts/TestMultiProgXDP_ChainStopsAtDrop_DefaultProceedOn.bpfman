@@ -34,6 +34,7 @@ let weight_c = 43
 
 guard pair <- net veth-pair
 defer net release $pair
+require_host_route_to_peer $pair
 
 # Warmup ping to populate the ARP caches both ways before any
 # BPF programs attach. The ChainStopsAtDrop variant drops ARP

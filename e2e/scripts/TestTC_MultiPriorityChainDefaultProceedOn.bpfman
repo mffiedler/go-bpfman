@@ -19,8 +19,11 @@
 #
 # Requires root and bpftool.
 
+import ../lib.bpfman
+
 guard pair <- net veth-pair
 defer net release $pair
+require_host_route_to_peer $pair
 
 guard loaded_0 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
 guard loaded_55 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats

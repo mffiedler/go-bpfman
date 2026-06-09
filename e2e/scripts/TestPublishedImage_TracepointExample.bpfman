@@ -23,6 +23,7 @@ expect_loaded_image_source $prog $image $published.inspected
 
 guard link <- bpfman link attach tracepoint $prog syscalls/sys_enter_kill
 let linkID = $link.record.id
+expect_pinned_link_identity $link
 assert $link.record.kind == tracepoint
 assert $link.record.program_id == $pid
 assert $link.record.details.group == syscalls

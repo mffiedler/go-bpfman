@@ -26,8 +26,11 @@
 #
 # Requires root and bpftool.
 
+import ../lib.bpfman
+
 guard pair <- net veth-pair
 defer net release $pair
+require_host_route_to_peer $pair
 
 # Priorities chosen to exercise the sort (insertion order does
 # not match priority order). proceed-on includes OK so the chain

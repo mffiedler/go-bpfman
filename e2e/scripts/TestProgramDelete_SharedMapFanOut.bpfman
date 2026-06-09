@@ -28,6 +28,15 @@ import ../lib.bpfman
 
 print "PROOF: shared-map delete fan-out (one owner, three dependants)"
 
+# This script asserts global store counts and uses `program delete
+# --all`, so `exclusive=true` is not enough on its own: it must also
+# start from an empty managed store. If this fails, a previous run
+# left residue behind and this script cannot prove the delete-ordering
+# invariant honestly.
+guard initial <- bpfman program list -o json
+let initialCount = $initial |> jq "[.programs[]] | length"
+require $initialCount == 0
+
 # Load one owner and three dependants that all share its maps.
 guard ownerA <- bpfman program load file \
     --path testdata/bpf/tcx_counter.bpf.o \

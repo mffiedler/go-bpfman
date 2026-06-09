@@ -27,6 +27,7 @@ import ../lib.bpfman
 
 guard pair <- net veth-pair
 defer net release $pair
+require_host_route_to_peer $pair
 
 guard loaded <- bpfman program load file \
     --path testdata/bpf/tcx_counter.bpf.o \
@@ -37,6 +38,7 @@ defer bpfman program unload $pid
 
 guard link <- bpfman link attach tcx --iface $pair.host_link --direction ingress --priority 50 $prog
 let linkID = $link.record.id
+expect_pinned_link_identity $link
 
 # Structural shape of the attach response. TCX has no dispatcher;
 # details carry the attach point directly.
@@ -49,6 +51,7 @@ assert $link.status.kernel_seen
 
 # Get round-trip: same shape, same values.
 guard gotLink <- bpfman link get $linkID
+expect_link_get_identity $gotLink $link $linkID
 assert $gotLink.record.id == $linkID
 assert $gotLink.record.kind == tcx
 assert $gotLink.record.program_id == $pid
@@ -58,10 +61,7 @@ assert $gotLink.record.details.priority == 50
 
 # List round-trip: link appears in the listing with matching id/kind.
 guard listed <- bpfman link list -o json
-let ourLink = $listed |> jq ".links[] | select(.id == ${linkID})"
-require not null ourLink
-assert $ourLink.id == $linkID
-assert $ourLink.kind == tcx
+expect_link_list_identity $listed $link $linkID tcx
 
 # Traffic round-trip: ping through the leased veth pair and prove
 # the TCX counter moved while attached. ARP/control traffic may add
