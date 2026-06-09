@@ -28,7 +28,7 @@
 # Deliberate scope reduction from the Go test: the Go test's
 # RequireIsolatedRuntime assertion that the shared pin
 # disappears after the last user unloads is not portable to
-# the parallel-scripts harness -- other concurrently-running
+# parallel script execution -- other concurrently-running
 # scripts may load the same bytecode and legitimately keep the
 # shared pin alive. The existence half captures the sharing
 # semantics; the absence-after-cleanup half stays in the Go

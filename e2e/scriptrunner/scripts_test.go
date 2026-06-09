@@ -85,10 +85,8 @@ import (
 // Registering in that order means consecutive subtests in the
 // t.Parallel queue are different scripts, which gives the
 // address pool's `net veth-pair` builtin maximum name
-// diversity per dispatched wave -- the same load shape the
-// legacy e2e/parallel-scripts.sh -r N option produced. Unset
-// or N=1 keeps the default one-pass behaviour and the
-// unsuffixed subtest names.
+// diversity per dispatched wave. Unset or N=1 keeps the
+// default one-pass behaviour and the unsuffixed subtest names.
 func TestBPFManScripts(t *testing.T) {
 	timeout := scriptTimeout()
 	repeats := scriptRepeats()

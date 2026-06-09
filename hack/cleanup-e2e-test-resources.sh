@@ -7,8 +7,8 @@
 # host-side interfaces matching the same pattern with an optional
 # `a` / `b` peer suffix. Bare-`N` host ifaces are dummies created
 # by testnet.NewTestInterface; `Na` / `Nb` ends are veth pairs
-# created by NewTestVethPair or by the parallel-scripts harness's
-# `net veth-pair` builtin.
+# created by NewTestVethPair or by a script's `net veth-pair`
+# builtin.
 #
 # The script does not mutate anything itself. It writes the commands
 # it would run to stdout so you can read them before deciding to
