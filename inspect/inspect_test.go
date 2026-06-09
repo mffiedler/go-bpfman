@@ -589,18 +589,19 @@ func TestGetLink_StoreOnly(t *testing.T) {
 	store := newRealStore(t)
 	saveInspectProgram(t, store, 100, bpfman.ProgramTypeTracepoint, "tracepoint_prog", "/run/bpfman/fs/prog_100")
 	record := createInspectLink(t, store, bpfman.LinkSpec{
-		ProgramID:    100,
-		KernelLinkID: ptr(kernel.LinkID(20)),
-		Kind:         bpfman.LinkKindTracepoint,
-		Details:      bpfman.TracepointDetails{Group: "sched", Name: "sched_switch"},
+		ProgramID: 100,
+		Kind:      bpfman.LinkKindTracepoint,
+		Details:   bpfman.TracepointDetails{Group: "sched", Name: "sched_switch"},
 	})
 
-	kern := &fakeKernelSource{} // Link not in kernel
+	kern := &fakeKernelSource{}
 
 	info, err := inspect.GetLink(context.Background(), store, kern, scanner, record.ID)
 	require.NoError(t, err)
 
 	assert.Equal(t, record.ID, info.Record.ID)
+	assert.Nil(t, info.Record.KernelLinkID)
+	assert.Nil(t, info.Record.PinPath)
 	assert.True(t, info.Presence.InStore)
 	assert.False(t, info.Presence.InKernel)
 	assert.False(t, info.Presence.InFS)
