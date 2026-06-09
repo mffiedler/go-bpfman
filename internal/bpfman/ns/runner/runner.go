@@ -223,23 +223,21 @@ func (cmd *NSUprobeCmd) Run() error {
 
 	logger.Info("probe attached successfully", "type", attachType)
 
-	// Get the perf event fd from the link and send it back to the parent.
-	// Uprobe links implement the PerfEvent interface.
-	pe, ok := lnk.(link.PerfEvent)
+	// Send the fd that owns the attachment back to the parent via the Unix
+	// socket. Container uprobes must return a BPF link fd so the host-namespace
+	// parent can pin it and record its kernel link ID. Older ioctl-style
+	// perf-event attachments only expose a raw perf-event fd; that fd cannot be
+	// pinned as a BPF link, so accepting it would recreate the one-shot phantom
+	// link bug.
+	raw, ok := lnk.(interface{ FD() int })
 	if !ok {
-		logger.Error("link does not implement PerfEvent interface",
-			"type", attachType)
+		logger.Error("container uprobe requires a pinnable BPF link fd",
+			"type", attachType,
+			"hint", "upgrade to a kernel/Cilium path that exposes BPF perf-event links")
 		lnk.Close()
-		return fmt.Errorf("link does not implement PerfEvent interface")
+		return fmt.Errorf("container uprobe requires a pinnable BPF link fd; raw perf-event attachments are not supported")
 	}
-	perfFile, err := pe.PerfEvent()
-	if err != nil {
-		logger.Error("failed to get perf event fd",
-			"error", err)
-		lnk.Close()
-		return fmt.Errorf("get perf event fd: %w", err)
-	}
-	linkFd := int(perfFile.Fd())
+	linkFd := raw.FD()
 
 	// The parent (in host namespace) receives its own fd reference and keeps
 	// it open for the lifetime of the managed link.
@@ -259,8 +257,7 @@ func (cmd *NSUprobeCmd) Run() error {
 		"link_fd", linkFd)
 
 	// Close our references. The parent now has the fd via SCM_RIGHTS.
-	// The perf event fd we sent keeps the attachment alive in the parent.
-	perfFile.Close()
+	// Success is signalled by clean exit (exit 0); parent uses Wait() result.
 	lnk.Close()
 
 	return nil

@@ -347,7 +347,7 @@ func TestUprobe_AttachSucceeds(t *testing.T) {
 	assert.Equal(t, 1, fix.Kernel.LinkCount(), "should have 1 link in kernel")
 }
 
-func TestUprobe_ContainerAttachStoresNoKernelIDOrPin(t *testing.T) {
+func TestUprobe_ContainerAttachStoresKernelIDAndPin(t *testing.T) {
 	t.Parallel()
 
 	fix := newTestFixture(t)
@@ -365,16 +365,16 @@ func TestUprobe_ContainerAttachStoresNoKernelIDOrPin(t *testing.T) {
 	link, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err, "AttachUprobe container should succeed")
 	require.NotZero(t, link.Record.ID, "bpfman link ID should be non-zero")
-	assert.Nil(t, link.Record.KernelLinkID, "container uprobe should not capture a kernel link ID")
-	assert.Nil(t, link.Record.PinPath, "container uprobe should not record a phantom pin path")
-	assert.False(t, link.Status.KernelSeen, "container uprobe has no captured kernel link to observe")
-	assert.False(t, link.Status.PinPresent, "container uprobe has no bpffs link pin to verify")
-	assert.Equal(t, 0, fix.Kernel.LinkCount(), "container uprobe should not create a fake enumerable kernel link")
+	assert.NotNil(t, link.Record.KernelLinkID, "container uprobe should capture a kernel link ID")
+	assert.NotNil(t, link.Record.PinPath, "container uprobe should record its bpffs link pin")
+	assert.True(t, link.Status.KernelSeen, "container uprobe should report the captured kernel link")
+	assert.True(t, link.Status.PinPresent, "container uprobe should create a bpffs link pin")
+	assert.Equal(t, 1, fix.Kernel.LinkCount(), "container uprobe should create a fake enumerable kernel link")
 
 	record, err := fix.Store.GetLink(ctx, link.Record.ID)
 	require.NoError(t, err, "stored link should round-trip")
-	assert.Nil(t, record.KernelLinkID, "stored container uprobe should not capture a kernel link ID")
-	assert.Nil(t, record.PinPath, "stored container uprobe should not record a phantom pin path")
+	assert.NotNil(t, record.KernelLinkID, "stored container uprobe should capture a kernel link ID")
+	assert.NotNil(t, record.PinPath, "stored container uprobe should record its bpffs link pin")
 
 	details, ok := record.Details.(bpfman.UprobeDetails)
 	require.True(t, ok, "expected UprobeDetails")

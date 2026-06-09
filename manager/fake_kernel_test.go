@@ -819,13 +819,35 @@ func (f *fakeKernel) AttachUprobeLocal(_ context.Context, progPinPath bpfman.Pro
 }
 
 func (f *fakeKernel) AttachUprobeContainer(_ context.Context, _ lock.WriterScope, progPinPath bpfman.ProgPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath bpfman.LinkPath, containerPid int32) (bpfman.AttachOutput, error) {
-	// Container uprobes keep the perf-event FD in memory. They do not
-	// provide a captured kernel link ID and they do not create a bpffs
-	// pin the manager can verify.
+	linkID := kernel.LinkID(f.nextID.Add(1))
+	createPinFile(linkPinPath)
+	linkKind := bpfman.LinkKindUprobe
+	kernelLinkType := "uprobe"
+	if retprobe {
+		linkKind = bpfman.LinkKindUretprobe
+		kernelLinkType = "uretprobe"
+	}
+	kl := kernel.Link{ID: linkID, ProgramID: 0, LinkType: kernelLinkType}
+	link := bpfman.Link{
+		Record: bpfman.LinkRecord{
+			ID:           bpfman.LinkID(linkID),
+			Kind:         linkKind,
+			KernelLinkID: &linkID,
+			PinPath:      bpfman.NewLinkPath(linkPinPath),
+			CreatedAt:    time.Now(),
+			Details:      bpfman.UprobeDetails{Target: target, FnName: fnName, Offset: offset, Retprobe: retprobe, ContainerPid: containerPid},
+		},
+		Status: bpfman.LinkStatus{
+			Kernel:     &kl,
+			KernelSeen: true,
+			PinPresent: linkPinPath != "",
+		},
+	}
+	f.links[linkID] = &link
 	return bpfman.AttachOutput{
-		KernelLinkID: nil,
-		KernelLink:   nil,
-		PinPath:      "",
+		KernelLinkID: &linkID,
+		KernelLink:   &kl,
+		PinPath:      linkPinPath,
 	}, nil
 }
 

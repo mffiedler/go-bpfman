@@ -20,11 +20,6 @@ import (
 type kernelAdapter struct {
 	logger *slog.Logger
 
-	// linkFds stores file descriptors for perf_event-based links that cannot
-	// be pinned to bpffs. The uprobe attachment remains active as long as the
-	// fd is open. Key is a unique identifier (e.g., "containerPid:target:fnName").
-	linkFds sync.Map
-
 	// liveLinks holds the *link.Link returned by cilium/ebpf at
 	// attach time, keyed by bpffs link pin path. For probe-style
 	// attachments (tracepoint, k(ret)probe, u(ret)probe,
