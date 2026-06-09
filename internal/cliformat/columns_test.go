@@ -177,6 +177,47 @@ func TestWideColumns(t *testing.T) {
 	}
 }
 
+func TestDefaultLinkColumns_ExposeManagedAndKernelIDs(t *testing.T) {
+	t.Parallel()
+
+	cols := DefaultLinkColumns()
+	expected := []string{"LINK_ID", "KERNEL_LINK_ID", "KIND", "PROGRAM_ID", "PIN_PATH"}
+	if len(cols.Columns) != len(expected) {
+		t.Fatalf("DefaultLinkColumns() has %d columns, want %d", len(cols.Columns), len(expected))
+	}
+	for i, col := range cols.Columns {
+		if col.Name != expected[i] {
+			t.Errorf("DefaultLinkColumns()[%d].Name = %q, want %q", i, col.Name, expected[i])
+		}
+	}
+
+	kernelLinkID := kernel.LinkID(17)
+	link := bpfman.LinkRecord{
+		ID:           2_123_456_789,
+		ProgramID:    42,
+		KernelLinkID: &kernelLinkID,
+		Kind:         bpfman.LinkKindTracepoint,
+	}
+	output := cols.FormatLinkTable([]bpfman.LinkRecord{link})
+	for _, want := range []string{"LINK_ID", "KERNEL_LINK_ID", "2123456789", "17"} {
+		if !strings.Contains(output, want) {
+			t.Errorf("link table missing %q: %s", want, output)
+		}
+	}
+}
+
+func TestLinkKernelIDColumn_Nil(t *testing.T) {
+	t.Parallel()
+
+	index := linkColumnIndex()
+	info := index["KERNEL_LINK_ID"]
+	col := ColumnSpec{Name: info.Name, ExtractLink: info.ExtractLink}
+	got := col.ExtractLinkValue(bpfman.LinkRecord{})
+	if got != "<none>" {
+		t.Errorf("KERNEL_LINK_ID for link with no captured kernel ID = %q, want %q", got, "<none>")
+	}
+}
+
 func TestExtractLinkIDs_NoLinks(t *testing.T) {
 	t.Parallel()
 

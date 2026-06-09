@@ -236,6 +236,13 @@ func LinkColumnRegistry() []ColumnInfo {
 			ExtractLink: func(l bpfman.LinkRecord) string {
 				return strconv.FormatUint(uint64(l.ID), 10)
 			}},
+		{Name: "KERNEL_LINK_ID", Description: "Captured kernel link ID",
+			ExtractLink: func(l bpfman.LinkRecord) string {
+				if l.KernelLinkID == nil {
+					return "<none>"
+				}
+				return strconv.FormatUint(uint64(*l.KernelLinkID), 10)
+			}},
 		{Name: "PROGRAM_ID", Description: "Associated program ID",
 			ExtractLink: func(l bpfman.LinkRecord) string {
 				return strconv.FormatUint(uint64(l.ProgramID), 10)
@@ -308,8 +315,8 @@ func selectLinkColumns(names []string) (ColumnSet, error) {
 
 // Link column name constants for default and wide output.
 var (
-	defaultLinkColumnNames = []string{"LINK_ID", "KIND", "PROGRAM_ID", "PIN_PATH"}
-	wideLinkColumnNames    = []string{"LINK_ID", "KIND", "PROGRAM_ID", "ATTACH", "PIN_PATH", "CREATED_AT"}
+	defaultLinkColumnNames = []string{"LINK_ID", "KERNEL_LINK_ID", "KIND", "PROGRAM_ID", "PIN_PATH"}
+	wideLinkColumnNames    = []string{"LINK_ID", "KERNEL_LINK_ID", "KIND", "PROGRAM_ID", "ATTACH", "PIN_PATH", "CREATED_AT"}
 )
 
 // DefaultLinkColumns returns the standard table columns for links.

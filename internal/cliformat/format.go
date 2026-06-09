@@ -499,6 +499,11 @@ func formatLinkResultTable(link bpfman.Link) string {
 	if !link.Record.CreatedAt.IsZero() {
 		specFields = append(specFields, fmt.Sprintf("    Created At:\t%s", link.Record.CreatedAt.Format(time.RFC3339)))
 	}
+	if link.Record.KernelLinkID != nil {
+		specFields = append(specFields, fmt.Sprintf("    Kernel Link ID:\t%d", *link.Record.KernelLinkID))
+	} else {
+		specFields = append(specFields, "    Kernel Link ID:\tNone")
+	}
 	specFields = append(specFields, "    Metadata:\tNone")
 	if link.Record.PinPath != nil {
 		specFields = append(specFields, fmt.Sprintf("    Pin Path:\t%s", link.Record.PinPath.String()))
@@ -1030,12 +1035,16 @@ func formatDispatcherSnapshotTable(snap platform.DispatcherSnapshot) string {
 	}
 
 	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "  POS\tPRIORITY\tPROGRAM_ID\tNAME\tLINK_ID\tPROCEED_ON")
+	fmt.Fprintln(w, "  POS\tPRIORITY\tPROGRAM_ID\tNAME\tLINK_ID\tKERNEL_LINK_ID\tPROCEED_ON")
 	for _, m := range snap.Members {
 		proceedOn := formatProceedOnMask(m.ProceedOn, snap.Key.Type)
-		fmt.Fprintf(w, "  %d\t%d\t%d\t%s\t%d\t%s\n",
+		kernelLinkID := "<none>"
+		if m.KernelLinkID != nil {
+			kernelLinkID = fmt.Sprintf("%d", *m.KernelLinkID)
+		}
+		fmt.Fprintf(w, "  %d\t%d\t%d\t%s\t%d\t%s\t%s\n",
 			m.Position, m.Priority, m.ProgramID,
-			m.ProgramName, m.LinkID, proceedOn)
+			m.ProgramName, m.LinkID, kernelLinkID, proceedOn)
 	}
 	w.Flush()
 
