@@ -99,7 +99,7 @@ func (s *Server) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, 
 	// Managed link IDs from the program's status.
 	linkIDs := make([]uint32, 0, len(prog.Status.Links))
 	for _, link := range prog.Status.Links {
-		linkIDs = append(linkIDs, uint32(link.Record.ID))
+		linkIDs = append(linkIDs, grpcLinkID(link.Record.ID))
 	}
 
 	s.logger.InfoContext(ctx, "Get", "program_id", req.Id, "program_name", prog.Record.Meta.Name, "links", len(linkIDs))
