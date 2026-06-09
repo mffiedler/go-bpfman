@@ -2,8 +2,8 @@
 // Copyright Authors of bpfman
 
 // Tracepoint counter program for e2e testing -- pinned variant.
-// Map is LIBBPF_PIN_BY_NAME so consumers (integration-tests
-// scripts, examples) can read the pinned map by path. The bare
+// Map is LIBBPF_PIN_BY_NAME so consumers such as the examples
+// can read the pinned map by path. The bare
 // `tracepoint_counter.bpf.c` sibling is a copy with LIBBPF_PIN_NONE
 // (the libbpf default) for tests that read the counter by kernel
 // map ID.

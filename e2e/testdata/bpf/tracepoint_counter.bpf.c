@@ -8,8 +8,8 @@
 // copy of this object owns a private map; tests that need
 // counter-delta assertions read by kernel ID. The
 // `tracepoint_counter_pinned.bpf.c` sibling is a copy with
-// LIBBPF_PIN_BY_NAME for consumers (integration-tests scripts,
-// examples) that depend on the pinned map path.
+// LIBBPF_PIN_BY_NAME for consumers such as the examples that
+// depend on the pinned map path.
 //
 // Adapted from:
 // https://github.com/bpfman/bpfman/tree/main/examples/go-tracepoint-counter/bpf

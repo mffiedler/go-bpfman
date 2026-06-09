@@ -139,8 +139,8 @@
 // Tests pull BPF bytecode from OCI container images hosted at
 // quay.io/bpfman-bytecode/. The image puller uses the same code path
 // as production, including optional signature verification (disabled
-// in tests). Some tests use local bytecode files from the
-// integration-tests/bytecode/ directory.
+// in tests). Some tests use local bytecode compiled from the
+// testdata/bpf/ tree and embedded into the test binary.
 //
 // # Stale Directory Cleanup
 //
