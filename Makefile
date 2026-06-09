@@ -217,7 +217,7 @@ quiet_cmd = @printf "  %-9s %s\n" "$(1)" "$(2)"
 endif
 
 # ---------------------------------------------------------------------------
-# CGO is always on for this repo: ns/nsenter ships a C constructor
+# CGO is always on for this repo: internal/bpfman/ns ships a C constructor
 # (nsexec.c) that has to be linked into every binary that imports the
 # package, and the project policy is to assume cgo is available.
 # Export so every recipe inherits it and individual go invocations no
@@ -410,16 +410,16 @@ endif
 # Tag sets consumed by each go build/test recipe. EXTRA_TAGS is
 # appended to every set so callers can add a tag once (e.g.
 # EXTRA_TAGS=cgo_sqlite) and have every build path pick it up.
-BUILD_TAGS   := $(call comma-join,$(if $(STATIC),$(STATIC_TAGS)) $(EXTRA_TAGS))
-TEST_TAGS    := $(BUILD_TAGS)
-E2E_TAGS     := $(call comma-join,e2e $(if $(STATIC),$(STATIC_TAGS)) $(EXTRA_TAGS))
-NSENTER_TAGS := $(call comma-join,nsenter $(EXTRA_TAGS))
+BUILD_TAGS     := $(call comma-join,$(if $(STATIC),$(STATIC_TAGS)) $(EXTRA_TAGS))
+TEST_TAGS      := $(BUILD_TAGS)
+E2E_TAGS       := $(call comma-join,e2e $(if $(STATIC),$(STATIC_TAGS)) $(EXTRA_TAGS))
+BPFMAN_NS_TAGS := $(call comma-join,bpfman_ns $(EXTRA_TAGS))
 
 # ---------------------------------------------------------------------------
-# nsenter cross-architecture tests.
+# bpfman-ns transport cross-architecture tests.
 # ---------------------------------------------------------------------------
-NSENTER_ARCHES ?= amd64 arm64 ppc64le s390x
-NSENTER_TEST_BIN ?= $(BIN_DIR)/nsenter.test
+BPFMAN_NS_ARCHES ?= amd64 arm64 ppc64le s390x
+BPFMAN_NS_TEST_BIN ?= $(BIN_DIR)/bpfman-ns.test
 
 # ---------------------------------------------------------------------------
 # BPF build path.
@@ -605,7 +605,7 @@ OPENSHIFT_BPF_INSTALL_CMD ?=
 LINT_MAKE_TARGETS := \
 	help \
 	test test-e2e test-e2e-scripts \
-	test-nsenter test-nsenter-amd64 test-nsenter-arm64 test-nsenter-cross \
+	test-bpfman-ns test-bpfman-ns-amd64 test-bpfman-ns-arm64 test-bpfman-ns-cross \
 	bpfman-compile \
 	build-image build-image-amd64 build-image-dev \
 	build-image-csi-sanity build-image-openshift \
@@ -662,9 +662,9 @@ help:
 	@printf "  %-31s %s\n" "test-e2e-scripts-timeline" "Run .bpfman e2e scripts and render $(E2E_SCRIPTS_TIMELINE_TRACE) (requires root)"
 	@printf "  %-31s %s\n" "e2e-kmod-force-reload" "Delete managed bpfman state, then rebuild and reload the e2e kmod (requires root)"
 	@printf "  %-31s %s\n" "test-examples" "Run .bpfman scripts under examples/ (requires root)"
-	@printf "  %-31s %s\n" "test-nsenter" "Run nsenter tests (native amd64)"
-	@printf "  %-31s %s\n" "test-nsenter-cross" "Run nsenter tests on amd64/arm64/ppc64le/s390x"
-	@printf "  %-31s %s\n" "test-nsenter-{arch}" "Run nsenter tests for a single architecture"
+	@printf "  %-31s %s\n" "test-bpfman-ns" "Run bpfman-ns transport tests (native amd64)"
+	@printf "  %-31s %s\n" "test-bpfman-ns-cross" "Run bpfman-ns transport tests on amd64/arm64/ppc64le/s390x"
+	@printf "  %-31s %s\n" "test-bpfman-ns-{arch}" "Run bpfman-ns transport tests for a single architecture"
 	@printf "  %-31s %s\n" "lint" "Run golangci-lint"
 	@printf "  %-31s %s\n" "coverage" "Generate coverage profile and show total"
 	@printf "  %-31s %s\n" "coverage-func" "Show coverage by function"
@@ -837,9 +837,9 @@ test-all:
 	$(Q)$(MAKE) test-e2e
 	$(Q)$(MAKE) test-e2e-grpc
 
-# nsenter cross-architecture tests
+# bpfman-ns transport cross-architecture tests
 #
-# Proves the nsenter package's C constructor and nsexec code compile,
+# Proves the bpfman-ns transport's C constructor and nsexec code compile,
 # link, and run on each target architecture. Uses cross-compilation
 # GCC and QEMU user-mode emulation for foreign architectures.
 #
@@ -849,20 +849,20 @@ test-all:
 # when a distro sysroot directory exists (/usr/<prefix>-linux-gnu).
 #
 # Usage:
-#   make test-nsenter                 # native amd64 only
-#   make test-nsenter-arm64           # single foreign architecture
-#   make test-nsenter-cross           # all architectures
-test-nsenter test-nsenter-amd64: | $(BIN_DIR)
-	@echo "=== nsenter: amd64 ==="
-	$(strip go test -c $(EXTRA_GOFLAGS) $(if $(NSENTER_TAGS),-tags=$(NSENTER_TAGS)) -o $(NSENTER_TEST_BIN) ./ns/nsenter/)
-	file $(NSENTER_TEST_BIN)
-	sudo $(NSENTER_TEST_BIN) -test.v
+#   make test-bpfman-ns               # native amd64 only
+#   make test-bpfman-ns-arm64         # single foreign architecture
+#   make test-bpfman-ns-cross         # all architectures
+test-bpfman-ns test-bpfman-ns-amd64: | $(BIN_DIR)
+	@echo "=== ns: amd64 ==="
+	$(strip go test -c $(EXTRA_GOFLAGS) $(if $(BPFMAN_NS_TAGS),-tags=$(BPFMAN_NS_TAGS)) -o $(BPFMAN_NS_TEST_BIN) ./internal/bpfman/ns/)
+	file $(BPFMAN_NS_TEST_BIN)
+	sudo $(BPFMAN_NS_TEST_BIN) -test.v
 
-test-nsenter-arm64 test-nsenter-ppc64le test-nsenter-s390x:
-	NSENTER_TEST_BIN=$(NSENTER_TEST_BIN) NSENTER_TAGS=$(NSENTER_TAGS) \
-		hack/test-nsenter-cross.sh $(@:test-nsenter-%=%)
+test-bpfman-ns-arm64 test-bpfman-ns-ppc64le test-bpfman-ns-s390x:
+	BPFMAN_NS_TEST_BIN=$(BPFMAN_NS_TEST_BIN) BPFMAN_NS_TAGS=$(BPFMAN_NS_TAGS) \
+		hack/test-bpfman-ns-cross.sh $(@:test-bpfman-ns-%=%)
 
-test-nsenter-cross: $(addprefix test-nsenter-,$(NSENTER_ARCHES))
+test-bpfman-ns-cross: $(addprefix test-bpfman-ns-,$(BPFMAN_NS_ARCHES))
 
 # Phony so the recipe always runs; go's own build cache decides
 # whether anything actually rebuilds. Mirrors the bpfman-compile
@@ -1258,7 +1258,7 @@ doc-text:
 #
 # Note: bpfman-proto is not a dependency here since pb files are committed.
 # Run 'make bpfman-proto' explicitly after modifying proto/bpfman.proto.
-# CGO is required for the ns/nsenter package which uses a C constructor to call
+# CGO is required for the bpfman-ns transport, which uses a C constructor to call
 # setns() before Go runtime starts (needed for uprobe container attachment).
 # ---------------------------------------------------------------------------
 bpfman-build: bpfman-fmt bpfman-compile
@@ -1283,20 +1283,20 @@ bpfman-goimports: $(BIN_DIR)/golangci-lint
 
 # Run go vet over every build-tag combination present in the tree.
 # `go vet ./...` honours the active tag set; cover the tree with
-# two passes, one per SQLite driver, both with e2e+nsenter set so
+# two passes, one per SQLite driver, both with e2e+bpfman_ns set so
 # the build-tagged files (entire e2e/ package, CGO-namespaced
-# nsenter helper) are vetted alongside the rest. No file in the
-# tree uses negative tags like !e2e, so the e2e+nsenter pass
+# bpfman-ns transport) are vetted alongside the rest. No file in the
+# tree uses negative tags like !e2e, so the e2e+bpfman_ns pass
 # supersets a tag-less pass and a third pass would be redundant.
 #   - !cgo_sqlite pass: modernc.org/sqlite branch (the default).
 #   - cgo_sqlite pass: mattn/go-sqlite3 alternate, mutually
 #     exclusive with the !cgo_sqlite branch.
 bpfman-vet: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS) $(E2E_BPF_OBJECTS)
-	go vet -tags 'e2e,nsenter' ./...
-	go vet -tags 'cgo_sqlite,e2e,nsenter' ./...
+	go vet -tags 'e2e,bpfman_ns' ./...
+	go vet -tags 'cgo_sqlite,e2e,bpfman_ns' ./...
 
 # Apply the Go modernisers (go fix) across the same two tag passes as
-# bpfman-vet, so every file -- the e2e/nsenter build-tagged packages
+# bpfman-vet, so every file -- the e2e/bpfman_ns build-tagged packages
 # and both SQLite driver branches included -- is rewritten to the
 # latest idioms. GOTOOLCHAIN forces the moderniser toolchain on top of
 # whatever build Go is active, downloading it on demand; see
@@ -1304,8 +1304,8 @@ bpfman-vet: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS) $(E2E_BPF_OBJEC
 # bpfman-fmt this mutates the tree in place; ci-check-gofix wraps it
 # with a git-diff gate.
 bpfman-gofix: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS) $(E2E_BPF_OBJECTS)
-	GOTOOLCHAIN=$(GOFIX_GO_VERSION) go fix -tags 'e2e,nsenter' ./...
-	GOTOOLCHAIN=$(GOFIX_GO_VERSION) go fix -tags 'cgo_sqlite,e2e,nsenter' ./...
+	GOTOOLCHAIN=$(GOFIX_GO_VERSION) go fix -tags 'e2e,bpfman_ns' ./...
+	GOTOOLCHAIN=$(GOFIX_GO_VERSION) go fix -tags 'cgo_sqlite,e2e,bpfman_ns' ./...
 
 # Compile bpfman. Depends on the dispatcher BPF embeds because
 # the dispatcher Go package's go:embed directives need them at
@@ -1683,7 +1683,7 @@ ci-lint: ci-image
 	$(CI_RUN) make clean-bpf lint
 
 # Reproduce the workflow's check-vet job locally. Runs every vet
-# pass (default + e2e/nsenter + cgo_sqlite) inside the CI container
+# pass (default + e2e/bpfman_ns + cgo_sqlite) inside the CI container
 # so the BPF embeds and CGO toolchain match what CI sees. Symmetric
 # with ci-check-fmt and ci-check-vendor: a separate gate, not a
 # side effect of bpfman-build.
@@ -1810,4 +1810,4 @@ bpfman-test-grpc: build-image-dev
 .PHONY: doc doc-text
 .PHONY: print-fedora-version print-go-version print-golangci-lint-version
 .PHONY: build-e2e-grpc build-e2e-scripts $(BIN_DIR)/e2e.test $(BIN_DIR)/e2e-grpc.test $(BIN_DIR)/e2e-scripts.test run-e2e-grpc run-e2e-scripts run-e2e-scripts-timeline bpfman-shell-fmt update-lowered-goldens test test-timeline test-all test-e2e test-e2e-grpc test-e2e-scripts test-e2e-scripts-file test-e2e-scripts-image test-e2e-scripts-matrix test-e2e-scripts-file-matrix test-e2e-scripts-image-matrix test-e2e-scripts-image-ci test-e2e-published-images test-e2e-scripts-stress test-e2e-scripts-timeline test-examples
-.PHONY: test-nsenter test-nsenter-amd64 test-nsenter-arm64 test-nsenter-cross test-nsenter-ppc64le test-nsenter-s390x
+.PHONY: test-bpfman-ns test-bpfman-ns-amd64 test-bpfman-ns-arm64 test-bpfman-ns-cross test-bpfman-ns-ppc64le test-bpfman-ns-s390x

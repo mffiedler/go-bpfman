@@ -1,9 +1,9 @@
-// Tests for the nsenter package's C constructor and namespace
+// Tests for the ns package's C constructor and namespace
 // switching behaviour.
 //
 // # Background
 //
-// The nsenter package contains a C function (nsexec) that runs as a
+// The ns package contains a C function (nsexec) that runs as a
 // GCC constructor -- meaning it executes automatically when the
 // binary starts, before Go's runtime initialises. This is the only
 // point in the process lifetime where setns(CLONE_NEWNS) can work,
@@ -25,7 +25,7 @@
 //
 // The tests use the standard Go subprocess pattern: the test binary
 // re-executes itself with -test.run=^TestHelperProcess$ and a
-// sentinel environment variable (_NSENTER_TEST_HELPER=1). The
+// sentinel environment variable (_BPFMANNS_TEST_HELPER=1). The
 // helper function detects this, does its work, and exits. The
 // parent test examines the helper's output and exit status.
 //
@@ -39,7 +39,7 @@
 // produced its expected debug message on stderr, proving the
 // constructor fired. Does not require elevated privileges.
 //
-// TestConstructorWithSelfNamespace (build tag "nsenter"): launches
+// TestConstructorWithSelfNamespace (build tag "bpfman_ns"): launches
 // a subprocess with _BPFMAN_MNT_NS=/proc/self/ns/mnt. After setns
 // the constructor clears the variable. The helper reports whether
 // the variable is gone. This is the strongest proof: if the
@@ -68,7 +68,7 @@
 // guest kernel) all tests run identically to amd64, including the
 // setns proof. We consider QEMU system emulation too heavyweight
 // for CI at present.
-package nsenter_test
+package ns_test
 
 import (
 	"bytes"
@@ -79,11 +79,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/frobware/go-bpfman/ns/nsenter"
+	"github.com/frobware/go-bpfman/internal/bpfman/ns"
 )
 
 // TestHelperProcess is the subprocess entry point, not a real test.
-// Other tests re-execute the test binary with _NSENTER_TEST_HELPER=1
+// Other tests re-execute the test binary with _BPFMANNS_TEST_HELPER=1
 // to reach this code. During a normal test run (no sentinel variable)
 // the function returns immediately and costs nothing.
 //
@@ -96,12 +96,12 @@ import (
 func TestHelperProcess(t *testing.T) {
 	t.Parallel()
 
-	if os.Getenv("_NSENTER_TEST_HELPER") != "1" {
+	if os.Getenv("_BPFMANNS_TEST_HELPER") != "1" {
 		return
 	}
 	defer os.Exit(0)
 
-	inode, err := nsenter.GetCurrentMntNsInode()
+	inode, err := ns.GetCurrentMntNsInode()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "GetCurrentMntNsInode: %v\n", err)
 		os.Exit(2)
@@ -111,12 +111,12 @@ func TestHelperProcess(t *testing.T) {
 		os.Exit(2)
 	}
 
-	mntNsVal := os.Getenv(nsenter.MntNsEnvVar)
+	mntNsVal := os.Getenv(ns.MntNsEnvVar)
 	envState := "cleared"
 	if mntNsVal != "" {
 		envState = "present"
 	}
-	fmt.Printf("NSENTER_OK inode=%d mntns_env=%s\n", inode, envState)
+	fmt.Printf("BPFMANNS_OK inode=%d mntns_env=%s\n", inode, envState)
 }
 
 // TestGetCurrentMntNsInode is a basic sanity check that the package
@@ -124,7 +124,7 @@ func TestHelperProcess(t *testing.T) {
 func TestGetCurrentMntNsInode(t *testing.T) {
 	t.Parallel()
 
-	inode, err := nsenter.GetCurrentMntNsInode()
+	inode, err := ns.GetCurrentMntNsInode()
 	if err != nil {
 		t.Fatalf("GetCurrentMntNsInode: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestConstructorWithoutNamespace(t *testing.T) {
 	t.Parallel()
 
 	result := runHelper(t, []string{
-		nsenter.LogLevelEnvVar + "=debug",
+		ns.LogLevelEnvVar + "=debug",
 	})
 	if !strings.Contains(result.stderr, "not set, returning to Go runtime") {
 		t.Fatalf("nsexec did not run (no debug output on stderr)\nstderr:\n%s", result.stderr)
@@ -180,7 +180,7 @@ func runHelper(t *testing.T, extraEnv []string) helperResult {
 		"PATH", "HOME", "TMPDIR", "USER",
 		"QEMU_LD_PREFIX",
 	)
-	cmd.Env = append(cmd.Env, "_NSENTER_TEST_HELPER=1")
+	cmd.Env = append(cmd.Env, "_BPFMANNS_TEST_HELPER=1")
 	cmd.Env = append(cmd.Env, extraEnv...)
 
 	err := cmd.Run()
@@ -192,7 +192,7 @@ func runHelper(t *testing.T, extraEnv []string) helperResult {
 		}
 		if strings.Contains(errOut, "Operation not permitted") ||
 			strings.Contains(errOut, "EPERM") {
-			t.Fatalf("setns failed (run with sudo or use make test-nsenter): %s", errOut)
+			t.Fatalf("setns failed (run with sudo or use make test-bpfman-ns): %s", errOut)
 		}
 		if strings.Contains(errOut, "Invalid argument") ||
 			strings.Contains(errOut, "EINVAL") {
@@ -208,7 +208,7 @@ func runHelper(t *testing.T, extraEnv []string) helperResult {
 func parseHelperOutput(t *testing.T, stdout, stderr string) helperResult {
 	t.Helper()
 
-	const marker = "NSENTER_OK inode="
+	const marker = "BPFMANNS_OK inode="
 	_, after, ok := strings.Cut(stdout, marker)
 	if !ok {
 		t.Fatalf("subprocess did not report\nstdout:\n%s\nstderr:\n%s",

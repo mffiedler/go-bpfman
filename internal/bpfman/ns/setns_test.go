@@ -1,11 +1,11 @@
-//go:build nsenter
+//go:build bpfman_ns
 
-package nsenter_test
+package ns_test
 
 import (
 	"testing"
 
-	"github.com/frobware/go-bpfman/ns/nsenter"
+	"github.com/frobware/go-bpfman/internal/bpfman/ns"
 )
 
 // TestConstructorWithSelfNamespace is the strongest proof that the
@@ -21,18 +21,18 @@ import (
 // Requires CAP_SYS_ADMIN; fails if not root. Skipped under QEMU
 // user-mode emulation where setns is not supported.
 //
-// Build tag: nsenter. Run via "make test-nsenter" which adds
-// -tags=nsenter and sudo.
+// Build tag: bpfman_ns. Run via "make test-bpfman-ns" which adds
+// -tags=bpfman_ns and sudo.
 func TestConstructorWithSelfNamespace(t *testing.T) {
 	t.Parallel()
 
 	result := runHelper(t, []string{
-		nsenter.MntNsEnvVar + "=/proc/self/ns/mnt",
+		ns.MntNsEnvVar + "=/proc/self/ns/mnt",
 	})
 	if result.mntNsEnv != "cleared" {
 		t.Fatalf("%s was not cleared by the constructor: env is %q",
-			nsenter.MntNsEnvVar, result.mntNsEnv)
+			ns.MntNsEnvVar, result.mntNsEnv)
 	}
 	t.Logf("subprocess inode: %d (constructor cleared %s)",
-		result.inode, nsenter.MntNsEnvVar)
+		result.inode, ns.MntNsEnvVar)
 }

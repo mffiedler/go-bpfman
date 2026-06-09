@@ -2,8 +2,8 @@
 #
 # Downstream container build for Konflux/OpenShift pipelines.
 #
-# CGO_ENABLED=1 is required because the nsenter package uses a C
-# constructor to call setns() before the Go runtime starts.
+# CGO_ENABLED=1 is required because the bpfman-ns transport uses a
+# C constructor to call setns() before the Go runtime starts.
 #
 # The BPF builder base image is parameterised because libbpf-devel
 # lives in CodeReady Builder (subscription-required). For local

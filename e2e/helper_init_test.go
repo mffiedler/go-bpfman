@@ -16,7 +16,7 @@ import (
 // namespace.
 //
 // Why: the bpfman-ns helper runs after the C constructor in
-// ns/nsenter/nsexec.c switches it into a target container's
+// internal/bpfman/ns/nsexec.c switches it into a target container's
 // mount namespace before Go's runtime starts. Many Kubernetes
 // target containers (particularly stripped-down ones built
 // from scratch images) do not mount procfs, so the helper

@@ -12,6 +12,7 @@ import (
 	"syscall"
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/fixturemode"
+	"github.com/frobware/go-bpfman/internal/bpfman/ns/runner"
 )
 
 var errInterrupted = fmt.Errorf("interrupted by signal: %w", context.Canceled)
@@ -28,6 +29,17 @@ var errInterrupted = fmt.Errorf("interrupted by signal: %w", context.Canceled)
 // is the escape hatch. A single signal.Notify registration owns
 // both steps so the first signal cannot be mistaken for the second.
 func main() {
+	switch ran, err := runner.Run(); {
+	case ran && err != nil:
+		fmt.Fprintf(os.Stderr, "bpfman-ns: error: %v\n", err)
+		os.Exit(1)
+	case err != nil:
+		fmt.Fprintf(os.Stderr, "bpfman-shell: error: %v\n", err)
+		os.Exit(1)
+	case ran:
+		return
+	}
+
 	// Mode dispatch: when BPFMAN_SHELL_MODE is set, bpfman-shell
 	// acts as a test-fixture helper rather than a user-facing
 	// script entry point. The dispatch runs before NewCLI so we don't open

@@ -13,9 +13,9 @@ import (
 	"github.com/cilium/ebpf/link"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/internal/bpfman/ns"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
-	"github.com/frobware/go-bpfman/ns/nsenter"
 )
 
 // AttachUprobeLocal attaches a pinned program to a user-space function
@@ -190,7 +190,7 @@ func (k *kernelAdapter) attachUprobeViaHelper(scope lock.WriterScope, progPinPat
 
 	// Create socketpair for receiving link fd from child.
 	// Child will send the perf_event fd via SCM_RIGHTS.
-	parentSocket, childSocket, err := nsenter.Socketpair()
+	parentSocket, childSocket, err := ns.Socketpair()
 	if err != nil {
 		k.logger.Error("failed to create socketpair", "error", err)
 		return fmt.Errorf("create socketpair: %w", err)
@@ -199,7 +199,7 @@ func (k *kernelAdapter) attachUprobeViaHelper(scope lock.WriterScope, progPinPat
 	defer childSocket.Close()
 
 	// Get current mount namespace inode for logging
-	currentMntNs, _ := nsenter.GetCurrentMntNsInode()
+	currentMntNs, _ := ns.GetCurrentMntNsInode()
 
 	// Determine target namespace path - try /proc first, then /host/proc for k8s
 	nsPath := fmt.Sprintf("/proc/%d/ns/mnt", containerPid)
@@ -243,9 +243,9 @@ func (k *kernelAdapter) attachUprobeViaHelper(scope lock.WriterScope, progPinPat
 	}
 
 	// Determine log level for child process based on our logger's level
-	childLogLevel := nsenter.LogLevelInfo
+	childLogLevel := ns.LogLevelInfo
 	if k.logger.Enabled(context.TODO(), slog.LevelDebug) {
-		childLogLevel = nsenter.LogLevelDebug
+		childLogLevel = ns.LogLevelDebug
 	}
 
 	// Dup the lock fd for the child process.
@@ -257,8 +257,8 @@ func (k *kernelAdapter) attachUprobeViaHelper(scope lock.WriterScope, progPinPat
 	}
 	defer lockFile.Close() // Close parent's dup after child starts
 
-	// Use nsenter.CommandWithOptions with ExtraFiles to pass program fd, socket, and lock fd
-	cmd := nsenter.CommandWithOptions(containerPid, bpfmanPath, nsenter.CommandOptions{
+	// Use ns.CommandWithOptions with ExtraFiles to pass program fd, socket, and lock fd
+	cmd := ns.CommandWithOptions(containerPid, bpfmanPath, ns.CommandOptions{
 		Logger:           k.logger,
 		LogLevel:         childLogLevel,
 		Mode:             "bpfman-ns",
@@ -291,7 +291,7 @@ func (k *kernelAdapter) attachUprobeViaHelper(scope lock.WriterScope, progPinPat
 
 	// Receive link fd from child via socket
 	k.logger.Debug("waiting for link fd from child")
-	linkFd, name, err := nsenter.RecvFd(parentSocket)
+	linkFd, name, err := ns.RecvFd(parentSocket)
 	if err != nil {
 		k.logger.Error("failed to receive link fd from child",
 			"error", err,

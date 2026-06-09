@@ -1,9 +1,11 @@
-package main
+package runner
 
 import (
 	"errors"
 	"reflect"
 	"testing"
+
+	"github.com/frobware/go-bpfman/internal/bpfman/ns"
 )
 
 func TestDetectNamespaceHelperInvocation_NotHelper(t *testing.T) {
@@ -21,52 +23,12 @@ func TestDetectNamespaceHelperInvocation_NotHelper(t *testing.T) {
 	}
 }
 
-func TestDetectNamespaceHelperInvocation_Argv0Symlink(t *testing.T) {
-	t.Parallel()
-
-	inv, ok, err := DetectNamespaceHelperInvocation(
-		[]string{"bpfman-ns", "uprobe", "--target=/bin/bash"},
-		"", // no BPFMAN_MODE
-	)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !ok {
-		t.Fatalf("expected ok=true, got false")
-	}
-
-	wantArgs := []string{"uprobe", "--target=/bin/bash"}
-	if !reflect.DeepEqual(inv.Args, wantArgs) {
-		t.Fatalf("args mismatch:\nwant: %#v\ngot:  %#v", wantArgs, inv.Args)
-	}
-}
-
-func TestDetectNamespaceHelperInvocation_Argv0SymlinkWithPath(t *testing.T) {
-	t.Parallel()
-
-	inv, ok, err := DetectNamespaceHelperInvocation(
-		[]string{"/usr/bin/bpfman-ns", "uprobe", "--target=/bin/bash"},
-		"", // no BPFMAN_MODE
-	)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !ok {
-		t.Fatalf("expected ok=true, got false")
-	}
-
-	wantArgs := []string{"uprobe", "--target=/bin/bash"}
-	if !reflect.DeepEqual(inv.Args, wantArgs) {
-		t.Fatalf("args mismatch:\nwant: %#v\ngot:  %#v", wantArgs, inv.Args)
-	}
-}
-
 func TestDetectNamespaceHelperInvocation_ModeEnvVar(t *testing.T) {
 	t.Parallel()
 
 	inv, ok, err := DetectNamespaceHelperInvocation(
 		[]string{"bpfman", "uprobe", "--target=/bin/bash"},
-		"bpfman-ns", // BPFMAN_MODE=bpfman-ns
+		ns.ModeBPFManNS, // BPFMAN_MODE=bpfman-ns
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -88,7 +50,7 @@ func TestDetectNamespaceHelperInvocation_ModeEnvVar_BpfmanRpc(t *testing.T) {
 	// BPFMAN_MODE=bpfman-rpc should NOT trigger helper mode (valid, but not helper)
 	inv, ok, err := DetectNamespaceHelperInvocation(
 		[]string{"bpfman", "serve"},
-		"bpfman-rpc",
+		ns.ModeBPFManRPC,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -160,10 +122,10 @@ func TestHandleNamespaceHelperInvocation_Helper_RunsAndReturnsHandled(t *testing
 		return nil
 	}
 
-	argv := []string{"bpfman-ns", "uprobe", "--target=/bin/bash"}
+	argv := []string{"bpfman", "uprobe", "--target=/bin/bash"}
 	handled, err := HandleNamespaceHelperInvocation(
 		argv,
-		"", // no BPFMAN_MODE needed, argv[0] triggers it
+		ns.ModeBPFManNS,
 		runner,
 	)
 	if err != nil {
@@ -188,8 +150,8 @@ func TestHandleNamespaceHelperInvocation_Helper_PropagatesRunnerError(t *testing
 	}
 
 	handled, err := HandleNamespaceHelperInvocation(
-		[]string{"bpfman-ns", "uprobe"},
-		"",
+		[]string{"bpfman", "uprobe"},
+		ns.ModeBPFManNS,
 		runner,
 	)
 	if !handled {

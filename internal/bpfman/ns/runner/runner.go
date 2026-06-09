@@ -1,11 +1,17 @@
-// Package cli provides the command-line interface for bpfman.
-package main
+// Package runner implements the child-side bpfman-ns command.
+//
+// A binary that performs container uprobe attachment re-execs itself
+// with BPFMAN_MODE=bpfman-ns; a CGO constructor in the ns package
+// calls setns(CLONE_NEWNS) before Go's runtime starts, so by the time
+// this code runs the process is already in the target namespace. This
+// package parses and executes the private bpfman-ns CLI; the shared
+// transport and wire contract live in the parent package.
+package runner
 
 import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"strconv"
 	"syscall"
 
@@ -13,29 +19,20 @@ import (
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 
+	"github.com/frobware/go-bpfman/internal/bpfman/ns"
 	"github.com/frobware/go-bpfman/lock"
-	"github.com/frobware/go-bpfman/ns/nsenter"
 )
 
 // NSCmd handles the bpfman-ns subcommand for attaching uprobes in other
 // namespaces.
 //
-// The namespace switch happens via a CGO constructor (in the nsenter package)
+// The namespace switch happens via a CGO constructor (in the ns package)
 // that runs before Go's runtime starts. The parent process sets _BPFMAN_MNT_NS
 // environment variable, and the C code calls setns(CLONE_NEWNS) while still
 // single-threaded.
 type NSCmd struct {
-	Uprobe NSUprobeCmd `cmd:"" help:"Attach uprobe in target namespace."`
+	Uprobe NSUprobeCmd `cmd:"" help:"Attach a uprobe program in the given container."`
 }
-
-// File descriptor numbers for inherited fds from parent.
-// The parent uses Cmd.ExtraFiles which maps to fd 3, 4, 5, etc.
-// WriterLockFD is passed via environment variable since its position
-// in ExtraFiles may vary.
-const (
-	ProgramFD = 3 // BPF program fd
-	SocketFD  = 4 // Unix socket for passing link fd back to parent
-)
 
 // NSUprobeCmd attaches a uprobe in the target container's mount namespace.
 // When this code runs, the process is already in the target namespace
@@ -138,33 +135,33 @@ func (cmd *NSUprobeCmd) Run() error {
 		"fn_name", cmd.FnName,
 		"offset", cmd.Offset,
 		"retprobe", cmd.Retprobe,
-		"program_fd", ProgramFD,
-		"socket_fd", SocketFD)
+		"program_fd", ns.ProgramFD,
+		"socket_fd", ns.SocketFD)
 
 	// Create program from the inherited file descriptor.
 	// The parent opened the pinned program and passed the fd via ExtraFiles.
 	// The child process owns its copy of the fd after exec.
-	logger.Debug("creating program from inherited fd", "fd", ProgramFD)
-	prog, err := ebpf.NewProgramFromFD(ProgramFD)
+	logger.Debug("creating program from inherited fd", "fd", ns.ProgramFD)
+	prog, err := ebpf.NewProgramFromFD(ns.ProgramFD)
 	if err != nil {
 		logger.Error("failed to create program from fd",
-			"fd", ProgramFD,
+			"fd", ns.ProgramFD,
 			"error", err,
 			"hint", "bpfman-ns must be invoked by the daemon, not directly")
-		return fmt.Errorf("create program from fd %d (bpfman-ns must be invoked by daemon, not directly): %w", ProgramFD, err)
+		return fmt.Errorf("create program from fd %d (bpfman-ns must be invoked by daemon, not directly): %w", ns.ProgramFD, err)
 	}
 	defer prog.Close()
 	logger.Debug("program from inherited fd",
-		"fd", ProgramFD,
+		"fd", ns.ProgramFD,
 		"prog_type", prog.Type())
 
 	// Get the socket for sending link fd back to parent
-	socket := os.NewFile(uintptr(SocketFD), "fdpass-socket")
+	socket := os.NewFile(uintptr(ns.SocketFD), "fdpass-socket")
 	if socket == nil {
 		logger.Error("failed to get socket fd",
-			"fd", SocketFD,
+			"fd", ns.SocketFD,
 			"hint", "bpfman-ns must be invoked by the daemon, not directly")
-		return fmt.Errorf("socket fd %d not available (bpfman-ns must be invoked by daemon)", SocketFD)
+		return fmt.Errorf("socket fd %d not available (bpfman-ns must be invoked by daemon)", ns.SocketFD)
 	}
 	defer socket.Close()
 
@@ -226,7 +223,7 @@ func (cmd *NSUprobeCmd) Run() error {
 
 	logger.Info("probe attached successfully", "type", attachType)
 
-	// Get the perf event fd from the link.
+	// Get the perf event fd from the link and send it back to the parent.
 	// Uprobe links implement the PerfEvent interface.
 	pe, ok := lnk.(link.PerfEvent)
 	if !ok {
@@ -235,7 +232,6 @@ func (cmd *NSUprobeCmd) Run() error {
 		lnk.Close()
 		return fmt.Errorf("link does not implement PerfEvent interface")
 	}
-
 	perfFile, err := pe.PerfEvent()
 	if err != nil {
 		logger.Error("failed to get perf event fd",
@@ -243,19 +239,18 @@ func (cmd *NSUprobeCmd) Run() error {
 		lnk.Close()
 		return fmt.Errorf("get perf event fd: %w", err)
 	}
-
-	// Send the perf event fd back to the parent via the Unix socket.
-	// The parent (in host namespace) will receive it and keep the link alive.
 	linkFd := int(perfFile.Fd())
+
+	// The parent (in host namespace) receives its own fd reference and keeps
+	// it open for the lifetime of the managed link.
 	logger.Debug("sending link fd to parent",
 		"link_fd", linkFd,
-		"socket_fd", SocketFD)
+		"socket_fd", ns.SocketFD)
 
-	if err := nsenter.SendFd(socket, "uprobe-link", linkFd); err != nil {
+	if err := ns.SendFd(socket, ns.LinkFDName, linkFd); err != nil {
 		logger.Error("failed to send link fd to parent",
 			"link_fd", linkFd,
 			"error", err)
-		perfFile.Close()
 		lnk.Close()
 		return fmt.Errorf("send link fd to parent: %w", err)
 	}
@@ -265,7 +260,6 @@ func (cmd *NSUprobeCmd) Run() error {
 
 	// Close our references. The parent now has the fd via SCM_RIGHTS.
 	// The perf event fd we sent keeps the attachment alive in the parent.
-	// Success is signalled by clean exit (exit 0); parent uses Wait() result.
 	perfFile.Close()
 	lnk.Close()
 
@@ -273,7 +267,7 @@ func (cmd *NSUprobeCmd) Run() error {
 }
 
 // NamespaceHelperInvocation captures the details of a namespace helper
-// invocation. This is used when bpfman re-execs itself to attach uprobes
+// invocation. This is used when a binary re-execs itself to attach uprobes
 // inside container mount namespaces.
 type NamespaceHelperInvocation struct {
 	Args []string
@@ -283,39 +277,25 @@ type NamespaceHelperInvocation struct {
 // namespace helper subprocess (used for container uprobe attachment).
 //
 // Detection logic:
-//  1. If BPFMAN_MODE is set:
-//     - "bpfman-ns" → helper mode
-//     - "bpfman-rpc" → not helper (valid, but different mode)
-//     - anything else → error (unknown mode)
-//  2. If BPFMAN_MODE is not set:
-//     - argv[0] basename is "bpfman-ns" → helper mode (symlink compatibility)
-//     - otherwise → not helper
+//   - "bpfman-ns" → helper mode
+//   - "bpfman-rpc" → not helper (valid, but different mode)
+//   - anything else → error (unknown mode)
 //
 // Returns the invocation details (with rewritten args for the helper parser),
 // whether helper mode was detected, and any error for invalid configuration.
 func DetectNamespaceHelperInvocation(argv []string, modeEnv string) (NamespaceHelperInvocation, bool, error) {
-	if len(argv) == 0 {
+	if len(argv) == 0 || modeEnv == "" {
 		return NamespaceHelperInvocation{}, false, nil
 	}
 
-	// If BPFMAN_MODE is set, it takes precedence and must be valid
-	if modeEnv != "" {
-		switch modeEnv {
-		case "bpfman-ns":
-			return NamespaceHelperInvocation{Args: argv[1:]}, true, nil
-		case "bpfman-rpc":
-			return NamespaceHelperInvocation{}, false, nil
-		default:
-			return NamespaceHelperInvocation{}, false, fmt.Errorf("unknown BPFMAN_MODE=%q; valid values: bpfman-ns, bpfman-rpc", modeEnv)
-		}
-	}
-
-	// Fall back to argv[0] check for symlink compatibility
-	if filepath.Base(argv[0]) == "bpfman-ns" {
+	switch modeEnv {
+	case ns.ModeBPFManNS:
 		return NamespaceHelperInvocation{Args: argv[1:]}, true, nil
+	case ns.ModeBPFManRPC:
+		return NamespaceHelperInvocation{}, false, nil
+	default:
+		return NamespaceHelperInvocation{}, false, fmt.Errorf("unknown BPFMAN_MODE=%q; valid values: bpfman-ns, bpfman-rpc", modeEnv)
 	}
-
-	return NamespaceHelperInvocation{}, false, nil
 }
 
 // HandleNamespaceHelperInvocation detects namespace helper mode and runs the
@@ -338,8 +318,8 @@ func runNamespaceHelper(inv NamespaceHelperInvocation) error {
 	var cmd NSCmd
 
 	parser, err := kong.New(&cmd,
-		kong.Name("bpfman-ns"),
-		kong.Description("BPF namespace subprocess for container uprobes."),
+		kong.Name(ns.ModeBPFManNS),
+		kong.Description("Attach an eBPF program inside a container's mount namespace."),
 		kong.UsageOnError(),
 	)
 	if err != nil {
@@ -350,6 +330,14 @@ func runNamespaceHelper(inv NamespaceHelperInvocation) error {
 	if err != nil {
 		return err
 	}
-
 	return ctx.Run()
+}
+
+// Run checks whether this process was re-execed as the bpfman-ns helper
+// (container uprobe attachment) and, if so, parses and runs the helper
+// command. The returned ran is true when the helper path was taken; the
+// caller should then exit without proceeding to its normal CLI. err is set
+// for an invalid invocation (ran false) or a helper failure (ran true).
+func Run() (ran bool, err error) {
+	return HandleNamespaceHelperInvocation(os.Args, os.Getenv(ns.ModeEnvVar), runNamespaceHelper)
 }

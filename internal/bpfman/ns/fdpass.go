@@ -1,6 +1,4 @@
-// Package nsenter provides mount namespace switching for uprobe attachment
-// in containers.
-package nsenter
+package ns
 
 import (
 	"fmt"

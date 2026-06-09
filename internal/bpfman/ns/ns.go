@@ -1,11 +1,18 @@
-// Package nsenter provides mount namespace switching for uprobe attachment
-// in containers.
+// Package ns provides the shared transport for bpfman's private
+// bpfman-ns mode.
 //
-// This package uses a CGO constructor that runs before the Go runtime starts,
-// allowing setns(CLONE_NEWNS) to work (which requires a single-threaded process).
+// The bpfman-ns protocol exists so bpfman can attach uprobes in a
+// container's mount namespace. The parent process re-execs the current
+// binary with BPFMAN_MODE=bpfman-ns, inherited file descriptors, and
+// _BPFMAN_MNT_NS. A CGO constructor runs before the Go runtime starts
+// in the child and calls setns(CLONE_NEWNS), which requires a
+// single-threaded process.
 //
-// The approach is inspired by runc's libcontainer/nsenter but simplified for
-// bpfman's uprobe use case.
+// This package intentionally stops at the shared wire contract and
+// process transport: mode strings, namespace-entry environment, inherited
+// fd positions, fd passing, and command construction. The child-side
+// bpfman-ns CLI lives in internal/bpfman/ns/runner so parent-side attach
+// code does not import Kong or the uprobe runner.
 //
 // # How it works
 //
@@ -25,10 +32,10 @@
 //
 // # Usage
 //
-// To attach a uprobe in a container's mount namespace:
+// To run the bpfman-ns child mode in a container's mount namespace:
 //
-//	cmd := nsenter.CommandWithOptions(containerPid, selfPath, nsenter.CommandOptions{
-//	    Mode: "bpfman-ns",
+//	cmd := ns.CommandWithOptions(containerPid, selfPath, ns.CommandOptions{
+//	    Mode: ns.ModeBPFManNS,
 //	}, "uprobe", target, "--fn-name", fnName)
 //	output, err := cmd.Output()
 //
@@ -36,7 +43,7 @@
 // - Have its mount namespace switched before Go starts (via C constructor)
 // - See the container's filesystem (target binary visible)
 // - Access host bpffs via /proc/<host-pid>/root/sys/fs/bpf/...
-package nsenter
+package ns
 
 /*
 #cgo CFLAGS: -Wall
@@ -55,7 +62,6 @@ import (
 	"syscall"
 )
 
-// Environment variable names used by nsenter.
 const (
 	// MntNsEnvVar triggers mount namespace switching in the C constructor.
 	MntNsEnvVar = "_BPFMAN_MNT_NS"
@@ -68,6 +74,22 @@ const (
 	// relying on argv[0] or symlinks. Valid values are
 	// "bpfman-rpc" and "bpfman-ns".
 	ModeEnvVar = "BPFMAN_MODE"
+
+	// ModeBPFManNS selects the private bpfman-ns child mode.
+	ModeBPFManNS = "bpfman-ns"
+
+	// ModeBPFManRPC selects bpfman's RPC mode. bpfman-ns dispatchers
+	// recognise it as valid but do not handle it.
+	ModeBPFManRPC = "bpfman-rpc"
+
+	// ProgramFD is the inherited BPF program fd in bpfman-ns children.
+	ProgramFD = 3
+
+	// SocketFD is the inherited Unix socket fd used to return the link fd.
+	SocketFD = 4
+
+	// LinkFDName is the name sent with the returned link fd.
+	LinkFDName = "uprobe-link"
 )
 
 // LogLevel represents the logging verbosity for the C nsexec code.

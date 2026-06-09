@@ -149,8 +149,8 @@ jobs:
       - name: Run lint
         run: nix develop --command make lint
 
-  test-nsenter-qemu:
-    name: Test nsenter QEMU (${{ matrix.goarch }})
+  test-bpfman-ns-qemu:
+    name: Test bpfman-ns QEMU (${{ matrix.goarch }})
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -189,12 +189,12 @@ jobs:
           retry sudo apt-get update
           retry sudo apt-get install -y ${{ matrix.pkgs }}
 
-      - name: Run nsenter tests
-        run: make test-nsenter-${{ matrix.goarch }}
+      - name: Run bpfman-ns transport tests
+        run: make test-bpfman-ns-${{ matrix.goarch }}
 
   ci-complete:
     name: CI complete
-    needs: [check-vendor, check-fmt, check-goimports, check-vet, check-gofix, check-bpfman-shell-fmt, build, tests, lint, nix, test-nsenter-qemu]
+    needs: [check-vendor, check-fmt, check-goimports, check-vet, check-gofix, check-bpfman-shell-fmt, build, tests, lint, nix, test-bpfman-ns-qemu]
     if: always()
     runs-on: ubuntu-latest
     steps:

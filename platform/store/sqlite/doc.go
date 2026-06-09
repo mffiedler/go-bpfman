@@ -24,7 +24,7 @@
 //
 //   - modernc.org/sqlite (default): pure Go, no CGO required for the
 //     database layer (though the application still requires
-//     CGO_ENABLED=1 for the nsenter package)
+//     CGO_ENABLED=1 for the bpfman-ns transport)
 //   - mattn/go-sqlite3: CGO-based, selected with -tags cgo_sqlite
 //
 // # Calling Conventions
