@@ -297,8 +297,8 @@ func (k *kernelAdapter) attachUprobeViaHelper(scope lock.WriterScope, progPinPat
 			"error", err,
 			"container_pid", containerPid)
 		cmd.Process.Kill()
-		cmd.Wait()
-		return 0, nil, fmt.Errorf("receive link fd from child: %w", err)
+		waitErr := cmd.Wait()
+		return 0, nil, helperReceiveError(fnName, target, containerPid, err, waitErr, helperStderr.String())
 	}
 	k.logger.Debug("received link fd from child",
 		"link_fd", linkFd,
@@ -362,6 +362,17 @@ func helperExitError(fnName, target string, containerPid int32, exitCode int, st
 		return fmt.Errorf("bpfman-ns failed attaching %s to %q in container %d (exit %d)", fnName, target, containerPid, exitCode)
 	}
 	return fmt.Errorf("bpfman-ns failed attaching %s to %q in container %d (exit %d): %s", fnName, target, containerPid, exitCode, reason)
+}
+
+func helperReceiveError(fnName, target string, containerPid int32, recvErr, waitErr error, stderr string) error {
+	var exitErr *exec.ExitError
+	if errors.As(waitErr, &exitErr) && summariseHelperStderr(stderr) != "" {
+		return helperExitError(fnName, target, containerPid, exitErr.ExitCode(), stderr)
+	}
+	if waitErr != nil && !errors.As(waitErr, &exitErr) {
+		return fmt.Errorf("receive link fd from child: %w; wait for bpfman-ns: %v", recvErr, waitErr)
+	}
+	return fmt.Errorf("receive link fd from child: %w", recvErr)
 }
 
 func summariseHelperStderr(stderr string) string {
