@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -93,6 +94,23 @@ func TestBPFManScripts(t *testing.T) {
 	repeats := scriptRepeats()
 	e2eDir := e2ePackageDir(t)
 
+	// -test.failfast cannot interrupt an already-released
+	// t.Parallel() wave, so the flag is a no-op for parallel
+	// scripts. Drive the abort cooperatively instead, preserving
+	// the parallel model: the first failing script cancels
+	// abortCtx, which tears down in-flight scripts and makes
+	// not-yet-started ones skip.
+	failfast := false
+	if f := flag.Lookup("test.failfast"); f != nil {
+		failfast = f.Value.String() == "true"
+	}
+	abortCtx, abortCancel := context.WithCancel(context.Background())
+	// t.Cleanup, not defer: with t.Parallel() the parent function
+	// returns before the paused subtests resume, so a defer would
+	// cancel abortCtx before any script runs and skip them all.
+	// t.Cleanup runs only after every subtest completes.
+	t.Cleanup(abortCancel)
+
 	const sub = "scripts"
 	absSub := filepath.Join(e2eDir, sub)
 	matches, err := filepath.Glob(filepath.Join(absSub, "*.bpfman"))
@@ -170,6 +188,16 @@ func TestBPFManScripts(t *testing.T) {
 					scriptSerialMu.Lock()
 					defer scriptSerialMu.Unlock()
 				}
+				if failfast {
+					if abortCtx.Err() != nil {
+						t.Skip("failfast: skipped after an earlier failure")
+					}
+					defer func() {
+						if t.Failed() {
+							abortCancel()
+						}
+					}()
+				}
 				if err := emitScriptTimelineMarker("script_start", t.Name()); err != nil {
 					t.Fatalf("write script timeline start marker: %v", err)
 				}
@@ -178,7 +206,7 @@ func TestBPFManScripts(t *testing.T) {
 						t.Errorf("write script timeline end marker: %v", err)
 					}
 				}()
-				runBPFManScript(t, e2eDir, rel, timeout)
+				runBPFManScript(t, e2eDir, rel, timeout, failfast, abortCtx)
 			})
 		}
 	}
@@ -337,11 +365,18 @@ func scriptSelectorSkipReason(selector k8slabels.Selector, labels k8slabels.Set)
 // t.Fatalf on failure or via t.Logf on success; either way the
 // Go test framework owns the framing so go test -json picks it
 // up cleanly.
-func runBPFManScript(t *testing.T, e2eDir, script string, timeout time.Duration) {
+func runBPFManScript(t *testing.T, e2eDir, script string, timeout time.Duration, failfast bool, abortCtx context.Context) {
 	t.Helper()
 	timeoutCause := fmt.Errorf("script %s exceeded %s: %w", script, timeout, context.DeadlineExceeded)
 	ctx, cancel := context.WithTimeoutCause(t.Context(), timeout, timeoutCause)
 	defer cancel()
+	if failfast {
+		// Cancel this in-flight script when an earlier script
+		// has failed, so the failfast abort propagates to the
+		// bpfman-shell subprocess rather than waiting it out.
+		stop := context.AfterFunc(abortCtx, cancel)
+		defer stop()
+	}
 
 	cmd := exec.CommandContext(ctx, "bpfman-shell", script)
 	// Script paths inside the corpus reference testdata
@@ -353,6 +388,9 @@ func runBPFManScript(t *testing.T, e2eDir, script string, timeout time.Duration)
 	out, err := runScriptCommand(ctx, cmd)
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		t.Fatalf("%s timed out after %s: %v\n\n%s", script, timeout, context.Cause(ctx), out)
+	}
+	if failfast && abortCtx.Err() != nil {
+		t.Skipf("%s skipped: failfast abort after an earlier failure", script)
 	}
 	if err != nil {
 		t.Fatalf("%s failed: %v\n\n%s", script, err, out)
