@@ -807,12 +807,12 @@ lint-dockerfile:
 # deliberate choice -- the e2e corpus is one small, coherent build
 # set, and bpfman-vet already depends on it.
 test: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS) $(E2E_BPF_OBJECTS)
-	$(strip go test $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") $(if $(PARALLEL),-parallel $(PARALLEL)) ./...)
+	$(strip go test $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") $(if $(filter-out 0,$(PARALLEL)),-parallel $(PARALLEL)) ./...)
 
 test-timeline: go-test-timeline-compile $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS) $(E2E_BPF_OBJECTS)
 	$(Q)mkdir -p $(dir $(GO_TEST_TIMELINE_EVENTS)) $(dir $(GO_TEST_TIMELINE_TRACE))
 	$(Q)rc=0; \
-	    $(strip go test $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") $(if $(PARALLEL),-parallel $(PARALLEL)) $(if $(TEST),-run "$(TEST)") -json ./...) > $(GO_TEST_TIMELINE_EVENTS) || rc=$$?; \
+	    $(strip go test $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") $(if $(filter-out 0,$(PARALLEL)),-parallel $(PARALLEL)) $(if $(TEST),-run "$(TEST)") -json ./...) > $(GO_TEST_TIMELINE_EVENTS) || rc=$$?; \
 	    $(BIN_DIR)/go-test-timeline -input $(GO_TEST_TIMELINE_EVENTS) -output $(GO_TEST_TIMELINE_TRACE); \
 	    printf "wrote %s\n" "$(GO_TEST_TIMELINE_TRACE)"; \
 	    exit $$rc
