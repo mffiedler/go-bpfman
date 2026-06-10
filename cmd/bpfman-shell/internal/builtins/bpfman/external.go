@@ -249,11 +249,11 @@ func decodeBpfmanResult(args []runtime.Arg, stdout []byte) (runtime.Value, error
 			}
 			return runtime.ValueFromStruct(snap)
 		case "list":
-			var summaries []platform.DispatcherSummary
-			if err := json.Unmarshal(stdout, &summaries); err != nil {
-				return runtime.Value{}, fmt.Errorf("decode DispatcherSummary list: %w", err)
+			var result platform.DispatcherListResult
+			if err := json.Unmarshal(stdout, &result); err != nil {
+				return runtime.Value{}, fmt.Errorf("decode DispatcherListResult: %w", err)
 			}
-			return runtime.ValueFromStruct(summaries)
+			return runtime.ValueFromStruct(result)
 		case "delete":
 			return runtime.Value{}, nil
 		}

@@ -948,7 +948,8 @@ func FormatDispatcherList(summaries []platform.DispatcherSummary, flags *OutputF
 		if summaries == nil {
 			summaries = []platform.DispatcherSummary{}
 		}
-		output, err := json.MarshalIndent(summaries, "", "  ")
+		result := platform.DispatcherListResult{Dispatchers: summaries}
+		output, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
 			return "", fmt.Errorf("failed to marshal: %w", err)
 		}
@@ -957,7 +958,8 @@ func FormatDispatcherList(summaries []platform.DispatcherSummary, flags *OutputF
 		if summaries == nil {
 			summaries = []platform.DispatcherSummary{}
 		}
-		return executeJSONPath(summaries, flags.JSONPathExpr())
+		result := platform.DispatcherListResult{Dispatchers: summaries}
+		return executeJSONPath(result, flags.JSONPathExpr())
 	case OutputFormatTable:
 		return formatDispatcherListTable(summaries), nil
 	default:

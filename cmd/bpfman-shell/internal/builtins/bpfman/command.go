@@ -141,7 +141,7 @@ func execCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, 
 	case *DeleteLinkCommand:
 		return runtime.Value{}, execDeleteLink(ctx, cli, mgr, c)
 	case *DispatcherListCommand:
-		return runtime.Value{}, execDispatcherList(ctx, cli, mgr, c)
+		return execDispatcherList(ctx, cli, mgr, c)
 	case *DispatcherGetCommand:
 		return execDispatcherGet(ctx, cli, mgr, c)
 	case *DispatcherDeleteCommand:
@@ -2238,11 +2238,13 @@ func parseDispatcherList(args []runtime.Arg) (*DispatcherListCommand, error) {
 }
 
 // execDispatcherList executes a parsed DispatcherListCommand, listing
-// dispatchers from the store and rendering output.
-func execDispatcherList(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *DispatcherListCommand) error {
+// dispatchers from the store, rendering output, and returning the
+// filtered summaries as a bindable value so scripts can assert on
+// the result the way they do with link list.
+func execDispatcherList(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *DispatcherListCommand) (runtime.Value, error) {
 	summaries, err := mgr.ListDispatcherSummaries(ctx)
 	if err != nil {
-		return err
+		return runtime.Value{}, err
 	}
 
 	filter := dispatcher.KeyFilter{Type: cmd.Type, Nsid: cmd.Nsid, Ifindex: cmd.Ifindex}
@@ -2254,15 +2256,20 @@ func execDispatcherList(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Ma
 	}
 	summaries = filtered
 
-	if len(summaries) == 0 && !cmd.Output.IsStructured() {
-		return nil
+	if len(summaries) > 0 || cmd.Output.IsStructured() {
+		output, err := cliformat.FormatDispatcherList(summaries, &cmd.Output)
+		if err != nil {
+			return runtime.Value{}, err
+		}
+		if err := cli.PrintOut(output); err != nil {
+			return runtime.Value{}, err
+		}
 	}
 
-	output, err := cliformat.FormatDispatcherList(summaries, &cmd.Output)
-	if err != nil {
-		return err
+	if summaries == nil {
+		summaries = []platform.DispatcherSummary{}
 	}
-	return cli.PrintOut(output)
+	return runtime.ValueFromStruct(platform.DispatcherListResult{Dispatchers: summaries})
 }
 
 // DispatcherGetCommand represents a fully parsed "dispatcher get"

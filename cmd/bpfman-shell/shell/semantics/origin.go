@@ -216,13 +216,13 @@ var (
 		// OriginDispatcher is reserved: the kind exists in the
 		// enum and renders as "dispatcher" in error messages,
 		// but no construction site currently emits a Value
-		// tagged with it. The dispatcher subcommands
-		// (`bpfman dispatcher list/get/delete`) print
-		// formatted output and bind only an envelope through
-		// the bind path. When a future refactor returns
-		// typed snapshots from `bpfman dispatcher get`,
-		// the semantic table grows by one entry alongside
-		// Program and Link.
+		// tagged with it. `bpfman dispatcher get` binds the
+		// snapshot and `bpfman dispatcher list` binds a
+		// DispatcherListResult, both as untagged (unsealed)
+		// values, so field access is permitted but not
+		// typo-checked. Tagging those Values and growing the
+		// semantic table by one entry alongside Program and
+		// Link would buy deep field checking.
 		OriginMap:     {Sealed: false, Kind: OriginMap},
 		OriginUnknown: {Sealed: false, Kind: OriginUnknown},
 	}
