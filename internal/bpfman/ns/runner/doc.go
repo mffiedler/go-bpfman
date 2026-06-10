@@ -2,9 +2,10 @@
 //
 // Runner code is entered after internal/bpfman/ns has already switched the
 // process into the target mount namespace from its C constructor. It should not
-// call setns itself. Its job is to parse the private bpfman-ns CLI, reconstruct
-// the inherited BPF program from the fd contract, verify the inherited writer
-// scope, attach the requested uprobe, and return an attachment fd to the parent
+// call setns itself. Its job is to parse the private bpfman-ns arguments,
+// reconstruct the inherited BPF program from the fd contract, verify the
+// inherited writer scope, attach the requested uprobe, and return an
+// attachment fd to the parent
 // process. The writer scope is inherited from the parent manager operation
 // because the attach performed here mutates kernel state and must remain
 // serialised with other bpfman operations.

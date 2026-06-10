@@ -1,49 +1,9 @@
-// Package ns provides the shared transport for bpfman's private
-// bpfman-ns mode.
-//
-// The bpfman-ns protocol exists so bpfman can attach uprobes in a
-// container's mount namespace. The parent process re-execs the current
-// binary with BPFMAN_MODE=bpfman-ns, inherited file descriptors, and
-// _BPFMAN_MNT_NS. A CGO constructor runs before the Go runtime starts
-// in the child and calls setns(CLONE_NEWNS), which requires a
-// single-threaded process.
-//
-// This package intentionally stops at the shared wire contract and
-// process transport: mode strings, namespace-entry environment, inherited
-// fd positions, fd passing, and command construction. The child-side
-// bpfman-ns CLI lives in internal/bpfman/ns/runner so parent-side attach
-// code does not import Kong or the uprobe runner.
-//
-// # How it works
-//
-// 1. When any binary that imports this package starts, the C constructor runs
-// 2. The constructor checks for _BPFMAN_MNT_NS environment variable
-// 3. If set, it calls setns() to enter that mount namespace
-// 4. Go runtime then starts in the target mount namespace
-// 5. If not set, Go starts normally (no namespace switch)
-//
-// # Logging
-//
-// The C code supports logging via _BPFMAN_NS_LOG_LEVEL environment variable:
-//   - "debug" - verbose logging including namespace inodes
-//   - "info"  - log namespace switches
-//   - "error" - only log errors (default)
-//   - "none"  - no logging
-//
-// # Usage
-//
-// To run the bpfman-ns child mode in a container's mount namespace:
-//
-//	cmd := ns.CommandWithOptions(containerPid, selfPath, ns.CommandOptions{
-//	    Mode: ns.ModeBPFManNS,
-//	}, "uprobe", target, "--fn-name", fnName)
-//	output, err := cmd.Output()
-//
-// The child process will:
-// - Have its mount namespace switched before Go starts (via C constructor)
-// - See the container's filesystem (target binary visible)
-// - Access host bpffs via /proc/<host-pid>/root/sys/fs/bpf/...
 package ns
+
+// Importing this package arms the C constructor: nsexec() runs before
+// the Go runtime starts in any binary that links it, and performs the
+// mount namespace switch when _BPFMAN_MNT_NS is set. See doc.go for
+// the wire contract.
 
 /*
 #cgo CFLAGS: -Wall

@@ -1,11 +1,3 @@
-// Package runner implements the child-side bpfman-ns command.
-//
-// A binary that performs container uprobe attachment re-execs itself
-// with BPFMAN_MODE=bpfman-ns; a CGO constructor in the ns package
-// calls setns(CLONE_NEWNS) before Go's runtime starts, so by the time
-// this code runs the process is already in the target namespace. This
-// package parses and executes the private bpfman-ns CLI; the shared
-// transport and wire contract live in the parent package.
 package runner
 
 import (
@@ -310,7 +302,7 @@ func HandleNamespaceHelperInvocation(argv []string, modeEnv string, run func(Nam
 }
 
 // runNamespaceHelper is the default runner for namespace helper invocations.
-// It parses the helper CLI and executes the command without mutating os.Args.
+// It parses the helper arguments and executes the command without mutating os.Args.
 func runNamespaceHelper(inv NamespaceHelperInvocation) error {
 	var cmd NSCmd
 

@@ -24,5 +24,8 @@
 //
 // The child command implementation lives in internal/bpfman/ns/runner. Keeping
 // it separate lets parent-side attach code import this transport package
-// without also importing the CLI parser and uprobe attach implementation.
+// without also importing the argument parser and uprobe attach implementation.
+// bpfman-ns is not a separate binary or CLI: the parent re-execs the current
+// executable with BPFMAN_MODE=bpfman-ns set, and the runner recognises that
+// mode before the normal command line is parsed.
 package ns
