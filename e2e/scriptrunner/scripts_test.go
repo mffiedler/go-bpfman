@@ -417,6 +417,16 @@ func TestRunScriptCommand_AllowsInterruptHandlerToFinish(t *testing.T) {
 
 func runScriptCommand(ctx context.Context, cmd *exec.Cmd) ([]byte, error) {
 	cancelled := execcancel.Configure(cmd)
+	// A signalled bpfman-shell drains its registered defers under a
+	// bounded cleanup context (the driver's deferDrainBudget, 5s)
+	// before exiting; concurrent siblings serialise their deferred
+	// unloads on the global writer lock, so a contended drain can
+	// legitimately need several seconds. execcancel's default Grace
+	// (2s) SIGKILLs the shell before that completes and the
+	// interrupted script leaks store state into every later run.
+	// Outwait the drain budget; the hard bound on a wedged shell is
+	// still here, just generous enough for cleanup to finish.
+	cmd.WaitDelay = 10 * time.Second
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
