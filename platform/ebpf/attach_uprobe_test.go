@@ -8,11 +8,23 @@ import (
 	"testing"
 )
 
-func TestSummariseHelperStderr(t *testing.T) {
+func TestSummariseHelperStderrIgnoresChatter(t *testing.T) {
 	t.Parallel()
 
-	got := summariseHelperStderr("\nfirst line\n final reason \n\n")
-	if got != "final reason" {
+	stderr := "nsexec[2531020]: INFO: namespace switch requested\n" +
+		"nsexec[2531020]: INFO: setns succeeded: mount namespace changed 4026531832 -> 4026532285\n" +
+		"nsexec[2531020]: INFO: returning to Go runtime in new mount namespace\n"
+	if got := summariseHelperStderr(stderr); got != "" {
+		t.Fatalf("log chatter is not a failure reason: got %q", got)
+	}
+}
+
+func TestSummariseHelperStderrFindsErrorBeforeTrailingChatter(t *testing.T) {
+	t.Parallel()
+
+	stderr := "bpfman-ns: error: specific reason\n" +
+		"nsexec[99]: INFO: late chatter\n"
+	if got := summariseHelperStderr(stderr); got != "specific reason" {
 		t.Fatalf("summary mismatch: got %q", got)
 	}
 }
@@ -33,7 +45,7 @@ func TestHelperExitErrorIncludesHelperReason(t *testing.T) {
 func TestSummariseHelperStderrKeepsNsexecLine(t *testing.T) {
 	t.Parallel()
 
-	line := "nsexec[123]: ERROR: setns failed"
+	line := "nsexec[2531900]: ERROR: failed to open mount namespace /nonexistent: No such file or directory (errno=2)"
 	got := summariseHelperStderr(line + "\n")
 	if got != line {
 		t.Fatalf("summary mismatch: got %q", got)
@@ -83,6 +95,25 @@ func TestHelperReceiveErrorFallsBackToReceiveError(t *testing.T) {
 	got := err.Error()
 	if !strings.Contains(got, "receive link fd from child: recvmsg: connection reset by peer") {
 		t.Fatalf("error did not include receive failure: %q", got)
+	}
+}
+
+func TestHelperReceiveErrorFallsBackWhenStderrIsOnlyChatter(t *testing.T) {
+	t.Parallel()
+
+	waitErr := commandExitError(t, 3)
+	recvErr := errors.New("recvfd: unexpected oob length: got 0, want 24")
+	stderr := "nsexec[2531020]: INFO: returning to Go runtime in new mount namespace\n"
+	err := helperReceiveError("malloc", "/bin/bash", 1234, recvErr, waitErr, stderr)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	got := err.Error()
+	if !strings.Contains(got, "receive link fd from child: recvfd: unexpected oob length") {
+		t.Fatalf("error did not fall back to receive failure: %q", got)
+	}
+	if strings.Contains(got, "INFO") {
+		t.Fatalf("log chatter must not be reported as a failure reason: %q", got)
 	}
 }
 

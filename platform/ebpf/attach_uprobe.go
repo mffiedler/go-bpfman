@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"syscall"
 
@@ -375,18 +376,30 @@ func helperReceiveError(fnName, target string, containerPid int32, recvErr, wait
 	return fmt.Errorf("receive link fd from child: %w", recvErr)
 }
 
+// nsexecErrorPattern matches the C constructor's error lines
+// ("nsexec[<pid>]: ERROR: ..."), emitted when setns fails before the Go
+// runtime starts.
+var nsexecErrorPattern = regexp.MustCompile(`^nsexec\[[0-9]+\]: ERROR: `)
+
+// summariseHelperStderr returns the failure reason from the helper's
+// stderr, or "" when it holds none. Only the error shapes this codebase
+// emits count as a reason: the child CLI's final "bpfman-ns: error:" or
+// "bpfman-shell: error:" line, and the C constructor's nsexec ERROR
+// line. The helper logs chatter at info level by default, so stderr is
+// rarely empty; matching on shape rather than taking the last non-empty
+// line keeps a routine log line from being reported as the failure
+// reason when the helper dies without printing one.
 func summariseHelperStderr(stderr string) string {
 	lines := strings.Split(stderr, "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
-		line := strings.TrimSpace(lines[i])
-		if line != "" {
-			return stripHelperErrorPrefix(line)
+		if reason := helperErrorReason(strings.TrimSpace(lines[i])); reason != "" {
+			return reason
 		}
 	}
 	return ""
 }
 
-func stripHelperErrorPrefix(line string) string {
+func helperErrorReason(line string) string {
 	for _, prefix := range []string{
 		"bpfman-ns: error:",
 		"bpfman-shell: error:",
@@ -395,5 +408,8 @@ func stripHelperErrorPrefix(line string) string {
 			return strings.TrimSpace(rest)
 		}
 	}
-	return line
+	if nsexecErrorPattern.MatchString(line) {
+		return line
+	}
+	return ""
 }
