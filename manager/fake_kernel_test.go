@@ -182,6 +182,11 @@ type fakeKernel struct {
 	// during a dispatcher swap, so keep the handles separately.
 	tcFilters map[tcFilterKey][]uint32
 
+	// XDP dispatcher link tracking for UpdateXDPDispatcherLink. The
+	// stable outer link survives dispatcher rebuilds and retargets a
+	// different pinned dispatcher program on each revision.
+	xdpDispatcherLinks map[string]string
+
 	// Operation recording for verification
 	ops        []kernelOp
 	removePins []string         // paths passed to RemovePin
@@ -250,17 +255,18 @@ func createPinFile[P ~string](p P) {
 
 func newFakeKernel() *fakeKernel {
 	fk := &fakeKernel{
-		programs:          make(map[kernel.ProgramID]fakeProgram),
-		links:             make(map[kernel.LinkID]*bpfman.Link),
-		tcFilters:         make(map[tcFilterKey][]uint32),
-		failOnProgram:     make(map[string]error),
-		failOnAttach:      make(map[string]error),
-		failOnDetach:      make(map[kernel.LinkID]error),
-		failOnIfname:      make(map[string]error),
-		failOnIfindex:     make(map[int]error),
-		failOnUnload:      make(map[string]error),
-		failOnUnloadCalls: make(map[string]int),
-		ifaceIndex:        map[string]int{"lo": 1, "eth0": 2},
+		programs:           make(map[kernel.ProgramID]fakeProgram),
+		links:              make(map[kernel.LinkID]*bpfman.Link),
+		tcFilters:          make(map[tcFilterKey][]uint32),
+		xdpDispatcherLinks: make(map[string]string),
+		failOnProgram:      make(map[string]error),
+		failOnAttach:       make(map[string]error),
+		failOnDetach:       make(map[kernel.LinkID]error),
+		failOnIfname:       make(map[string]error),
+		failOnIfindex:      make(map[int]error),
+		failOnUnload:       make(map[string]error),
+		failOnUnloadCalls:  make(map[string]int),
+		ifaceIndex:         map[string]int{"lo": 1, "eth0": 2},
 	}
 	fk.nextID.Store(100)
 	return fk
@@ -458,6 +464,7 @@ func (f *fakeKernel) Reset() {
 	f.removePins = nil
 	f.tcDetaches = nil
 	f.tcFilters = make(map[tcFilterKey][]uint32)
+	f.xdpDispatcherLinks = make(map[string]string)
 	f.failOnProgram = make(map[string]error)
 	f.failOnAttach = make(map[string]error)
 	f.failOnDetach = make(map[kernel.LinkID]error)
@@ -909,6 +916,7 @@ func (f *fakeKernel) AttachFexit(_ context.Context, progPinPath bpfman.ProgPinPa
 }
 
 func (f *fakeKernel) DetachLink(_ context.Context, linkPinPath bpfman.LinkPath) error {
+	path := linkPinPath.String()
 	for id, link := range f.links {
 		pinPath := ""
 		if link.Record.PinPath != nil {
@@ -920,16 +928,18 @@ func (f *fakeKernel) DetachLink(_ context.Context, linkPinPath bpfman.LinkPath) 
 			failErr := f.failOnDetach[id]
 			f.mu.Unlock()
 			if failErr != nil {
-				f.recordOp("detach", linkPinPath.String(), uint32(id), failErr)
+				f.recordOp("detach", path, uint32(id), failErr)
 				return failErr
 			}
 			delete(f.links, id)
-			f.recordOp("detach", linkPinPath.String(), uint32(id), nil)
+			delete(f.xdpDispatcherLinks, path)
+			f.recordOp("detach", path, uint32(id), nil)
 			return nil
 		}
 	}
 	// Link not found - still record the detach attempt
-	f.recordOp("detach", linkPinPath.String(), 0, nil)
+	delete(f.xdpDispatcherLinks, path)
+	f.recordOp("detach", path, 0, nil)
 	return nil
 }
 
@@ -1215,8 +1225,18 @@ func (f *fakeKernel) RepinMap(_ context.Context, srcPath, dstPath string) error 
 }
 
 func (f *fakeKernel) UpdateXDPDispatcherLink(_ context.Context, linkPinPath bpfman.LinkPath, newProgPinPath bpfman.ProgPinPath) error {
+	f.mu.Lock()
+	f.xdpDispatcherLinks[linkPinPath.String()] = newProgPinPath.String()
+	f.mu.Unlock()
 	f.recordOp("update-xdp-link", linkPinPath.String()+" -> "+newProgPinPath.String(), 0, nil)
 	return nil
+}
+
+func (f *fakeKernel) XDPDispatcherTarget(linkPinPath bpfman.LinkPath) (bpfman.ProgPinPath, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	target, ok := f.xdpDispatcherLinks[linkPinPath.String()]
+	return bpfman.ProgPinPath(target), ok
 }
 
 func (f *fakeKernel) LoadAndPinXDPDispatcher(_ context.Context, cfg dispatcher.XDPConfig, progPinPath bpfman.ProgPinPath) (kernel.ProgramID, error) {
@@ -1257,6 +1277,9 @@ func (f *fakeKernel) CreateXDPLink(_ context.Context, progPinPath bpfman.ProgPin
 	createPinFile(linkPinPath)
 	dispatcherID := kernel.ProgramID(0) // Not easily available from pin
 	linkID := kernel.LinkID(f.nextID.Add(1))
+	f.mu.Lock()
+	f.xdpDispatcherLinks[linkPinPath.String()] = progPinPath.String()
+	f.mu.Unlock()
 	f.recordOp("create-xdp-link", linkPinPath.String(), uint32(linkID), nil)
 	return &platform.XDPDispatcherResult{
 		DispatcherID:  dispatcherID,

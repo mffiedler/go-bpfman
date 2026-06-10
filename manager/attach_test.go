@@ -15,6 +15,39 @@ import (
 	"github.com/frobware/go-bpfman/platform"
 )
 
+type failDispatcherSnapshotStore struct {
+	platform.Store
+	failOnCall int
+	calls      int
+	err        error
+}
+
+func (s *failDispatcherSnapshotStore) RunInTransaction(
+	ctx context.Context,
+	name string,
+	fn func(platform.Store) error,
+) error {
+	return s.Store.RunInTransaction(ctx, name, func(tx platform.Store) error {
+		return fn(&failDispatcherSnapshotTx{Store: tx, parent: s})
+	})
+}
+
+type failDispatcherSnapshotTx struct {
+	platform.Store
+	parent *failDispatcherSnapshotStore
+}
+
+func (tx *failDispatcherSnapshotTx) ReplaceDispatcherSnapshot(
+	ctx context.Context,
+	snap platform.DispatcherSnapshotSpec,
+) (platform.DispatcherSnapshot, error) {
+	tx.parent.calls++
+	if tx.parent.calls == tx.parent.failOnCall {
+		return platform.DispatcherSnapshot{}, tx.parent.err
+	}
+	return tx.Store.ReplaceDispatcherSnapshot(ctx, snap)
+}
+
 // =============================================================================
 // Fentry Lifecycle Tests
 // =============================================================================
@@ -1336,6 +1369,116 @@ func TestTC_DispatcherStateInStore(t *testing.T) {
 	summaries, err = fix.Store.ListDispatcherSummaries(ctx)
 	require.NoError(t, err)
 	assert.Empty(t, summaries, "dispatcher should be removed after last extension detached")
+}
+
+func TestXDP_DispatcherRebuildRollbackRestoresOuterLink(t *testing.T) {
+	t.Parallel()
+
+	persistErr := errors.New("injected snapshot persist failure")
+	fix := newTestFixtureWithStore(t, func(store platform.Store) platform.Store {
+		return &failDispatcherSnapshotStore{
+			Store:      store,
+			failOnCall: 2,
+			err:        persistErr,
+		}
+	})
+	ctx := context.Background()
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("xdp.o"), "xdp_pass", bpfman.ProgramTypeXDP)
+	require.NoError(t, err)
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
+	require.NoError(t, err)
+	_, err = fix.Attach(ctx, attachSpec)
+	require.NoError(t, err)
+
+	summaries, err := fix.Store.ListDispatcherSummaries(ctx)
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+	snap, err := fix.Store.GetDispatcherSnapshot(ctx, summaries[0].Key)
+	require.NoError(t, err)
+	require.Len(t, snap.Members, 1)
+
+	linkPath := fix.Layout.BPFFS().DispatcherLinkPath(snap.Key.Type, snap.Key.Nsid, snap.Key.Ifindex)
+	oldTarget, ok := fix.Kernel.XDPDispatcherTarget(linkPath)
+	require.True(t, ok, "dispatcher link should exist")
+	assert.Equal(t,
+		fix.Layout.BPFFS().DispatcherProgPath(snap.Key.Type, snap.Key.Nsid, snap.Key.Ifindex, snap.Revision),
+		oldTarget,
+	)
+
+	_, err = fix.Attach(ctx, attachSpec)
+	require.ErrorIs(t, err, persistErr)
+
+	restoredTarget, ok := fix.Kernel.XDPDispatcherTarget(linkPath)
+	require.True(t, ok, "rollback should keep the dispatcher link")
+	assert.Equal(t, oldTarget, restoredTarget,
+		"snapshot failure must retarget the outer link to the old dispatcher")
+
+	after, err := fix.Store.GetDispatcherSnapshot(ctx, summaries[0].Key)
+	require.NoError(t, err)
+	assert.Equal(t, snap.Revision, after.Revision)
+	assert.Len(t, after.Members, 1)
+}
+
+func TestTC_DispatcherRebuildRollbackRestoresOldFilter(t *testing.T) {
+	t.Parallel()
+
+	persistErr := errors.New("injected snapshot persist failure")
+	fix := newTestFixtureWithStore(t, func(store platform.Store) platform.Store {
+		return &failDispatcherSnapshotStore{
+			Store:      store,
+			failOnCall: 2,
+			err:        persistErr,
+		}
+	})
+	ctx := context.Background()
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tc.o"), "tc_pass", bpfman.ProgramTypeTC)
+	require.NoError(t, err)
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	require.NoError(t, err)
+	attachSpec = attachSpec.WithPriority(50)
+	_, err = fix.Attach(ctx, attachSpec)
+	require.NoError(t, err)
+
+	summaries, err := fix.Store.ListDispatcherSummaries(ctx)
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+	snap, err := fix.Store.GetDispatcherSnapshot(ctx, summaries[0].Key)
+	require.NoError(t, err)
+	require.Len(t, snap.Members, 1)
+
+	_, err = fix.Attach(ctx, attachSpec)
+	require.ErrorIs(t, err, persistErr)
+
+	handles := fix.Kernel.TCFilterHandles()
+	require.Len(t, handles, 1, "rollback should leave exactly one TC filter")
+	created := tcFilterCreateHandles(fix.Kernel.Operations())
+	require.GreaterOrEqual(t, len(created), 3,
+		"rollback should create a replacement filter for the old dispatcher")
+	assert.NotEqual(t, created[1], handles[0],
+		"snapshot failure must not leave the failed new filter installed")
+
+	after, err := fix.Store.GetDispatcherSnapshot(ctx, summaries[0].Key)
+	require.NoError(t, err)
+	assert.Equal(t, snap.Revision, after.Revision)
+	assert.Len(t, after.Members, 1)
+}
+
+func tcFilterCreateHandles(ops []kernelOp) []uint32 {
+	var handles []uint32
+	for _, op := range ops {
+		if op.Op == "create-tc-filter" {
+			handles = append(handles, op.ID)
+		}
+	}
+	return handles
 }
 
 // =============================================================================

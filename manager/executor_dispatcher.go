@@ -286,13 +286,21 @@ func (e *executor) rebuildXDPDispatcher(
 	}); err != nil {
 		e.logger.ErrorContext(ctx, "persist failed, rolling back XDP dispatcher",
 			"ifindex", ops.ifindex, "error", err)
-		cleanupExtensions()
 		if firstAttach {
 			if rbErr := e.kernel.DetachLink(ctx, dispLinkPinPath); rbErr != nil {
 				e.logger.ErrorContext(ctx, "rollback: detach dispatcher link failed",
 					"path", dispLinkPinPath, "error", rbErr)
 			}
+		} else {
+			oldDispProgPinPath := e.bpffs.DispatcherProgPath(dispType, nsid, ops.ifindex, snap.Revision)
+			if rbErr := e.kernel.UpdateXDPDispatcherLink(ctx, dispLinkPinPath, oldDispProgPinPath); rbErr != nil {
+				e.logger.ErrorContext(ctx, "rollback: restore XDP dispatcher link failed",
+					"link_path", dispLinkPinPath,
+					"old_dispatcher_path", oldDispProgPinPath,
+					"error", rbErr)
+			}
 		}
+		cleanupExtensions()
 		cleanupNewDispatcher()
 		return extensionResult{}, err
 	}
@@ -611,6 +619,23 @@ func (e *executor) rebuildTCDispatcher(
 	}); err != nil {
 		e.logger.ErrorContext(ctx, "persist failed, rolling back TC dispatcher",
 			"ifindex", ops.ifindex, "error", err)
+		parent := dispatcher.TCParentHandle(dispType)
+		if rbErr := e.kernel.DetachTCFilter(ctx, int(ops.ifindex), ops.ifname, parent, result.Priority, result.Handle, ops.netnsPath); rbErr != nil {
+			e.logger.ErrorContext(ctx, "rollback: remove new TC filter failed",
+				"handle", fmt.Sprintf("%x", result.Handle),
+				"priority", result.Priority,
+				"error", rbErr)
+		}
+		if !firstAttach && oldHandle != 0 {
+			oldDispProgPinPath := e.bpffs.DispatcherProgPath(dispType, nsid, ops.ifindex, snap.Revision)
+			if _, rbErr := e.kernel.CreateTCFilter(ctx, oldDispProgPinPath, int(ops.ifindex), ops.ifname, ops.direction, ops.netnsPath); rbErr != nil {
+				e.logger.ErrorContext(ctx, "rollback: restore old TC filter failed",
+					"path", oldDispProgPinPath,
+					"old_priority", oldPriority,
+					"old_handle", fmt.Sprintf("%x", oldHandle),
+					"error", rbErr)
+			}
+		}
 		cleanupExtensions()
 		cleanupNewDispatcher()
 		return extensionResult{}, err

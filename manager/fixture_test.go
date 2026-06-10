@@ -63,10 +63,27 @@ func newTestFixtureWithDiscoverer(t *testing.T, discoverer *fakeDiscoverer) *tes
 // The store is intentionally not overridable; tests should exercise the
 // real SQLite schema so cascade and restriction behaviour stays covered.
 func newTestFixtureWithOptions(t *testing.T, discoverer *fakeDiscoverer, puller platform.ImagePuller) *testFixture {
+	return newTestFixtureWithOptionsAndStore(t, discoverer, puller, nil)
+}
+
+func newTestFixtureWithStore(t *testing.T, wrap func(platform.Store) platform.Store) *testFixture {
+	return newTestFixtureWithOptionsAndStore(t, nil, nil, wrap)
+}
+
+func newTestFixtureWithOptionsAndStore(
+	t *testing.T,
+	discoverer *fakeDiscoverer,
+	puller platform.ImagePuller,
+	wrap func(platform.Store) platform.Store,
+) *testFixture {
 	t.Helper()
 	store, err := sqlite.NewInMemory(context.Background(), testLogger())
 	require.NoError(t, err, "failed to create store")
 	t.Cleanup(func() { store.Close() })
+	managerStore := store
+	if wrap != nil {
+		managerStore = wrap(store)
+	}
 	layout, err := fs.New(filepath.Join(t.TempDir(), "bpfman"))
 	require.NoError(t, err, "failed to create fs layout")
 	kernel := newFakeKernel()
@@ -78,14 +95,14 @@ func newTestFixtureWithOptions(t *testing.T, discoverer *fakeDiscoverer, puller 
 	ensuredRuntime, err := runtime.New(layout, runtime.NoOpMounter{}, testLogger())
 	require.NoError(t, err, "failed to ensure runtime")
 
-	mgr, err := manager.New(ensuredRuntime, puller, store, kernel, discoverer, testLogger())
+	mgr, err := manager.New(ensuredRuntime, puller, managerStore, kernel, discoverer, testLogger())
 	require.NoError(t, err, "failed to create manager")
 	bcDir := t.TempDir()
 	return &testFixture{
 		Manager:       mgr,
 		Kernel:        kernel,
 		Discoverer:    discoverer,
-		Store:         store,
+		Store:         managerStore,
 		Layout:        layout,
 		t:             t,
 		bytecodeDir:   bcDir,
