@@ -23,7 +23,7 @@ type CLI struct {
 	kctx *kong.Context `kong:"-"`
 
 	Apply bool `name:"apply" help:"Execute the planned actions. Without this flag the command lists what would change and exits zero."`
-	Wipe  bool `name:"wipe" help:"Ignore the store and return --runtime-dir to a fresh-box state: unmount the bpffs at the runtime root if mounted, then remove the runtime root tree wholesale (lock file, store DB, bytecode caches, every subdirectory). Use when the store and bpf fs have drifted out of sync. The next bpfman invocation rebuilds a clean tree from scratch."`
+	Wipe  bool `name:"wipe" help:"Ignore the store and return --runtime-dir to a fresh-box state: unmount the bpffs at the runtime root if mounted, then remove the runtime root tree wholesale (lock file, store DB, bytecode caches, every subdirectory). The kernel and network e2e residue scans still run, so leaked test interfaces and namespaces are swept too. Use when the store and bpf fs have drifted out of sync. The next bpfman invocation rebuilds a clean tree from scratch."`
 }
 
 // NewCLI parses argv and returns the configured root.
@@ -55,10 +55,14 @@ func NewCLI() (*CLI, error) {
 func (c *CLI) Execute(ctx context.Context) error {
 	var plan bpfresidue.Plan
 
-	// --wipe short-circuits the snapshot-based logic and
-	// removes every file under --runtime-dir. The escape
-	// hatch when the store and bpf fs have drifted into a
-	// state the normal flows cannot reconcile.
+	// --wipe replaces the snapshot-based orphan scan (the store
+	// it would read is about to be deleted) with a wholesale
+	// removal of --runtime-dir. The escape hatch when the store
+	// and bpf fs have drifted into a state the normal flows
+	// cannot reconcile. The kernel- and network-side scans below
+	// still run: the runtime-dir wipe cannot reach a leaked test
+	// veth or netns, and a survivor holds its address-pool route
+	// and poisons later runs' host-route prechecks.
 	if c.Wipe {
 		layout, err := c.Layout()
 		if err != nil {
@@ -69,24 +73,23 @@ func (c *CLI) Execute(ctx context.Context) error {
 			return fmt.Errorf("scan runtime dir for wipe: %w", err)
 		}
 		plan = append(plan, wipePlan...)
-		return c.finish(plan)
-	}
-
-	// 1. inspect.Snapshot-driven orphan scan. The manager
-	// construction needs the bpfman runtime dir to exist; on a
-	// fresh box or after a full teardown there's nothing to
-	// snapshot, so we degrade to a comment line instead of
-	// failing the whole command.
-	if mgr, cleanup, err := c.NewManager(ctx); err == nil {
-		defer cleanup()
-		obs, err := mgr.Snapshot(ctx)
-		if err == nil {
-			plan = append(plan, bpfresidue.PlanFromObservation(obs)...)
-		} else {
-			fmt.Fprintf(c.Out, "# warning: snapshot bpfman state: %v\n", err)
-		}
 	} else {
-		fmt.Fprintf(c.Out, "# note: no bpfman runtime at %s, skipping orphan scan (%v)\n", c.RuntimeDir, err)
+		// 1. inspect.Snapshot-driven orphan scan. The manager
+		// construction needs the bpfman runtime dir to exist; on a
+		// fresh box or after a full teardown there's nothing to
+		// snapshot, so we degrade to a comment line instead of
+		// failing the whole command.
+		if mgr, cleanup, err := c.NewManager(ctx); err == nil {
+			defer cleanup()
+			obs, err := mgr.Snapshot(ctx)
+			if err == nil {
+				plan = append(plan, bpfresidue.PlanFromObservation(obs)...)
+			} else {
+				fmt.Fprintf(c.Out, "# warning: snapshot bpfman state: %v\n", err)
+			}
+		} else {
+			fmt.Fprintf(c.Out, "# note: no bpfman runtime at %s, skipping orphan scan (%v)\n", c.RuntimeDir, err)
+		}
 	}
 
 	// 2. tc_dispatcher clsact on test-named interfaces.
