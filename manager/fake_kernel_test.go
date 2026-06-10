@@ -253,6 +253,21 @@ func createPinFile[P ~string](p P) {
 	os.WriteFile(path, nil, 0644)
 }
 
+func createPinFileExclusive[P ~string](p P) error {
+	path := string(p)
+	if path == "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+	if err != nil {
+		return err
+	}
+	return f.Close()
+}
+
 func newFakeKernel() *fakeKernel {
 	fk := &fakeKernel{
 		programs:           make(map[kernel.ProgramID]fakeProgram),
@@ -1241,7 +1256,10 @@ func (f *fakeKernel) XDPDispatcherTarget(linkPinPath bpfman.LinkPath) (bpfman.Pr
 
 func (f *fakeKernel) LoadAndPinXDPDispatcher(_ context.Context, cfg dispatcher.XDPConfig, progPinPath bpfman.ProgPinPath) (kernel.ProgramID, error) {
 	dispatcherID := kernel.ProgramID(f.nextID.Add(1))
-	createPinFile(progPinPath)
+	if err := createPinFileExclusive(progPinPath); err != nil {
+		f.recordOp("load-pin-xdp-dispatcher", progPinPath.String(), 0, err)
+		return 0, err
+	}
 	f.programs[dispatcherID] = fakeProgram{
 		id:          dispatcherID,
 		name:        "xdp_dispatcher",
@@ -1254,7 +1272,10 @@ func (f *fakeKernel) LoadAndPinXDPDispatcher(_ context.Context, cfg dispatcher.X
 
 func (f *fakeKernel) LoadAndPinTCDispatcher(_ context.Context, cfg dispatcher.TCConfig, progPinPath bpfman.ProgPinPath) (kernel.ProgramID, error) {
 	dispatcherID := kernel.ProgramID(f.nextID.Add(1))
-	createPinFile(progPinPath)
+	if err := createPinFileExclusive(progPinPath); err != nil {
+		f.recordOp("load-pin-tc-dispatcher", progPinPath.String(), 0, err)
+		return 0, err
+	}
 	f.programs[dispatcherID] = fakeProgram{
 		id:          dispatcherID,
 		name:        "tc_dispatcher",

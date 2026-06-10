@@ -1481,6 +1481,86 @@ func tcFilterCreateHandles(ops []kernelOp) []uint32 {
 	return handles
 }
 
+func TestXDP_DetachRebuildRollbackAllowsRetry(t *testing.T) {
+	t.Parallel()
+
+	persistErr := errors.New("injected snapshot persist failure")
+	fix := newTestFixtureWithStore(t, func(store platform.Store) platform.Store {
+		return &failDispatcherSnapshotStore{
+			Store:      store,
+			failOnCall: 3,
+			err:        persistErr,
+		}
+	})
+	ctx := context.Background()
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("xdp.o"), "xdp_pass", bpfman.ProgramTypeXDP)
+	require.NoError(t, err)
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
+	require.NoError(t, err)
+	first, err := fix.Attach(ctx, attachSpec)
+	require.NoError(t, err)
+	_, err = fix.Attach(ctx, attachSpec)
+	require.NoError(t, err)
+
+	err = fix.Detach(ctx, first.Record.ID)
+	require.ErrorIs(t, err, persistErr)
+
+	err = fix.Detach(ctx, first.Record.ID)
+	require.NoError(t, err, "retry should not trip over orphaned detach-rebuild pins")
+
+	summaries, err := fix.Store.ListDispatcherSummaries(ctx)
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+	snap, err := fix.Store.GetDispatcherSnapshot(ctx, summaries[0].Key)
+	require.NoError(t, err)
+	assert.Len(t, snap.Members, 1)
+}
+
+func TestTC_DetachRebuildRollbackAllowsRetry(t *testing.T) {
+	t.Parallel()
+
+	persistErr := errors.New("injected snapshot persist failure")
+	fix := newTestFixtureWithStore(t, func(store platform.Store) platform.Store {
+		return &failDispatcherSnapshotStore{
+			Store:      store,
+			failOnCall: 3,
+			err:        persistErr,
+		}
+	})
+	ctx := context.Background()
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tc.o"), "tc_pass", bpfman.ProgramTypeTC)
+	require.NoError(t, err)
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	require.NoError(t, err)
+	attachSpec = attachSpec.WithPriority(50)
+	first, err := fix.Attach(ctx, attachSpec)
+	require.NoError(t, err)
+	_, err = fix.Attach(ctx, attachSpec)
+	require.NoError(t, err)
+
+	err = fix.Detach(ctx, first.Record.ID)
+	require.ErrorIs(t, err, persistErr)
+
+	err = fix.Detach(ctx, first.Record.ID)
+	require.NoError(t, err, "retry should not trip over orphaned detach-rebuild pins")
+
+	summaries, err := fix.Store.ListDispatcherSummaries(ctx)
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+	snap, err := fix.Store.GetDispatcherSnapshot(ctx, summaries[0].Key)
+	require.NoError(t, err)
+	assert.Len(t, snap.Members, 1)
+	assert.Equal(t, 1, fix.Kernel.TCFilterCount())
+}
+
 // =============================================================================
 // Extension Position Tests
 // =============================================================================

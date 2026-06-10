@@ -803,12 +803,30 @@ func (e *executor) rebuildXDPForDetach(
 		return fmt.Errorf("load XDP dispatcher for detach rebuild: %w", err)
 	}
 
+	cleanupNewRevision := func() {
+		if rbErr := e.removeDispatcherRevisionDir(ctx, key, revision); rbErr != nil {
+			e.logger.ErrorContext(ctx, "rollback: remove XDP detach-rebuild revision failed",
+				"path", e.bpffs.DispatcherRevisionDir(key.Type, key.Nsid, key.Ifindex, revision),
+				"error", rbErr)
+		}
+	}
+
 	// Attach remaining extensions.
 	type attachedExt struct {
 		out     bpfman.AttachOutput
 		pinPath bpfman.LinkPath
 	}
 	attached := make([]attachedExt, 0, len(slots))
+	cleanupExtensions := func() {
+		for _, ext := range attached {
+			if ext.pinPath != "" {
+				if rbErr := e.kernel.DetachLink(ctx, ext.pinPath); rbErr != nil {
+					e.logger.ErrorContext(ctx, "rollback: detach XDP detach-rebuild extension failed",
+						"path", ext.pinPath, "error", rbErr)
+				}
+			}
+		}
+	}
 	for i, slot := range slots {
 		linkPinPath := e.bpffs.ExtensionLinkPath(key.Type, key.Nsid, key.Ifindex, revision, i)
 		out, err := e.kernel.AttachXDPExtension(ctx, dispatcher.XDPExtensionAttachSpec{
@@ -819,6 +837,8 @@ func (e *executor) rebuildXDPForDetach(
 			LinkPinPath:       linkPinPath,
 		})
 		if err != nil {
+			cleanupExtensions()
+			cleanupNewRevision()
 			return fmt.Errorf("re-attach XDP extension %s at position %d: %w", slot.ProgramName, i, err)
 		}
 		attached = append(attached, attachedExt{out: out, pinPath: linkPinPath})
@@ -852,6 +872,8 @@ func (e *executor) rebuildXDPForDetach(
 	// Swap link.
 	linkPinPath := e.bpffs.DispatcherLinkPath(key.Type, key.Nsid, key.Ifindex)
 	if err := e.kernel.UpdateXDPDispatcherLink(ctx, linkPinPath, progPinPath); err != nil {
+		cleanupExtensions()
+		cleanupNewRevision()
 		return fmt.Errorf("update XDP dispatcher link: %w", err)
 	}
 
@@ -884,6 +906,15 @@ func (e *executor) rebuildXDPForDetach(
 		_, err := tx.ReplaceDispatcherSnapshot(ctx, newSnap)
 		return err
 	}); err != nil {
+		oldProgPinPath := e.bpffs.DispatcherProgPath(key.Type, key.Nsid, key.Ifindex, snap.Revision)
+		if rbErr := e.kernel.UpdateXDPDispatcherLink(ctx, linkPinPath, oldProgPinPath); rbErr != nil {
+			e.logger.ErrorContext(ctx, "rollback: restore XDP detach-rebuild dispatcher link failed",
+				"link_path", linkPinPath,
+				"old_dispatcher_path", oldProgPinPath,
+				"error", rbErr)
+		}
+		cleanupExtensions()
+		cleanupNewRevision()
 		return err
 	}
 
@@ -922,12 +953,30 @@ func (e *executor) rebuildTCForDetach(
 		return fmt.Errorf("load TC dispatcher for detach rebuild: %w", err)
 	}
 
+	cleanupNewRevision := func() {
+		if rbErr := e.removeDispatcherRevisionDir(ctx, key, revision); rbErr != nil {
+			e.logger.ErrorContext(ctx, "rollback: remove TC detach-rebuild revision failed",
+				"path", e.bpffs.DispatcherRevisionDir(key.Type, key.Nsid, key.Ifindex, revision),
+				"error", rbErr)
+		}
+	}
+
 	// Attach remaining extensions.
 	type attachedExt struct {
 		out     bpfman.AttachOutput
 		pinPath bpfman.LinkPath
 	}
 	attached := make([]attachedExt, 0, len(slots))
+	cleanupExtensions := func() {
+		for _, ext := range attached {
+			if ext.pinPath != "" {
+				if rbErr := e.kernel.DetachLink(ctx, ext.pinPath); rbErr != nil {
+					e.logger.ErrorContext(ctx, "rollback: detach TC detach-rebuild extension failed",
+						"path", ext.pinPath, "error", rbErr)
+				}
+			}
+		}
+	}
 	for i, slot := range slots {
 		linkPinPath := e.bpffs.ExtensionLinkPath(key.Type, key.Nsid, key.Ifindex, revision, i)
 		out, err := e.kernel.AttachTCExtension(ctx, dispatcher.TCExtensionAttachSpec{
@@ -938,6 +987,8 @@ func (e *executor) rebuildTCForDetach(
 			LinkPinPath:       linkPinPath,
 		})
 		if err != nil {
+			cleanupExtensions()
+			cleanupNewRevision()
 			return fmt.Errorf("re-attach TC extension %s at position %d: %w", slot.ProgramName, i, err)
 		}
 		attached = append(attached, attachedExt{out: out, pinPath: linkPinPath})
@@ -994,6 +1045,8 @@ func (e *executor) rebuildTCForDetach(
 	// Create new filter.
 	result, err := e.kernel.CreateTCFilter(ctx, progPinPath, int(key.Ifindex), snapInterfaceName(snap), direction, snap.Runtime.NetnsPath)
 	if err != nil {
+		cleanupExtensions()
+		cleanupNewRevision()
 		return fmt.Errorf("create TC filter for detach rebuild: %w", err)
 	}
 
@@ -1035,6 +1088,25 @@ func (e *executor) rebuildTCForDetach(
 		_, err := tx.ReplaceDispatcherSnapshot(ctx, newSnap)
 		return err
 	}); err != nil {
+		parent := dispatcher.TCParentHandle(dispType)
+		if rbErr := e.kernel.DetachTCFilter(ctx, int(key.Ifindex), snapInterfaceName(snap), parent, result.Priority, result.Handle, snap.Runtime.NetnsPath); rbErr != nil {
+			e.logger.ErrorContext(ctx, "rollback: remove TC detach-rebuild filter failed",
+				"handle", fmt.Sprintf("%x", result.Handle),
+				"priority", result.Priority,
+				"error", rbErr)
+		}
+		if oldHandle != 0 {
+			oldProgPinPath := e.bpffs.DispatcherProgPath(key.Type, key.Nsid, key.Ifindex, snap.Revision)
+			if _, rbErr := e.kernel.CreateTCFilter(ctx, oldProgPinPath, int(key.Ifindex), snapInterfaceName(snap), direction, snap.Runtime.NetnsPath); rbErr != nil {
+				e.logger.ErrorContext(ctx, "rollback: restore TC detach-rebuild filter failed",
+					"path", oldProgPinPath,
+					"old_priority", oldPriority,
+					"old_handle", fmt.Sprintf("%x", oldHandle),
+					"error", rbErr)
+			}
+		}
+		cleanupExtensions()
+		cleanupNewRevision()
 		return err
 	}
 
