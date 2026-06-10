@@ -553,8 +553,8 @@ func (l *lowerer) lowerDefStmt(s *syntax.DefStmt) error {
 	defL.cur = entry
 	defL.emit(&ir.EnterFrame{Kind: ir.FrameDef, Span: s.Span})
 	defL.emit(&ir.EnterDeferScope{Kind: ir.DeferScopeDef, Span: s.Span})
-	for i, name := range s.Params {
-		defL.emit(&ir.BindName{Name: name.Text, Src: ir.Temp(i), Span: s.Span})
+	for i, p := range s.Params {
+		defL.emit(&ir.BindName{Name: p.Name.Text, Src: ir.Temp(i), Span: s.Span})
 	}
 	for _, st := range s.Body {
 		if err := defL.lowerStmt(st); err != nil {
@@ -571,7 +571,7 @@ func (l *lowerer) lowerDefStmt(s *syntax.DefStmt) error {
 
 	def := &ir.Def{
 		Name:      s.Name.Text,
-		Params:    identTexts(s.Params),
+		Params:    irDefParams(s.Params),
 		HasReturn: bodyHasReturn(s.Body),
 		Entry:     entry,
 		Blocks:    defL.blocks,
@@ -790,4 +790,14 @@ func identTexts(idents []syntax.Ident) []string {
 		texts = append(texts, ident.Text)
 	}
 	return texts
+}
+
+// irDefParams converts the syntax-level def parameters into their
+// IR form, carrying the optional type annotation through.
+func irDefParams(params []syntax.DefParam) []ir.Param {
+	out := make([]ir.Param, 0, len(params))
+	for _, p := range params {
+		out = append(out, ir.Param{Name: p.Name.Text, Type: p.Type})
+	}
+	return out
 }

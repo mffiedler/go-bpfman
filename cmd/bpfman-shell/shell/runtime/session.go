@@ -36,7 +36,7 @@ type Session struct {
 // for diagnostics.
 type defValue struct {
 	Name      string
-	Params    []string
+	Params    []ir.Param
 	HasReturn bool
 	source.Span
 
@@ -151,9 +151,13 @@ func (s *Session) DefSignatures() []DefSignature {
 	out := make([]DefSignature, 0, len(names))
 	for _, name := range names {
 		d := s.defs[name]
+		params := make([]string, 0, len(d.Params))
+		for _, p := range d.Params {
+			params = append(params, p.String())
+		}
 		out = append(out, DefSignature{
 			Name:   d.Name,
-			Params: slices.Clone(d.Params),
+			Params: params,
 		})
 	}
 	return out

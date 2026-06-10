@@ -341,6 +341,80 @@ func decorateDefError(err error, def *defValue, callLoc source.Pos) error {
 	return err
 }
 
+// bindDefArg converts one call argument into the value bound to the
+// def's i-th parameter. Untyped parameters keep argToValue's
+// baseline rule. An annotated parameter is a declared input
+// boundary: it parses bare words (the genuinely untyped form) into
+// the declared type, and requires every already-typed argument to
+// match -- a quoted literal asserts string, a typed variable asserts
+// its kind, and the annotation never coerces across an asserted
+// kind. Failures cite the argument's span and name the def and
+// parameter.
+func bindDefArg(def *defValue, i int, arg Arg) (Value, error) {
+	p := def.Params[i]
+	if p.Type == "" {
+		return argToValue(arg), nil
+	}
+	fail := func(got string) error {
+		return syntax.SpanErrorf(ArgSpan(arg), "def %s: parameter %q: expected %s, got %s", def.Name, p.Name, p.Type, got)
+	}
+	switch a := arg.(type) {
+	case WordArg:
+		return parseWordAs(p.Type, a.Text, fail)
+	case QuotedArg:
+		if p.Type == "string" {
+			return StringValue(a.Text), nil
+		}
+		return Value{}, fail(fmt.Sprintf("the quoted string %q (quoting asserts string; drop the quotes to parse it)", a.Text))
+	default:
+		v := argToValue(arg)
+		if got := scalarKind(v); got != p.Type {
+			if got == "" {
+				return Value{}, fail("a non-scalar value")
+			}
+			return Value{}, fail("a " + got)
+		}
+		return v, nil
+	}
+}
+
+// parseWordAs parses a bare word into the declared parameter type.
+func parseWordAs(typ, text string, fail func(string) error) (Value, error) {
+	switch typ {
+	case "number":
+		if !syntax.IsJSONNumber(text) {
+			return Value{}, fail(fmt.Sprintf("%q", text))
+		}
+		return ValueFromAny(json.Number(text)), nil
+	case "bool":
+		switch text {
+		case "true":
+			return BoolValue(true), nil
+		case "false":
+			return BoolValue(false), nil
+		}
+		return Value{}, fail(fmt.Sprintf("%q", text))
+	default: // "string"
+		return StringValue(text), nil
+	}
+}
+
+// scalarKind names a Value's scalar kind in annotation vocabulary:
+// "number", "string", or "bool". Structured, null, and absent
+// values return "".
+func scalarKind(v Value) string {
+	switch v.v.(type) {
+	case string:
+		return "string"
+	case json.Number, float64:
+		return "number"
+	case bool:
+		return "bool"
+	default:
+		return ""
+	}
+}
+
 // argToValue converts a post-expansion Arg into a Value suitable for
 // binding to a def parameter. The typing rule at the call boundary:
 // variables keep their value kinds (a number-valued $n arrives in

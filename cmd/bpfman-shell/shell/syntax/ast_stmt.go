@@ -1,6 +1,9 @@
 package syntax
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
 	"time"
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
@@ -177,10 +180,48 @@ type DeferStmt struct {
 	source.Span
 }
 
+// DefParam is one declared def parameter: a name plus an optional
+// type annotation. An annotated parameter parses bare-word
+// arguments into the declared type at bind time and requires
+// already-typed arguments to match; an empty Type keeps the
+// untyped baseline (words bind as strings, variables keep their
+// value kinds).
+type DefParam struct {
+	Name Ident
+	Type string
+}
+
+// DefParamTypes lists the accepted parameter annotation types in
+// the order error messages cite them.
+var DefParamTypes = []string{"number", "string", "bool"}
+
+// IsJSONNumber reports whether text is exactly one JSON number.
+// This is the validation a `number` parameter annotation applies to
+// a bare word, because the shell stores numbers as json.Number:
+// anything looser (Go's ParseFloat accepts NaN, Inf, hex floats,
+// and a leading +) would smuggle values into json.Number that every
+// JSON-oriented path downstream rejects. JSON's grammar also
+// forbids leading zeros, which is the right strictness for an
+// input boundary.
+func IsJSONNumber(text string) bool {
+	dec := json.NewDecoder(bytes.NewReader([]byte(text)))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		return false
+	}
+	if _, ok := v.(json.Number); !ok {
+		return false
+	}
+	// Exactly one value: trailing data means the word was not a
+	// single number.
+	return dec.Decode(&v) == io.EOF
+}
+
 // DefStmt declares a user-defined command.
 type DefStmt struct {
 	Name   Ident
-	Params []Ident
+	Params []DefParam
 	Body   []Stmt
 	source.Span
 }

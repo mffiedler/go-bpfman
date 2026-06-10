@@ -89,7 +89,7 @@ func (w symbolWalker) walkStmt(st Stmt, scope source.Span) {
 		w.emit(n.Name, SymbolDef, scope)
 		defScope := n.Span
 		for _, param := range n.Params {
-			w.emit(param, SymbolParam, defScope)
+			w.emit(param.Name, SymbolParam, defScope)
 		}
 		w.walkStmts(n.Body, defScope)
 	}

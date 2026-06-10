@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/ir"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
 )
 
@@ -26,12 +27,12 @@ func traceNote(env *Env, sp source.Span, rendered string) {
 	traceRendered(env, sp.Pos, rendered)
 }
 
-func defTraceText(name string, params []string) string {
+func defTraceText(name string, params []ir.Param) string {
 	var b strings.Builder
 	b.WriteString("def ")
 	b.WriteString(name)
 	b.WriteByte('(')
-	b.WriteString(strings.Join(params, " "))
+	b.WriteString(ir.ParamList(params))
 	b.WriteByte(')')
 	return b.String()
 }

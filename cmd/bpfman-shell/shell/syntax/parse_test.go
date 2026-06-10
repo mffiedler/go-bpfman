@@ -1573,3 +1573,65 @@ func TestParse_CommandArg_ParenExprErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestParse_DefParamAnnotations(t *testing.T) {
+	t.Parallel()
+
+	t.Run("annotated and unannotated params mix", func(t *testing.T) {
+		t.Parallel()
+		prog, err := parseSource(t, "def f(a: number b c: string d: bool) { print $a }")
+		require.NoError(t, err)
+		def := prog.Stmts[0].(*DefStmt)
+		require.Len(t, def.Params, 4)
+		assert.Equal(t, "a", def.Params[0].Name.Text)
+		assert.Equal(t, "number", def.Params[0].Type)
+		assert.Equal(t, "b", def.Params[1].Name.Text)
+		assert.Equal(t, "", def.Params[1].Type)
+		assert.Equal(t, "c", def.Params[2].Name.Text)
+		assert.Equal(t, "string", def.Params[2].Type)
+		assert.Equal(t, "d", def.Params[3].Name.Text)
+		assert.Equal(t, "bool", def.Params[3].Type)
+	})
+
+	t.Run("unknown type rejected with allowed list", func(t *testing.T) {
+		t.Parallel()
+		_, err := parseSource(t, "def f(a: integer) { print $a }")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), `unknown parameter type "integer"`)
+		assert.Contains(t, err.Error(), "number, string, bool")
+	})
+
+	t.Run("annotation missing type", func(t *testing.T) {
+		t.Parallel()
+		_, err := parseSource(t, "def f(a:) { print $a }")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), `parameter "a": annotation requires a type`)
+	})
+
+	t.Run("glued colon rejected", func(t *testing.T) {
+		t.Parallel()
+		_, err := parseSource(t, "def f(a:number) { print $a }")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "write it as \"a: number\"")
+	})
+
+	t.Run("duplicate names still rejected when annotated", func(t *testing.T) {
+		t.Parallel()
+		_, err := parseSource(t, "def f(a: number a: string) { print $a }")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "duplicate parameter name")
+	})
+}
+
+func TestIsJSONNumber(t *testing.T) {
+	t.Parallel()
+
+	accepted := []string{"0", "5", "-5", "3.14", "1e3", "1E-2", "4026531840"}
+	for _, s := range accepted {
+		assert.True(t, IsJSONNumber(s), "%q must be a JSON number", s)
+	}
+	rejected := []string{"NaN", "Inf", "+Inf", "-Inf", "Infinity", "+5", "05", "0x10", "1 2", "", "abc", "1.10.3"}
+	for _, s := range rejected {
+		assert.False(t, IsJSONNumber(s), "%q must not be a JSON number", s)
+	}
+}

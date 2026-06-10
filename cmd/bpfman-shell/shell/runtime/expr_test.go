@@ -42,10 +42,10 @@ func idents(names ...string) []syntax.Ident {
 	return out
 }
 
-func identTexts(idents []syntax.Ident) []string {
-	out := make([]string, 0, len(idents))
-	for _, ident := range idents {
-		out = append(out, ident.Text)
+func identTexts(params []syntax.DefParam) []string {
+	out := make([]string, 0, len(params))
+	for _, p := range params {
+		out = append(out, p.Name.Text)
 	}
 	return out
 }

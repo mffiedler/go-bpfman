@@ -66,7 +66,7 @@ func TestDumpLowered_defWithBindAndReturn(t *testing.T) {
 
 	def := &ir.Def{
 		Name:     "load_prog",
-		Params:   []string{"path"},
+		Params:   []ir.Param{{Name: "path"}},
 		Entry:    bbEntry,
 		Blocks:   []*ir.BasicBlock{bbEntry, bbFail, bbReturn},
 		NumTemps: 4,

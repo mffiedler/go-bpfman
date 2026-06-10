@@ -95,7 +95,11 @@ func runLoweredDefCall(def *defValue, args []Arg, env *Env) (Value, bool, int, e
 	ex := newExecutor(env, def.NumTemps)
 	ex.inDef = true
 	for i := range args {
-		ex.temps[i] = argToValue(args[i])
+		v, err := bindDefArg(def, i, args[i])
+		if err != nil {
+			return Value{}, false, 0, err
+		}
+		ex.temps[i] = v
 	}
 	err := ex.runUnit(def.Entry)
 	ex.unwindOnExit()

@@ -23,6 +23,7 @@
 package ir
 
 import (
+	"strings"
 	"time"
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
@@ -47,9 +48,35 @@ type Program struct {
 // own block table. Params keeps the original parameter names
 // for diagnostics; binding happens inside the def's entry block
 // via the usual EnterFrame / BindName sequence.
+// Param is one declared def parameter. Type is the optional
+// annotation ("number", "string", "bool"); empty means untyped,
+// keeping the baseline binding rule (words bind as strings,
+// variables keep their value kinds).
+type Param struct {
+	Name string
+	Type string
+}
+
+// String renders the parameter as it appears in source.
+func (p Param) String() string {
+	if p.Type != "" {
+		return p.Name + ": " + p.Type
+	}
+	return p.Name
+}
+
+// ParamList renders a parameter list as it appears in source.
+func ParamList(params []Param) string {
+	texts := make([]string, 0, len(params))
+	for _, p := range params {
+		texts = append(texts, p.String())
+	}
+	return strings.Join(texts, " ")
+}
+
 type Def struct {
 	Name      string
-	Params    []string
+	Params    []Param
 	HasReturn bool
 	Entry     *BasicBlock
 	Blocks    []*BasicBlock

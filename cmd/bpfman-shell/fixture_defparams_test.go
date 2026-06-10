@@ -46,6 +46,34 @@ func TestScriptRun_DefParamKindsFixtureMatrix(t *testing.T) {
 			name:    "interpolation_of_number_param",
 			fixture: "defparams/interpolation-of-number-param",
 		},
+		{
+			name:    "annotated_word_parses",
+			fixture: "defparams/annotated-word-parses",
+		},
+		{
+			name:    "annotated_word_rejects_bad_number",
+			fixture: "defparams/annotated-word-rejects-bad-number",
+		},
+		{
+			name:    "annotated_word_rejects_nonfinite",
+			fixture: "defparams/annotated-word-rejects-nonfinite",
+		},
+		{
+			name:    "annotated_quoted_rejects_number",
+			fixture: "defparams/annotated-quoted-rejects-number",
+		},
+		{
+			name:    "annotated_variable_mismatch",
+			fixture: "defparams/annotated-variable-mismatch",
+		},
+		{
+			name:    "annotated_variable_matches",
+			fixture: "defparams/annotated-variable-matches",
+		},
+		{
+			name:    "annotated_string_accepts_all_forms",
+			fixture: "defparams/annotated-string-accepts-all-forms",
+		},
 	}
 
 	for _, tc := range cases {

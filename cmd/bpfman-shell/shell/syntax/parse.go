@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 
@@ -979,8 +980,8 @@ func (p *parser) parseReturnStmt() (Stmt, error) {
 // rejected with a clear error so the migration from the previous
 // comma-separated spelling fails loudly rather than silently
 // accepting `def f(a, b)` as `def f(a, b)` with a glued-comma name.
-func (p *parser) parseDefParams(defLoc source.Pos) ([]Ident, error) {
-	var params []Ident
+func (p *parser) parseDefParams(defLoc source.Pos) ([]DefParam, error) {
+	var params []DefParam
 	seen := make(map[string]bool)
 	for {
 		// Allow newlines/semis inside the parameter list so a long
@@ -1002,18 +1003,51 @@ func (p *parser) parseDefParams(defLoc source.Pos) ([]Ident, error) {
 		if strings.ContainsRune(t.Text, ',') {
 			return nil, spanErrorf(t.Span, "def: comma is not a parameter separator; use whitespace (got %q)", t.Text)
 		}
-		if !isIdent(t.Text) {
-			return nil, spanErrorf(t.Span, "def: invalid parameter name %q", t.Text)
+		// An annotated parameter follows the record-field
+		// convention: the name token carries a trailing colon
+		// and the type is the next word. A colon anywhere else
+		// in the token is the glued spelling, rejected so
+		// "a:number" fails loudly rather than parsing as a
+		// strange name.
+		name := t.Text
+		annotated := false
+		if strings.ContainsRune(name, ':') {
+			if !strings.HasSuffix(name, ":") || strings.Count(name, ":") != 1 {
+				return nil, spanErrorf(t.Span, "def: parameter annotation needs a space after the colon; write it as %q", strings.Replace(name, ":", ": ", 1))
+			}
+			name = strings.TrimSuffix(name, ":")
+			annotated = true
 		}
-		if t.Text == "_" {
+		if !isIdent(name) {
+			return nil, spanErrorf(t.Span, "def: invalid parameter name %q", name)
+		}
+		if name == "_" {
 			return nil, spanErrorf(t.Span, "def parameters cannot bind '_'; use a real name or drop the slot")
 		}
-		if seen[t.Text] {
-			return nil, spanErrorf(t.Span, "def: duplicate parameter name %q", t.Text)
+		if seen[name] {
+			return nil, spanErrorf(t.Span, "def: duplicate parameter name %q", name)
 		}
-		seen[t.Text] = true
-		params = append(params, identFromToken(t))
+		seen[name] = true
+		nameTok := t
 		p.advance()
+
+		param := DefParam{Name: Ident{Text: name, Span: nameTok.Span}}
+		if annotated {
+			for !p.atEOF() && p.peek().Kind == TokenSep {
+				p.pos++
+			}
+			if p.atEOF() || p.peek().Kind != TokenWord || p.peek().Text == ")" {
+				return nil, spanErrorf(nameTok.Span, "def: parameter %q: annotation requires a type (number, string, bool)", name)
+			}
+			typeTok := p.peek()
+			validType := slices.Contains(DefParamTypes, typeTok.Text)
+			if !validType {
+				return nil, spanErrorf(typeTok.Span, "def: parameter %q: unknown parameter type %q (expected one of: number, string, bool)", name, typeTok.Text)
+			}
+			param.Type = typeTok.Text
+			p.advance()
+		}
+		params = append(params, param)
 	}
 }
 

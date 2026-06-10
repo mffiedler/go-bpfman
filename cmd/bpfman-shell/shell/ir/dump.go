@@ -61,7 +61,7 @@ func Dump(w io.Writer, lp *Program) error {
 func dumpDef(b *strings.Builder, d *Def, defs map[string]bool) {
 	labels := assignLabels(d.Blocks)
 	ctx := newDumpContext(d.Blocks, defs)
-	fmt.Fprintf(b, "def %s(%s)", d.Name, strings.Join(d.Params, " "))
+	fmt.Fprintf(b, "def %s(%s)", d.Name, ParamList(d.Params))
 	fmt.Fprintf(b, " entry=%s\n", labels[d.Entry])
 	for _, blk := range d.Blocks {
 		b.WriteByte('\n')
@@ -236,7 +236,7 @@ func dumpInstr(b *strings.Builder, i Instr, labels map[*BasicBlock]string, ctx d
 		b.WriteString("ExitLoop")
 	case *RegisterDef:
 		fmt.Fprintf(b, "RegisterDef name=%s params=[%s]",
-			v.Def.Name, strings.Join(v.Def.Params, " "))
+			v.Def.Name, ParamList(v.Def.Params))
 	default:
 		fmt.Fprintf(b, "<unknown %T>", i)
 	}

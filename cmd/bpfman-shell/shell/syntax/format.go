@@ -178,7 +178,7 @@ func (f *sourceFormatter) writeStmt(st Stmt, indent int) {
 		}
 	case *DefStmt:
 		fmt.Fprintf(&f.b, "def %s(", v.Name.Text)
-		f.b.WriteString(joinIdentTexts(v.Params))
+		f.b.WriteString(joinDefParams(v.Params))
 		f.b.WriteString(") {\n")
 		f.writeStmts(v.Body, indent+1)
 		f.writeIndent(indent)
@@ -279,7 +279,7 @@ func (f *sourceFormatter) writePollStmtSource(v *PollStmt, indent int) {
 func (f *sourceFormatter) writeDefStmtSource(v *DefStmt, indent int) {
 	if v.Pos.Line == v.End.Line {
 		fmt.Fprintf(&f.b, "def %s(", v.Name.Text)
-		f.b.WriteString(joinIdentTexts(v.Params))
+		f.b.WriteString(joinDefParams(v.Params))
 		f.b.WriteString(") {\n")
 		f.writeStmts(v.Body, indent+1)
 		f.writeIndent(indent)
@@ -287,7 +287,7 @@ func (f *sourceFormatter) writeDefStmtSource(v *DefStmt, indent int) {
 		return
 	}
 	fmt.Fprintf(&f.b, "def %s(", v.Name.Text)
-	f.b.WriteString(joinIdentTexts(v.Params))
+	f.b.WriteString(joinDefParams(v.Params))
 	f.b.WriteString(") {")
 	f.writeLineComment(v.Pos.Line)
 	f.b.WriteByte('\n')
@@ -388,6 +388,20 @@ func joinIdentTexts(idents []Ident) string {
 	texts := make([]string, 0, len(idents))
 	for _, ident := range idents {
 		texts = append(texts, ident.Text)
+	}
+	return strings.Join(texts, " ")
+}
+
+// joinDefParams renders a def parameter list back to source form,
+// preserving annotations: "a: number b".
+func joinDefParams(params []DefParam) string {
+	texts := make([]string, 0, len(params))
+	for _, p := range params {
+		if p.Type != "" {
+			texts = append(texts, p.Name.Text+": "+p.Type)
+			continue
+		}
+		texts = append(texts, p.Name.Text)
 	}
 	return strings.Join(texts, " ")
 }
