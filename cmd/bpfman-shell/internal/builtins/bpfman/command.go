@@ -2163,10 +2163,14 @@ func execListLinks(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager
 }
 
 // DispatcherListCommand represents a fully parsed "dispatcher list"
-// command with optional type filter and output format.
+// command with optional key filters and output format. Zero values
+// mean unfiltered: nsid 0 and ifindex 0 never identify a real
+// dispatcher, matching the zero DispatcherType sentinel.
 type DispatcherListCommand struct {
-	Type   dispatcher.DispatcherType
-	Output cliformat.OutputFlags
+	Type    dispatcher.DispatcherType
+	Nsid    uint64
+	Ifindex uint32
+	Output  cliformat.OutputFlags
 }
 
 func (*DispatcherListCommand) isCommand() {}
@@ -2174,7 +2178,7 @@ func (*DispatcherListCommand) isCommand() {}
 // parseDispatcherList resolves expanded shell arguments into a
 // DispatcherListCommand. The grammar is:
 //
-//	[--type <type>] [-o <format>]
+//	[--type <type>] [--nsid <nsid>] [--ifindex <ifindex>] [-o <format>]
 func parseDispatcherList(args []runtime.Arg) (*DispatcherListCommand, error) {
 	cmd := &DispatcherListCommand{
 		Output: cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}},
@@ -2193,6 +2197,26 @@ func parseDispatcherList(args []runtime.Arg) (*DispatcherListCommand, error) {
 				return nil, fmt.Errorf("dispatcher list: %w", err)
 			}
 			cmd.Type = typ
+		case "--nsid":
+			i++
+			if i >= len(args) {
+				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i-1]), "dispatcher list: --nsid requires a value")
+			}
+			nsid, err := strconv.ParseUint(driver.ArgText(args[i]), 10, 64)
+			if err != nil {
+				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i]), "dispatcher list: invalid nsid %q: %v", driver.ArgText(args[i]), err)
+			}
+			cmd.Nsid = nsid
+		case "--ifindex":
+			i++
+			if i >= len(args) {
+				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i-1]), "dispatcher list: --ifindex requires a value")
+			}
+			ifindex, err := strconv.ParseUint(driver.ArgText(args[i]), 10, 32)
+			if err != nil {
+				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i]), "dispatcher list: invalid ifindex %q: %v", driver.ArgText(args[i]), err)
+			}
+			cmd.Ifindex = uint32(ifindex)
 		case "-o":
 			if cmd.Output.Output.IsSet {
 				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i]), "dispatcher list: duplicate -o flag")
@@ -2221,15 +2245,14 @@ func execDispatcherList(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Ma
 		return err
 	}
 
-	if cmd.Type != (dispatcher.DispatcherType{}) {
-		filtered := summaries[:0]
-		for _, s := range summaries {
-			if s.Key.Type == cmd.Type {
-				filtered = append(filtered, s)
-			}
+	filter := dispatcher.KeyFilter{Type: cmd.Type, Nsid: cmd.Nsid, Ifindex: cmd.Ifindex}
+	filtered := summaries[:0]
+	for _, s := range summaries {
+		if filter.Matches(s.Key) {
+			filtered = append(filtered, s)
 		}
-		summaries = filtered
 	}
+	summaries = filtered
 
 	if len(summaries) == 0 && !cmd.Output.IsStructured() {
 		return nil

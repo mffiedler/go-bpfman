@@ -43,7 +43,7 @@ const HelpDetail = `Subcommands:
     bpfman link delete <link-ids> [-r]              Delete with cascading cleanup
 
   Dispatcher management:
-    bpfman dispatcher list [--type <type>]           List dispatchers
+    bpfman dispatcher list [--type <type>] [--nsid <nsid>] [--ifindex <ifindex>]  List dispatchers
     bpfman dispatcher get <type> <nsid> <ifindex>    Get dispatcher details
     bpfman dispatcher delete <type> <nsid> <ifindex> Delete a dispatcher
 

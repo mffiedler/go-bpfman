@@ -17,10 +17,14 @@ type DispatcherCmd struct {
 	Delete DeleteDispatcherCmd `cmd:"" hidden:"" help:"Delete a dispatcher."`
 }
 
-// ListDispatchersCmd lists all dispatchers.
+// ListDispatchersCmd lists all dispatchers. Zero filter values mean
+// unfiltered: nsid 0 and ifindex 0 never identify a real dispatcher,
+// matching the zero DispatcherType sentinel.
 type ListDispatchersCmd struct {
 	cliformat.OutputFlags
-	Type dispatcher.DispatcherType `name:"type" help:"Filter by dispatcher type (xdp, tc-ingress, tc-egress)."`
+	Type    dispatcher.DispatcherType `name:"type" help:"Filter by dispatcher type (xdp, tc-ingress, tc-egress)."`
+	Nsid    uint64                    `name:"nsid" help:"Filter by network namespace ID."`
+	Ifindex uint32                    `name:"ifindex" help:"Filter by interface index."`
 }
 
 // Run executes the list dispatchers command.
@@ -36,16 +40,15 @@ func (c *ListDispatchersCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error 
 		return err
 	}
 
-	// Client-side type filter
-	if c.Type != (dispatcher.DispatcherType{}) {
-		filtered := summaries[:0]
-		for _, s := range summaries {
-			if s.Key.Type == c.Type {
-				filtered = append(filtered, s)
-			}
+	// Client-side key filters
+	filter := dispatcher.KeyFilter{Type: c.Type, Nsid: c.Nsid, Ifindex: c.Ifindex}
+	filtered := summaries[:0]
+	for _, s := range summaries {
+		if filter.Matches(s.Key) {
+			filtered = append(filtered, s)
 		}
-		summaries = filtered
 	}
+	summaries = filtered
 
 	if len(summaries) == 0 && !c.OutputFlags.IsStructured() {
 		return nil

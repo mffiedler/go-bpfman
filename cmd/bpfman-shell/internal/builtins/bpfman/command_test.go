@@ -14,6 +14,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/semantics"
+	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/internal/registryfixture"
 	"github.com/frobware/go-bpfman/kernel"
 )
@@ -1416,6 +1417,89 @@ func TestParseGetLink(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantID, cmd.ID)
 			assert.Equal(t, tt.wantOutput, cmd.Output.Output.Value)
+		})
+	}
+}
+
+func TestParseDispatcherList(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		args        []runtime.Arg
+		wantType    dispatcher.DispatcherType
+		wantNsid    uint64
+		wantIfindex uint32
+		wantErr     string
+	}{
+		{
+			name: "no flags",
+		},
+		{
+			name:     "type filter",
+			args:     []runtime.Arg{word("--type"), word("tc-ingress")},
+			wantType: dispatcher.DispatcherTypeTCIngress,
+		},
+		{
+			name:     "nsid filter",
+			args:     []runtime.Arg{word("--nsid"), word("4026531840")},
+			wantNsid: 4026531840,
+		},
+		{
+			name:        "ifindex filter",
+			args:        []runtime.Arg{word("--ifindex"), word("7")},
+			wantIfindex: 7,
+		},
+		{
+			name: "all filters combined",
+			args: []runtime.Arg{
+				word("--type"), word("xdp"),
+				word("--nsid"), word("4026531840"),
+				word("--ifindex"), word("7"),
+			},
+			wantType:    dispatcher.DispatcherTypeXDP,
+			wantNsid:    4026531840,
+			wantIfindex: 7,
+		},
+		{
+			name:    "nsid missing value",
+			args:    []runtime.Arg{word("--nsid")},
+			wantErr: "--nsid requires a value",
+		},
+		{
+			name:    "nsid not a number",
+			args:    []runtime.Arg{word("--nsid"), word("root")},
+			wantErr: "invalid nsid",
+		},
+		{
+			name:    "ifindex missing value",
+			args:    []runtime.Arg{word("--ifindex")},
+			wantErr: "--ifindex requires a value",
+		},
+		{
+			name:    "ifindex not a number",
+			args:    []runtime.Arg{word("--ifindex"), word("eth0")},
+			wantErr: "invalid ifindex",
+		},
+		{
+			name:    "ifindex out of range",
+			args:    []runtime.Arg{word("--ifindex"), word("4294967296")},
+			wantErr: "invalid ifindex",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cmd, err := parseDispatcherList(tt.args)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantType, cmd.Type)
+			assert.Equal(t, tt.wantNsid, cmd.Nsid)
+			assert.Equal(t, tt.wantIfindex, cmd.Ifindex)
 		})
 	}
 }

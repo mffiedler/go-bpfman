@@ -20,6 +20,31 @@ func NewKey(typ DispatcherType, nsid uint64, ifindex uint32) Key {
 	}
 }
 
+// KeyFilter selects dispatcher keys by any combination of type,
+// nsid, and ifindex. Zero values mean unfiltered: nsid 0 and
+// ifindex 0 never identify a real dispatcher (the kernel allocates
+// namespace inodes and interface indices from 1), matching the zero
+// DispatcherType sentinel.
+type KeyFilter struct {
+	Type    DispatcherType
+	Nsid    uint64
+	Ifindex uint32
+}
+
+// Matches reports whether the key passes every set filter field.
+func (f KeyFilter) Matches(k Key) bool {
+	if f.Type != (DispatcherType{}) && k.Type != f.Type {
+		return false
+	}
+	if f.Nsid != 0 && k.Nsid != f.Nsid {
+		return false
+	}
+	if f.Ifindex != 0 && k.Ifindex != f.Ifindex {
+		return false
+	}
+	return true
+}
+
 // State represents the persistent state of a dispatcher.
 // A dispatcher manages multi-program chaining for XDP or TC attachments.
 type State struct {
