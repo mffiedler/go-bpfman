@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -1966,6 +1967,87 @@ func TestTC_DispatcherRebuildDetachesOldFilterInNetns(t *testing.T) {
 	currentHandles := fix.Kernel.TCFilterHandles()
 	require.Len(t, currentHandles, 1)
 	assert.NotEqual(t, oldHandle, currentHandles[0], "new netns dispatcher filter should remain live")
+}
+
+func TestXDP_DetachDeletedNetnsDispatcherRemovesDispatcher(t *testing.T) {
+	t.Parallel()
+
+	fix := newTestFixture(t)
+	ctx := context.Background()
+	netnsPath := fix.TempNetnsPath()
+
+	spec1, err := bpfman.NewLoadSpec(fix.BytecodeFile("xdp.o"), "xdp_pass", bpfman.ProgramTypeXDP)
+	require.NoError(t, err)
+	prog1, err := fix.Load(ctx, spec1, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	attach1, err := bpfman.NewXDPAttachSpec(prog1.Record.ProgramID, "eth0")
+	require.NoError(t, err)
+	attach1 = attach1.WithNetns(netnsPath)
+	link1, err := fix.Attach(ctx, attach1)
+	require.NoError(t, err)
+
+	spec2, err := bpfman.NewLoadSpec(fix.BytecodeFile("xdp.o"), "xdp_pass", bpfman.ProgramTypeXDP)
+	require.NoError(t, err)
+	prog2, err := fix.Load(ctx, spec2, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	attach2, err := bpfman.NewXDPAttachSpec(prog2.Record.ProgramID, "eth0")
+	require.NoError(t, err)
+	attach2 = attach2.WithNetns(netnsPath)
+	_, err = fix.Attach(ctx, attach2)
+	require.NoError(t, err)
+
+	require.NoError(t, os.Remove(netnsPath))
+
+	err = fix.Detach(ctx, link1.Record.ID)
+	require.NoError(t, err)
+
+	summaries, err := fix.Store.ListDispatcherSummaries(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, summaries, "deleted netns should remove the dispatcher instead of rebuilding it")
+	assert.Equal(t, 0, fix.Kernel.LinkCount(), "remaining extension links should be released with the revision")
+}
+
+func TestTC_DetachDeletedNetnsDispatcherRemovesDispatcher(t *testing.T) {
+	t.Parallel()
+
+	fix := newTestFixture(t)
+	ctx := context.Background()
+	netnsPath := fix.TempNetnsPath()
+
+	spec1, err := bpfman.NewLoadSpec(fix.BytecodeFile("tc.o"), "tc_pass", bpfman.ProgramTypeTC)
+	require.NoError(t, err)
+	prog1, err := fix.Load(ctx, spec1, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	attach1, err := bpfman.NewTCAttachSpec(prog1.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	require.NoError(t, err)
+	attach1 = attach1.WithNetns(netnsPath).WithPriority(50)
+	link1, err := fix.Attach(ctx, attach1)
+	require.NoError(t, err)
+
+	spec2, err := bpfman.NewLoadSpec(fix.BytecodeFile("tc.o"), "tc_pass", bpfman.ProgramTypeTC)
+	require.NoError(t, err)
+	prog2, err := fix.Load(ctx, spec2, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	attach2, err := bpfman.NewTCAttachSpec(prog2.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	require.NoError(t, err)
+	attach2 = attach2.WithNetns(netnsPath).WithPriority(60)
+	_, err = fix.Attach(ctx, attach2)
+	require.NoError(t, err)
+
+	require.NoError(t, os.Remove(netnsPath))
+
+	err = fix.Detach(ctx, link1.Record.ID)
+	require.NoError(t, err)
+
+	summaries, err := fix.Store.ListDispatcherSummaries(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, summaries, "deleted netns should remove the dispatcher instead of rebuilding it")
+	assert.Equal(t, 0, fix.Kernel.LinkCount(), "remaining extension links should be released with the revision")
+	assert.Equal(t, 0, fix.Kernel.TCFilterCount(), "TC filter should be removed with the dispatcher")
 }
 
 // =============================================================================

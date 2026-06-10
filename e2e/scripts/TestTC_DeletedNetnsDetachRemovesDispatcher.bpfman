@@ -1,0 +1,55 @@
+# -*- mode: bpfman -*-
+# Proves detaching one member of a netns-scoped TC dispatcher whose
+# namespace has been deleted removes the dispatcher instead of trying
+# to rebuild it in a namespace that can no longer be entered.
+
+import ../lib.bpfman
+
+guard pair <- net veth-pair
+defer net release $pair
+
+let netns = "/var/run/netns/${pair.ns}"
+
+guard firstLoad <- bpfman program load file \
+    --path testdata/bpf/tc_counter.bpf.o \
+    --programs tc:stats
+let firstProg = $firstLoad.programs[0]
+defer bpfman program unload $firstProg
+
+guard secondLoad <- bpfman program load file \
+    --path testdata/bpf/tc_counter.bpf.o \
+    --programs tc:stats
+let secondProg = $secondLoad.programs[0]
+defer bpfman program unload $secondProg
+
+guard firstLink <- bpfman link attach tc \
+    --iface $pair.peer_link \
+    --direction ingress \
+    --priority 50 \
+    --proceed-on ok,pipe,dispatcher_return \
+    --netns $netns \
+    $firstProg
+
+guard secondLink <- bpfman link attach tc \
+    --iface $pair.peer_link \
+    --direction ingress \
+    --priority 60 \
+    --proceed-on ok,pipe,dispatcher_return \
+    --netns $netns \
+    $secondProg
+
+let nsid = $firstLink.record.details.nsid
+let ifindex = $firstLink.record.details.ifindex
+
+guard before <- bpfman dispatcher get tc-ingress $nsid $ifindex
+assert ($before |> jq ".members | length") == 2
+
+guard _ <- exec ip netns del $pair.ns
+
+bpfman link detach $firstLink
+
+assert fail bpfman dispatcher get tc-ingress $nsid $ifindex
+
+guard listed <- bpfman link list -o json
+assert_link_absent $listed $firstLink.record.id
+assert_link_absent $listed $secondLink.record.id

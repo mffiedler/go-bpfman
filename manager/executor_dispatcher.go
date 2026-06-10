@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
@@ -743,6 +744,11 @@ func (e *executor) rebuildDispatcherForDetach(ctx context.Context, key dispatche
 
 	if len(snap.Members) == 0 {
 		return e.removeEmptyDispatcher(ctx, snap)
+	}
+	if snap.Runtime.NetnsPath != "" {
+		if _, err := os.Stat(snap.Runtime.NetnsPath); errors.Is(err, os.ErrNotExist) {
+			return e.removeEmptyDispatcher(ctx, snap)
+		}
 	}
 
 	// Extensions remain: rebuild with the remaining members.

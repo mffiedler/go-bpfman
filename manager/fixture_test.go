@@ -127,6 +127,13 @@ func (f *testFixture) BytecodeFile(name string) string {
 	return p
 }
 
+func (f *testFixture) TempNetnsPath() string {
+	f.t.Helper()
+	path := filepath.Join(f.t.TempDir(), "netns")
+	require.NoError(f.t, os.WriteFile(path, nil, 0644))
+	return path
+}
+
 // AssertKernelEmpty verifies no programs remain in the kernel.
 func (f *testFixture) AssertKernelEmpty() {
 	f.t.Helper()
