@@ -241,6 +241,13 @@ func (a DeleteIface) Describe() string { return fmt.Sprintf("ip link del %s", a.
 func (a DeleteIface) Apply() error {
 	l, err := netlink.LinkByName(a.Name)
 	if err != nil {
+		// Already gone counts as done: the scan emits both ends
+		// of a veth pair and deleting either end cascades to the
+		// other, so the second delete routinely finds nothing.
+		var notFound netlink.LinkNotFoundError
+		if errors.As(err, &notFound) {
+			return nil
+		}
 		return fmt.Errorf("look up %s: %w", a.Name, err)
 	}
 	if err := netlink.LinkDel(l); err != nil {
