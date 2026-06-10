@@ -1,9 +1,3 @@
-# Pin the default goal explicitly. Without this, GNU Make uses
-# the first target it encounters as the default, which makes
-# the build's entry point dependent on file ordering: dropping
-# a pattern rule or generated-file target above `all:` silently
-# changes what `make` (no args) builds. Stating it once at the
-# top removes that hazard.
 .DEFAULT_GOAL := all
 
 # ============================================================================
@@ -224,10 +218,9 @@ endif
 # longer need to repeat CGO_ENABLED=1. Linker mode is deliberately not
 # pinned here: with CGO_ENABLED=1, the Go toolchain auto-picks
 # external linking when a binary actually links C and internal linking
-# otherwise, which is the right behaviour and avoids the
-# "loadinternal: cannot find runtime/cgo" warning that an
-# unconditional GO_EXTLINK_ENABLED=1 used to produce on pure-Go test
-# binaries.
+# otherwise, which is the right behaviour; pinning
+# GO_EXTLINK_ENABLED=1 unconditionally would emit "loadinternal:
+# cannot find runtime/cgo" warnings on pure-Go test binaries.
 # ---------------------------------------------------------------------------
 export CGO_ENABLED := 1
 
@@ -476,7 +469,7 @@ endif
 # Go package's go:embed directives read .bpf.o files at the package
 # root (dispatcher/), so the compile rule below targets that path
 # directly -- no intermediate copy needed. xdp_dispatcher_v1.bpf.c
-# is kept as historical reference and is excluded from the build.
+# is reference-only and excluded from the build.
 DISPATCHER_BPF_SOURCES := $(filter-out dispatcher/bpf/xdp_dispatcher_v1.bpf.c,$(wildcard dispatcher/bpf/*.bpf.c))
 DISPATCHER_BPF_EMBEDS  := $(addprefix dispatcher/,$(notdir $(DISPATCHER_BPF_SOURCES:.bpf.c=.bpf.o)))
 DISPATCHER_BPF_DEPS    := $(DISPATCHER_BPF_EMBEDS:.bpf.o=.bpf.d)
@@ -741,8 +734,9 @@ clean: clean-bpfman clean-bpfman-shell clean-bpfman-e2e-cleanup clean-go-test-ti
 # Nuclear option, modeled on `make mrproper` in the kernel tree:
 # wipe local build artifacts AND Go's shared caches under
 # ~/.cache/go-build. Useful when chasing cache-coherence bugs whose
-# inputs aren't in cmd/go's action key (e.g. GO_EXTLINK_ENABLED — see
-# flake.nix). Affects every Go project sharing this user's cache, not
+# inputs aren't in cmd/go's action key (environment variables the
+# toolchain reads but does not hash). Affects every Go project
+# sharing this user's cache, not
 # just this checkout. The module cache is intentionally NOT wiped:
 # `go clean -modcache` forces a full re-download on the next build.
 clean-mrproper: clean
@@ -1337,8 +1331,7 @@ clean-bpfman-shell:
 # bpfman-e2e-cleanup is the host-state cleanup utility. It finds and
 # removes kernel-side residue left behind by bpfman (orphan
 # dispatcher links) and by the e2e harness (test interfaces and
-# netns from interrupted runs). Replaces the hack/cleanup-*.sh
-# shell scripts; ships only in dev / CI images.
+# netns from interrupted runs). Ships only in dev / CI images.
 bpfman-e2e-cleanup-build: bpfman-fmt bpfman-e2e-cleanup-compile
 
 bpfman-e2e-cleanup-compile: | $(BIN_DIR)
