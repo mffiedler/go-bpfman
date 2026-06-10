@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/ir"
@@ -169,12 +170,59 @@ func Loop(ctx context.Context, cfg Config) error {
 	return scriptLoop(ctx, cfg)
 }
 
+// deferDrainBudget bounds the cleanup context that defer drains run
+// under once the run's root context has been cancelled. It is the
+// whole drain's budget, not per-defer: a deferred command that
+// blocks eats the remainder and later defers fail fast. A var, not
+// a const, so tests can shrink it. Note the e2e script runner's
+// execcancel.Grace (2s) SIGKILLs a signalled bpfman-shell before
+// this budget expires; typical drains (a handful of unloads) finish
+// in well under either bound.
+var deferDrainBudget = 5 * time.Second
+
+// dispatchContext returns a per-dispatch context selector and a stop
+// function releasing the cleanup context's resources. While the
+// run's root context is alive every dispatch uses it. Once the root
+// is cancelled (operator interrupt, runner failfast abort, script
+// timeout), defer drains get a fresh context detached from the
+// cancellation and bounded by deferDrainBudget, so deferred cleanup
+// actually executes instead of dying on the dead root. Non-drain
+// dispatches keep the cancelled root, so a statement racing the
+// unwind still aborts.
+func dispatchContext(root context.Context, env *runtime.Env) (ctxFor func() context.Context, stop func()) {
+	var mu sync.Mutex
+	var cleanup context.Context
+	var cancel context.CancelFunc
+	ctxFor = func() context.Context {
+		if root.Err() == nil || !env.Draining {
+			return root
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if cleanup == nil {
+			cleanup, cancel = context.WithTimeout(context.WithoutCancel(root), deferDrainBudget)
+		}
+		return cleanup
+	}
+	stop = func() {
+		mu.Lock()
+		defer mu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
+	}
+	return ctxFor, stop
+}
+
 // wireEnvForRun installs the per-run Env callbacks the
 // evaluator needs: command dispatch, bind dispatch, lowered assert
-// dispatch, and the trace hook.
-func wireEnvForRun(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *runtime.Session, env *runtime.Env, loc SourceLoc, hooks RunHooks) {
-	env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, env, loc, hooks.Fallback)
-	env.ExecBind = makeExecBind(ctx, cli, mgr, session, env, loc, hooks.BindFallback)
+// dispatch, and the trace hook. The returned stop function releases
+// the defer-drain cleanup context and must be called when the run
+// ends.
+func wireEnvForRun(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *runtime.Session, env *runtime.Env, loc SourceLoc, hooks RunHooks) (stop func()) {
+	ctxFor, stop := dispatchContext(ctx, env)
+	env.ExecCommand = makeExecCommand(ctxFor, cli, mgr, session, env, loc, hooks.Fallback)
+	env.ExecBind = makeExecBind(ctxFor, cli, mgr, session, env, loc, hooks.BindFallback)
 	if hooks.MakeAssert != nil {
 		env.ExecAssert = hooks.MakeAssert(cli, session)
 	}
@@ -182,6 +230,7 @@ func wireEnvForRun(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager
 	env.Sleep = hooks.Sleep
 	env.Trace = makeTraceHook(cli, session)
 	env.RenderPollFailure = makeRenderPollFailure(cli)
+	return stop
 }
 
 // makeRenderPollFailure builds the callback the shell evaluator
@@ -250,7 +299,8 @@ func scriptLoop(ctx context.Context, cfg Config) error {
 	}
 	hooks := configHooks(cfg)
 	loc := SourceLoc{File: file, Line: 1}
-	wireEnvForRun(ctx, cli, cfg.Mgr, session, env, loc, hooks)
+	stop := wireEnvForRun(ctx, cli, cfg.Mgr, session, env, loc, hooks)
+	defer stop()
 	return runProgramSource(ctx, cli, env, src, loc, baseDir)
 }
 
@@ -425,11 +475,12 @@ func Dispatch(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, ses
 // Dispatch order: registered builtins handle their own names;
 // the embedder's Fallback handles domain commands; an
 // unrecognised first word runs as an external subprocess.
-func makeExecCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *runtime.Session, env *runtime.Env, loc SourceLoc, fallback FallbackFunc) func([]runtime.Arg, source.Span) (runtime.Value, error) {
+func makeExecCommand(ctxFor func() context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *runtime.Session, env *runtime.Env, loc SourceLoc, fallback FallbackFunc) func([]runtime.Arg, source.Span) (runtime.Value, error) {
 	return func(args []runtime.Arg, span source.Span) (runtime.Value, error) {
 		if len(args) == 0 {
 			return runtime.Value{}, nil
 		}
+		ctx := ctxFor()
 		callLoc := dispatchSourceLoc(loc, env, span)
 		handled, val, err := Dispatch(ctx, cli, mgr, session, env, args, loc, span)
 		if err != nil {
@@ -459,11 +510,12 @@ func makeExecCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 // BindFallback handles special-case bind paths (wait, net exec,
 // domain dispatch); registered builtins handle their own names;
 // an unrecognised first word runs as an external subprocess.
-func makeExecBind(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *runtime.Session, env *runtime.Env, loc SourceLoc, fallback BindFallbackFunc) func([]runtime.Arg, source.Span) (runtime.BindResult, error) {
+func makeExecBind(ctxFor func() context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *runtime.Session, env *runtime.Env, loc SourceLoc, fallback BindFallbackFunc) func([]runtime.Arg, source.Span) (runtime.BindResult, error) {
 	return func(args []runtime.Arg, span source.Span) (runtime.BindResult, error) {
 		if len(args) == 0 {
 			return runtime.BindResult{}, syntax.SpanErrorf(span, "empty command form on '<-' RHS")
 		}
+		ctx := ctxFor()
 		callLoc := dispatchSourceLoc(loc, env, span)
 
 		if ArgText(args[0]) == "exec" {

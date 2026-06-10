@@ -66,6 +66,17 @@ type Env struct {
 	// counts toward the script's exit code via Session.
 	RenderDeferFailure func(stmtLoc source.Pos, args []Arg, rc Envelope)
 
+	// Draining is true while runDefers is executing a defer
+	// stack. The driver's dispatch closures read it to decide
+	// which context a dispatch runs under: when the run's root
+	// context has been cancelled (operator interrupt, runner
+	// abort, timeout), defer drains get a fresh bounded cleanup
+	// context instead of the dead root, so deferred cleanup
+	// actually executes. runDefers saves and restores the flag,
+	// so nested drains (a deferred def whose body has its own
+	// defers) keep it set.
+	Draining bool
+
 	// RenderDeferOutput fires after every defer dispatch, win or
 	// lose, so the driver can flush the deferred command's
 	// captured stdout/stderr to its terminal. Defers go through
@@ -399,6 +410,9 @@ func runDefers(env *Env, stack []deferEntry) int {
 	if env.ExecBind == nil {
 		return 0
 	}
+	prev := env.Draining
+	env.Draining = true
+	defer func() { env.Draining = prev }()
 	failures := 0
 	for i := len(stack) - 1; i >= 0; i-- {
 		entry := stack[i]
