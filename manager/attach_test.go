@@ -1561,6 +1561,123 @@ func TestTC_DetachRebuildRollbackAllowsRetry(t *testing.T) {
 	assert.Equal(t, 1, fix.Kernel.TCFilterCount())
 }
 
+func TestXDP_UnloadDispatcherMemberRebuildsRemainingMembers(t *testing.T) {
+	t.Parallel()
+
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("xdp.o"), "xdp_pass", bpfman.ProgramTypeXDP)
+	require.NoError(t, err)
+	firstProg, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err)
+	secondProg, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	firstAttach, err := bpfman.NewXDPAttachSpec(firstProg.Record.ProgramID, "lo")
+	require.NoError(t, err)
+	_, err = fix.Attach(ctx, firstAttach)
+	require.NoError(t, err)
+	secondAttach, err := bpfman.NewXDPAttachSpec(secondProg.Record.ProgramID, "lo")
+	require.NoError(t, err)
+	_, err = fix.Attach(ctx, secondAttach)
+	require.NoError(t, err)
+
+	summaries, err := fix.Store.ListDispatcherSummaries(ctx)
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+	before, err := fix.Store.GetDispatcherSnapshot(ctx, summaries[0].Key)
+	require.NoError(t, err)
+	require.Len(t, before.Members, 2)
+
+	err = fix.Unload(ctx, firstProg.Record.ProgramID)
+	require.NoError(t, err)
+
+	after, err := fix.Store.GetDispatcherSnapshot(ctx, summaries[0].Key)
+	require.NoError(t, err)
+	assert.Equal(t, before.Revision+1, after.Revision)
+	require.Len(t, after.Members, 1)
+	assert.Equal(t, secondProg.Record.ProgramID, after.Members[0].ProgramID)
+	assert.Equal(t, 1, fix.Kernel.LinkCount(), "only the remaining extension link should stay attached")
+}
+
+func TestTC_UnloadDispatcherMemberRebuildsRemainingMembers(t *testing.T) {
+	t.Parallel()
+
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tc.o"), "tc_pass", bpfman.ProgramTypeTC)
+	require.NoError(t, err)
+	firstProg, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err)
+	secondProg, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	firstAttach, err := bpfman.NewTCAttachSpec(firstProg.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	require.NoError(t, err)
+	firstAttach = firstAttach.WithPriority(50)
+	_, err = fix.Attach(ctx, firstAttach)
+	require.NoError(t, err)
+	secondAttach, err := bpfman.NewTCAttachSpec(secondProg.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	require.NoError(t, err)
+	secondAttach = secondAttach.WithPriority(50)
+	_, err = fix.Attach(ctx, secondAttach)
+	require.NoError(t, err)
+
+	summaries, err := fix.Store.ListDispatcherSummaries(ctx)
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+	before, err := fix.Store.GetDispatcherSnapshot(ctx, summaries[0].Key)
+	require.NoError(t, err)
+	require.Len(t, before.Members, 2)
+
+	err = fix.Unload(ctx, firstProg.Record.ProgramID)
+	require.NoError(t, err)
+
+	after, err := fix.Store.GetDispatcherSnapshot(ctx, summaries[0].Key)
+	require.NoError(t, err)
+	assert.Equal(t, before.Revision+1, after.Revision)
+	require.Len(t, after.Members, 1)
+	assert.Equal(t, secondProg.Record.ProgramID, after.Members[0].ProgramID)
+	assert.Equal(t, 1, fix.Kernel.LinkCount(), "only the remaining extension link should stay attached")
+	assert.Equal(t, 1, fix.Kernel.TCFilterCount(), "TC should keep one filter for the rebuilt dispatcher")
+}
+
+func TestXDP_UnloadProgramWithTwoDispatcherLinksRemovesDispatcher(t *testing.T) {
+	t.Parallel()
+
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("xdp.o"), "xdp_pass", bpfman.ProgramTypeXDP)
+	require.NoError(t, err)
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
+	require.NoError(t, err)
+	_, err = fix.Attach(ctx, attachSpec)
+	require.NoError(t, err)
+	_, err = fix.Attach(ctx, attachSpec)
+	require.NoError(t, err)
+
+	summaries, err := fix.Store.ListDispatcherSummaries(ctx)
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+	before, err := fix.Store.GetDispatcherSnapshot(ctx, summaries[0].Key)
+	require.NoError(t, err)
+	require.Len(t, before.Members, 2)
+
+	err = fix.Unload(ctx, prog.Record.ProgramID)
+	require.NoError(t, err)
+
+	summaries, err = fix.Store.ListDispatcherSummaries(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, summaries, "unloading both links should remove the dispatcher")
+	assert.Equal(t, 0, fix.Kernel.LinkCount())
+}
+
 // =============================================================================
 // Extension Position Tests
 // =============================================================================

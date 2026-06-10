@@ -1,0 +1,61 @@
+# -*- mode: bpfman -*-
+# Proves unloading one member of a TC dispatcher immediately rebuilds
+# the dispatcher with the surviving member rather than leaving stale
+# dispatcher configuration behind.
+
+import ../lib.bpfman
+
+guard pair <- net veth-pair
+defer net release $pair
+
+guard firstLoad <- bpfman program load file \
+    --path testdata/bpf/tc_counter.bpf.o \
+    --programs tc:stats
+let firstProg = $firstLoad.programs[0]
+
+guard secondLoad <- bpfman program load file \
+    --path testdata/bpf/tc_counter.bpf.o \
+    --programs tc:stats
+let secondProg = $secondLoad.programs[0]
+defer bpfman program unload $secondProg
+
+guard firstLink <- bpfman link attach tc \
+    --iface $pair.host_link \
+    --direction ingress \
+    --priority 50 \
+    --proceed-on ok,pipe,dispatcher_return \
+    $firstProg
+
+let filterCount = 'fromjson | [ .[] | select(.kind == "bpf") ] | length'
+guard firstFilters <- tc -j filter show dev $pair.host_link ingress
+let firstFilterCount = $firstFilters.stdout |> jq $filterCount
+
+guard secondLink <- bpfman link attach tc \
+    --iface $pair.host_link \
+    --direction ingress \
+    --priority 60 \
+    --proceed-on ok,pipe,dispatcher_return \
+    $secondProg
+defer bpfman link detach $secondLink
+
+guard beforeFilters <- tc -j filter show dev $pair.host_link ingress
+let beforeFilterCount = $beforeFilters.stdout |> jq $filterCount
+assert $beforeFilterCount == $firstFilterCount
+
+guard before <- bpfman dispatcher get tc-ingress $pair.host_nsid $pair.host_ifindex
+assert ($before |> jq ".members | length") == 2
+let beforeRevision = $before.revision
+
+bpfman program unload $firstProg
+
+guard after <- bpfman dispatcher get tc-ingress $pair.host_nsid $pair.host_ifindex
+assert ($after |> jq ".members | length") == 1
+assert $after.revision == ($beforeRevision + 1)
+assert $after.members[0].program_id == $secondProg.record.program_id
+
+guard afterFilters <- tc -j filter show dev $pair.host_link ingress
+let afterFilterCount = $afterFilters.stdout |> jq $filterCount
+assert $afterFilterCount == $firstFilterCount
+
+guard listed <- bpfman link list -o json
+assert_link_absent $listed $firstLink.record.id

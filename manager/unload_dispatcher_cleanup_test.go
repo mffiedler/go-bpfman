@@ -11,16 +11,33 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
+	"github.com/frobware/go-bpfman/platform"
 )
+
+type failProgramDeleteOnceStore struct {
+	platform.Store
+	err   error
+	fired bool
+}
+
+func (s *failProgramDeleteOnceStore) Delete(ctx context.Context, programID kernel.ProgramID) error {
+	if !s.fired {
+		s.fired = true
+		return s.err
+	}
+	return s.Store.Delete(ctx, programID)
+}
 
 // TestUnload_MapsPinsFailure_IsNonFatalAndStillCleansEmptyDispatcher
 // pins the post-detach contract: once kernel detach succeeds, a
 // transient bpffs failure on the program's map pins is warned and
 // discarded, not joined. Surfacing it would put callers in a
 // false-negative retry loop (the program is gone; a retry would see
-// ErrProgramNotFound). The empty-dispatcher cleanup still runs so a
-// hygiene warning cannot strand a dispatcher on the netdev.
+// ErrProgramNotFound). Dispatcher removal has already happened during
+// the dispatcher-aware link detach, so a hygiene warning cannot
+// strand a dispatcher on the netdev.
 func TestUnload_MapsPinsFailure_IsNonFatalAndStillCleansEmptyDispatcher(t *testing.T) {
 	t.Parallel()
 
@@ -58,7 +75,7 @@ func TestUnload_MapsPinsFailure_IsNonFatalAndStillCleansEmptyDispatcher(t *testi
 	require.Equal(t, 1, fix.Kernel.UnloadFailureCount(mapsDir),
 		"fault injection must have fired exactly once on the maps directory")
 
-	// The contract: dispatcher cleanup runs even when hygiene fails.
+	// The contract: dispatcher removal runs before hygiene can fail.
 	summaries, err = fix.Store.ListDispatcherSummaries(ctx)
 	require.NoError(t, err)
 	assert.Empty(t, summaries,
@@ -68,6 +85,40 @@ func TestUnload_MapsPinsFailure_IsNonFatalAndStillCleansEmptyDispatcher(t *testi
 	programs, err := fix.Store.List(ctx)
 	require.NoError(t, err)
 	assert.Empty(t, programs, "program row should still be deleted")
+}
+
+func TestUnload_DeleteProgramFailure_RetryToleratesRemovedDispatcher(t *testing.T) {
+	t.Parallel()
+
+	deleteErr := errors.New("simulated program delete failure")
+	fix := newTestFixtureWithStore(t, func(store platform.Store) platform.Store {
+		return &failProgramDeleteOnceStore{Store: store, err: deleteErr}
+	})
+	ctx := context.Background()
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("xdp.o"), "xdp_pass", bpfman.ProgramTypeXDP)
+	require.NoError(t, err)
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
+	require.NoError(t, err)
+	_, err = fix.Attach(ctx, attachSpec)
+	require.NoError(t, err)
+
+	err = fix.Unload(ctx, prog.Record.ProgramID)
+	require.ErrorIs(t, err, deleteErr)
+
+	summaries, err := fix.Store.ListDispatcherSummaries(ctx)
+	require.NoError(t, err)
+	require.Empty(t, summaries, "first attempt should have removed the empty dispatcher")
+
+	err = fix.Unload(ctx, prog.Record.ProgramID)
+	require.NoError(t, err, "retry should tolerate the already-removed dispatcher")
+
+	programs, err := fix.Store.List(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, programs, "retry should delete the remaining program row")
 }
 
 // TestUnload_BytecodeDirFailure_IsNonFatalAndStillCleansEmptyDispatcher

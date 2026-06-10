@@ -6,8 +6,10 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
+	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/platform"
 )
 
@@ -64,7 +66,8 @@ func (m *Manager) unload(ctx context.Context, programID kernel.ProgramID, progra
 		"persisted", persisted)
 
 	// Point of no return.
-	if err := m.detachAllLinks(ctx, links); err != nil {
+	rebuiltDispatchers, err := m.detachAllLinks(ctx, links)
+	if err != nil {
 		return fmt.Errorf("detach links for program %d: %w", programID, err)
 	}
 	if err := m.unloadKernelProgram(ctx, progPinPath); err != nil {
@@ -115,31 +118,50 @@ func (m *Manager) unload(ctx context.Context, programID kernel.ProgramID, progra
 	// itself failed, the link rows remain, the dispatcher is
 	// observed non-empty, and this call is a no-op --- correct under
 	// the documented contract.
-	m.cleanupEmptyDispatchers(ctx, collectDispatcherKeys(links))
+	dispatcherCleanup := collectDispatcherKeys(links)
+	for key := range rebuiltDispatchers {
+		delete(dispatcherCleanup, key)
+	}
+	m.cleanupEmptyDispatchers(ctx, dispatcherCleanup)
 	return errors.Join(errs...)
 }
 
 // detachAllLinks performs BPF_LINK_DETACH on each persisted link in
-// turn. It is the first half of the kernel-side point of no return:
-// once any link detach has succeeded the program's attachment state
-// has been mutated, and a clean inverse no longer exists. The
-// function is fail-fast --- if a detach fails the remaining links
-// are left for coherency or a retry to clean up rather than pressed
-// through additional destructive work.
+// turn, and immediately rebuilds any dispatcher whose member was
+// detached. It is the first half of the kernel-side point of no
+// return: once any link detach has succeeded the program's attachment
+// state has been mutated, and a clean inverse no longer exists. The
+// function is fail-fast --- if a detach or dispatcher rebuild fails
+// the remaining links are left for coherency or a retry to clean up
+// rather than pressed through additional destructive work.
 //
 // Ephemeral links (PinPath nil) are not represented in bpffs and
 // require no kernel-side detach; the in-memory link object will be
 // dropped when its program is unloaded.
-func (m *Manager) detachAllLinks(ctx context.Context, links []bpfman.LinkRecord) error {
+func (m *Manager) detachAllLinks(ctx context.Context, links []bpfman.LinkRecord) (map[dispatcher.Key]struct{}, error) {
+	rebuiltDispatchers := make(map[dispatcher.Key]struct{})
 	for _, link := range links {
 		if link.PinPath == nil {
 			continue
 		}
 		if err := m.kernel.DetachLink(ctx, *link.PinPath); err != nil {
-			return fmt.Errorf("detach link %d: %w", link.ID, err)
+			return rebuiltDispatchers, fmt.Errorf("detach link %d: %w", link.ID, err)
 		}
+
+		dispType, nsid, ifindex, err := extractDispatcherKey(link.Details)
+		if err != nil {
+			return rebuiltDispatchers, fmt.Errorf("extract dispatcher key for link %d: %w", link.ID, err)
+		}
+		if dispType == (dispatcher.DispatcherType{}) {
+			continue
+		}
+		key := dispatcher.Key{Type: dispType, Nsid: nsid, Ifindex: ifindex}
+		if err := m.executor.Execute(ctx, action.RebuildDispatcherForDetach{Key: key, ExcludeLinkID: link.ID}); err != nil {
+			return rebuiltDispatchers, fmt.Errorf("rebuild dispatcher after detaching link %d: %w", link.ID, err)
+		}
+		rebuiltDispatchers[key] = struct{}{}
 	}
-	return nil
+	return rebuiltDispatchers, nil
 }
 
 // unloadKernelProgram drops the bpffs program pin. Once this returns
