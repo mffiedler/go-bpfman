@@ -61,3 +61,25 @@ func TestFormatDispatcherListJSON_EmptyListYieldsEmptyResult(t *testing.T) {
 		t.Errorf("empty list should marshal as an empty dispatchers array: %s", output)
 	}
 }
+
+func TestFormatDispatcherListTable_SingleListingCarriesNetns(t *testing.T) {
+	t.Parallel()
+
+	table, err := FormatDispatcherList(sampleDispatcherSummaries(), &OutputFlags{Output: OutputValue{Value: "table"}})
+	if err != nil {
+		t.Fatalf("FormatDispatcherList(table) error = %v", err)
+	}
+	for _, want := range []string{"NETNS", "/var/run/netns/blue"} {
+		if !strings.Contains(table, want) {
+			t.Errorf("table missing %q:\n%s", want, table)
+		}
+	}
+
+	wide, err := FormatDispatcherList(sampleDispatcherSummaries(), &OutputFlags{Output: OutputValue{Value: "wide"}})
+	if err != nil {
+		t.Fatalf("FormatDispatcherList(wide) error = %v", err)
+	}
+	if wide != table {
+		t.Error("wide must alias the single table listing")
+	}
+}

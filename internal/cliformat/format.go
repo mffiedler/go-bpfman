@@ -960,7 +960,11 @@ func FormatDispatcherList(summaries []platform.DispatcherSummary, flags *OutputF
 		}
 		result := platform.DispatcherListResult{Dispatchers: summaries}
 		return executeJSONPath(result, flags.JSONPathExpr())
-	case OutputFormatTable:
+	case OutputFormatTable, OutputFormatWide:
+		// dispatcher list is a developer diagnostic with one
+		// listing: the table carries every summary column,
+		// NETNS included, so wide is an alias rather than a
+		// second view to maintain.
 		return formatDispatcherListTable(summaries), nil
 	default:
 		return formatDispatcherListTable(summaries), nil
@@ -971,7 +975,7 @@ func formatDispatcherListTable(summaries []platform.DispatcherSummary) string {
 	var b strings.Builder
 	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
 
-	fmt.Fprintln(w, "TYPE\tNSID\tIFINDEX\tREVISION\tPROGRAM_ID\tKERNEL_LINK_ID\tPRIORITY\tMEMBERS")
+	fmt.Fprintln(w, "TYPE\tNSID\tIFINDEX\tREVISION\tPROGRAM_ID\tKERNEL_LINK_ID\tPRIORITY\tMEMBERS\tNETNS")
 
 	for _, s := range summaries {
 		linkID := "-"
@@ -982,10 +986,14 @@ func formatDispatcherListTable(summaries []platform.DispatcherSummary) string {
 		if s.Runtime.FilterPriority != nil {
 			priority = fmt.Sprintf("%d", *s.Runtime.FilterPriority)
 		}
-		fmt.Fprintf(w, "%s\t%d\t%d\t%d\t%d\t%s\t%s\t%d\n",
+		netns := s.Runtime.NetnsPath
+		if netns == "" {
+			netns = "-"
+		}
+		fmt.Fprintf(w, "%s\t%d\t%d\t%d\t%d\t%s\t%s\t%d\t%s\n",
 			s.Key.Type, s.Key.Nsid, s.Key.Ifindex,
 			s.Revision, s.Runtime.ProgramID,
-			linkID, priority, s.MemberCount)
+			linkID, priority, s.MemberCount, netns)
 	}
 
 	w.Flush()
