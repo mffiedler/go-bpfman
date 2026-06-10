@@ -133,15 +133,12 @@ def assert_link_absent(listed linkID) {
 # parallel against a shared runtime, so an unscoped emptiness check
 # would race with whatever other scripts have attached. With want 0
 # this is the per-interface leak detector; with want 1 it proves a
-# rebuild left exactly one dispatcher behind.
-def assert_dispatcher_count(nsid ifindex want) {
+# rebuild left exactly one dispatcher behind. The annotations parse
+# literal arguments at the call boundary, so callers may pass bare
+# counts or numeric variables interchangeably.
+def assert_dispatcher_count(nsid: number ifindex: number want: number) {
     guard listed <- bpfman dispatcher list --nsid $nsid --ifindex $ifindex -o json
-    # Bare literal arguments arrive as words (variables keep their
-    # value kinds), and callers pass literal counts; coerce before
-    # comparing with jq's numeric length. tonumber is the identity
-    # on numbers, so variable callers work too.
-    let wantCount = $want |> jq "tonumber"
-    assert ($listed |> jq ".dispatchers | length") == $wantCount
+    assert ($listed |> jq ".dispatchers | length") == $want
 }
 
 # Temporary host-routing precheck for root-netns veth tests. Some
