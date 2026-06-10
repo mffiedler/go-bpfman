@@ -1612,3 +1612,84 @@ print "${4 * $x}"`
 			"foreach must restore x's outer shape on exit")
 	}
 }
+
+// TestCheck_DefParamAnnotationLiterals pins the static half of the
+// annotation policy: a literal argument to an annotated parameter
+// that can never bind successfully is a check-time issue, in both
+// command position and thread position. Variables stay
+// runtime-checked, so they produce no issue here even when their
+// value would mismatch.
+func TestCheck_DefParamAnnotationLiterals(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		src       string
+		wantIssue string
+	}{
+		{
+			name:      "bad number literal in command position",
+			src:       "def c(want: number) {\n    assert $want == 5\n}\nc abc",
+			wantIssue: `def c: parameter "want": expected number, got "abc"`,
+		},
+		{
+			name:      "quoted literal where number declared",
+			src:       "def c(want: number) {\n    assert $want == 5\n}\nc \"5\"",
+			wantIssue: "quoting asserts string",
+		},
+		{
+			name:      "bad bool literal",
+			src:       "def b(flag: bool) {\n    print $flag\n}\nb yes",
+			wantIssue: `def b: parameter "flag": expected bool, got "yes"`,
+		},
+		{
+			name:      "NaN rejected for number",
+			src:       "def c(want: number) {\n    print $want\n}\nc NaN",
+			wantIssue: `def c: parameter "want": expected number, got "NaN"`,
+		},
+		{
+			name:      "Inf rejected for number",
+			src:       "def c(want: number) {\n    print $want\n}\nc Inf",
+			wantIssue: `def c: parameter "want": expected number, got "Inf"`,
+		},
+		{
+			name: "scientific notation accepted",
+			src:  "def c(want: number) {\n    print $want\n}\nc 1e3",
+		},
+		{
+			name: "valid literals produce no issue",
+			src:  "def c(want: number ok: bool name: string) {\n    print $want\n}\nc 5 true hello",
+		},
+		{
+			name: "variables stay runtime-checked",
+			src:  "def c(want: number) {\n    print $want\n}\nlet s = \"5\"\nc $s",
+		},
+		{
+			name: "unannotated params accept any literal",
+			src:  "def c(want) {\n    print $want\n}\nc abc",
+		},
+		{
+			name:      "bad literal in thread position",
+			src:       "def f(x y: number) {\n    print $y\n}\nlet v = 1\nprint ($v |> f abc)",
+			wantIssue: `def f: parameter "y": expected number, got "abc"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			issues := checkSource(t, tt.src)
+			if tt.wantIssue == "" {
+				assert.Empty(t, issues)
+				return
+			}
+			require.NotEmpty(t, issues, "expected an issue containing %q", tt.wantIssue)
+			found := false
+			for _, is := range issues {
+				if strings.Contains(is.Msg, tt.wantIssue) {
+					found = true
+				}
+			}
+			assert.True(t, found, "no issue contained %q; got %v", tt.wantIssue, issues)
+		})
+	}
+}

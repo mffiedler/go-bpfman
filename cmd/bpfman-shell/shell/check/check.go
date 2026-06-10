@@ -692,7 +692,7 @@ func (c *checker) inferDefReturnShape(name string) semantics.Shape {
 	}()
 	c.withFrame(func() {
 		for _, p := range def.Params {
-			c.define(p.Text, openShape(), nil)
+			c.define(p.Name.Text, openShape(), nil)
 		}
 		summary = c.inferBlockReturn(def.Body)
 	})
@@ -991,12 +991,64 @@ func (c *checker) checkDefArity(cmd *syntax.CommandStmt) {
 	}
 	want := c.defArity[head]
 	got := len(cmd.Args) - 1
-	if got == want {
+	if got != want {
+		decl := c.defDeclPos[head]
+		c.addIssue(cmd.Span, "%s: expected %d argument(s), got %d (def declared at %d:%d)",
+			head, want, got, decl.Line, decl.Col)
 		return
 	}
-	decl := c.defDeclPos[head]
-	c.addIssue(cmd.Span, "%s: expected %d argument(s), got %d (def declared at %d:%d)",
-		head, want, got, decl.Line, decl.Col)
+	c.checkDefLiteralArgs(head, cmd.Args[1:], 0)
+}
+
+// checkDefLiteralArgs mirrors the runtime's annotated-parameter
+// policy at static time for the inputs the checker can fully judge:
+// literal arguments. A bare word that cannot parse as the declared
+// type, or a quoted literal where a non-string type is declared,
+// can never bind successfully, so the mismatch is a check-time
+// issue with the same message the runtime would produce. Variable
+// and projection arguments stay runtime-checked: value shapes do
+// not carry scalar kinds. args[i] binds the def's parameter
+// paramOffset+i, so thread-position calls (whose piped value
+// occupies parameter zero) pass offset one.
+func (c *checker) checkDefLiteralArgs(head string, args []syntax.Expr, paramOffset int) {
+	def, ok := c.defDecls[head]
+	if !ok {
+		// Pre-expansion visible-def metadata (DefStaticInfo)
+		// carries no parameter types; the expanded-program
+		// check sees the declarations directly.
+		return
+	}
+	for i, arg := range args {
+		pi := paramOffset + i
+		if pi >= len(def.Params) {
+			return
+		}
+		p := def.Params[pi]
+		if p.Type == "" {
+			continue
+		}
+		lit, ok := arg.(*syntax.LiteralExpr)
+		if !ok {
+			continue
+		}
+		if lit.Quoted {
+			if p.Type != "string" {
+				c.addIssue(lit.Span, "def %s: parameter %q: expected %s, got the quoted string %q (quoting asserts string; drop the quotes to parse it)",
+					head, p.Name.Text, p.Type, lit.Text)
+			}
+			continue
+		}
+		switch p.Type {
+		case "number":
+			if !syntax.IsJSONNumber(lit.Text) {
+				c.addIssue(lit.Span, "def %s: parameter %q: expected number, got %q", head, p.Name.Text, lit.Text)
+			}
+		case "bool":
+			if lit.Text != "true" && lit.Text != "false" {
+				c.addIssue(lit.Span, "def %s: parameter %q: expected bool, got %q", head, p.Name.Text, lit.Text)
+			}
+		}
+	}
 }
 
 // primaryNameForHint picks a placeholder for the bind-target
@@ -1188,7 +1240,7 @@ func (c *checker) walkStmt(s syntax.Stmt) {
 		c.nonTopLevelDepth++
 		c.withFrame(func() {
 			for _, p := range n.Params {
-				c.define(p.Text, semantics.Shape{Sealed: false, Kind: semantics.OriginUnknown}, nil)
+				c.define(p.Name.Text, semantics.Shape{Sealed: false, Kind: semantics.OriginUnknown}, nil)
 			}
 			c.walkStmts(n.Body)
 		})
@@ -1933,12 +1985,15 @@ func (c *checker) checkThreadDefArity(prog *syntax.Program) {
 		}
 		want := c.defArity[name]
 		got := len(te.Args)
-		if got == want {
+		if got != want {
+			decl := c.defDeclPos[name]
+			c.addIssue(te.Span, "%s: expected %d argument(s), got %d (def declared at %d:%d)",
+				name, want, got, decl.Line, decl.Col)
 			return true
 		}
-		decl := c.defDeclPos[name]
-		c.addIssue(te.Span, "%s: expected %d argument(s), got %d (def declared at %d:%d)",
-			name, want, got, decl.Line, decl.Col)
+		// The piped value occupies parameter zero, so literal
+		// arguments start at parameter one.
+		c.checkDefLiteralArgs(name, te.Args[1:], 1)
 		return true
 	})
 }
