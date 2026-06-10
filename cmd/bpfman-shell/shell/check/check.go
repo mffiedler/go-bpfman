@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -1701,13 +1700,12 @@ func (c *checker) isStartCommand(cmd *syntax.CommandStmt) bool {
 //
 // Variable-reference operands are trusted (we cannot know
 // their value at static time); only syntax.LiteralExpr operands are
-// inspected. The numeric-vs-not test is strconv.ParseFloat,
-// which accepts the same lexical shapes the runtime arithmetic
-// does: decimal integer, decimal float, scientific notation.
-// Hex (0x...) and octal (0...) forms are rejected by both
-// sides; the check reports them at preflight rather than
-// letting them surface later from the runtime's "operand is
-// not numeric" path.
+// inspected. The numeric-vs-not test is syntax.IsJSONNumber,
+// which accepts the same finite JSON-number shapes the runtime
+// arithmetic evaluator accepts. Hex, non-finite values, leading
+// plus signs, and leading-zero forms are rejected by both sides;
+// the check reports them at preflight rather than letting them
+// surface later from the runtime's "operand is not numeric" path.
 func (c *checker) checkArithmeticOperands(prog *syntax.Program) {
 	syntax.Inspect(prog, func(n syntax.Node) bool {
 		be, ok := n.(*syntax.BinaryExpr)
@@ -1907,17 +1905,12 @@ func isScalarLikeKind(k semantics.OriginKind) bool {
 }
 
 // isNumericLiteral reports whether text is a literal the
-// arithmetic evaluator will accept. The runtime parses operands
-// with strconv.ParseFloat (decimal integers, floats, scientific
-// notation), so the static check uses the same parser to keep
-// the two sides aligned. A previous ParseInt-with-base-0
-// fallback accepted hex / octal forms the runtime rejected,
-// silently letting `0x1a + 1` pass preflight and then fail
-// later with the runtime's less helpful "operand is not
-// numeric" diagnostic; that fallback is gone.
+// arithmetic evaluator will accept. The runtime accepts finite
+// JSON numbers, keeping integer-shaped values exact and rejecting
+// non-finite or non-JSON spellings. The static check uses the same
+// predicate to keep both sides aligned.
 func isNumericLiteral(text string) bool {
-	_, err := strconv.ParseFloat(text, 64)
-	return err == nil
+	return syntax.IsJSONNumber(text)
 }
 
 // checkLoopExits walks stmts with a foreach-depth counter,

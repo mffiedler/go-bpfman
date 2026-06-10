@@ -14,7 +14,11 @@ import (
 func evalExpr(expr ir.Expr, env *Env) (Value, error) {
 	switch e := expr.(type) {
 	case *ir.LiteralExpr:
-		return literalValueParts(e.Text, e.Quoted), nil
+		v, err := literalValueParts(e.Text, e.Quoted)
+		if err != nil {
+			return Value{}, syntax.SpanErrorf(e.Span, "%v", err)
+		}
+		return v, nil
 	case *ir.VarRefExpr:
 		return resolveVarRefValueParts(e.Name, e.Path, e.Span, env)
 	case *ir.AdapterExpr:

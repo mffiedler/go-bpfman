@@ -22,6 +22,18 @@ func TestScriptRun_ExpressionWorkflowFixtureMatrix(t *testing.T) {
 			name:    "zip_length_mismatch_halts_before_body",
 			fixture: "expressions/zip-length-mismatch-halts-before-body",
 		},
+		{
+			name:    "exact_large_integer_comparisons",
+			fixture: "expressions/exact-large-integer-comparisons",
+		},
+		{
+			name:    "exact_large_integer_arithmetic",
+			fixture: "expressions/exact-large-integer-arithmetic",
+		},
+		{
+			name:    "invalid_numeric_literal_rejected",
+			fixture: "expressions/invalid-numeric-literal-rejected",
+		},
 	}
 
 	for _, tc := range cases {

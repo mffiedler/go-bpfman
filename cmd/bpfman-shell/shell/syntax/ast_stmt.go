@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"math"
+	"strings"
 	"time"
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
@@ -215,7 +217,22 @@ func IsJSONNumber(text string) bool {
 	}
 	// Exactly one value: trailing data means the word was not a
 	// single number.
-	return dec.Decode(&v) == io.EOF
+	if dec.Decode(&v) != io.EOF {
+		return false
+	}
+	if IsIntegralJSONNumber(text) {
+		return true
+	}
+	f, err := json.Number(text).Float64()
+	return err == nil && !math.IsInf(f, 0) && !math.IsNaN(f)
+}
+
+// IsIntegralJSONNumber reports whether text is a JSON number whose
+// syntax denotes an integer. It assumes callers have already
+// validated the full JSON-number grammar with IsJSONNumber when
+// they need to reject malformed input.
+func IsIntegralJSONNumber(text string) bool {
+	return !strings.ContainsAny(text, ".eE")
 }
 
 // DefStmt declares a user-defined command.

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/big"
 	"strconv"
 	"strings"
 	"time"
@@ -1262,42 +1263,112 @@ func isArithmeticOpText(op string) bool {
 	return false
 }
 
-// evalArithmetic parses both operands as float64 and performs
-// the requested operation.  Division and modulo by zero are
-// runtime errors; Go's math.Mod is used for '%' (which defines
-// the result's sign to match the dividend, e.g. -7 % 3 = -1).
-// Results are wrapped as numeric scalars via json.Number so
-// the scalar-formatting path matches jq-sourced numbers:
-// integer-valued floats render without a trailing ".0".
-func evalArithmetic(op, left, right string) (Value, error) {
-	a, err := strconv.ParseFloat(left, 64)
-	if err != nil {
-		return Value{}, fmt.Errorf("arithmetic %s: left operand %q is not numeric", op, left)
+type shellNumber struct {
+	text     string
+	integral bool
+	i        *big.Int
+	f        float64
+}
+
+func parseShellNumber(text, side string) (shellNumber, error) {
+	if !syntax.IsJSONNumber(text) {
+		return shellNumber{}, fmt.Errorf("%s operand %q is not numeric", side, text)
 	}
-	b, err := strconv.ParseFloat(right, 64)
+	n := shellNumber{text: text, integral: syntax.IsIntegralJSONNumber(text)}
+	if n.integral {
+		i, ok := new(big.Int).SetString(text, 10)
+		if !ok {
+			return shellNumber{}, fmt.Errorf("%s operand %q is not numeric", side, text)
+		}
+		n.i = i
+		return n, nil
+	}
+	f, err := json.Number(text).Float64()
+	if err != nil || math.IsInf(f, 0) || math.IsNaN(f) {
+		return shellNumber{}, fmt.Errorf("%s operand %q exceeds the representable range", side, text)
+	}
+	n.f = f
+	return n, nil
+}
+
+func (n shellNumber) float64(side string) (float64, error) {
+	if !n.integral {
+		return n.f, nil
+	}
+	f, _ := new(big.Float).SetInt(n.i).Float64()
+	if math.IsInf(f, 0) || math.IsNaN(f) {
+		return 0, fmt.Errorf("%s operand %q exceeds the representable range", side, n.text)
+	}
+	return f, nil
+}
+
+func numericValueFromInt(i *big.Int) Value {
+	return Value{v: json.Number(i.String()), kind: semantics.OriginScalar}
+}
+
+// evalArithmetic performs exact integer arithmetic for integral
+// operands where the operator can stay integral (+, -, *, %).
+// Division and any mixed/fractional operation promote to finite
+// float64. Division and modulo by zero are runtime errors.
+func evalArithmetic(op, left, right string) (Value, error) {
+	a, err := parseShellNumber(left, "left")
 	if err != nil {
-		return Value{}, fmt.Errorf("arithmetic %s: right operand %q is not numeric", op, right)
+		return Value{}, fmt.Errorf("arithmetic %s: %w", op, err)
+	}
+	b, err := parseShellNumber(right, "right")
+	if err != nil {
+		return Value{}, fmt.Errorf("arithmetic %s: %w", op, err)
+	}
+	if a.integral && b.integral && op != "/" {
+		if op == "%" && b.i.Sign() == 0 {
+			return Value{}, fmt.Errorf("division by zero")
+		}
+		r := new(big.Int)
+		switch op {
+		case "+":
+			r.Add(a.i, b.i)
+		case "-":
+			r.Sub(a.i, b.i)
+		case "*":
+			r.Mul(a.i, b.i)
+		case "%":
+			r.Rem(a.i, b.i)
+		default:
+			return Value{}, fmt.Errorf("unknown arithmetic operator %q", op)
+		}
+		return numericValueFromInt(r), nil
+	}
+	af, err := a.float64("left")
+	if err != nil {
+		return Value{}, fmt.Errorf("arithmetic %s: %w", op, err)
+	}
+	bf, err := b.float64("right")
+	if err != nil {
+		return Value{}, fmt.Errorf("arithmetic %s: %w", op, err)
 	}
 	var r float64
 	switch op {
 	case "+":
-		r = a + b
+		r = af + bf
 	case "-":
-		r = a - b
+		r = af - bf
 	case "*":
-		r = a * b
+		r = af * bf
 	case "/":
-		if b == 0 {
+		if bf == 0 {
 			return Value{}, fmt.Errorf("division by zero")
 		}
-		r = a / b
+		r = af / bf
 	case "%":
-		if b == 0 {
+		if bf == 0 {
 			return Value{}, fmt.Errorf("division by zero")
 		}
-		r = math.Mod(a, b)
+		r = math.Mod(af, bf)
 	default:
 		return Value{}, fmt.Errorf("unknown arithmetic operator %q", op)
+	}
+	if math.IsInf(r, 0) || math.IsNaN(r) {
+		return Value{}, fmt.Errorf("arithmetic %s: result exceeds the representable range", op)
 	}
 	return numericValue(r), nil
 }
@@ -1312,22 +1383,47 @@ func numericValue(x float64) Value {
 	return Value{v: json.Number(text), kind: semantics.OriginScalar}
 }
 
-func literalValueParts(text string, quoted bool) Value {
+func literalValueParts(text string, quoted bool) (Value, error) {
 	if quoted {
-		return StringValue(text)
+		return StringValue(text), nil
 	}
 	switch text {
 	case "true":
-		return BoolValue(true)
+		return BoolValue(true), nil
 	case "false":
-		return BoolValue(false)
+		return BoolValue(false), nil
 	case "null":
-		return NullValue()
+		return NullValue(), nil
 	}
-	if _, err := strconv.ParseFloat(text, 64); err == nil {
-		return Value{v: json.Number(text), kind: semantics.OriginScalar}
+	if syntax.IsJSONNumber(text) {
+		return Value{v: json.Number(text), kind: semantics.OriginScalar}, nil
 	}
-	return StringValue(text)
+	if looksNumeric(text) {
+		// Two distinguishable failures deserve different advice:
+		// valid JSON grammar that overflows float64 (1e309) cannot
+		// be fixed by quoting, while a malformed spelling (5s,
+		// 2024-01-01) is usually an intended string.
+		if json.Valid([]byte(text)) {
+			return Value{}, fmt.Errorf("numeric literal %q exceeds the representable range", text)
+		}
+		return Value{}, fmt.Errorf("numeric literal %q is not a valid JSON number; quote it if you meant a string", text)
+	}
+	return StringValue(text), nil
+}
+
+func looksNumeric(text string) bool {
+	if text == "" {
+		return false
+	}
+	first := text[0]
+	if first >= '0' && first <= '9' {
+		return true
+	}
+	if (first == '-' || first == '+') && len(text) > 1 {
+		second := text[1]
+		return second >= '0' && second <= '9'
+	}
+	return false
 }
 
 // evalNotEmpty implements the not-empty unary predicate. "Empty"
@@ -1401,28 +1497,49 @@ func evalSymbolicTextComparison(op, left, right string) (Value, error) {
 }
 
 func evalNumericComparison(op, left, right string) (Value, error) {
-	a, err := strconv.ParseFloat(left, 64)
+	a, err := parseShellNumber(left, "left")
 	if err != nil {
-		return Value{}, fmt.Errorf("left operand %q is not numeric", left)
+		return Value{}, err
 	}
-	b, err := strconv.ParseFloat(right, 64)
+	b, err := parseShellNumber(right, "right")
 	if err != nil {
-		return Value{}, fmt.Errorf("right operand %q is not numeric", right)
+		return Value{}, err
+	}
+	var cmp int
+	if a.integral && b.integral {
+		cmp = a.i.Cmp(b.i)
+	} else {
+		af, err := a.float64("left")
+		if err != nil {
+			return Value{}, err
+		}
+		bf, err := b.float64("right")
+		if err != nil {
+			return Value{}, err
+		}
+		switch {
+		case af < bf:
+			cmp = -1
+		case af > bf:
+			cmp = 1
+		default:
+			cmp = 0
+		}
 	}
 	var pass bool
 	switch op {
 	case "==":
-		pass = a == b
+		pass = cmp == 0
 	case "!=":
-		pass = a != b
+		pass = cmp != 0
 	case "<":
-		pass = a < b
+		pass = cmp < 0
 	case "<=":
-		pass = a <= b
+		pass = cmp <= 0
 	case ">":
-		pass = a > b
+		pass = cmp > 0
 	case ">=":
-		pass = a >= b
+		pass = cmp >= 0
 	default:
 		return Value{}, fmt.Errorf("unknown numeric operator %q", op)
 	}

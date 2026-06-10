@@ -72,12 +72,10 @@ func TestEvalExpr_Literal_Classification(t *testing.T) {
 		{"unquoted_int", &syntax.LiteralExpr{Text: "5"}, json.Number("5")},
 		{"unquoted_float", &syntax.LiteralExpr{Text: "5.5"}, json.Number("5.5")},
 		{"unquoted_negative", &syntax.LiteralExpr{Text: "-3"}, json.Number("-3")},
-		{"unquoted_zero_padded", &syntax.LiteralExpr{Text: "007"}, json.Number("007")},
 		{"unquoted_true", &syntax.LiteralExpr{Text: "true"}, true},
 		{"unquoted_false", &syntax.LiteralExpr{Text: "false"}, false},
 		{"unquoted_word", &syntax.LiteralExpr{Text: "fentry"}, "fentry"},
 		{"unquoted_path", &syntax.LiteralExpr{Text: "/tmp/x"}, "/tmp/x"},
-		{"unquoted_hex_stays_string", &syntax.LiteralExpr{Text: "0xff"}, "0xff"},
 		{"quoted_numeric_text_stays_string", &syntax.LiteralExpr{Text: "5", Quoted: true}, "5"},
 		{"quoted_true_stays_string", &syntax.LiteralExpr{Text: "true", Quoted: true}, "true"},
 		{"quoted_word", &syntax.LiteralExpr{Text: "hello", Quoted: true}, "hello"},
@@ -89,6 +87,19 @@ func TestEvalExpr_Literal_Classification(t *testing.T) {
 			v, err := evalLoweredExpr(tt.expr, evalEnv(s))
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantRaw, v.Raw())
+		})
+	}
+}
+
+func TestEvalExpr_Literal_InvalidNumericLookingFormsRejected(t *testing.T) {
+	t.Parallel()
+
+	for _, text := range []string{"007", "0xff", "1e309"} {
+		t.Run(text, func(t *testing.T) {
+			t.Parallel()
+			_, err := evalLoweredExpr(&syntax.LiteralExpr{Text: text}, evalEnv(NewSession()))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "numeric literal")
 		})
 	}
 }
@@ -1424,16 +1435,12 @@ func TestRuntime_HexLiteralArithmeticRejected(t *testing.T) {
 	t.Parallel()
 
 	// Pins the runtime side of the static / runtime numeric
-	// acceptance contract. evalArithmetic parses operands with
-	// strconv.ParseFloat, which rejects the 0x-prefixed hex
-	// form, so any hex literal in arithmetic position must
-	// surface as "operand is not numeric" at runtime. The
-	// static checker uses the same parser so the diagnostic
-	// arrives at preflight; this test guards the runtime
-	// half of that agreement.
+	// acceptance contract. Numeric-looking literals must either
+	// become finite JSON numbers or fail; they no longer fall back
+	// to strings before arithmetic sees them.
 	err := runScriptError(t, "let r = 0x1a + 1", nil)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not numeric")
+	assert.Contains(t, err.Error(), "numeric literal")
 }
 
 func TestExecSource_CommandArg_ParenExprArithmetic(t *testing.T) {

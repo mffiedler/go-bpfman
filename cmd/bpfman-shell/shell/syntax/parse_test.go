@@ -1630,7 +1630,7 @@ func TestIsJSONNumber(t *testing.T) {
 	for _, s := range accepted {
 		assert.True(t, IsJSONNumber(s), "%q must be a JSON number", s)
 	}
-	rejected := []string{"NaN", "Inf", "+Inf", "-Inf", "Infinity", "+5", "05", "0x10", "1 2", "", "abc", "1.10.3"}
+	rejected := []string{"NaN", "Inf", "+Inf", "-Inf", "Infinity", "+5", "05", "0x10", "1e309", "1 2", "", "abc", "1.10.3"}
 	for _, s := range rejected {
 		assert.False(t, IsJSONNumber(s), "%q must not be a JSON number", s)
 	}
