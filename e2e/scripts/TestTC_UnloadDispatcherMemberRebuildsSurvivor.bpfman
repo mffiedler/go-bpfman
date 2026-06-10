@@ -52,6 +52,7 @@ guard after <- bpfman dispatcher get tc-ingress $pair.host_nsid $pair.host_ifind
 assert ($after |> jq ".members | length") == 1
 assert $after.revision == ($beforeRevision + 1)
 assert $after.members[0].program_id == $secondProg.record.program_id
+assert_dispatcher_count $pair.host_nsid $pair.host_ifindex 1
 
 guard afterFilters <- tc -j filter show dev $pair.host_link ingress
 let afterFilterCount = $afterFilters.stdout |> jq $filterCount

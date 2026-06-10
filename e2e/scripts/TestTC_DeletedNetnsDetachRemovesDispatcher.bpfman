@@ -49,6 +49,7 @@ guard _ <- exec ip netns del $pair.ns
 bpfman link detach $firstLink
 
 assert fail bpfman dispatcher get tc-ingress $nsid $ifindex
+assert_dispatcher_count $nsid $ifindex 0
 
 guard listed <- bpfman link list -o json
 assert_link_absent $listed $firstLink.record.id

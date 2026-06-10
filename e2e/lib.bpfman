@@ -127,6 +127,21 @@ def assert_link_absent(listed linkID) {
     assert $count == 0
 }
 
+# Asserts the store records exactly `want` dispatchers on the given
+# (nsid, ifindex), across all dispatcher types. List-derived
+# assertions must scope to keys the script owns: scripts run in
+# parallel against a shared runtime, so an unscoped emptiness check
+# would race with whatever other scripts have attached. With want 0
+# this is the per-interface leak detector; with want 1 it proves a
+# rebuild left exactly one dispatcher behind.
+def assert_dispatcher_count(nsid ifindex want) {
+    guard listed <- bpfman dispatcher list --nsid $nsid --ifindex $ifindex -o json
+    # Def arguments arrive as words; coerce before comparing with
+    # jq's numeric length.
+    let wantCount = $want |> jq "tonumber"
+    assert ($listed |> jq ".dispatchers | length") == $wantCount
+}
+
 # Temporary host-routing precheck for root-netns veth tests. Some
 # hosts install policy routing rules for VPNs such as Tailscale or
 # WireGuard. Those rules can route replies to the peer-side veth
