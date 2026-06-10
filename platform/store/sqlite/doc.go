@@ -41,7 +41,8 @@
 //	    if err := txStore.Save(ctx, id, prog); err != nil {
 //	        return err // triggers rollback
 //	    }
-//	    return txStore.SaveLink(ctx, record) // commits if nil
+//	    _, err := txStore.CreateLink(ctx, spec)
+//	    return err // commits if nil
 //	})
 //
 // # Autocommit Behaviour
@@ -52,7 +53,7 @@
 //
 //   - Single-statement methods (Get, Delete, List) are atomic by
 //     themselves.
-//   - Multi-statement methods (Save, SaveLink) are NOT atomic: if the
+//   - Multi-statement methods (Save, CreateLink) are NOT atomic: if the
 //     second statement fails, the first statement's changes are
 //     already committed. For example, Save inserts the program, then
 //     deletes old metadata index entries, then inserts new ones. A
