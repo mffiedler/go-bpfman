@@ -342,9 +342,11 @@ func decorateDefError(err error, def *defValue, callLoc source.Pos) error {
 }
 
 // argToValue converts a post-expansion Arg into a Value suitable for
-// binding to a def parameter. Word and quoted args become string
-// values; resolved scalar args become string values; structured and
-// adapter args carry their already-resolved Value through.
+// binding to a def parameter. The typing rule at the call boundary:
+// variables keep their value kinds (a number-valued $n arrives in
+// the def as a number), while bare and quoted literals are words by
+// shell convention and bind as strings. Structured and adapter args
+// carry their already-resolved Value through.
 func argToValue(a Arg) Value {
 	switch v := a.(type) {
 	case WordArg:
@@ -352,6 +354,9 @@ func argToValue(a Arg) Value {
 	case QuotedArg:
 		return StringValue(v.Text)
 	case ScalarValueArg:
+		if v.HasValue {
+			return v.Value
+		}
 		return StringValue(v.Text)
 	case StructuredValueArg:
 		return v.Value

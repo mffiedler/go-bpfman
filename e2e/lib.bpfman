@@ -136,8 +136,10 @@ def assert_link_absent(listed linkID) {
 # rebuild left exactly one dispatcher behind.
 def assert_dispatcher_count(nsid ifindex want) {
     guard listed <- bpfman dispatcher list --nsid $nsid --ifindex $ifindex -o json
-    # Def arguments arrive as words; coerce before comparing with
-    # jq's numeric length.
+    # Bare literal arguments arrive as words (variables keep their
+    # value kinds), and callers pass literal counts; coerce before
+    # comparing with jq's numeric length. tonumber is the identity
+    # on numbers, so variable callers work too.
     let wantCount = $want |> jq "tonumber"
     assert ($listed |> jq ".dispatchers | length") == $wantCount
 }
