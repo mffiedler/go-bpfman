@@ -188,8 +188,8 @@ func TestDescribe(t *testing.T) {
 		},
 		{
 			name:     "DetachTCFilter",
-			action:   DetachTCFilter{Ifindex: 3, Priority: 100},
-			contains: "detach TC filter ifindex=3 priority=100",
+			action:   DetachTCFilter{Ifindex: 3, Priority: 100, NetnsPath: "/proc/self/ns/net"},
+			contains: "detach TC filter ifindex=3 priority=100 netns=/proc/self/ns/net",
 		},
 	}
 

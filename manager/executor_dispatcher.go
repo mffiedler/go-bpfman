@@ -260,6 +260,7 @@ func (e *executor) rebuildXDPDispatcher(
 		Runtime: platform.DispatcherRuntime{
 			ProgramID:    dispatcherID,
 			KernelLinkID: &linkID,
+			NetnsPath:    ops.netnsPath,
 		},
 	}
 	for i, slot := range allSlots {
@@ -539,7 +540,7 @@ func (e *executor) rebuildTCDispatcher(
 	if !firstAttach && snap.Runtime.FilterPriority != nil {
 		oldPriority = *snap.Runtime.FilterPriority
 		parent := dispatcher.TCParentHandle(dispType)
-		handle, err := e.kernel.FindTCFilterHandle(ctx, int(ops.ifindex), parent, oldPriority)
+		handle, err := e.kernel.FindTCFilterHandle(ctx, int(ops.ifindex), parent, oldPriority, ops.netnsPath)
 		if err != nil {
 			e.logger.WarnContext(ctx, "failed to find old TC filter handle",
 				"error", err)
@@ -568,7 +569,7 @@ func (e *executor) rebuildTCDispatcher(
 	// Remove old filter after new one is in place.
 	if !firstAttach && oldHandle != 0 {
 		parent := dispatcher.TCParentHandle(dispType)
-		if err := e.kernel.DetachTCFilter(ctx, int(ops.ifindex), ops.ifname, parent, oldPriority, oldHandle); err != nil {
+		if err := e.kernel.DetachTCFilter(ctx, int(ops.ifindex), ops.ifname, parent, oldPriority, oldHandle, ops.netnsPath); err != nil {
 			e.logger.WarnContext(ctx, "failed to remove old TC filter",
 				"handle", fmt.Sprintf("%x", oldHandle), "error", err)
 		} else {
@@ -584,6 +585,7 @@ func (e *executor) rebuildTCDispatcher(
 		Runtime: platform.DispatcherRuntime{
 			ProgramID:      dispatcherID,
 			FilterPriority: &result.Priority,
+			NetnsPath:      ops.netnsPath,
 		},
 	}
 	for i, slot := range allSlots {
@@ -835,6 +837,7 @@ func (e *executor) rebuildXDPForDetach(
 		Runtime: platform.DispatcherRuntime{
 			ProgramID:    dispatcherID,
 			KernelLinkID: snap.Runtime.KernelLinkID,
+			NetnsPath:    snap.Runtime.NetnsPath,
 		},
 	}
 	for i, slot := range slots {
@@ -946,7 +949,7 @@ func (e *executor) rebuildTCForDetach(
 	if snap.Runtime.FilterPriority != nil {
 		oldPriority = *snap.Runtime.FilterPriority
 		parent := dispatcher.TCParentHandle(dispType)
-		handle, err := e.kernel.FindTCFilterHandle(ctx, int(key.Ifindex), parent, oldPriority)
+		handle, err := e.kernel.FindTCFilterHandle(ctx, int(key.Ifindex), parent, oldPriority, snap.Runtime.NetnsPath)
 		if err != nil {
 			e.logger.WarnContext(ctx, "failed to find old TC filter handle for detach rebuild",
 				"error", err)
@@ -964,7 +967,7 @@ func (e *executor) rebuildTCForDetach(
 	}
 
 	// Create new filter.
-	result, err := e.kernel.CreateTCFilter(ctx, progPinPath, int(key.Ifindex), "", direction, "")
+	result, err := e.kernel.CreateTCFilter(ctx, progPinPath, int(key.Ifindex), snapInterfaceName(snap), direction, snap.Runtime.NetnsPath)
 	if err != nil {
 		return fmt.Errorf("create TC filter for detach rebuild: %w", err)
 	}
@@ -972,7 +975,7 @@ func (e *executor) rebuildTCForDetach(
 	// Remove old filter.
 	if oldHandle != 0 {
 		parent := dispatcher.TCParentHandle(dispType)
-		if err := e.kernel.DetachTCFilter(ctx, int(key.Ifindex), "", parent, oldPriority, oldHandle); err != nil {
+		if err := e.kernel.DetachTCFilter(ctx, int(key.Ifindex), snapInterfaceName(snap), parent, oldPriority, oldHandle, snap.Runtime.NetnsPath); err != nil {
 			e.logger.WarnContext(ctx, "failed to remove old TC filter after detach rebuild",
 				"handle", fmt.Sprintf("%x", oldHandle), "error", err)
 		}
@@ -985,6 +988,7 @@ func (e *executor) rebuildTCForDetach(
 		Runtime: platform.DispatcherRuntime{
 			ProgramID:      result.DispatcherID,
 			FilterPriority: &result.Priority,
+			NetnsPath:      snap.Runtime.NetnsPath,
 		},
 	}
 	for i, slot := range slots {
@@ -1017,6 +1021,15 @@ func (e *executor) rebuildTCForDetach(
 	}
 
 	return nil
+}
+
+func snapInterfaceName(snap platform.DispatcherSnapshot) string {
+	for _, member := range snap.Members {
+		if member.Ifname != "" {
+			return member.Ifname
+		}
+	}
+	return ""
 }
 
 // removeEmptyDispatcher removes a dispatcher when no extensions
@@ -1068,7 +1081,7 @@ func (e *executor) removeEmptyDispatcher(ctx context.Context, snap platform.Disp
 
 	// Point of no return.
 	if isTCDispatcherType(key.Type) {
-		if err := e.detachTCDispatcherFilter(ctx, key, snap.Runtime.FilterPriority); err != nil {
+		if err := e.detachTCDispatcherFilter(ctx, snap); err != nil {
 			return fmt.Errorf("detach TC dispatcher filter: %w", err)
 		}
 	} else {
@@ -1150,16 +1163,18 @@ func (e *executor) detachXDPOuterLink(ctx context.Context, key dispatcher.Key) e
 // least resistance is to do that alongside step 3 of the
 // hardening ladder, where TC dispatcher resources gain typed
 // representation.
-func (e *executor) detachTCDispatcherFilter(ctx context.Context, key dispatcher.Key, filterPriority *uint16) error {
+func (e *executor) detachTCDispatcherFilter(ctx context.Context, snap platform.DispatcherSnapshot) error {
+	key := snap.Key
 	var priority uint16
-	if filterPriority != nil {
-		priority = *filterPriority
+	if snap.Runtime.FilterPriority != nil {
+		priority = *snap.Runtime.FilterPriority
 	}
 	parent := dispatcher.TCParentHandle(key.Type)
-	handle, err := e.kernel.FindTCFilterHandle(ctx, int(key.Ifindex), parent, priority)
+	handle, err := e.kernel.FindTCFilterHandle(ctx, int(key.Ifindex), parent, priority, snap.Runtime.NetnsPath)
 	if err != nil {
 		e.logger.WarnContext(ctx, "failed to find TC filter handle; assuming already gone",
 			"ifindex", key.Ifindex,
+			"netns", snap.Runtime.NetnsPath,
 			"parent", fmt.Sprintf("%x", parent),
 			"priority", priority,
 			"error", err)
@@ -1168,7 +1183,7 @@ func (e *executor) detachTCDispatcherFilter(ctx context.Context, key dispatcher.
 	if handle == 0 {
 		return nil
 	}
-	return e.kernel.DetachTCFilter(ctx, int(key.Ifindex), "", parent, priority, handle)
+	return e.kernel.DetachTCFilter(ctx, int(key.Ifindex), snapInterfaceName(snap), parent, priority, handle, snap.Runtime.NetnsPath)
 }
 
 // removeDispatcherProgPin unpins the dispatcher program. After the

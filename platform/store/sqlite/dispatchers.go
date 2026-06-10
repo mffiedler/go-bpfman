@@ -22,7 +22,7 @@ import (
 func (s *sqliteStore) prepareDispatcherStatements(ctx context.Context) error {
 	var err error
 
-	const getDispatcherSQL = `SELECT revision, program_id, kernel_link_id, priority
+	const getDispatcherSQL = `SELECT revision, program_id, kernel_link_id, priority, netns
 		FROM dispatchers WHERE type = ? AND nsid = ? AND ifindex = ?`
 
 	s.stmtGetDispatcher, err = s.db.PrepareContext(ctx, getDispatcherSQL)
@@ -60,7 +60,7 @@ func (s *sqliteStore) prepareDispatcherStatements(ctx context.Context) error {
 
 	const listDispatcherSummariesSQL = `
 		SELECT d.type, d.nsid, d.ifindex, d.revision, d.program_id, d.kernel_link_id,
-		       d.priority,
+		       d.priority, d.netns,
 		    (SELECT COUNT(*) FROM link_xdp_details x
 		     WHERE x.nsid = d.nsid AND x.ifindex = d.ifindex
 		       AND d.type = 'xdp') +
@@ -93,13 +93,14 @@ func (s *sqliteStore) prepareDispatcherStatements(ctx context.Context) error {
 		return fmt.Errorf("prepare DeleteTCExtLinks: %w", err)
 	}
 
-	const upsertDispatcherSQL = `INSERT INTO dispatchers (type, nsid, ifindex, revision, program_id, kernel_link_id, priority, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	const upsertDispatcherSQL = `INSERT INTO dispatchers (type, nsid, ifindex, revision, program_id, kernel_link_id, priority, netns, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(type, nsid, ifindex) DO UPDATE SET
 		  revision = excluded.revision,
 		  program_id = excluded.program_id,
 		  kernel_link_id = excluded.kernel_link_id,
 		  priority = excluded.priority,
+		  netns = excluded.netns,
 		  updated_at = excluded.updated_at`
 
 	s.stmtUpsertDispatcher, err = s.db.PrepareContext(ctx, upsertDispatcherSQL)
@@ -127,7 +128,7 @@ func (s *sqliteStore) prepareDispatcherStatements(ctx context.Context) error {
 
 	const insertXDPDetailSQL = `INSERT INTO link_xdp_details
 		(id, interface, ifindex, priority, position, proceed_on, netns, nsid, dispatcher_program_id)
-		VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)`
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	s.stmtInsertXDPDetail, err = s.db.PrepareContext(ctx, insertXDPDetailSQL)
 	if err != nil {
@@ -136,7 +137,7 @@ func (s *sqliteStore) prepareDispatcherStatements(ctx context.Context) error {
 
 	const insertTCDetailSQL = `INSERT INTO link_tc_details
 		(id, interface, ifindex, direction, priority, position, proceed_on, netns, nsid, dispatcher_program_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	s.stmtInsertTCDetail, err = s.db.PrepareContext(ctx, insertTCDetailSQL)
 	if err != nil {
@@ -169,8 +170,8 @@ func dispatcherDirection(dt dispatcher.DispatcherType) string {
 // scanDispatcherRuntime scans the dispatcher row fields (program_id,
 // link_id, priority) into a DispatcherRuntime, handling nullable
 // link_id and priority.
-func scanDispatcherRuntime(programID kernel.ProgramID, nullLinkID sql.NullInt64, priority sql.NullInt64) platform.DispatcherRuntime {
-	rt := platform.DispatcherRuntime{ProgramID: programID}
+func scanDispatcherRuntime(programID kernel.ProgramID, nullLinkID sql.NullInt64, priority sql.NullInt64, netns string) platform.DispatcherRuntime {
+	rt := platform.DispatcherRuntime{ProgramID: programID, NetnsPath: netns}
 	if nullLinkID.Valid {
 		lid := kernel.LinkID(nullLinkID.Int64)
 		rt.KernelLinkID = &lid
@@ -192,10 +193,11 @@ func (s *sqliteStore) GetDispatcherSnapshot(ctx context.Context, key dispatcher.
 	var programID kernel.ProgramID
 	var nullLinkID sql.NullInt64
 	var priority sql.NullInt64
+	var netnsPath string
 
 	err := s.stmtGetDispatcher.QueryRowContext(ctx,
 		key.Type.String(), key.Nsid, key.Ifindex,
-	).Scan(&revision, &programID, &nullLinkID, &priority)
+	).Scan(&revision, &programID, &nullLinkID, &priority, &netnsPath)
 	if err == sql.ErrNoRows {
 		s.logger.Debug("sql", "stmt", "GetDispatcherSnapshot", "args", []any{key}, "duration_ms", msec(time.Since(start)), "rows", 0)
 		return platform.DispatcherSnapshot{}, fmt.Errorf("dispatcher (%s, %d, %d): %w", key.Type, key.Nsid, key.Ifindex, platform.ErrRecordNotFound)
@@ -208,7 +210,7 @@ func (s *sqliteStore) GetDispatcherSnapshot(ctx context.Context, key dispatcher.
 	snap := platform.DispatcherSnapshot{
 		Key:      key,
 		Revision: revision,
-		Runtime:  scanDispatcherRuntime(programID, nullLinkID, priority),
+		Runtime:  scanDispatcherRuntime(programID, nullLinkID, priority, netnsPath),
 	}
 
 	// Fetch members from the appropriate detail table.
@@ -284,8 +286,9 @@ func (s *sqliteStore) ListDispatcherSummaries(ctx context.Context) ([]platform.D
 		var programID kernel.ProgramID
 		var nullLinkID sql.NullInt64
 		var priority sql.NullInt64
+		var netnsPath string
 		if err := rows.Scan(&dispTypeStr, &summary.Key.Nsid, &summary.Key.Ifindex,
-			&summary.Revision, &programID, &nullLinkID, &priority, &summary.MemberCount); err != nil {
+			&summary.Revision, &programID, &nullLinkID, &priority, &netnsPath, &summary.MemberCount); err != nil {
 			s.logger.Debug("sql", "stmt", "ListDispatcherSummaries", "duration_ms", msec(time.Since(start)), "error", err)
 			return nil, fmt.Errorf("scan dispatcher summary: %w", err)
 		}
@@ -294,7 +297,7 @@ func (s *sqliteStore) ListDispatcherSummaries(ctx context.Context) ([]platform.D
 			return nil, fmt.Errorf("invalid dispatcher type in DB: %w", err)
 		}
 		summary.Key.Type = parsed
-		summary.Runtime = scanDispatcherRuntime(programID, nullLinkID, priority)
+		summary.Runtime = scanDispatcherRuntime(programID, nullLinkID, priority, netnsPath)
 		result = append(result, summary)
 	}
 	if err := rows.Err(); err != nil {
@@ -346,7 +349,7 @@ func (s *sqliteStore) ReplaceDispatcherSnapshot(ctx context.Context, snap platfo
 	if _, err := s.stmtUpsertDispatcher.ExecContext(ctx,
 		snap.Key.Type.String(), snap.Key.Nsid, snap.Key.Ifindex,
 		snap.Revision, snap.Runtime.ProgramID, linkID,
-		priority, now, now); err != nil {
+		priority, snap.Runtime.NetnsPath, now, now); err != nil {
 		return platform.DispatcherSnapshot{}, fmt.Errorf("upsert dispatcher: %w", err)
 	}
 
@@ -399,14 +402,14 @@ func (s *sqliteStore) ReplaceDispatcherSnapshot(ctx context.Context, snap platfo
 		if snap.Key.Type == dispatcher.DispatcherTypeXDP {
 			if _, err := s.stmtInsertXDPDetail.ExecContext(ctx,
 				m.LinkID, m.Ifname, snap.Key.Ifindex, m.Priority, m.Position,
-				proceedOnJSON, snap.Key.Nsid, snap.Runtime.ProgramID); err != nil {
+				proceedOnJSON, snap.Runtime.NetnsPath, snap.Key.Nsid, snap.Runtime.ProgramID); err != nil {
 				return platform.DispatcherSnapshot{}, fmt.Errorf("insert XDP detail for link %d: %w", m.LinkID, err)
 			}
 		} else {
 			dir := dispatcherDirection(snap.Key.Type)
 			if _, err := s.stmtInsertTCDetail.ExecContext(ctx,
 				m.LinkID, m.Ifname, snap.Key.Ifindex, dir, m.Priority, m.Position,
-				proceedOnJSON, snap.Key.Nsid, snap.Runtime.ProgramID); err != nil {
+				proceedOnJSON, snap.Runtime.NetnsPath, snap.Key.Nsid, snap.Runtime.ProgramID); err != nil {
 				return platform.DispatcherSnapshot{}, fmt.Errorf("insert TC detail for link %d: %w", m.LinkID, err)
 			}
 		}

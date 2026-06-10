@@ -46,6 +46,7 @@ type DispatcherRuntime struct {
 	ProgramID      kernel.ProgramID `json:"program_id"`
 	KernelLinkID   *kernel.LinkID   `json:"kernel_link_id,omitempty"`
 	FilterPriority *uint16          `json:"filter_priority,omitempty"`
+	NetnsPath      string           `json:"netns_path"`
 }
 
 // DispatcherSnapshot is a complete point-in-time view of a dispatcher

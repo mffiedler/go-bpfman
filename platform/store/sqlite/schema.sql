@@ -296,6 +296,7 @@ CREATE TABLE IF NOT EXISTS dispatchers (
     program_id INTEGER NOT NULL UNIQUE,
     kernel_link_id INTEGER,
     priority INTEGER CHECK (priority >= 0),
+    netns TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
 

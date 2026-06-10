@@ -1586,6 +1586,48 @@ func TestTC_DispatcherRebuildDetachesOldFilterHandle(t *testing.T) {
 	assert.NotEqual(t, oldHandle, currentHandles[0], "new dispatcher filter should remain live")
 }
 
+func TestTC_DispatcherRebuildDetachesOldFilterInNetns(t *testing.T) {
+	t.Parallel()
+
+	fix := newTestFixture(t)
+	ctx := context.Background()
+	netnsPath := "/proc/self/ns/net"
+
+	spec1, err := bpfman.NewLoadSpec(fix.BytecodeFile("tc.o"), "tc_pass", bpfman.ProgramTypeTC)
+	require.NoError(t, err)
+	prog1, err := fix.Load(ctx, spec1, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	attach1, err := bpfman.NewTCAttachSpec(prog1.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	require.NoError(t, err)
+	attach1 = attach1.WithNetns(netnsPath).WithPriority(50)
+	_, err = fix.Attach(ctx, attach1)
+	require.NoError(t, err)
+
+	firstHandles := fix.Kernel.TCFilterHandles()
+	require.Len(t, firstHandles, 1)
+	oldHandle := firstHandles[0]
+
+	spec2, err := bpfman.NewLoadSpec(fix.BytecodeFile("tc.o"), "tc_pass", bpfman.ProgramTypeTC)
+	require.NoError(t, err)
+	prog2, err := fix.Load(ctx, spec2, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	attach2, err := bpfman.NewTCAttachSpec(prog2.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	require.NoError(t, err)
+	attach2 = attach2.WithNetns(netnsPath).WithPriority(60)
+	_, err = fix.Attach(ctx, attach2)
+	require.NoError(t, err)
+
+	events := fix.Kernel.TCDetachEvents()
+	require.Len(t, events, 1)
+	assert.Equal(t, oldHandle, events[0].handle, "netns rebuild must detach the old filter handle")
+
+	currentHandles := fix.Kernel.TCFilterHandles()
+	require.Len(t, currentHandles, 1)
+	assert.NotEqual(t, oldHandle, currentHandles[0], "new netns dispatcher filter should remain live")
+}
+
 // =============================================================================
 // Direction Validation Tests
 // =============================================================================

@@ -159,6 +159,7 @@ type kernelOp struct {
 
 // tcFilterKey identifies a TC filter by its location on an interface.
 type tcFilterKey struct {
+	netns    string
 	ifindex  int
 	parent   uint32
 	priority uint16
@@ -1030,10 +1031,10 @@ func (f *fakeKernel) AttachTCDispatcher(_ context.Context, spec dispatcher.TCDis
 	}, nil
 }
 
-func (f *fakeKernel) DetachTCFilter(_ context.Context, ifindex int, ifname string, parent uint32, priority uint16, handle uint32) error {
+func (f *fakeKernel) DetachTCFilter(_ context.Context, ifindex int, ifname string, parent uint32, priority uint16, handle uint32, netnsPath string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	key := tcFilterKey{ifindex: ifindex, parent: parent, priority: priority}
+	key := tcFilterKey{netns: netnsPath, ifindex: ifindex, parent: parent, priority: priority}
 	f.tcDetaches = append(f.tcDetaches, tcFilterDetach{tcFilterKey: key, handle: handle})
 	handles := f.tcFilters[key]
 	for i, h := range handles {
@@ -1050,10 +1051,10 @@ func (f *fakeKernel) DetachTCFilter(_ context.Context, ifindex int, ifname strin
 	return nil
 }
 
-func (f *fakeKernel) FindTCFilterHandle(_ context.Context, ifindex int, parent uint32, priority uint16) (uint32, error) {
+func (f *fakeKernel) FindTCFilterHandle(_ context.Context, ifindex int, parent uint32, priority uint16, netnsPath string) (uint32, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	key := tcFilterKey{ifindex: ifindex, parent: parent, priority: priority}
+	key := tcFilterKey{netns: netnsPath, ifindex: ifindex, parent: parent, priority: priority}
 	handles := f.tcFilters[key]
 	if len(handles) == 0 {
 		return 0, fmt.Errorf("no TC filter for ifindex=%d parent=%x priority=%d", ifindex, parent, priority)
@@ -1286,7 +1287,7 @@ func (f *fakeKernel) CreateTCFilter(_ context.Context, progPinPath bpfman.ProgPi
 	}
 
 	f.mu.Lock()
-	key := tcFilterKey{ifindex: ifindex, parent: parent, priority: 50}
+	key := tcFilterKey{netns: netnsPath, ifindex: ifindex, parent: parent, priority: 50}
 	f.tcFilters[key] = append(f.tcFilters[key], handle)
 	f.mu.Unlock()
 

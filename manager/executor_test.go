@@ -266,11 +266,11 @@ func (k *stubKernel) RepinMap(ctx context.Context, srcPath, dstPath string) erro
 }
 
 // TCFilterDetacher
-func (k *stubKernel) DetachTCFilter(ctx context.Context, ifindex int, ifname string, parent uint32, priority uint16, handle uint32) error {
+func (k *stubKernel) DetachTCFilter(ctx context.Context, ifindex int, ifname string, parent uint32, priority uint16, handle uint32, netnsPath string) error {
 	panic("stubKernel.DetachTCFilter not implemented")
 }
 
-func (k *stubKernel) FindTCFilterHandle(ctx context.Context, ifindex int, parent uint32, priority uint16) (uint32, error) {
+func (k *stubKernel) FindTCFilterHandle(ctx context.Context, ifindex int, parent uint32, priority uint16, netnsPath string) (uint32, error) {
 	panic("stubKernel.FindTCFilterHandle not implemented")
 }
 

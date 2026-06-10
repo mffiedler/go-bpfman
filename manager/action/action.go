@@ -192,11 +192,12 @@ func (DetachLink) isAction() {}
 // Used to detach TC dispatchers which are attached as clsact filters
 // rather than BPF links.
 type DetachTCFilter struct {
-	Ifindex  int
-	Ifname   string
-	Parent   uint32 // ingress or egress parent handle
-	Priority uint16
-	Handle   uint32
+	Ifindex   int
+	Ifname    string
+	Parent    uint32 // ingress or egress parent handle
+	Priority  uint16
+	Handle    uint32
+	NetnsPath string
 }
 
 func (DetachTCFilter) isAction() {}

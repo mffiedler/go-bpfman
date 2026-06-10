@@ -1,0 +1,50 @@
+# -*- mode: bpfman -*-
+# Proves TC dispatcher rebuild updates the filter in the requested
+# network namespace. The peer-side veth exists inside $pair.ns; the
+# second attach rebuilds the dispatcher and must remove the old TC
+# filter from that namespace before leaving the new one in place.
+
+import ../lib.bpfman
+
+guard pair <- net veth-pair
+defer net release $pair
+
+let netns = "/var/run/netns/${pair.ns}"
+let filterCount = 'fromjson | [ .[] | select(.kind == "bpf") ] | length'
+
+guard firstLoad <- bpfman program load file \
+    --path testdata/bpf/tc_counter.bpf.o \
+    --programs tc:stats
+let firstProg = $firstLoad.programs[0]
+defer bpfman program unload $firstProg
+
+guard firstLink <- bpfman link attach tc \
+    --iface $pair.peer_link \
+    --direction ingress \
+    --priority 50 \
+    --proceed-on ok,pipe,dispatcher_return \
+    --netns $netns \
+    $firstProg
+defer bpfman link detach $firstLink
+
+guard firstFilters <- net exec $pair tc -j filter show dev $pair.peer_link ingress
+let firstCount = $firstFilters.stdout |> jq $filterCount
+
+guard secondLoad <- bpfman program load file \
+    --path testdata/bpf/tc_counter.bpf.o \
+    --programs tc:stats
+let secondProg = $secondLoad.programs[0]
+defer bpfman program unload $secondProg
+
+guard secondLink <- bpfman link attach tc \
+    --iface $pair.peer_link \
+    --direction ingress \
+    --priority 60 \
+    --proceed-on ok,pipe,dispatcher_return \
+    --netns $netns \
+    $secondProg
+defer bpfman link detach $secondLink
+
+guard rebuiltFilters <- net exec $pair tc -j filter show dev $pair.peer_link ingress
+let rebuiltCount = $rebuiltFilters.stdout |> jq $filterCount
+assert $rebuiltCount == $firstCount

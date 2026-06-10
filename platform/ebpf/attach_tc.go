@@ -173,8 +173,17 @@ func (k *kernelAdapter) AttachTCDispatcher(ctx context.Context, spec dispatcher.
 
 // FindTCFilterHandle looks up the kernel-assigned handle for a TC BPF
 // filter by listing filters on the given parent and matching priority.
-func (k *kernelAdapter) FindTCFilterHandle(ctx context.Context, ifindex int, parent uint32, priority uint16) (uint32, error) {
-	return readBackTCFilterHandle(ifindex, parent, priority)
+func (k *kernelAdapter) FindTCFilterHandle(ctx context.Context, ifindex int, parent uint32, priority uint16, netnsPath string) (uint32, error) {
+	var handle uint32
+	err := netns.Run(netnsPath, func() error {
+		var err error
+		handle, err = readBackTCFilterHandle(ifindex, parent, priority)
+		return err
+	})
+	if err != nil {
+		return 0, err
+	}
+	return handle, nil
 }
 
 // readBackTCFilterHandle lists tc filters on the given parent/priority
@@ -201,23 +210,30 @@ func readBackTCFilterHandle(ifindex int, parent uint32, priority uint16) (uint32
 }
 
 // DetachTCFilter removes a legacy TC BPF filter via netlink.
-func (k *kernelAdapter) DetachTCFilter(ctx context.Context, ifindex int, ifname string, parent uint32, priority uint16, handle uint32) error {
-	filter := &netlink.BpfFilter{
-		FilterAttrs: netlink.FilterAttrs{
-			LinkIndex: ifindex,
-			Parent:    parent,
-			Handle:    handle,
-			Priority:  priority,
-			Protocol:  unix.ETH_P_ALL,
-		},
-	}
-	if err := netlink.FilterDel(filter); err != nil {
-		return fmt.Errorf("delete TC filter (ifindex=%d parent=%x prio=%d handle=%x): %w",
-			ifindex, parent, priority, handle, err)
+func (k *kernelAdapter) DetachTCFilter(ctx context.Context, ifindex int, ifname string, parent uint32, priority uint16, handle uint32, netnsPath string) error {
+	err := netns.Run(netnsPath, func() error {
+		filter := &netlink.BpfFilter{
+			FilterAttrs: netlink.FilterAttrs{
+				LinkIndex: ifindex,
+				Parent:    parent,
+				Handle:    handle,
+				Priority:  priority,
+				Protocol:  unix.ETH_P_ALL,
+			},
+		}
+		if err := netlink.FilterDel(filter); err != nil {
+			return fmt.Errorf("delete TC filter (ifindex=%d parent=%x prio=%d handle=%x): %w",
+				ifindex, parent, priority, handle, err)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 	k.logger.Debug("detached TC filter",
 		"ifindex", ifindex,
 		"ifname", ifname,
+		"netns", netnsPath,
 		"parent", fmt.Sprintf("%x", parent),
 		"priority", priority,
 		"handle", fmt.Sprintf("%x", handle))

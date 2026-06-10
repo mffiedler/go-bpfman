@@ -79,7 +79,7 @@ func Describe(a Action) string {
 	case RemoveStagingDir:
 		return fmt.Sprintf("remove staging directory %s", a.Path)
 	case DetachTCFilter:
-		return fmt.Sprintf("detach TC filter ifindex=%d priority=%d", a.Ifindex, a.Priority)
+		return fmt.Sprintf("detach TC filter ifindex=%d priority=%d netns=%s", a.Ifindex, a.Priority, a.NetnsPath)
 	default:
 		return fmt.Sprintf("%T", a)
 	}

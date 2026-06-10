@@ -364,14 +364,14 @@ type PinRemover interface {
 // TCFilterDetacher removes legacy TC BPF filters via netlink.
 type TCFilterDetacher interface {
 	// DetachTCFilter removes a tc filter identified by ifindex, parent,
-	// priority, and handle. This is the counterpart to the netlink-based
-	// attachment performed by AttachTCDispatcher.
-	DetachTCFilter(ctx context.Context, ifindex int, ifname string, parent uint32, priority uint16, handle uint32) error
+	// priority, handle, and network namespace. This is the counterpart
+	// to the netlink-based attachment performed by AttachTCDispatcher.
+	DetachTCFilter(ctx context.Context, ifindex int, ifname string, parent uint32, priority uint16, handle uint32, netnsPath string) error
 
 	// FindTCFilterHandle looks up the kernel-assigned handle for a TC
 	// BPF filter by listing filters on the given parent and matching
 	// the specified priority.
-	FindTCFilterHandle(ctx context.Context, ifindex int, parent uint32, priority uint16) (uint32, error)
+	FindTCFilterHandle(ctx context.Context, ifindex int, parent uint32, priority uint16, netnsPath string) (uint32, error)
 }
 
 // MapRepinner re-pins maps to new locations.

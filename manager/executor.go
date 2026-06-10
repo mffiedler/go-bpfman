@@ -123,7 +123,7 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 		return nil, e.kernel.DetachLink(ctx, a.PinPath)
 
 	case action.DetachTCFilter:
-		return nil, e.kernel.DetachTCFilter(ctx, a.Ifindex, a.Ifname, a.Parent, a.Priority, a.Handle)
+		return nil, e.kernel.DetachTCFilter(ctx, a.Ifindex, a.Ifname, a.Parent, a.Priority, a.Handle, a.NetnsPath)
 
 	case action.PublishBytecode:
 		return nil, e.bcfs.PublishBytecode(a.ProgramID, a.SourcePath, a.Provenance)
