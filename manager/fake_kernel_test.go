@@ -1,3 +1,28 @@
+// This file provides the manager test harness: a fake kernel adapter
+// paired with the real SQLite store. The split is deliberate. The
+// store is where cascades, snapshot replacement, and transaction
+// semantics live, so faking it would only test our assumptions about
+// SQL; the kernel side is faked so tests can force failures at exact
+// operation boundaries (a snapshot persist failure, an occupied pin,
+// a detach error, a missing namespace path) and assert kernel-side
+// state directly (link counts, filter identity, dispatcher link
+// targets) without scraping netlink or bpffs.
+//
+// Trust this suite accordingly. The fake verifies the kernel
+// invariants it has been taught; it cannot discover invariants it
+// does not model. A green run proves the manager's logic against the
+// modelled behaviour, not that the model matches the kernel. The
+// netns-aware filter identity here exists because review against the
+// Rust implementation found detach operating on the wrong namespace
+// while the then netns-blind fake passed everything.
+//
+// Two rules keep that honest. Extend the fake only when a bug or a
+// parity finding depends on a kernel invariant it lacks; grown
+// speculatively it trends towards reimplementing the kernel. And
+// when you teach it a new invariant, anchor the model to reality
+// with an e2e script (see e2e/scripts) that proves the same
+// invariant against the real kernel once; the fake-kernel test then
+// guards the logic cheaply forever.
 package manager_test
 
 import (
