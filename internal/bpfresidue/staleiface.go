@@ -8,6 +8,8 @@ import (
 	"regexp"
 
 	"github.com/vishvananda/netlink"
+
+	"github.com/frobware/go-bpfman/internal/testnetroute"
 )
 
 // DefaultNetnsDir is the iproute2 convention for named network
@@ -69,6 +71,21 @@ func ScanE2EResidue(bpffsRoot, netnsDir string) (Plan, error) {
 		if StaleTestIfaceRe.MatchString(entry.Name()) {
 			plan = append(plan, DeleteNetns{Name: entry.Name(), Dir: netnsDir})
 		}
+	}
+
+	// The harness's TEST-NET-2 policy rule is global state shared
+	// by every pair (see internal/testnetroute); it is removed
+	// here rather than at pair release so parallel scripts cannot
+	// race one pair's teardown against another's traffic. The
+	// match is by destination and table at any preference, so
+	// rules installed under a custom BPFMAN_E2E_POLICY_RULE_PREF
+	// are swept too.
+	rules, err := testnetroute.Installed()
+	if err != nil {
+		return plan, fmt.Errorf("scan test-net policy rules: %w", err)
+	}
+	for _, r := range rules {
+		plan = append(plan, DeleteTestNetRule{Pref: r.Priority})
 	}
 
 	return plan, nil

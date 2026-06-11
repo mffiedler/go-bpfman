@@ -33,7 +33,10 @@ import (
 	"time"
 
 	"github.com/vishvananda/netlink"
+
 	"github.com/vishvananda/netns"
+
+	"github.com/frobware/go-bpfman/internal/testnetroute"
 
 	bpfnetns "github.com/frobware/go-bpfman/ns/netns"
 )
@@ -384,6 +387,15 @@ func NewTestVethPair(t *testing.T, opts ...VethOption) TestVethPair {
 	nameA := base + "a"
 	nameB := base + "b"
 	nsName := base
+
+	// The host end stays in the root namespace, so replies to the
+	// pair's TEST-NET-2 addresses resolve through host policy
+	// routing, which a VPN can hijack. Establish the harness's
+	// bypass rule before building any topology; the per-test
+	// host-route precheck then verifies the invariant holds.
+	if err := testnetroute.Ensure(); err != nil {
+		t.Fatalf("ensure test-net policy rule: %v", err)
+	}
 
 	// Fail if interfaces already exist.
 	for _, name := range []string{nameA, nameB} {

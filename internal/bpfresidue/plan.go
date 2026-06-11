@@ -12,6 +12,7 @@ import (
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 
+	"github.com/frobware/go-bpfman/internal/testnetroute"
 	bpfnetns "github.com/frobware/go-bpfman/ns/netns"
 )
 
@@ -298,6 +299,38 @@ func (a DeleteNetns) Apply() error {
 	}
 	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("delete netns %s: %w", a.Name, err)
+	}
+	return nil
+}
+
+// DeleteTestNetRule removes one harness policy-routing rule that
+// directs TEST-NET-2 lookups to the main table. The scan matches by
+// destination and table at any preference, so rules installed with
+// a custom BPFMAN_E2E_POLICY_RULE_PREF are swept too.
+type DeleteTestNetRule struct {
+	Pref int
+}
+
+// Describe implements Action.
+func (a DeleteTestNetRule) Describe() string {
+	return fmt.Sprintf("ip rule del pref %d to %s lookup main", a.Pref, testnetroute.CIDR)
+}
+
+// Apply implements Action. Absence counts as done: a parallel
+// sweep or manual removal may have raced this plan.
+func (a DeleteTestNetRule) Apply() error {
+	installed, err := testnetroute.Installed()
+	if err != nil {
+		return err
+	}
+	for _, r := range installed {
+		if r.Priority != a.Pref {
+			continue
+		}
+		del := r
+		if err := netlink.RuleDel(&del); err != nil {
+			return fmt.Errorf("delete test-net rule (pref %d): %w", a.Pref, err)
+		}
 	}
 	return nil
 }

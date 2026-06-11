@@ -187,6 +187,7 @@ BPFMAN_LOCK_TIMEOUT ?=
 BPFMAN_DISPATCH ?=
 BPFMAN_E2E_BYTECODE_SOURCE ?=
 BPFMAN_E2E_IMAGE_REGISTRY ?=
+BPFMAN_E2E_POLICY_RULE_PREF ?=
 BPFMAN_E2E_SCRIPT_SELECTOR ?=
 BPFMAN_E2E_SCRIPT_TIMEOUT ?=
 BPFMAN_E2E_SCRIPT_REPEATS ?=
@@ -871,7 +872,7 @@ $(BIN_DIR)/e2e.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) | $(BIN_DIR)
 # count loop on top of the deterministic gate).
 test-e2e: $(BIN_DIR)/e2e.test
 	$(Q)$(MAKE) e2e-kmod-reload
-	sudo $(call forward-env,BPFMAN_E2E_ISOLATED_RUNTIME BPFMAN_LOG) $(BIN_DIR)/e2e.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(filter-out 0,$(PARALLEL)),-test.parallel $(PARALLEL)) $(if $(TEST),-test.run $(TEST))
+	sudo $(call forward-env,BPFMAN_E2E_ISOLATED_RUNTIME BPFMAN_E2E_POLICY_RULE_PREF BPFMAN_LOG) $(BIN_DIR)/e2e.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(filter-out 0,$(PARALLEL)),-test.parallel $(PARALLEL)) $(if $(TEST),-test.run $(TEST))
 
 # Parallel gRPC e2e: stands up a real `bpfman serve` subprocess and
 # fans goroutines through load/get/attach/detach/unload over the
@@ -987,6 +988,7 @@ E2E_SCRIPTS_FORWARD_VARS := \
 	BPFMAN_DISPATCH \
 	BPFMAN_E2E_BYTECODE_SOURCE \
 	BPFMAN_E2E_IMAGE_REGISTRY \
+	BPFMAN_E2E_POLICY_RULE_PREF \
 	BPFMAN_E2E_SCRIPT_REPEATS \
 	BPFMAN_E2E_SCRIPT_SELECTOR \
 	BPFMAN_E2E_SCRIPT_TIMEOUT \

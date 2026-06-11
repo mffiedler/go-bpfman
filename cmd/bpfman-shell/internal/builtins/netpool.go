@@ -84,7 +84,10 @@ type poolLease struct {
 
 	// hostCIDR and peerCIDR are the /30 prefix forms to pass to
 	// `ip addr add`. The kernel installs the connected route
-	// automatically; the pool does not manage explicit routes.
+	// automatically; the pool does not manage explicit routes,
+	// though pair creation does ensure the harness-wide TEST-NET-2
+	// policy rule (see internal/testnetroute) so host policy
+	// routing cannot hijack the reply path.
 	hostCIDR string
 	peerCIDR string
 

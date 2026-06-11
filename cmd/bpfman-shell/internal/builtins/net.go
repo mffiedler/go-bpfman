@@ -27,6 +27,7 @@ import (
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/driver"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/semantics"
+	"github.com/frobware/go-bpfman/internal/testnetroute"
 	"github.com/frobware/go-bpfman/ns/netns"
 )
 
@@ -351,6 +352,18 @@ func handleNetVethPair(ctx context.Context, origin string, args []runtime.Arg) (
 		peerCIDR = lease.peerCIDR
 		hostAddr = lease.hostAddr
 		peerAddr = lease.peerAddr
+	}
+
+	// The host end stays in the root namespace, so replies to the
+	// pair's TEST-NET-2 addresses resolve through host policy
+	// routing, which a VPN can hijack. Establish the harness's
+	// bypass rule before building the topology; the script-level
+	// host-route precheck then verifies the invariant holds.
+	if err := testnetroute.Ensure(); err != nil {
+		if lease != nil {
+			_ = releasePoolSlot(lease, f.Ns, f.HostLink)
+		}
+		return runtime.Value{}, fmt.Errorf("net veth-pair: %w", err)
 	}
 
 	// Best-effort pre-clean against leftover state from a prior
