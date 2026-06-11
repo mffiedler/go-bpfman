@@ -45,6 +45,14 @@
 // DeleteDispatcherSnapshot). Every caller gets the schema's
 // atomicity guarantees without knowing to ask for them.
 //
+// The visibility split carries the convention: exported store
+// methods are safe domain operations and own any transaction needed
+// to preserve their own invariants; unexported statement helpers
+// (createLink, setLinkPinPath, replaceDispatcherSnapshot,
+// deleteDispatcherSnapshot) assume the caller has already chosen the
+// transaction boundary and must not be called outside one when they
+// perform multi-statement updates.
+//
 // RunInTransaction is for the other axis: composing several domain
 // operations into one larger atomic unit, as load does when it
 // commits a batch of program saves together. For example:
