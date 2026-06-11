@@ -60,7 +60,7 @@ func TestHandleNet_UnknownSubcommand(t *testing.T) {
 	_, err := callNet(t, "bridge")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `unknown subcommand "bridge"`)
-	assert.Contains(t, err.Error(), "exec, release, start, veth-pair")
+	assert.Contains(t, err.Error(), "exec, netns-veth-pair, release, start, veth-pair")
 }
 
 func TestParseVethPairFlags_ExplicitMode_BothSpellings(t *testing.T) {
@@ -332,7 +332,7 @@ func TestHandleNetExec_NonPairArg(t *testing.T) {
 		Args: []runtime.Arg{runtime.WordArg{Text: "exec"}, scalarPairArg(), runtime.WordArg{Text: "true"}},
 	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "$pair argument")
+	assert.Contains(t, err.Error(), "expected a $pair or endpoint argument")
 }
 
 func TestHandleNetExec_RejectsReleasedHandle(t *testing.T) {
@@ -363,7 +363,7 @@ func TestHandleNetStart_NonPairArg(t *testing.T) {
 		Args: []runtime.Arg{runtime.WordArg{Text: "start"}, scalarPairArg(), runtime.WordArg{Text: "sleep"}, runtime.WordArg{Text: "0"}},
 	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "$pair argument")
+	assert.Contains(t, err.Error(), "expected a $pair or endpoint argument")
 }
 
 func TestHandleNetStart_RejectsReleasedHandle(t *testing.T) {
@@ -467,4 +467,197 @@ func TestHandleNetRelease_AutoModeReleasesLease(t *testing.T) {
 	assert.Equal(t, "vea-rel", prov.LinkAName)
 	assert.NotEmpty(t, prov.ReleasedAt, "release path must write released_at into the slot body")
 	assert.True(t, pair.IsReleased())
+}
+
+// isolatedPair constructs a NetnsVethPair fixture with the
+// residue-convention names the real builder would generate.
+func isolatedPair() *runtime.NetnsVethPair {
+	return runtime.NewNetnsVethPair(
+		runtime.NetnsVethEndpoint{Ns: "B0000000000a1Na", Link: "B0000000000a1Na", Addr: "198.51.100.1"},
+		runtime.NetnsVethEndpoint{Ns: "B0000000000a1Nb", Link: "B0000000000a1Nb", Addr: "198.51.100.2"},
+	)
+}
+
+// isolatedPairArg wraps a *runtime.NetnsVethPair the way the
+// argument expander would when a script writes $pair.
+func isolatedPairArg(p *runtime.NetnsVethPair) runtime.Arg {
+	return runtime.StructuredValueArg{Name: "pair", Value: runtime.ValueFromNetnsVethPair(p)}
+}
+
+// endpointArg extracts $pair.a / $pair.b the way the path walker
+// would and wraps it as a structured argument.
+func endpointArg(t *testing.T, p *runtime.NetnsVethPair, side string) runtime.Arg {
+	t.Helper()
+	ep, err := runtime.ValueFromNetnsVethPair(p).LookupValue("$pair", side)
+	require.NoError(t, err)
+	return runtime.StructuredValueArg{Name: "pair." + side, Value: ep}
+}
+
+func TestHandleNetNetnsVethPair_RejectsFlags(t *testing.T) {
+	t.Parallel()
+	_, err := callNet(t, "netns-veth-pair", "--ns=x")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "takes no arguments")
+}
+
+func TestHandleNetNetnsVethPair_RejectsPositionals(t *testing.T) {
+	t.Parallel()
+	_, err := callNet(t, "netns-veth-pair", "stray")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "takes no arguments")
+}
+
+func TestHandleNetExec_BareIsolatedPairRejected(t *testing.T) {
+	t.Parallel()
+	_, err := handleNet(driver.Ctx{
+		Ctx:  t.Context(),
+		Cmd:  "net",
+		Args: []runtime.Arg{runtime.WordArg{Text: "exec"}, isolatedPairArg(isolatedPair()), runtime.WordArg{Text: "true"}},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "net exec: netns-veth-pair has two endpoints; use $pair.a or $pair.b")
+}
+
+func TestHandleNetStart_BareIsolatedPairRejected(t *testing.T) {
+	t.Parallel()
+	_, err := handleNet(driver.Ctx{
+		Ctx:  t.Context(),
+		Cmd:  "net",
+		Args: []runtime.Arg{runtime.WordArg{Text: "start"}, isolatedPairArg(isolatedPair()), runtime.WordArg{Text: "sleep"}, runtime.WordArg{Text: "0"}},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "net start: netns-veth-pair has two endpoints; use $pair.a or $pair.b")
+}
+
+func TestHandleNetExec_EndpointOfReleasedPairRejected(t *testing.T) {
+	t.Parallel()
+	pair := isolatedPair()
+	pair.MarkReleased()
+	_, err := handleNet(driver.Ctx{
+		Ctx:  t.Context(),
+		Cmd:  "net",
+		Args: []runtime.Arg{runtime.WordArg{Text: "exec"}, endpointArg(t, pair, "a"), runtime.WordArg{Text: "true"}},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "released")
+}
+
+func TestHandleNetStart_EndpointOfReleasedPairRejected(t *testing.T) {
+	t.Parallel()
+	pair := isolatedPair()
+	pair.MarkReleased()
+	_, err := handleNet(driver.Ctx{
+		Ctx:  t.Context(),
+		Cmd:  "net",
+		Args: []runtime.Arg{runtime.WordArg{Text: "start"}, endpointArg(t, pair, "b"), runtime.WordArg{Text: "sleep"}, runtime.WordArg{Text: "0"}},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "released")
+}
+
+func TestHandleNetRelease_EndpointRejected(t *testing.T) {
+	t.Parallel()
+	_, err := handleNet(driver.Ctx{
+		Ctx:  t.Context(),
+		Cmd:  "net",
+		Args: []runtime.Arg{runtime.WordArg{Text: "release"}, endpointArg(t, isolatedPair(), "a")},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "net release: endpoint belongs to a netns-veth-pair; release the pair")
+}
+
+func TestHandleNetRelease_IsolatedIdempotentOnAlreadyReleased(t *testing.T) {
+	t.Parallel()
+	pair := isolatedPair()
+	pair.MarkReleased()
+	v, err := handleNet(driver.Ctx{
+		Ctx:  t.Context(),
+		Cmd:  "net",
+		Args: []runtime.Arg{runtime.WordArg{Text: "release"}, isolatedPairArg(pair)},
+	})
+	require.NoError(t, err)
+	env, ok := v.Origin().(runtime.Envelope)
+	require.True(t, ok)
+	assert.True(t, env.OK())
+}
+
+// TestHandleNetRelease_IsolatedAutoModeReleasesLease mirrors the
+// host-end lease-release test for the isolated builder: releasing
+// the pair must write released_at carrying both netns names so
+// the next acquirer's leak check validates both tenants.
+func TestHandleNetRelease_IsolatedAutoModeReleasesLease(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	lease, err := acquirePoolSlot(poolAcquireRequest{
+		root:        root,
+		origin:      "test_release.bpfman:1",
+		nsName:      "B0000000000a1Na",
+		nsBName:     "B0000000000a1Nb",
+		linkAName:   "B0000000000a1Na",
+		linkExists:  func(string) bool { return false },
+		netnsExists: func(string) bool { return false },
+	})
+	require.NoError(t, err)
+	pair := isolatedPair()
+	rememberNetnsVethPairLease(pair, lease)
+	v, err := handleNet(driver.Ctx{
+		Ctx:  t.Context(),
+		Cmd:  "net",
+		Args: []runtime.Arg{runtime.WordArg{Text: "release"}, isolatedPairArg(pair)},
+	})
+	require.NoError(t, err)
+	env, ok := v.Origin().(runtime.Envelope)
+	require.True(t, ok)
+	assert.True(t, env.OK())
+
+	body, err := os.ReadFile(slotLockPath(root, lease.slot))
+	require.NoError(t, err)
+	var prov struct {
+		NsName     string `json:"ns_name"`
+		NsBName    string `json:"ns_b_name"`
+		LinkAName  string `json:"link_a_name"`
+		ReleasedAt string `json:"released_at"`
+	}
+	require.NoError(t, json.Unmarshal(body, &prov))
+	assert.Equal(t, "B0000000000a1Na", prov.NsName)
+	assert.Equal(t, "B0000000000a1Nb", prov.NsBName)
+	assert.Equal(t, "B0000000000a1Na", prov.LinkAName)
+	assert.NotEmpty(t, prov.ReleasedAt)
+	assert.True(t, pair.IsReleased())
+}
+
+// TestNetExecNamespace pins the target-resolution rule shared by
+// net exec and net start: a host-end $pair runs in its peer
+// namespace, an endpoint runs in its own namespace.
+func TestNetExecNamespace(t *testing.T) {
+	t.Parallel()
+
+	hostEnd := &runtime.NetPair{Ns: "ns0", HostLink: "h0", PeerLink: "p0", HostAddr: "1.2.3.4", PeerAddr: "1.2.3.5"}
+	ns, err := netExecNamespace(pairArg(hostEnd))
+	require.NoError(t, err)
+	assert.Equal(t, "ns0", ns)
+
+	pair := isolatedPair()
+	ns, err = netExecNamespace(endpointArg(t, pair, "a"))
+	require.NoError(t, err)
+	assert.Equal(t, "B0000000000a1Na", ns)
+
+	ns, err = netExecNamespace(endpointArg(t, pair, "b"))
+	require.NoError(t, err)
+	assert.Equal(t, "B0000000000a1Nb", ns)
+}
+
+// TestNetnsVethPair_FieldsRemainReadableAfterRelease mirrors the
+// host-end invariant: release consumes the capability, not the
+// historical description.
+func TestNetnsVethPair_FieldsRemainReadableAfterRelease(t *testing.T) {
+	t.Parallel()
+	pair := isolatedPair()
+	pair.MarkReleased()
+	v := runtime.ValueFromNetnsVethPair(pair)
+	got, err := v.Lookup("$pair", "a.addr")
+	require.NoError(t, err)
+	s, err := got.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "198.51.100.1", s)
 }

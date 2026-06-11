@@ -1693,3 +1693,158 @@ func TestCheck_DefParamAnnotationLiterals(t *testing.T) {
 		})
 	}
 }
+
+// TestCheck_NetnsVethPair_* pin the static half of the isolated
+// netns-veth-pair topology: the bind shape, the nested endpoint
+// record shapes, and the net exec / net release argument rules,
+// mirroring the runtime messages exactly.
+
+func TestCheck_NetnsVethPairShape_ValidPathsAreClean(t *testing.T) {
+	t.Parallel()
+
+	src := `guard pair <- net netns-veth-pair
+print $pair.a.ns
+print $pair.a.link
+print $pair.a.addr
+print $pair.a.ifindex
+print $pair.a.nsid
+print $pair.b.ns
+print $pair.b.link
+print $pair.b.addr
+print $pair.b.ifindex
+print $pair.b.nsid`
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
+func TestCheck_NetnsVethPairShape_TopLevelFieldTypoRejected(t *testing.T) {
+	t.Parallel()
+
+	src := `guard pair <- net netns-veth-pair
+print $pair.host_link`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "pair has kind netns-veth-pair")
+	assert.Contains(t, issues[0].Msg, `"host_link"`)
+	assert.Contains(t, issues[0].Msg, "valid: a, b")
+}
+
+func TestCheck_NetnsVethPairShape_EndpointFieldTypoRejected(t *testing.T) {
+	t.Parallel()
+
+	src := `guard pair <- net netns-veth-pair
+print $pair.a.nss`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, `"nss"`)
+	assert.Contains(t, issues[0].Msg, `"ns"`)
+}
+
+func TestCheck_NetExec_BareIsolatedPairRejected(t *testing.T) {
+	t.Parallel()
+
+	src := `guard pair <- net netns-veth-pair
+net exec $pair ping -c 1 198.51.100.2`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "net exec: netns-veth-pair has two endpoints; use $pair.a or $pair.b")
+}
+
+func TestCheck_NetExec_BareIsolatedPairRejectedInBindPosition(t *testing.T) {
+	t.Parallel()
+
+	src := `guard pair <- net netns-veth-pair
+guard e <- net exec $pair ping -c 1 198.51.100.2`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "net exec: netns-veth-pair has two endpoints; use $pair.a or $pair.b")
+}
+
+func TestCheck_NetStart_BareIsolatedPairRejected(t *testing.T) {
+	t.Parallel()
+
+	src := `guard pair <- net netns-veth-pair
+guard j <- net start $pair sleep 60`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "net start: netns-veth-pair has two endpoints; use $pair.a or $pair.b")
+}
+
+func TestCheck_NetExec_EndpointAccepted(t *testing.T) {
+	t.Parallel()
+
+	src := `guard pair <- net netns-veth-pair
+net exec $pair.a ping -c 1 $pair.b.addr
+net exec $pair.b ping -c 1 $pair.a.addr`
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
+func TestCheck_NetExec_HostEndPairStillAccepted(t *testing.T) {
+	t.Parallel()
+
+	src := `guard pair <- net veth-pair
+net exec $pair ping -c 1 $pair.host_addr`
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
+func TestCheck_NetRelease_EndpointRejected(t *testing.T) {
+	t.Parallel()
+
+	src := `guard pair <- net netns-veth-pair
+net release $pair.a`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "net release: endpoint belongs to a netns-veth-pair; release the pair")
+}
+
+func TestCheck_NetRelease_IsolatedPairAccepted(t *testing.T) {
+	t.Parallel()
+
+	src := `guard pair <- net netns-veth-pair
+net release $pair`
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
+func TestCheck_NetRelease_InDeferAccepted(t *testing.T) {
+	t.Parallel()
+
+	src := `guard pair <- net netns-veth-pair
+defer net release $pair`
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
+func TestCheck_NetRelease_EndpointInDeferRejected(t *testing.T) {
+	t.Parallel()
+
+	src := `guard pair <- net netns-veth-pair
+defer net release $pair.a`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "net release: endpoint belongs to a netns-veth-pair; release the pair")
+}
+
+func TestCheck_NetExec_WrongKindRejected(t *testing.T) {
+	t.Parallel()
+
+	src := `guard j <- start sleep 60
+net exec $j ping -c 1 198.51.100.2
+kill $j`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "expected a $pair or endpoint argument, got a job value")
+}
+
+func TestCheck_NetExec_UnknownKindStaysSilent(t *testing.T) {
+	t.Parallel()
+
+	src := `def probe(x) {
+    net exec $x ping -c 1 198.51.100.2
+}
+probe abc`
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}

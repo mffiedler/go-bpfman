@@ -121,6 +121,12 @@ type poolAcquireRequest struct {
 	// `ip netns add`. Used by assertSlotClean's netns check.
 	nsName string
 
+	// nsBName is the second netns name for the isolated
+	// netns-veth-pair builder; empty for the host-end builder.
+	// Recorded in provenance so the next acquirer's leak check
+	// validates both tenants.
+	nsBName string
+
 	// linkAName is the host-side veth name the caller will pass
 	// to `ip link add`. Used by assertSlotClean's link check.
 	linkAName string
@@ -141,8 +147,9 @@ type poolAcquireRequest struct {
 }
 
 var (
-	netPairLeaseMu sync.Mutex
-	netPairLeases  = map[*runtime.NetPair]*poolLease{}
+	netPairLeaseMu      sync.Mutex
+	netPairLeases       = map[*runtime.NetPair]*poolLease{}
+	netnsVethPairLeases = map[*runtime.NetnsVethPair]*poolLease{}
 )
 
 // provenance is the JSON body written to a slot's lockfile. It
@@ -150,8 +157,12 @@ var (
 // can attribute a leaked resource and so FIFO ordering has an
 // explicit timestamp to sort on.
 type provenance struct {
-	Origin     string `json:"origin,omitempty"`
-	NsName     string `json:"ns_name,omitempty"`
+	Origin string `json:"origin,omitempty"`
+	NsName string `json:"ns_name,omitempty"`
+	// NsBName is the second netns name when the tenant was a
+	// `net netns-veth-pair` (both ends namespaced). Empty for the
+	// host-end builder, which owns only one namespace.
+	NsBName    string `json:"ns_b_name,omitempty"`
 	LinkAName  string `json:"link_a_name,omitempty"`
 	AcquiredAt string `json:"acquired_at,omitempty"`
 	ReleasedAt string `json:"released_at,omitempty"`
@@ -257,6 +268,7 @@ func tryAcquirePoolSlot(req poolAcquireRequest) (*poolLease, error) {
 		fresh := provenance{
 			Origin:     req.origin,
 			NsName:     req.nsName,
+			NsBName:    req.nsBName,
 			LinkAName:  req.linkAName,
 			AcquiredAt: now.Format(time.RFC3339Nano),
 		}
@@ -285,19 +297,21 @@ func tryAcquirePoolSlot(req poolAcquireRequest) (*poolLease, error) {
 // must happen before any subsequent operation on the local handle
 // short-circuits.
 //
-// nsName and linkAName are passed in so the released body carries
-// the names the next acquirer will validate against; they should
-// match what the caller installed in the kernel under this slot.
+// nsName, nsBName, and linkAName are passed in so the released
+// body carries the names the next acquirer will validate against;
+// they should match what the caller installed in the kernel under
+// this slot. nsBName is empty for the host-end builder.
 //
 // A nil lease or a lease with slot == 0 is a no-op (the explicit-
 // address path on `net veth-pair` does not lease a slot).
-func releasePoolSlot(lease *poolLease, nsName, linkAName string) error {
+func releasePoolSlot(lease *poolLease, nsName, nsBName, linkAName string) error {
 	if lease == nil || lease.slot == 0 || lease.lockFile == nil {
 		return nil
 	}
 	final := provenance{
 		Origin:     lease.origin,
 		NsName:     nsName,
+		NsBName:    nsBName,
 		LinkAName:  linkAName,
 		ReleasedAt: time.Now().UTC().Format(time.RFC3339Nano),
 	}
@@ -335,6 +349,26 @@ func takeNetPairLease(pair *runtime.NetPair) *poolLease {
 	netPairLeaseMu.Lock()
 	lease := netPairLeases[pair]
 	delete(netPairLeases, pair)
+	netPairLeaseMu.Unlock()
+	return lease
+}
+
+func rememberNetnsVethPairLease(pair *runtime.NetnsVethPair, lease *poolLease) {
+	if pair == nil || lease == nil {
+		return
+	}
+	netPairLeaseMu.Lock()
+	netnsVethPairLeases[pair] = lease
+	netPairLeaseMu.Unlock()
+}
+
+func takeNetnsVethPairLease(pair *runtime.NetnsVethPair) *poolLease {
+	if pair == nil {
+		return nil
+	}
+	netPairLeaseMu.Lock()
+	lease := netnsVethPairLeases[pair]
+	delete(netnsVethPairLeases, pair)
 	netPairLeaseMu.Unlock()
 	return lease
 }
@@ -427,6 +461,9 @@ func assertSlotClean(slot uint32, prev provenance, linkCheck linkExistsFn, netns
 	}
 	if prev.NsName != "" && netnsCheck(prev.NsName) {
 		return leakError(slot, prev, "netns", prev.NsName)
+	}
+	if prev.NsBName != "" && netnsCheck(prev.NsBName) {
+		return leakError(slot, prev, "netns", prev.NsBName)
 	}
 	return nil
 }

@@ -21,8 +21,12 @@ import (
 	"net/netip"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
+
+	vnetlink "github.com/vishvananda/netlink"
+	vnetns "github.com/vishvananda/netns"
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/driver"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
@@ -37,8 +41,9 @@ func init() {
 		Handler:  handleNet,
 		Category: driver.CategoryJobs,
 		Usage: "net veth-pair --ns=NS --host-link=NAME --host-addr=CIDR --peer-link=NAME --peer-addr=CIDR [--no-routes]  |  " +
+			"net netns-veth-pair  |  " +
 			"net release $pair  |  net exec $pair CMD ARGS...  |  net start $pair CMD ARGS...",
-		Summary: "Paired-veth single-netns topology fixture for TC / TCX / XDP dispatcher tests.",
+		Summary: "Paired-veth topology fixtures for TC / TCX / XDP dispatcher tests.",
 		Detail: "net is the e2e built-in for the topology dispatcher tests share: a single " +
 			"veth pair, a netns the peer end lives in, two /32 addresses, and the two " +
 			"symmetric routes that make the pair pingable. veth-pair builds the whole " +
@@ -49,7 +54,12 @@ func init() {
 			"missing resources are fine). exec runs a command in the netns and captures " +
 			"the result envelope (sync); start launches a command in the netns as a " +
 			"background $job (async). Operational use after release is a runtime error; " +
-			"field reads stay valid. Raw ip(8) remains the documented escape hatch for " +
+			"field reads stay valid. netns-veth-pair builds the isolated topology " +
+			"instead: both veth ends in owned, named namespaces, returned as a $pair " +
+			"with two symmetric endpoints ($pair.a, $pair.b; fields ns, link, addr, " +
+			"ifindex, nsid). exec/start take an explicit endpoint ('net exec $pair.a " +
+			"ping $pair.b.addr'); release takes the pair and tears down both " +
+			"namespaces. Raw ip(8) remains the documented escape hatch for " +
 			"topologies net does not cover (bridges, VLANs, IPv6, multiple pairs).",
 	})
 }
@@ -61,13 +71,15 @@ func init() {
 // extra fan-out.
 func handleNet(c driver.Ctx) (runtime.Value, error) {
 	if len(c.Args) == 0 {
-		return runtime.Value{}, fmt.Errorf("net: subcommand required (valid: exec, release, start, veth-pair)")
+		return runtime.Value{}, fmt.Errorf("net: subcommand required (valid: exec, netns-veth-pair, release, start, veth-pair)")
 	}
 	sub := driver.ArgText(c.Args[0])
 	rest := c.Args[1:]
 	switch sub {
 	case "veth-pair":
 		return handleNetVethPair(c.Ctx, c.Pos.Cite(), rest)
+	case "netns-veth-pair":
+		return handleNetNetnsVethPair(c.Ctx, c.Pos.Cite(), rest)
 	case "release":
 		return handleNetRelease(c.Ctx, rest)
 	case "exec":
@@ -79,43 +91,48 @@ func handleNet(c driver.Ctx) (runtime.Value, error) {
 	case "start":
 		return handleNetStart(c.Ctx, c.Env, c.Pos.Cite(), rest)
 	default:
-		return runtime.Value{}, fmt.Errorf("net: unknown subcommand %q (valid: exec, release, start, veth-pair)", sub)
+		return runtime.Value{}, fmt.Errorf("net: unknown subcommand %q (valid: exec, netns-veth-pair, release, start, veth-pair)", sub)
 	}
 }
 
-// netPairFromArg unwraps a $pair argument into the underlying
-// *runtime.NetPair without checking the lifecycle latch. Used by
-// net release where re-release is idempotent and the latch is
-// re-checked inside the release handler.
-func netPairFromArg(a runtime.Arg) (*runtime.NetPair, error) {
+// netExecNamespace unwraps the first argument of net exec / net
+// start into the network namespace name to run in, rejecting a
+// released topology. A host-end $pair runs in its single owned
+// (peer) namespace; an isolated-pair endpoint runs in its own
+// namespace. The bare isolated pair is refused because neither
+// side is a natural default -- the script must say $pair.a or
+// $pair.b. The release latch always lives on the pair, so an
+// endpoint of a released pair rejects the same way the pair
+// itself would.
+func netExecNamespace(a runtime.Arg) (string, error) {
 	sva, ok := a.(runtime.StructuredValueArg)
 	if !ok {
-		return nil, fmt.Errorf("expected a $pair argument, got %T", a)
+		return "", fmt.Errorf("expected a $pair or endpoint argument, got %T", a)
 	}
-	if sva.Value.Kind() != semantics.OriginNetPair {
-		return nil, fmt.Errorf("expected a $pair argument, got a %s value", sva.Value.Kind())
+	switch sva.Value.Kind() {
+	case semantics.OriginNetPair:
+		pair, ok := sva.Value.Origin().(*runtime.NetPair)
+		if !ok {
+			return "", fmt.Errorf("$pair has no underlying handle (got %T)", sva.Value.Origin())
+		}
+		if pair.IsReleased() {
+			return "", fmt.Errorf("$pair has been released; operational use of the handle is invalid after release")
+		}
+		return pair.Ns, nil
+	case semantics.OriginNetnsVethEndpoint:
+		ep, ok := sva.Value.Origin().(*runtime.NetnsVethEndpoint)
+		if !ok {
+			return "", fmt.Errorf("endpoint has no underlying handle (got %T)", sva.Value.Origin())
+		}
+		if ep.Pair.IsReleased() {
+			return "", fmt.Errorf("$pair has been released; operational use of its endpoints is invalid after release")
+		}
+		return ep.Ns, nil
+	case semantics.OriginNetnsVethPair:
+		return "", fmt.Errorf("netns-veth-pair has two endpoints; use $pair.a or $pair.b")
+	default:
+		return "", fmt.Errorf("expected a $pair or endpoint argument, got a %s value", sva.Value.Kind())
 	}
-	pair, ok := sva.Value.Origin().(*runtime.NetPair)
-	if !ok {
-		return nil, fmt.Errorf("$pair has no underlying handle (got %T)", sva.Value.Origin())
-	}
-	return pair, nil
-}
-
-// ensureNetPair unwraps a $pair argument and rejects a released
-// handle. Used by net exec and net start, where operational use
-// of a consumed topology is a runtime error. net release reaches
-// for netPairFromArg directly because the second release is a
-// harmless idempotent no-op.
-func ensureNetPair(a runtime.Arg) (*runtime.NetPair, error) {
-	pair, err := netPairFromArg(a)
-	if err != nil {
-		return nil, err
-	}
-	if pair.IsReleased() {
-		return nil, fmt.Errorf("$pair has been released; operational use of the handle is invalid after release")
-	}
-	return pair, nil
 }
 
 // vethPairFlags is the parsed form of `net veth-pair`'s flag set.
@@ -361,7 +378,7 @@ func handleNetVethPair(ctx context.Context, origin string, args []runtime.Arg) (
 	// host-route precheck then verifies the invariant holds.
 	if err := testnetroute.Ensure(); err != nil {
 		if lease != nil {
-			_ = releasePoolSlot(lease, f.Ns, f.HostLink)
+			_ = releasePoolSlot(lease, f.Ns, "", f.HostLink)
 		}
 		return runtime.Value{}, fmt.Errorf("net veth-pair: %w", err)
 	}
@@ -382,7 +399,7 @@ func handleNetVethPair(ctx context.Context, origin string, args []runtime.Arg) (
 			runIPIgnoreErr(ctx, "netns", "del", f.Ns)
 		}
 		if lease != nil {
-			_ = releasePoolSlot(lease, f.Ns, f.HostLink)
+			_ = releasePoolSlot(lease, f.Ns, "", f.HostLink)
 		}
 	}
 
@@ -438,6 +455,160 @@ func handleNetVethPair(ctx context.Context, origin string, args []runtime.Arg) (
 	return runtime.ValueFromNetPair(pair), nil
 }
 
+// handleNetNetnsVethPair builds the isolated topology: a veth
+// pair whose two ends live in owned, named network namespaces.
+// There is no privileged host side and no host policy routing to
+// defend against -- packets generated inside either namespace
+// consult that namespace's pristine rule table and resolve the
+// peer through the /30 connected route -- so unlike
+// handleNetVethPair this path deliberately does NOT call
+// testnetroute.Ensure(): the isolated topology is VPN-immune by
+// construction, and installing the host rule from here would blur
+// the claim that the two topologies prove different things.
+//
+// Identity and addresses are pool-allocated; the builder takes no
+// flags. The two namespaces (and the veth ends inside them) use
+// the residue convention names B<hex>Na / B<hex>Nb, so the
+// e2e-cleanup netns sweep covers this mode for free: deleting a
+// namespace cascades to the veth end inside it, and the mode
+// leaks no root-namespace interface at all.
+func handleNetNetnsVethPair(ctx context.Context, origin string, args []runtime.Arg) (runtime.Value, error) {
+	if len(args) != 0 {
+		return runtime.Value{}, fmt.Errorf("net netns-veth-pair: takes no arguments (names and addresses are pool-allocated); got %q", driver.ArgText(args[0]))
+	}
+
+	// One shared base keeps the two namespaces and the two veth
+	// ends visually cross-referenceable; netns names and link
+	// names live in different kernel namespaces of names, so the
+	// reuse cannot collide.
+	base := uniqueLinkBase()
+	nsA, nsB := base+"a", base+"b"
+	linkA, linkB := nsA, nsB
+
+	lease, err := acquirePoolSlot(poolAcquireRequest{
+		origin:    origin,
+		nsName:    nsA,
+		nsBName:   nsB,
+		linkAName: linkA,
+	})
+	if err != nil {
+		return runtime.Value{}, fmt.Errorf("net netns-veth-pair: %w", err)
+	}
+
+	// Best-effort pre-clean against leftover state from a prior
+	// failed run. A crash between link-add and the move leaves
+	// the pair in the root namespace, so the link delete covers
+	// that window (deleting one end reclaims both); the netns
+	// deletes cascade to moved ends.
+	runIPIgnoreErr(ctx, "link", "del", linkA)
+	runIPIgnoreErr(ctx, "netns", "del", nsA)
+	runIPIgnoreErr(ctx, "netns", "del", nsB)
+
+	var nsACreated, nsBCreated, linkCreated bool
+	rollback := func() {
+		if linkCreated {
+			runIPIgnoreErr(ctx, "link", "del", linkA)
+		}
+		if nsACreated {
+			runIPIgnoreErr(ctx, "netns", "del", nsA)
+		}
+		if nsBCreated {
+			runIPIgnoreErr(ctx, "netns", "del", nsB)
+		}
+		_ = releasePoolSlot(lease, nsA, nsB, linkA)
+	}
+
+	if err := runIP(ctx, "netns", "add", nsA); err != nil {
+		rollback()
+		return runtime.Value{}, fmt.Errorf("net netns-veth-pair: %w", err)
+	}
+	nsACreated = true
+
+	if err := runIP(ctx, "netns", "add", nsB); err != nil {
+		rollback()
+		return runtime.Value{}, fmt.Errorf("net netns-veth-pair: %w", err)
+	}
+	nsBCreated = true
+
+	if err := runIP(ctx, "link", "add", linkA, "type", "veth", "peer", "name", linkB); err != nil {
+		rollback()
+		return runtime.Value{}, fmt.Errorf("net netns-veth-pair: %w", err)
+	}
+	linkCreated = true
+
+	steps := [][]string{
+		{"link", "set", linkA, "netns", nsA},
+		{"link", "set", linkB, "netns", nsB},
+		{"-n", nsA, "link", "set", linkA, "up"},
+		{"-n", nsA, "addr", "add", lease.hostCIDR, "dev", linkA},
+		{"-n", nsB, "link", "set", linkB, "up"},
+		{"-n", nsB, "addr", "add", lease.peerCIDR, "dev", linkB},
+	}
+	for _, step := range steps {
+		if err := runIP(ctx, step...); err != nil {
+			rollback()
+			return runtime.Value{}, fmt.Errorf("net netns-veth-pair: %w", err)
+		}
+	}
+
+	// Per-side identifiers for attach assertions and dispatcher
+	// scoping (`bpfman dispatcher get tc-ingress $pair.a.nsid
+	// $pair.a.ifindex`). Best-effort, as in handleNetVethPair:
+	// failures leave the fields zero rather than aborting
+	// construction.
+	pair := runtime.NewNetnsVethPair(
+		runtime.NetnsVethEndpoint{
+			Ns:      nsA,
+			Link:    linkA,
+			Addr:    lease.hostAddr,
+			Ifindex: netnsLinkIfindex(nsA, linkA),
+			Nsid:    namedNetnsID(nsA),
+		},
+		runtime.NetnsVethEndpoint{
+			Ns:      nsB,
+			Link:    linkB,
+			Addr:    lease.peerAddr,
+			Ifindex: netnsLinkIfindex(nsB, linkB),
+			Nsid:    namedNetnsID(nsB),
+		},
+	)
+	rememberNetnsVethPairLease(pair, lease)
+	return runtime.ValueFromNetnsVethPair(pair), nil
+}
+
+// netnsLinkIfindex returns the interface index of link inside the
+// named netns, or zero when the lookup fails (the same gap rule
+// handleNetVethPair applies to its host-side capture).
+func netnsLinkIfindex(nsName, link string) uint32 {
+	h, err := vnetns.GetFromName(nsName)
+	if err != nil {
+		return 0
+	}
+	defer h.Close()
+	nlh, err := vnetlink.NewHandleAt(h)
+	if err != nil {
+		return 0
+	}
+	defer nlh.Close()
+	l, err := nlh.LinkByName(link)
+	if err != nil {
+		return 0
+	}
+	return uint32(l.Attrs().Index)
+}
+
+// namedNetnsID returns the inode number of the named netns, or
+// zero when the stat fails. The inode is the same identity
+// netns.CurrentNSID reports for the process's own namespace, so
+// $pair.a.nsid and $pair.host_nsid are directly comparable.
+func namedNetnsID(name string) uint64 {
+	id, err := netns.NSID(filepath.Join("/run/netns", name))
+	if err != nil {
+		return 0
+	}
+	return id
+}
+
 // linkNameSeq is the process-local atomic counter feeding
 // uniqueLinkBase. PID plus counter is hashed to produce a 12-hex
 // identifier, so two parallel processes (different PIDs) and two
@@ -489,19 +660,48 @@ func handleNetRelease(ctx context.Context, args []runtime.Arg) (runtime.Value, e
 	if len(args) != 1 {
 		return runtime.Value{}, fmt.Errorf("net release: requires exactly one $pair argument")
 	}
-	pair, err := netPairFromArg(args[0])
-	if err != nil {
-		return runtime.Value{}, fmt.Errorf("net release: %w", err)
+	sva, ok := args[0].(runtime.StructuredValueArg)
+	if !ok {
+		return runtime.Value{}, fmt.Errorf("net release: expected a $pair argument, got %T", args[0])
 	}
-	if pair.MarkReleased() {
+	switch sva.Value.Kind() {
+	case semantics.OriginNetPair:
+		pair, ok := sva.Value.Origin().(*runtime.NetPair)
+		if !ok {
+			return runtime.Value{}, fmt.Errorf("net release: $pair has no underlying handle (got %T)", sva.Value.Origin())
+		}
+		if pair.MarkReleased() {
+			return runtime.ValueFromEnvelope(runtime.OkEnvelope()), nil
+		}
+		runIPIgnoreErr(ctx, "link", "del", pair.HostLink)
+		runIPIgnoreErr(ctx, "netns", "del", pair.Ns)
+		if lease := takeNetPairLease(pair); lease != nil {
+			_ = releasePoolSlot(lease, pair.Ns, "", pair.HostLink)
+		}
 		return runtime.ValueFromEnvelope(runtime.OkEnvelope()), nil
+	case semantics.OriginNetnsVethPair:
+		pair, ok := sva.Value.Origin().(*runtime.NetnsVethPair)
+		if !ok {
+			return runtime.Value{}, fmt.Errorf("net release: $pair has no underlying handle (got %T)", sva.Value.Origin())
+		}
+		if pair.MarkReleased() {
+			return runtime.ValueFromEnvelope(runtime.OkEnvelope()), nil
+		}
+		// Deleting each namespace reclaims the veth end inside
+		// it; no root-namespace resource exists to clean.
+		runIPIgnoreErr(ctx, "netns", "del", pair.A.Ns)
+		runIPIgnoreErr(ctx, "netns", "del", pair.B.Ns)
+		if lease := takeNetnsVethPairLease(pair); lease != nil {
+			_ = releasePoolSlot(lease, pair.A.Ns, pair.B.Ns, pair.A.Link)
+		}
+		return runtime.ValueFromEnvelope(runtime.OkEnvelope()), nil
+	case semantics.OriginNetnsVethEndpoint:
+		// You release the topology, not half of it: the pool
+		// lease and both namespaces are pair-scoped.
+		return runtime.Value{}, fmt.Errorf("net release: endpoint belongs to a netns-veth-pair; release the pair")
+	default:
+		return runtime.Value{}, fmt.Errorf("net release: expected a $pair argument, got a %s value", sva.Value.Kind())
 	}
-	runIPIgnoreErr(ctx, "link", "del", pair.HostLink)
-	runIPIgnoreErr(ctx, "netns", "del", pair.Ns)
-	if lease := takeNetPairLease(pair); lease != nil {
-		_ = releasePoolSlot(lease, pair.Ns, pair.HostLink)
-	}
-	return runtime.ValueFromEnvelope(runtime.OkEnvelope()), nil
 }
 
 // NetExecEnvelope runs `ip netns exec NS CMD ARGS...` synchronously
@@ -514,7 +714,7 @@ func NetExecEnvelope(ctx context.Context, args []runtime.Arg) (runtime.Envelope,
 	if len(args) < 2 {
 		return runtime.Envelope{}, fmt.Errorf("net exec: requires $pair and a command")
 	}
-	pair, err := ensureNetPair(args[0])
+	nsName, err := netExecNamespace(args[0])
 	if err != nil {
 		return runtime.Envelope{}, fmt.Errorf("net exec: %w", err)
 	}
@@ -522,7 +722,7 @@ func NetExecEnvelope(ctx context.Context, args []runtime.Arg) (runtime.Envelope,
 		runtime.WordArg{Text: "ip"},
 		runtime.WordArg{Text: "netns"},
 		runtime.WordArg{Text: "exec"},
-		runtime.WordArg{Text: pair.Ns},
+		runtime.WordArg{Text: nsName},
 	}
 	full := append(prefix, args[1:]...)
 	cap, err := driver.RunExternal(ctx, full)
@@ -547,7 +747,7 @@ func handleNetStart(ctx context.Context, env *runtime.Env, origin string, args [
 	if len(args) < 2 {
 		return runtime.Value{}, fmt.Errorf("net start: requires $pair and a command")
 	}
-	pair, err := ensureNetPair(args[0])
+	nsName, err := netExecNamespace(args[0])
 	if err != nil {
 		return runtime.Value{}, fmt.Errorf("net start: %w", err)
 	}
@@ -555,7 +755,7 @@ func handleNetStart(ctx context.Context, env *runtime.Env, origin string, args [
 	if err != nil {
 		return runtime.Value{}, err
 	}
-	argv := append([]string{"ip", "netns", "exec", pair.Ns}, driver.ArgTexts(resolved)...)
+	argv := append([]string{"ip", "netns", "exec", nsName}, driver.ArgTexts(resolved)...)
 	job, err := spawnJob(ctx, env, spawnSpec{
 		Argv:      argv,
 		Origin:    origin,

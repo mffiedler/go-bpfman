@@ -74,6 +74,25 @@ const (
 	// lifecycle capability: kfunc release returns the slot to the
 	// cross-process pool; field reads remain valid after release.
 	OriginKfunc
+	// OriginNetnsVethPair tags a Value that wraps a NetnsVethPair:
+	// the handle returned by `net netns-veth-pair`, the isolated
+	// topology whose veth ends both live in owned, named network
+	// namespaces. Unlike a NetPair there is no privileged host
+	// side: the record nests two symmetric endpoint capabilities
+	// reachable as $pair.a and $pair.b. The release unit is the
+	// pair -- `net release $pair` consumes both sides -- and `net
+	// exec` refuses the bare pair because neither side is a
+	// natural default.
+	OriginNetnsVethPair
+	// OriginNetnsVethEndpoint tags a Value that wraps one side of
+	// a NetnsVethPair ($pair.a / $pair.b): a capability for
+	// execution and field access, not an ownership boundary. `net
+	// exec $pair.a CMD` runs CMD inside that endpoint's namespace;
+	// the pair's release latch governs both endpoints, so an
+	// endpoint of a released pair fails operational use, and `net
+	// release $pair.a` is rejected because you release the
+	// topology, not half of it.
+	OriginNetnsVethEndpoint
 )
 
 // String returns the canonical name used in user-facing error
@@ -107,6 +126,10 @@ func (k OriginKind) String() string {
 		return "net pair"
 	case OriginKfunc:
 		return "kernel function"
+	case OriginNetnsVethPair:
+		return "netns-veth-pair"
+	case OriginNetnsVethEndpoint:
+		return "netns-veth-pair endpoint"
 	default:
 		return fmt.Sprintf("OriginKind(%d)", int(k))
 	}
@@ -145,6 +168,23 @@ type Shape struct {
 	// Shapes. The walker descends into Elem when a path
 	// segment is "[N]".
 	Elem *Shape
+}
+
+// netnsVethEndpointShape is the sealed record shape shared by the
+// two endpoints of a netns-veth-pair and by a free-standing
+// endpoint value ($pair.a bound through a let). The pair shape
+// nests it under fields a and b, so $pair.a.ns checks statically
+// all the way down.
+var netnsVethEndpointShape = Shape{
+	Sealed: true,
+	Kind:   OriginNetnsVethEndpoint,
+	Fields: map[string]Shape{
+		"ns":      {Sealed: true, Kind: OriginScalar},
+		"link":    {Sealed: true, Kind: OriginScalar},
+		"addr":    {Sealed: true, Kind: OriginScalar},
+		"ifindex": {Sealed: true, Kind: OriginScalar},
+		"nsid":    {Sealed: true, Kind: OriginScalar},
+	},
 }
 
 var (
@@ -213,6 +253,15 @@ var (
 				"count":   {Sealed: true, Kind: OriginScalar},
 			},
 		},
+		OriginNetnsVethPair: {
+			Sealed: true,
+			Kind:   OriginNetnsVethPair,
+			Fields: map[string]Shape{
+				"a": netnsVethEndpointShape,
+				"b": netnsVethEndpointShape,
+			},
+		},
+		OriginNetnsVethEndpoint: netnsVethEndpointShape,
 		// OriginDispatcher is reserved: the kind exists in the
 		// enum and renders as "dispatcher" in error messages,
 		// but no construction site currently emits a Value

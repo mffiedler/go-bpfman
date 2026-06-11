@@ -82,7 +82,7 @@ func TestAcquirePoolSlot_AssignsSlotOneFirst(t *testing.T) {
 
 	lease, err := acquirePoolSlot(poolReq(root, "test.bpfman:1", "ns0", "vea0"))
 	require.NoError(t, err)
-	defer releasePoolSlot(lease, "ns0", "vea0")
+	defer releasePoolSlot(lease, "ns0", "", "vea0")
 	assert.Equal(t, uint32(1), lease.slot)
 	assert.Equal(t, "198.51.100.1/30", lease.hostCIDR)
 	assert.Equal(t, "198.51.100.2/30", lease.peerCIDR)
@@ -100,11 +100,11 @@ func TestAcquirePoolSlot_DistinctSlotsWhileHeld(t *testing.T) {
 
 	first, err := acquirePoolSlot(poolReq(root, "a", "ns-a", "vea-a"))
 	require.NoError(t, err)
-	defer releasePoolSlot(first, "ns-a", "vea-a")
+	defer releasePoolSlot(first, "ns-a", "", "vea-a")
 
 	second, err := acquirePoolSlot(poolReq(root, "b", "ns-b", "vea-b"))
 	require.NoError(t, err)
-	defer releasePoolSlot(second, "ns-b", "vea-b")
+	defer releasePoolSlot(second, "ns-b", "", "vea-b")
 
 	assert.Equal(t, uint32(1), first.slot)
 	assert.Equal(t, uint32(2), second.slot)
@@ -124,13 +124,13 @@ func TestAcquirePoolSlot_FIFOOnRelease(t *testing.T) {
 
 	b, err := acquirePoolSlot(poolReq(root, "b", "ns-b", "vea-b"))
 	require.NoError(t, err)
-	defer releasePoolSlot(b, "ns-b", "vea-b")
+	defer releasePoolSlot(b, "ns-b", "", "vea-b")
 
-	require.NoError(t, releasePoolSlot(a, "ns-a", "vea-a"))
+	require.NoError(t, releasePoolSlot(a, "ns-a", "", "vea-a"))
 
 	c, err := acquirePoolSlot(poolReq(root, "c", "ns-c", "vea-c"))
 	require.NoError(t, err)
-	defer releasePoolSlot(c, "ns-c", "vea-c")
+	defer releasePoolSlot(c, "ns-c", "", "vea-c")
 
 	assert.Equal(t, uint32(1), a.slot)
 	assert.Equal(t, uint32(2), b.slot)
@@ -152,7 +152,7 @@ func TestAcquirePoolSlot_PreferReleasedOverHeld(t *testing.T) {
 	defer func() {
 		for _, l := range held {
 			if l != nil {
-				_ = releasePoolSlot(l, "", "")
+				_ = releasePoolSlot(l, "", "", "")
 			}
 		}
 	}()
@@ -164,15 +164,15 @@ func TestAcquirePoolSlot_PreferReleasedOverHeld(t *testing.T) {
 	// held[i] holds slot i+1 since acquires are assigned in
 	// scan order from an empty pool. Release slot 3 first, then
 	// slot 2; slot 3 ends up with the older released_at.
-	require.NoError(t, releasePoolSlot(held[2], "", ""))
+	require.NoError(t, releasePoolSlot(held[2], "", "", ""))
 	held[2] = nil
 	time.Sleep(2 * time.Millisecond)
-	require.NoError(t, releasePoolSlot(held[1], "", ""))
+	require.NoError(t, releasePoolSlot(held[1], "", "", ""))
 	held[1] = nil
 
 	next, err := acquirePoolSlot(poolReq(root, "reuse", "", ""))
 	require.NoError(t, err)
-	defer releasePoolSlot(next, "", "")
+	defer releasePoolSlot(next, "", "", "")
 	assert.Equalf(t, uint32(3), next.slot, "expected the longest-released slot (3); got %d", next.slot)
 }
 
@@ -187,7 +187,7 @@ func TestAcquirePoolSlot_Exhaustion(t *testing.T) {
 	held := make([]*poolLease, 0, poolSize)
 	defer func() {
 		for _, l := range held {
-			_ = releasePoolSlot(l, "", "")
+			_ = releasePoolSlot(l, "", "", "")
 		}
 	}()
 	for i := uint32(1); i <= poolSize; i++ {
@@ -228,7 +228,7 @@ func TestAcquirePoolSlot_ReleasedSlotIgnoresExtantLink(t *testing.T) {
 	req.linkExists = func(name string) bool { return name == "vea-leaker" }
 	lease, err := acquirePoolSlot(req)
 	require.NoError(t, err, "released_at should suppress the existence check")
-	defer releasePoolSlot(lease, "ns-next", "vea-next")
+	defer releasePoolSlot(lease, "ns-next", "", "vea-next")
 	assert.Equal(t, uint32(1), lease.slot)
 }
 
@@ -253,7 +253,7 @@ func TestAcquirePoolSlot_ReleasedSlotIgnoresExtantNetns(t *testing.T) {
 	req.netnsExists = func(name string) bool { return name == "ns-leaker" }
 	lease, err := acquirePoolSlot(req)
 	require.NoError(t, err, "released_at should suppress the existence check")
-	defer releasePoolSlot(lease, "ns-next", "vea-next")
+	defer releasePoolSlot(lease, "ns-next", "", "vea-next")
 	assert.Equal(t, uint32(1), lease.slot)
 }
 
@@ -347,7 +347,7 @@ func TestReleasePoolSlot_WritesReleasedAt(t *testing.T) {
 
 	lease, err := acquirePoolSlot(poolReq(root, "release_test.bpfman:5", "ns-rel", "vea-rel"))
 	require.NoError(t, err)
-	require.NoError(t, releasePoolSlot(lease, "ns-rel", "vea-rel"))
+	require.NoError(t, releasePoolSlot(lease, "ns-rel", "", "vea-rel"))
 
 	body, err := os.ReadFile(slotLockPath(root, lease.slot))
 	require.NoError(t, err)
@@ -366,8 +366,8 @@ func TestReleasePoolSlot_WritesReleasedAt(t *testing.T) {
 // the filesystem.
 func TestReleasePoolSlot_NilOrZeroIsNoOp(t *testing.T) {
 	t.Parallel()
-	require.NoError(t, releasePoolSlot(nil, "", ""))
-	require.NoError(t, releasePoolSlot(&poolLease{}, "", ""))
+	require.NoError(t, releasePoolSlot(nil, "", "", ""))
+	require.NoError(t, releasePoolSlot(&poolLease{}, "", "", ""))
 }
 
 // TestAcquirePoolSlot_ConcurrentDistinctSlots is the in-process
@@ -395,7 +395,7 @@ func TestAcquirePoolSlot_ConcurrentDistinctSlots(t *testing.T) {
 	defer func() {
 		for _, l := range results {
 			if l != nil {
-				_ = releasePoolSlot(l, "", "")
+				_ = releasePoolSlot(l, "", "", "")
 			}
 		}
 	}()
@@ -424,7 +424,7 @@ func TestAcquirePoolSlot_RecoversFromUnparseableBody(t *testing.T) {
 
 	lease, err := acquirePoolSlot(poolReq(root, "ok", "", ""))
 	require.NoError(t, err)
-	defer releasePoolSlot(lease, "", "")
+	defer releasePoolSlot(lease, "", "", "")
 	// Slot 1's mtime is "now" so it sorts after the unused
 	// slots 2..64; we expect slot 2.
 	assert.Equalf(t, uint32(2), lease.slot, "garbage body should fall back to mtime ordering, putting slot 1 last; got %d", lease.slot)
@@ -563,6 +563,44 @@ func TestPoolAcquireRequest_DefaultsApplyToEmptyFields(t *testing.T) {
 		linkAName: "vea-next",
 	})
 	require.NoError(t, err, "default checkers should report absent for nonexistent kernel resources")
-	defer releasePoolSlot(lease, "ns-next", "vea-next")
+	defer releasePoolSlot(lease, "ns-next", "", "vea-next")
 	assert.Equal(t, uint32(1), lease.slot)
+}
+
+// TestAcquirePoolSlot_CrashLeakedSecondNetnsAttributed covers the
+// isolated builder's second tenant: a crash-leaked slot whose
+// ns_b_name still exists in the kernel must fail the acquire with
+// the leak attributed, exactly as ns_name does.
+func TestAcquirePoolSlot_CrashLeakedSecondNetnsAttributed(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+
+	body := provenance{
+		Origin:     "crashed_test.bpfman:7",
+		NsName:     "B0000000000a1Na",
+		NsBName:    "B0000000000a1Nb",
+		LinkAName:  "B0000000000a1Na",
+		AcquiredAt: "2020-01-01T00:00:00Z",
+	}
+	raw, err := json.Marshal(body)
+	require.NoError(t, err)
+	slot1 := slotLockPath(root, 1)
+	require.NoError(t, os.WriteFile(slot1, raw, 0o600))
+	pastTime := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, os.Chtimes(slot1, pastTime, pastTime))
+	fresh := provenance{ReleasedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+	rawFresh, err := json.Marshal(fresh)
+	require.NoError(t, err)
+	for slot := uint32(2); slot <= poolSize; slot++ {
+		require.NoError(t, os.WriteFile(slotLockPath(root, slot), rawFresh, 0o600))
+	}
+
+	req := poolReq(root, "next_test.bpfman:1", "ns-next", "vea-next")
+	req.netnsExists = func(name string) bool { return name == "B0000000000a1Nb" }
+	_, err = acquirePoolSlot(req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "slot 1")
+	assert.Contains(t, err.Error(), `netns "B0000000000a1Nb"`)
+	assert.Contains(t, err.Error(), "crashed_test.bpfman:7")
+	assert.Contains(t, err.Error(), "never released")
 }

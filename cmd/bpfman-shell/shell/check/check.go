@@ -1119,6 +1119,7 @@ func (c *checker) walkStmt(s syntax.Stmt) {
 				c.checkExpr(a)
 			}
 			c.checkDefArity(n.Cmd)
+			c.checkNetArgShape(n.Cmd)
 		}
 		// Def dispatch precedes both the pure-builtin
 		// rejection and the bind-shape lookup. A def name on
@@ -1301,6 +1302,7 @@ func (c *checker) walkStmt(s syntax.Stmt) {
 			}
 			c.checkDefArity(n.Cmd)
 			c.checkJobArgShape(n.Cmd)
+			c.checkNetArgShape(n.Cmd)
 		}
 
 	case *syntax.PollStmt:
@@ -1350,6 +1352,7 @@ func (c *checker) walkStmt(s syntax.Stmt) {
 		}
 		c.checkDefArity(n)
 		c.checkJobArgShape(n)
+		c.checkNetArgShape(n)
 		if head, ok := commandHeadLiteral(n); ok && head == "import" && c.nonTopLevelDepth != 0 {
 			c.addIssue(n.Span, "import must be declared at top level")
 		}
@@ -1369,6 +1372,50 @@ func (c *checker) checkJobArgShape(cmd *syntax.CommandStmt) {
 		return
 	}
 	c.addIssue(target.Span, "expected a $job argument, got a %s value", shape.Kind)
+}
+
+// checkNetArgShape mirrors the runtime's net exec / net start /
+// net release argument rules statically, message for message. The
+// isolated netns-veth-pair has no natural default side, so the
+// bare pair is rejected for exec/start in favour of an explicit
+// endpoint, and an endpoint is rejected for release because the
+// release unit is the pair. Unknown shapes stay silent (wildcard),
+// matching every other kind check.
+func (c *checker) checkNetArgShape(cmd *syntax.CommandStmt) {
+	if cmd == nil || len(cmd.Args) < 3 {
+		return
+	}
+	head, ok := commandHeadLiteral(cmd)
+	if !ok || head != "net" || c.defs[head] {
+		return
+	}
+	sub, ok := cmd.Args[1].(*syntax.LiteralExpr)
+	if !ok || sub.Quoted {
+		return
+	}
+	target, ok := cmd.Args[2].(*syntax.VarRefExpr)
+	if !ok {
+		return
+	}
+	kind := c.inferExprShape(target).Kind
+	switch sub.Text {
+	case "exec", "start":
+		switch kind {
+		case semantics.OriginNetnsVethPair:
+			c.addIssue(target.Span, "net %s: netns-veth-pair has two endpoints; use $pair.a or $pair.b", sub.Text)
+		case semantics.OriginUnknown, semantics.OriginNetPair, semantics.OriginNetnsVethEndpoint:
+		default:
+			c.addIssue(target.Span, "net %s: expected a $pair or endpoint argument, got a %s value", sub.Text, kind)
+		}
+	case "release":
+		switch kind {
+		case semantics.OriginNetnsVethEndpoint:
+			c.addIssue(target.Span, "net release: endpoint belongs to a netns-veth-pair; release the pair")
+		case semantics.OriginUnknown, semantics.OriginNetPair, semantics.OriginNetnsVethPair:
+		default:
+			c.addIssue(target.Span, "net release: expected a $pair argument, got a %s value", kind)
+		}
+	}
 }
 
 func (c *checker) checkAssertClause(clause syntax.AssertClause) {

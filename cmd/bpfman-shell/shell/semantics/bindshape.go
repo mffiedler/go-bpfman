@@ -66,6 +66,8 @@ func inferNetBindShape(args []syntax.Expr) Shape {
 	switch sub.Text {
 	case "veth-pair":
 		return KindShape(OriginNetPair)
+	case "netns-veth-pair":
+		return KindShape(OriginNetnsVethPair)
 	case "release", "exec":
 		return KindShape(OriginEnvelope)
 	case "start":

@@ -3,10 +3,12 @@
 # Emit ip(8) / tc(8) commands that drain dispatcher residue and
 # delete interfaces and netns left by an interrupted e2e run. The
 # scope is the harness's own naming: test netns named `B<hex>N`
-# (exactly 12 hex digits, matching e2e/testnet.uniqueTestName) and
-# host-side interfaces matching the same pattern with an optional
-# `a` / `b` peer suffix. Bare-`N` host ifaces are dummies created
-# by testnet.NewTestInterface; `Na` / `Nb` ends are veth pairs
+# (exactly 12 hex digits, matching e2e/testnet.uniqueTestName) or
+# `B<hex>Na` / `B<hex>Nb` (the isolated `net netns-veth-pair`
+# builder owns one namespace per veth end), and host-side
+# interfaces matching the same pattern with an optional `a` / `b`
+# peer suffix. Bare-`N` host ifaces are dummies created by
+# testnet.NewTestInterface; `Na` / `Nb` ends are veth pairs
 # created by NewTestVethPair or by a script's `net veth-pair`
 # builtin.
 #
@@ -138,13 +140,14 @@ emit_xdp_link_drains_in_ns() {
 }
 
 # Phase 1: drain attachments off every interface in each test netns.
-# Every iface in a `B<hex>N` netns is in scope, so no name filter is
-# needed for the XDP drain; the tc qdisc del is per-iface as before
-# and harmless when no clsact exists.
+# Both the host-end builder's bare-`N` netns and the isolated
+# builder's `Na` / `Nb` pair are in scope; every iface inside is
+# ours, so no name filter is needed for the XDP drain. The tc qdisc
+# del is per-iface as before and harmless when no clsact exists.
 shopt -s nullglob
-for path in /run/netns/B*N; do
+for path in /run/netns/B*; do
     ns=$(basename "$path")
-    if [[ ! "$ns" =~ ^B[0-9a-f]{12}N$ ]]; then
+    if [[ ! "$ns" =~ ^B[0-9a-f]{12}N[ab]?$ ]]; then
         continue
     fi
     emit_xdp_link_drains_in_ns "$ns" ""
@@ -171,10 +174,11 @@ while read -r iface; do
     fi
 done < <(ifaces_in "")
 
-# Phase 4: delete the test netns themselves.
-for path in /run/netns/B*N; do
+# Phase 4: delete the test netns themselves. Deleting an isolated
+# pair's `Na` / `Nb` namespaces cascades the veth ends inside them.
+for path in /run/netns/B*; do
     name=$(basename "$path")
-    if [[ ${name} =~ ^B[0-9a-f]{12}N$ ]]; then
+    if [[ ${name} =~ ^B[0-9a-f]{12}N[ab]?$ ]]; then
         printf 'ip netns del %s\n' "$name"
     fi
 done

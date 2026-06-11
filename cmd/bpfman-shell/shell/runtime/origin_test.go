@@ -25,6 +25,8 @@ func TestOriginKind_String(t *testing.T) {
 		{semantics.OriginDispatcher, "dispatcher"},
 		{semantics.OriginMap, "map"},
 		{semantics.OriginEnvelope, "result"},
+		{semantics.OriginNetnsVethPair, "netns-veth-pair"},
+		{semantics.OriginNetnsVethEndpoint, "netns-veth-pair endpoint"},
 		{semantics.OriginKind(999), "OriginKind(999)"},
 	}
 	for _, tc := range cases {
@@ -101,6 +103,16 @@ func TestValue_InternalOriginMirrorKeysMatchSealedShapeFields(t *testing.T) {
 			name: semantics.OriginKfunc.String(),
 			kind: semantics.OriginKfunc,
 			v:    ValueFromKfunc(&Kfunc{Index: 1, Name: "bpfman_test", Trigger: "/sys/kernel/debug/tracing/events/foo", Count: "/sys/kernel/debug/tracing/events/foo/count"}),
+		},
+		{
+			name: semantics.OriginNetnsVethPair.String(),
+			kind: semantics.OriginNetnsVethPair,
+			v:    ValueFromNetnsVethPair(testNetnsVethPair()),
+		},
+		{
+			name: semantics.OriginNetnsVethEndpoint.String(),
+			kind: semantics.OriginNetnsVethEndpoint,
+			v:    valueFromNetnsVethEndpoint(testNetnsVethPair().A),
 		},
 	}
 	for _, tc := range cases {
