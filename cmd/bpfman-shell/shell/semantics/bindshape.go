@@ -30,6 +30,7 @@ var bindShapeRegistry = map[string]bindShapeFn{
 	"tempdir":       staticBindShape(Shape{Sealed: false, Kind: OriginUnknown}),
 	"uprobe-target": staticBindShape(Shape{Sealed: false, Kind: OriginUnknown}),
 	"registry":      staticBindShape(KindShape(OriginScalar)),
+	"process":       staticBindShape(Shape{Sealed: false, Kind: OriginUnknown}),
 	"net":           inferNetBindShape,
 	"uprobe":        inferUprobeBindShape,
 	"kfunc":         inferKfuncBindShape,
