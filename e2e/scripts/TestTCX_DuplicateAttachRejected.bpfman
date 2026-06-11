@@ -1,0 +1,76 @@
+# -*- mode: bpfman -*-
+# Proves attaching the same TCX program a second time to the same
+# (interface, direction) is rejected and the first attachment
+# survives. The pre-fix behaviour silently detached the live link
+# via the stale-pin preflight and left two store records sharing
+# one pin path.
+#
+# Survival is asserted behaviourally as well as structurally: after
+# the rejected duplicate, the original attachment still counts
+# packets. Pings run peer -> host, so the counted packets on the
+# host's ingress are the peer's echo requests; the host-route
+# precheck guards the reply path that completes them.
+
+import ../lib.bpfman
+
+guard pair <- net veth-pair
+defer net release $pair
+require_host_route_to_peer $pair
+
+guard loaded <- bpfman program load file \
+    --path testdata/bpf/tcx_counter.bpf.o \
+    --programs tcx:tcx_stats
+let prog = $loaded.programs[0]
+defer bpfman program unload $prog
+
+guard link <- bpfman link attach tcx \
+    --iface $pair.host_link \
+    --direction ingress \
+    --priority 50 \
+    $prog
+defer bpfman link detach $link
+
+assert fail bpfman link attach tcx \
+    --iface $pair.host_link \
+    --direction ingress \
+    --priority 60 \
+    $prog
+
+# Equal priority is the exact deterministic pin-key collision,
+# independent of ordering; and the rejection must fail usefully,
+# naming the surviving link so the user knows what to detach.
+let dup <- bpfman link attach tcx \
+    --iface $pair.host_link \
+    --direction ingress \
+    --priority 50 \
+    $prog
+assert $dup.ok == false
+assert contains $dup.stderr "as link ${link.record.id}"
+
+# The first attachment survives the rejected duplicate: exactly one
+# link record remains, it is the original, and -- the kernel truth
+# the store cannot prove -- its kernel link is still attached. The
+# pre-fix preflight detached the live kernel link before the
+# duplicate was refused, leaving a record that pointed at nothing.
+guard listed <- bpfman link list -o json
+assert ($listed |> jq "[.links[] | select(.id == ${link.record.id})] | length") == 1
+assert ($listed |> jq "[.links[] | select(.program_id == ${prog.record.program_id})] | length") == 1
+
+guard klinks <- bpftool link list -j
+assert ($klinks.stdout |> jq "fromjson | [ .[] | select(.id == ${link.record.kernel_link_id}) ] | length") == 1
+
+# The kernel listing proves the link object exists; the counter
+# proves it is still on the packet path. Lower bound; ARP/control
+# traffic may add packets.
+let mapID = $prog.status.maps[0].id
+let sumFilter = "fromjson | [.[0].formatted.values[].value | tonumber] | add"
+guard dumpBefore <- bpftool map dump id $mapID -j
+let before = $dumpBefore.stdout |> jq $sumFilter
+
+guard _ <- net exec $pair ping -c 5 -i 0.05 -W 1 $pair.host_addr
+
+guard dumpAfter <- bpftool map dump id $mapID -j
+let after = $dumpAfter.stdout |> jq $sumFilter
+let delta = $after - $before
+print "survivor: delta=${delta}"
+assert $delta >= 5

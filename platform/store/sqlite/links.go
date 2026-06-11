@@ -145,7 +145,7 @@ func (s *sqliteStore) ListTCXLinksByInterface(ctx context.Context, nsid uint64, 
 	for rows.Next() {
 		var info bpfman.TCXLinkInfo
 		var kernelLinkID int64
-		if err := rows.Scan(&kernelLinkID, &info.KernelProgramID, &info.Priority); err != nil {
+		if err := rows.Scan(&info.LinkID, &kernelLinkID, &info.KernelProgramID, &info.Priority); err != nil {
 			return nil, fmt.Errorf("scan TCX link info: %w", err)
 		}
 		info.KernelLinkID = kernel.LinkID(kernelLinkID)

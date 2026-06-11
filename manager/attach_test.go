@@ -2638,6 +2638,85 @@ func TestTracepointAttach_PreflightSkippedWhenListEmpty(t *testing.T) {
 	assert.NotZero(t, link.Record.ID)
 }
 
+// TestTCX_DuplicateAttachRejected pins the duplicate-attach
+// contract: attaching the same TCX program a second time to the
+// same (interface, direction) is rejected, and the first
+// attachment survives untouched. The previous behaviour was the
+// inverse: the stale-pin preflight detached the live kernel link
+// and a second store record was created sharing the first's pin
+// path, so detaching either record killed the other's attachment.
+// Rust gets the equivalent rejection from the kernel's mprog
+// EEXIST; the store record for the same program on the same hook
+// is our proof of a live managed attachment.
+func TestTCX_DuplicateAttachRejected(t *testing.T) {
+	t.Parallel()
+
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tcx.o"), "tcx_pass", bpfman.ProgramTypeTCX)
+	require.NoError(t, err)
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	attachSpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	require.NoError(t, err)
+	attachSpec = attachSpec.WithPriority(50)
+	first, err := fix.Attach(ctx, attachSpec)
+	require.NoError(t, err)
+	require.Equal(t, 1, fix.Kernel.LinkCount())
+
+	secondSpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	require.NoError(t, err)
+	secondSpec = secondSpec.WithPriority(60)
+	_, err = fix.Attach(ctx, secondSpec)
+	require.Error(t, err, "duplicate attach must be rejected")
+	assert.Contains(t, err.Error(), "already attached")
+
+	// The first attachment survives: one kernel link, one store
+	// record, and detaching the survivor still works.
+	assert.Equal(t, 1, fix.Kernel.LinkCount(), "first kernel link must survive the rejected duplicate")
+	links, err := fix.Store.ListLinks(ctx)
+	require.NoError(t, err)
+	require.Len(t, links, 1, "exactly one store record must remain")
+	require.NoError(t, fix.Detach(ctx, first.Record.ID))
+	assert.Equal(t, 0, fix.Kernel.LinkCount())
+}
+
+// TestTCX_OrphanedPinStillCleaned pins the other half of the
+// preflight contract: a bpffs pin with no store record is crash
+// residue, and a fresh attach must clean it up and proceed rather
+// than failing on it.
+func TestTCX_OrphanedPinStillCleaned(t *testing.T) {
+	t.Parallel()
+
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tcx.o"), "tcx_pass", bpfman.ProgramTypeTCX)
+	require.NoError(t, err)
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	// Simulate crash residue: attach, then delete only the store
+	// record so the kernel link and pin survive recordless.
+	attachSpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	require.NoError(t, err)
+	attachSpec = attachSpec.WithPriority(50)
+	first, err := fix.Attach(ctx, attachSpec)
+	require.NoError(t, err)
+	require.NoError(t, fix.Store.DeleteLink(ctx, first.Record.ID))
+
+	// A fresh attach of the same program to the same hook sees an
+	// orphaned pin, not a live managed attachment, and succeeds.
+	retrySpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	require.NoError(t, err)
+	retrySpec = retrySpec.WithPriority(50)
+	_, err = fix.Attach(ctx, retrySpec)
+	require.NoError(t, err, "orphaned pin must be cleaned, not treated as a duplicate")
+	assert.Equal(t, 1, fix.Kernel.LinkCount())
+}
+
 // TestTCX_EqualPriorityOrderIsInsertionOrder pins the listing
 // contract the attach-order anchor depends on: links sharing a
 // priority come back in insertion order (the SQL tiebreaks on the

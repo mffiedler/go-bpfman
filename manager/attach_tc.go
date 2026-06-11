@@ -137,20 +137,37 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 
 	linkPinPath := m.rt.BPFFS().TCXLinkPath(direction.String(), nsid, uint32(ifindex), programID)
 
-	// Stale pin removal (preflight I/O). Use DetachLink, not RemovePin:
-	// if a previous attach crashed leaving a live kernel link behind
+	progPinPath := prog.Handles.PinPath
+	existingLinks, err := m.store.ListTCXLinksByInterface(ctx, nsid, uint32(ifindex), direction.String())
+	if err != nil {
+		return bpfman.Link{}, fmt.Errorf("list existing TCX links: %w", err)
+	}
+
+	// Duplicate attach is rejected, not replaced. The pin path is
+	// keyed by (direction, nsid, ifindex, program), so a second
+	// attach of the same program to the same hook would share the
+	// first's pin: the stale-pin preflight below would detach the
+	// LIVE kernel link, and the two store records would cross-wire
+	// every later detach. A store record for this program on this
+	// hook is the proof of a live managed attachment; the kernel's
+	// mprog layer gives Rust the equivalent rejection via EEXIST.
+	for _, l := range existingLinks {
+		if l.KernelProgramID == programID {
+			return bpfman.Link{}, fmt.Errorf("program %d is already attached to %s %s as link %d; detach it first",
+				programID, ifname, direction, l.LinkID)
+		}
+	}
+
+	// Stale pin removal (preflight I/O). The duplicate check above
+	// proves no managed attachment owns this pin, so anything at the
+	// path is crash residue. Use DetachLink, not RemovePin: if a
+	// previous attach crashed leaving a live kernel link behind
 	// the bpffs pin, raw os.Remove drops only the userland reference
 	// and the netdev keeps running the program until RCU teardown
 	// completes. DetachLink performs BPF_LINK_DETACH first, so the
 	// kernel link is provably gone before we touch the pin file.
 	if err := m.executor.Execute(ctx, action.DetachLink{PinPath: linkPinPath}); err != nil {
 		return bpfman.Link{}, fmt.Errorf("detach stale TCX link %s: %w", linkPinPath, err)
-	}
-
-	progPinPath := prog.Handles.PinPath
-	existingLinks, err := m.store.ListTCXLinksByInterface(ctx, nsid, uint32(ifindex), direction.String())
-	if err != nil {
-		return bpfman.Link{}, fmt.Errorf("list existing TCX links: %w", err)
 	}
 
 	// The attach order anchors the new program relative to an existing

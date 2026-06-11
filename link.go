@@ -271,8 +271,10 @@ func (TCXDetails) linkDetails()   {}
 func (TCXDetails) Kind() LinkKind { return LinkKindTCX }
 
 // TCXLinkInfo combines link summary with TCX-specific details.
-// Used for computing attach order based on priority.
+// Used for computing attach order based on priority, and for
+// naming the offending link when a duplicate attach is rejected.
 type TCXLinkInfo struct {
+	LinkID          LinkID           `json:"link_id"`
 	KernelLinkID    kernel.LinkID    `json:"kernel_link_id"`
 	KernelProgramID kernel.ProgramID `json:"kernel_program_id"`
 	Priority        int32            `json:"priority"`

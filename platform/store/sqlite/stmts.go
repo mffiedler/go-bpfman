@@ -118,7 +118,7 @@ func (s *sqliteStore) prepareLinkRegistryStatements(ctx context.Context) error {
 	}
 
 	const sqlListTCXLinksByInterface = `
-		SELECT l.kernel_link_id, l.kernel_prog_id, td.priority
+		SELECT l.id, l.kernel_link_id, l.kernel_prog_id, td.priority
 		FROM links l
 		JOIN link_tcx_details td ON l.id = td.id
 		WHERE td.nsid = ? AND td.ifindex = ? AND td.direction = ?
