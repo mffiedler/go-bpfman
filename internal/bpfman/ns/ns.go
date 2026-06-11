@@ -42,14 +42,12 @@ const (
 	// recognise it as valid but do not handle it.
 	ModeBPFManRPC = "bpfman-rpc"
 
-	// ProgramFD is the inherited BPF program fd in bpfman-ns children.
-	ProgramFD = 3
+	// SocketFD is the inherited Unix socket fd used to return the
+	// target-binary fd to the parent.
+	SocketFD = 3
 
-	// SocketFD is the inherited Unix socket fd used to return the link fd.
-	SocketFD = 4
-
-	// LinkFDName is the name sent with the returned link fd.
-	LinkFDName = "uprobe-link"
+	// TargetFDName is the name sent with the returned target-binary fd.
+	TargetFDName = "uprobe-target"
 )
 
 // LogLevel represents the logging verbosity for the C nsexec code.

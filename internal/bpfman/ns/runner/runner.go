@@ -8,8 +8,6 @@ import (
 	"syscall"
 
 	"github.com/alecthomas/kong"
-	"github.com/cilium/ebpf"
-	"github.com/cilium/ebpf/link"
 
 	"github.com/frobware/go-bpfman/internal/bpfman/ns"
 	"github.com/frobware/go-bpfman/lock"
@@ -26,21 +24,21 @@ type NSCmd struct {
 	Uprobe NSUprobeCmd `cmd:"" help:"Attach a uprobe program in the given container."`
 }
 
-// NSUprobeCmd attaches a uprobe in the target container's mount namespace.
-// When this code runs, the process is already in the target namespace
-// (switched by the CGO constructor before Go started).
+// NSUprobeCmd opens the target binary in the container's mount namespace
+// and returns its fd to the parent. When this code runs, the process is
+// already in the target namespace (switched by the CGO constructor before
+// Go started), so the binary path resolves against the container's
+// filesystem.
 //
-// The parent process passes:
-//   - BPF program via fd 3 (ExtraFiles[0])
-//   - Unix socket via fd 4 (ExtraFiles[1]) for returning the link fd
-//
-// After attaching, we send the link fd back to the parent via the socket.
-// The parent (in host namespace) then pins the link.
+// The parent passes a Unix socket via fd 3 (ExtraFiles[0]); the child sends
+// the opened target-binary fd back over it. The parent, in bpfman's own
+// namespace, reaches that inode through /proc/self/fd and performs the BPF
+// link create and pin there, where the kernel reliably exposes a pinnable
+// perf-event bpf_link. The function name, offset, and retprobe flag are not
+// needed here -- the parent owns the attach -- so the child takes only the
+// target path.
 type NSUprobeCmd struct {
-	Target   string `arg:"" help:"Target binary path (resolved in container namespace)."`
-	FnName   string `name:"fn-name" help:"Function name to attach to."`
-	Offset   uint64 `name:"offset" default:"0" help:"Offset from function start."`
-	Retprobe bool   `name:"retprobe" help:"Attach as uretprobe."`
+	Target string `arg:"" help:"Target binary path (resolved in container namespace)."`
 }
 
 // getMntNsInode returns the inode of a mount namespace file.
@@ -56,12 +54,15 @@ func getMntNsInode(path string) uint64 {
 	return sys.Ino
 }
 
-// Run executes the uprobe attachment. We're already in the target namespace
-// (the CGO constructor called setns before Go started).
+// Run opens the target binary in the (already-entered) container mount
+// namespace and sends its fd to the parent. The CGO constructor performed
+// the setns before Go started, so cmd.Target resolves against the
+// container's filesystem here.
 //
-// The BPF program is passed via fd 3, and a Unix socket via fd 4.
-// The writer lock fd is passed via the BPFMAN_WRITER_LOCK_FD environment variable.
-// After attaching, we send the link fd back to the parent over the socket.
+// A Unix socket is inherited via fd 3, and the writer lock fd via the
+// BPFMAN_WRITER_LOCK_FD environment variable. The child does no BPF work:
+// it verifies the inherited writer lock, opens the target, and returns the
+// fd; the parent performs the attach and pin in bpfman's own namespace.
 func (cmd *NSUprobeCmd) Run() error {
 	// Create a logger that writes to stderr, respecting BPFMAN_LOG if set.
 	// Defaults to info level for less verbose output in normal operation.
@@ -124,30 +125,9 @@ func (cmd *NSUprobeCmd) Run() error {
 		"ppid", os.Getppid(),
 		"current_mnt_ns_inode", currentMntNs,
 		"target", cmd.Target,
-		"fn_name", cmd.FnName,
-		"offset", cmd.Offset,
-		"retprobe", cmd.Retprobe,
-		"program_fd", ns.ProgramFD,
 		"socket_fd", ns.SocketFD)
 
-	// Create program from the inherited file descriptor.
-	// The parent opened the pinned program and passed the fd via ExtraFiles.
-	// The child process owns its copy of the fd after exec.
-	logger.Debug("creating program from inherited fd", "fd", ns.ProgramFD)
-	prog, err := ebpf.NewProgramFromFD(ns.ProgramFD)
-	if err != nil {
-		logger.Error("failed to create program from fd",
-			"fd", ns.ProgramFD,
-			"error", err,
-			"hint", "bpfman-ns must be invoked by the daemon, not directly")
-		return fmt.Errorf("create program from fd %d (bpfman-ns must be invoked by daemon, not directly): %w", ns.ProgramFD, err)
-	}
-	defer prog.Close()
-	logger.Debug("program from inherited fd",
-		"fd", ns.ProgramFD,
-		"prog_type", prog.Type())
-
-	// Get the socket for sending link fd back to parent
+	// The socket returns the opened target-binary fd to the parent.
 	socket := os.NewFile(uintptr(ns.SocketFD), "fdpass-socket")
 	if socket == nil {
 		logger.Error("failed to get socket fd",
@@ -157,101 +137,37 @@ func (cmd *NSUprobeCmd) Run() error {
 	}
 	defer socket.Close()
 
-	// Verify target binary exists in current namespace.
-	if stat, err := os.Stat(cmd.Target); err != nil {
-		logger.Error("target binary not found in container namespace",
+	// Open the target binary in the container's mount namespace. Only this
+	// path resolution needs the target namespace; the parent performs the
+	// uprobe attach and pin in bpfman's own namespace, reaching this same
+	// inode through /proc/self/fd of the fd sent below.
+	target, err := os.Open(cmd.Target)
+	if err != nil {
+		logger.Error("failed to open target binary in container namespace",
 			"target", cmd.Target,
 			"error", err,
 			"current_mnt_ns_inode", currentMntNs,
 			"hint", "ensure the target path exists in the container's filesystem")
-		return fmt.Errorf("target binary %q not found in container (mnt ns inode %d): %w", cmd.Target, currentMntNs, err)
-	} else {
-		logger.Debug("target binary found in container namespace",
-			"target", cmd.Target,
-			"size", stat.Size(),
-			"mode", stat.Mode())
+		return fmt.Errorf("open target binary %q in container (mnt ns inode %d): %w", cmd.Target, currentMntNs, err)
 	}
+	defer target.Close()
 
-	// Open the executable (resolves in current/target namespace)
-	logger.Debug("opening executable", "target", cmd.Target)
-	ex, err := link.OpenExecutable(cmd.Target)
-	if err != nil {
-		logger.Error("failed to open executable",
-			"target", cmd.Target,
-			"error", err)
-		return fmt.Errorf("open executable %s: %w", cmd.Target, err)
-	}
-	logger.Debug("opened executable", "target", cmd.Target)
-
-	// Attach uprobe
-	opts := &link.UprobeOptions{Offset: cmd.Offset}
-	var lnk link.Link
-
-	attachType := "uprobe"
-	if cmd.Retprobe {
-		attachType = "uretprobe"
-	}
-	logger.Info("attaching probe",
-		"type", attachType,
-		"fn_name", cmd.FnName,
-		"offset", cmd.Offset,
-		"target", cmd.Target)
-
-	if cmd.Retprobe {
-		lnk, err = ex.Uretprobe(cmd.FnName, prog, opts)
-	} else {
-		lnk, err = ex.Uprobe(cmd.FnName, prog, opts)
-	}
-	if err != nil {
-		logger.Error("failed to attach probe",
-			"type", attachType,
-			"fn_name", cmd.FnName,
-			"offset", cmd.Offset,
-			"target", cmd.Target,
-			"current_mnt_ns_inode", currentMntNs,
-			"error", err)
-		return fmt.Errorf("attach %s to %s (offset %d) in %q (mnt ns %d): %w", attachType, cmd.FnName, cmd.Offset, cmd.Target, currentMntNs, err)
-	}
-
-	logger.Info("probe attached successfully", "type", attachType)
-
-	// Send the fd that owns the attachment back to the parent via the Unix
-	// socket. Container uprobes must return a BPF link fd so the host-namespace
-	// parent can pin it and record its kernel link ID. Older ioctl-style
-	// perf-event attachments only expose a raw perf-event fd; that fd cannot be
-	// pinned as a BPF link, so accepting it would recreate the one-shot phantom
-	// link bug.
-	raw, ok := lnk.(interface{ FD() int })
-	if !ok {
-		logger.Error("container uprobe requires a pinnable BPF link fd",
-			"type", attachType,
-			"hint", "upgrade to a kernel/Cilium path that exposes BPF perf-event links")
-		lnk.Close()
-		return fmt.Errorf("container uprobe requires a pinnable BPF link fd; raw perf-event attachments are not supported")
-	}
-	linkFd := raw.FD()
-
-	// The parent (in host namespace) receives its own fd reference and keeps
-	// it open for the lifetime of the managed link.
-	logger.Debug("sending link fd to parent",
-		"link_fd", linkFd,
+	logger.Debug("opened target binary, sending fd to parent",
+		"target", cmd.Target,
+		"target_fd", int(target.Fd()),
 		"socket_fd", ns.SocketFD)
 
-	if err := ns.SendFd(socket, ns.LinkFDName, linkFd); err != nil {
-		logger.Error("failed to send link fd to parent",
-			"link_fd", linkFd,
+	if err := ns.SendFd(socket, ns.TargetFDName, int(target.Fd())); err != nil {
+		logger.Error("failed to send target fd to parent",
+			"target", cmd.Target,
 			"error", err)
-		lnk.Close()
-		return fmt.Errorf("send link fd to parent: %w", err)
+		return fmt.Errorf("send target fd to parent: %w", err)
 	}
 
-	logger.Info("link fd sent to parent successfully",
-		"link_fd", linkFd)
+	logger.Info("target fd sent to parent successfully", "target", cmd.Target)
 
-	// Close our references. The parent now has the fd via SCM_RIGHTS.
-	// Success is signalled by clean exit (exit 0); parent uses Wait() result.
-	lnk.Close()
-
+	// Success is signalled by clean exit (exit 0); the parent holds its own
+	// fd reference via SCM_RIGHTS.
 	return nil
 }
 

@@ -142,23 +142,25 @@ func (k *kernelAdapter) doAttachUprobeLocal(progPinPath, target, fnName string, 
 }
 
 // attachUprobeViaHelper re-execs the current binary with CGO-based namespace
-// switching to attach a uprobe in a container's mount namespace.
+// switching to obtain an fd to the target binary inside a container's mount
+// namespace, then attaches and pins the uprobe in bpfman's own namespace.
 //
 // Go's runtime is multi-threaded and setns(CLONE_NEWNS) requires a
 // single-threaded process. We solve this using a CGO constructor in the
-// bpfman-ns transport that runs before Go's runtime starts:
+// bpfman-ns transport that runs before Go's runtime starts. The child does no
+// BPF work; it only opens the target binary, whose path resolves only in the
+// container namespace:
 //
-// 1. Parent creates socketpair for fd passing
-// 2. Parent loads pinned program, passes fd via ExtraFiles (fd 3)
-// 3. Parent passes socket via ExtraFiles (fd 4) for receiving link fd
-// 4. Parent passes writer lock fd via ExtraFiles (fd 5) and env var
-// 5. Parent sets _BPFMAN_MNT_NS env var and re-execs itself in bpfman-ns mode
-// 6. Child's C constructor calls setns() before Go runtime starts
-// 7. Child verifies it holds the writer lock
-// 8. Child's Go code runs in target mount namespace (target binary visible)
-// 9. Child uses inherited program fd to attach uprobe
-// 10. Child sends link fd back to parent via socket (SCM_RIGHTS)
-// 11. Parent pins the received link fd in host bpffs
+//  1. Parent creates socketpair for fd passing
+//  2. Parent passes socket via ExtraFiles (fd 3) and the writer lock fd
+//  3. Parent sets _BPFMAN_MNT_NS env var and re-execs itself in bpfman-ns mode
+//  4. Child's C constructor calls setns() before Go runtime starts
+//  5. Child verifies it holds the writer lock
+//  6. Child opens the target binary (visible only in the target namespace)
+//  7. Child sends the target-binary fd back to parent via socket (SCM_RIGHTS)
+//  8. Parent, in its own namespace, attaches and pins the uprobe via
+//     /proc/self/fd of the received fd -- the same path as a local uprobe,
+//     where the kernel exposes a pinnable perf-event bpf_link
 func (k *kernelAdapter) attachUprobeViaHelper(scope lock.WriterScope, progPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath string, containerPid int32) (kernel.LinkID, *kernel.Link, error) {
 	// Find the bpfman binary (which also serves as bpfman-ns)
 	bpfmanPath, err := os.Executable()
@@ -167,30 +169,7 @@ func (k *kernelAdapter) attachUprobeViaHelper(scope lock.WriterScope, progPinPat
 		return 0, nil, fmt.Errorf("get executable path: %w", err)
 	}
 
-	// Load pinned program - we'll pass the fd to the child
-	prog, err := ebpf.LoadPinnedProgram(progPinPath, nil)
-	if err != nil {
-		k.logger.Error("failed to load pinned program", "path", progPinPath, "error", err)
-		return 0, nil, fmt.Errorf("load pinned program %s: %w", progPinPath, err)
-	}
-	defer prog.Close()
-
-	progInfo, _ := prog.Info()
-	progID, _ := progInfo.ID()
-
-	// Dup the program fd so we can pass it to child via ExtraFiles.
-	// This avoids ownership issues between ebpf.Program and os.File.
-	progFd := prog.FD()
-	dupFd, err := syscall.Dup(progFd)
-	if err != nil {
-		k.logger.Error("failed to dup program fd", "fd", progFd, "error", err)
-		return 0, nil, fmt.Errorf("dup program fd: %w", err)
-	}
-	progFile := os.NewFile(uintptr(dupFd), "bpf-program")
-	defer progFile.Close()
-
-	// Create socketpair for receiving link fd from child.
-	// Child will send the perf_event fd via SCM_RIGHTS.
+	// Create socketpair for receiving the target-binary fd from the child.
 	parentSocket, childSocket, err := ns.Socketpair()
 	if err != nil {
 		k.logger.Error("failed to create socketpair", "error", err)
@@ -226,22 +205,11 @@ func (k *kernelAdapter) attachUprobeViaHelper(scope lock.WriterScope, progPinPat
 		"offset", offset,
 		"retprobe", retprobe,
 		"prog_pin_path", progPinPath,
-		"prog_id", progID,
 		"link_pin_path", linkPinPath)
 
-	// Build arguments for bpfman-ns uprobe command.
-	// Program fd passed via ExtraFiles[0] (fd 3 in child).
-	// Socket fd passed via ExtraFiles[1] (fd 4 in child) for returning link fd.
-	// Note: bpfman-ns mode is set via BPFMAN_MODE env var, not argv.
-	args := []string{
-		"uprobe",
-		target,
-		"--fn-name", fnName,
-		"--offset", fmt.Sprintf("%d", offset),
-	}
-	if retprobe {
-		args = append(args, "--retprobe")
-	}
+	// The child needs only the target path; the parent owns the attach.
+	// bpfman-ns mode is set via the BPFMAN_MODE env var, not argv.
+	args := []string{"uprobe", target}
 
 	// Determine log level for child process based on our logger's level
 	childLogLevel := ns.LogLevelInfo
@@ -258,13 +226,13 @@ func (k *kernelAdapter) attachUprobeViaHelper(scope lock.WriterScope, progPinPat
 	}
 	defer lockFile.Close() // Close parent's dup after child starts
 
-	// Use the shared bpfman-ns transport to pass program, socket, and lock fds.
+	// Use the shared bpfman-ns transport to pass the socket and lock fds.
 	cmd := ns.CommandWithOptions(containerPid, bpfmanPath, ns.CommandOptions{
 		Logger:           k.logger,
 		LogLevel:         childLogLevel,
 		Mode:             ns.ModeBPFManNS,
 		NsPath:           nsPath,
-		ExtraFiles:       []*os.File{progFile, childSocket}, // fd 3, fd 4 in child
+		ExtraFiles:       []*os.File{childSocket}, // fd 3 in child
 		WriterLockFD:     lockFile,
 		WriterLockEnvVar: lock.WriterLockFDEnvVar,
 	}, args...)
@@ -272,9 +240,7 @@ func (k *kernelAdapter) attachUprobeViaHelper(scope lock.WriterScope, progPinPat
 	k.logger.Debug("executing bpfman-ns helper subprocess",
 		"executable", bpfmanPath,
 		"args", args,
-		"child_log_level", childLogLevel,
-		"program_fd_passed", true,
-		"socket_fd_passed", true)
+		"child_log_level", childLogLevel)
 
 	var helperStderr bytes.Buffer
 	cmd.Stderr = io.MultiWriter(os.Stderr, &helperStderr)
@@ -290,19 +256,20 @@ func (k *kernelAdapter) attachUprobeViaHelper(scope lock.WriterScope, progPinPat
 	// Close child's socket end in parent - child has its own copy via ExtraFiles
 	childSocket.Close()
 
-	// Receive link fd from child via socket
-	k.logger.Debug("waiting for link fd from child")
-	linkFd, name, err := ns.RecvFd(parentSocket)
+	// Receive the target-binary fd from the child via socket.
+	k.logger.Debug("waiting for target fd from child")
+	binaryFd, name, err := ns.RecvFd(parentSocket)
 	if err != nil {
-		k.logger.Error("failed to receive link fd from child",
+		k.logger.Error("failed to receive target fd from child",
 			"error", err,
 			"container_pid", containerPid)
 		cmd.Process.Kill()
 		waitErr := cmd.Wait()
 		return 0, nil, helperReceiveError(fnName, target, containerPid, err, waitErr, helperStderr.String())
 	}
-	k.logger.Debug("received link fd from child",
-		"link_fd", linkFd,
+	defer syscall.Close(binaryFd)
+	k.logger.Debug("received target fd from child",
+		"target_fd", binaryFd,
 		"name", name)
 
 	// Wait for child to exit - exit 0 signals success
@@ -316,45 +283,25 @@ func (k *kernelAdapter) attachUprobeViaHelper(scope lock.WriterScope, progPinPat
 				"fn_name", fnName,
 				"helper_stderr", summariseHelperStderr(helperStderr.String()),
 				"ns_path", nsPath)
-			syscall.Close(linkFd) // Clean up received fd
 			return 0, nil, helperExitError(fnName, target, containerPid, exitErr.ExitCode(), helperStderr.String())
 		}
 		k.logger.Error("failed to wait for bpfman-ns helper",
 			"error", err,
 			"container_pid", containerPid)
-		syscall.Close(linkFd)
 		return 0, nil, fmt.Errorf("wait for bpfman-ns: %w", err)
 	}
 
-	lnk, err := link.NewFromFD(linkFd)
-	if err != nil {
-		return 0, nil, fmt.Errorf("wrap container uprobe BPF link fd: %w", err)
-	}
-	if err := pinWithRetry(linkPinPath, lnk.Pin); err != nil {
-		lnk.Close()
-		return 0, nil, fmt.Errorf("pin container uprobe link to %s: %w", linkPinPath, err)
-	}
-	info, err := lnk.Info()
-	if err != nil {
-		if unpinErr := lnk.Unpin(); unpinErr != nil {
-			k.logger.Warn("failed to unpin container uprobe link after info error",
-				"pin_path", linkPinPath,
-				"error", unpinErr)
-		}
-		lnk.Close()
-		return 0, nil, fmt.Errorf("get container uprobe link info: %w", err)
-	}
-
-	linkID := kernel.LinkID(info.ID)
-	k.trackLink(linkPinPath, lnk)
-
-	k.logger.Info("container uprobe link pinned",
-		"pin_path", linkPinPath,
-		"kernel_link_id", uint32(linkID),
-		"link_type", info.Type,
-		"program_id", uint32(info.Program))
-
-	return linkID, ToKernelLink(info), nil
+	// Attach and pin in bpfman's own namespace. The kernel resolves
+	// /proc/self/fd of the inherited fd back to the target binary's inode,
+	// so this is the same code path as a local uprobe -- and the perf-event
+	// bpf_link is created here, where Cilium's feature probe behaves.
+	procTarget := fmt.Sprintf("/proc/self/fd/%d", binaryFd)
+	k.logger.Info("attaching container uprobe in host namespace",
+		"container_pid", containerPid,
+		"proc_target", procTarget,
+		"fn_name", fnName,
+		"link_pin_path", linkPinPath)
+	return k.doAttachUprobeLocal(progPinPath, procTarget, fnName, offset, retprobe, linkPinPath)
 }
 
 func helperExitError(fnName, target string, containerPid int32, exitCode int, stderr string) error {
