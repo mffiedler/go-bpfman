@@ -47,12 +47,6 @@ type ProgPin struct {
 	ProgramID kernel.ProgramID `json:"program_id"`
 }
 
-// LinkDir represents a link directory: {fs}/links/{program_id}
-type LinkDir struct {
-	Path      string           `json:"path"`
-	ProgramID kernel.ProgramID `json:"program_id"`
-}
-
 // MapDir represents a map directory: {fs}/maps/{program_id}
 type MapDir struct {
 	Path      string           `json:"path"`
@@ -90,7 +84,6 @@ type SharedMapPin struct {
 // Use Scanner.Scan() to create, or construct directly in tests.
 type FSState struct {
 	ProgPins           []ProgPin           `json:"prog_pins"`
-	LinkDirs           []LinkDir           `json:"link_dirs"`
 	MapDirs            []MapDir            `json:"map_dirs"`
 	DispatcherDirs     []DispatcherDir     `json:"dispatcher_dirs"`
 	DispatcherLinkPins []DispatcherLinkPin `json:"dispatcher_link_pins"`
@@ -128,11 +121,6 @@ func (s *Scanner) tcEgressDir() string {
 // mapsDir returns the maps directory.
 func (s *Scanner) mapsDir() string {
 	return s.b.mapsDir()
-}
-
-// linksDir returns the links directory.
-func (s *Scanner) linksDir() string {
-	return s.b.linksDir()
 }
 
 // ProgPins returns an iterator over program pins in {fs}/prog_*.
@@ -173,49 +161,6 @@ func (s *Scanner) ProgPins(ctx context.Context) iter.Seq2[ProgPin, error] {
 				ProgramID: kernel.ProgramID(id),
 			}
 			if !yield(pin, nil) {
-				return
-			}
-		}
-	}
-}
-
-// LinkDirs returns an iterator over link directories in {fs}/links/{program_id}.
-// Errors are yielded only for failures that prevent enumeration.
-// Malformed entries are skipped and reported via OnMalformed.
-func (s *Scanner) LinkDirs(ctx context.Context) iter.Seq2[LinkDir, error] {
-	return func(yield func(LinkDir, error) bool) {
-		linksDir := s.linksDir()
-		entries, err := os.ReadDir(linksDir)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return // directory doesn't exist: no link dirs
-			}
-			yield(LinkDir{}, fmt.Errorf("read dir %s: %w", linksDir, err))
-			return
-		}
-
-		for _, entry := range entries {
-			if ctx.Err() != nil {
-				yield(LinkDir{}, ctx.Err())
-				return
-			}
-
-			if !entry.IsDir() {
-				continue
-			}
-
-			name := entry.Name()
-			id, err := strconv.ParseUint(name, 10, 32)
-			if err != nil {
-				s.reportMalformed(filepath.Join(linksDir, name), fmt.Errorf("parse program ID: %w", err))
-				continue
-			}
-
-			dir := LinkDir{
-				Path:      filepath.Join(linksDir, name),
-				ProgramID: kernel.ProgramID(id),
-			}
-			if !yield(dir, nil) {
 				return
 			}
 		}
@@ -517,13 +462,6 @@ func (s *Scanner) Scan(ctx context.Context) (*FSState, error) {
 			return nil, fmt.Errorf("scan prog pins: %w", err)
 		}
 		state.ProgPins = append(state.ProgPins, pin)
-	}
-
-	for dir, err := range s.LinkDirs(ctx) {
-		if err != nil {
-			return nil, fmt.Errorf("scan link dirs: %w", err)
-		}
-		state.LinkDirs = append(state.LinkDirs, dir)
 	}
 
 	for dir, err := range s.MapDirs(ctx) {

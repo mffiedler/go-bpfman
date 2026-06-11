@@ -46,7 +46,6 @@ let pid = $prog.record.program_id
 let runtime_base = $prog.record.handles.pin_path |> jq 'split("/fs/")[0]'
 let expect_prog_pin = "${runtime_base}/fs/prog_${pid}"
 let expect_map_dir = "${runtime_base}/fs/maps/${pid}"
-let expect_link_dir = "${runtime_base}/fs/links/${pid}"
 let expect_bytecode = "${runtime_base}/programs/${pid}/bytecode.o"
 # Kernel-reported map_ids list cross-checked against bpfman's
 # observed status.maps[].id set.
@@ -111,7 +110,6 @@ assert $prog matches exhaustive {
         stats:    null
         prog_pin: $expect_prog_pin
         map_dir:  $expect_map_dir
-        link_dir: $expect_link_dir
         bytecode: $expect_bytecode
         links:    empty
         maps:     not-empty
@@ -216,7 +214,6 @@ assert $got matches exhaustive {
         }
         prog_pin: $expect_prog_pin
         map_dir:  $expect_map_dir
-        link_dir: $expect_link_dir
         bytecode: $expect_bytecode
         links:    empty
         maps:     not-empty

@@ -67,13 +67,6 @@ func (b BPFFS) RemoveProgPin(p bpfman.ProgPinPath) error {
 	return b.removePinFile(path)
 }
 
-// RemoveLinkDir removes a link directory of the form:
-//
-//	{bpffs}/links/{program_id}
-func (b BPFFS) RemoveLinkDir(p bpfman.LinkDir) error {
-	return b.removeNumericChildDir(b.Links(), p.String(), "link dir")
-}
-
 // RemoveMapDir removes a map directory of the form:
 //
 //	{bpffs}/maps/{program_id}

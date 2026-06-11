@@ -217,7 +217,6 @@ func formatProgramTree(prog bpfman.Program) string {
 			b.WriteString("│  └─ Paths\n")
 			fmt.Fprintf(&b, "│     ├─ prog:     %s\n", prog.Status.ProgPin)
 			fmt.Fprintf(&b, "│     ├─ maps:     %s\n", prog.Status.MapDir)
-			fmt.Fprintf(&b, "│     ├─ links:    %s\n", prog.Status.LinkDir)
 			fmt.Fprintf(&b, "│     └─ bytecode: %s\n", prog.Status.Bytecode)
 		}
 	}
@@ -285,9 +284,6 @@ func formatProgramTable(prog bpfman.Program) string {
 			statusFields = append(statusFields, fmt.Sprintf("    Bytecode:\t%s", prog.Status.Bytecode))
 		}
 		statusFields = append(statusFields, fmt.Sprintf("    Instructions:\t%d", kp.VerifiedInstructions))
-		if prog.Status.ProgPin != "" {
-			statusFields = append(statusFields, fmt.Sprintf("    Link Dir:\t%s", prog.Status.LinkDir))
-		}
 		if len(prog.Status.Links) > 0 {
 			statusFields = append(statusFields, "    Links:\t ")
 			for _, l := range prog.Status.Links {
@@ -778,9 +774,6 @@ func formatLoadedProgramsTable(programs []bpfman.Program) string {
 				statusFields = append(statusFields, fmt.Sprintf("    Bytecode:\t%s", prog.Status.Bytecode))
 			}
 			statusFields = append(statusFields, fmt.Sprintf("    Instructions:\t%d", kp.VerifiedInstructions))
-			if prog.Status.ProgPin != "" {
-				statusFields = append(statusFields, fmt.Sprintf("    Link Dir:\t%s", prog.Status.LinkDir))
-			}
 			if len(prog.Status.Links) > 0 {
 				statusFields = append(statusFields, "    Links:\t ")
 				for _, l := range prog.Status.Links {

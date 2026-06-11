@@ -367,9 +367,6 @@ func (m *Manager) executeReapDeadProgramRecord(ctx context.Context, id kernel.Pr
 	// shared-map pin references and the bpffs/bytecode residue before
 	// the row (and the shared_map_pins reference data it carries) is
 	// dropped. Each step is best-effort.
-	if err := m.removeProgramLinksDir(m.rt.BPFFS().LinkPinDir(id)); err != nil {
-		m.logger.WarnContext(ctx, "reap: remove links dir", "program_id", id, "error", err)
-	}
 	if err := m.removeProgramMapsPins(ctx, m.rt.BPFFS().MapPinDir(id)); err != nil {
 		m.logger.WarnContext(ctx, "reap: remove map pins", "program_id", id, "error", err)
 	}
@@ -538,7 +535,6 @@ func (m *Manager) loadBody(ctx context.Context, specs []bpfman.LoadSpec, opts Lo
 				Kernel:   lo.Program,
 				ProgPin:  bpffs.ProgPinPath(programID),
 				MapDir:   bpffs.MapPinDir(mapOwner),
-				LinkDir:  bpffs.LinkPinDir(programID),
 				Bytecode: rt.ProgramBytecodePath(programID),
 				Maps:     bpfman.ToMapStatus(kernelMaps),
 			},

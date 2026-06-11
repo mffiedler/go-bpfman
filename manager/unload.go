@@ -57,7 +57,6 @@ import (
 func (m *Manager) unload(ctx context.Context, programID kernel.ProgramID, programName string, links []bpfman.LinkRecord, persisted bool) error {
 	progPinPath := m.rt.BPFFS().ProgPinPath(programID)
 	mapsDir := m.rt.BPFFS().MapPinDir(programID)
-	linksDir := m.rt.BPFFS().LinkPinDir(programID)
 
 	m.logger.DebugContext(ctx, "unloading program",
 		"program_id", programID,
@@ -81,12 +80,6 @@ func (m *Manager) unload(ctx context.Context, programID kernel.ProgramID, progra
 	// transient bpffs or store-cleanup failure cannot turn a
 	// completed unload into a false-negative on the caller's retry.
 	var errs []error
-	if err := m.removeProgramLinksDir(linksDir); err != nil {
-		m.logger.WarnContext(ctx, "failed to remove orphaned links directory",
-			"program_id", programID,
-			"path", linksDir,
-			"error", err)
-	}
 	if err := m.removeProgramMapsPins(ctx, mapsDir); err != nil {
 		m.logger.WarnContext(ctx, "failed to remove orphaned map pins",
 			"program_id", programID,
@@ -170,14 +163,6 @@ func (m *Manager) detachAllLinks(ctx context.Context, links []bpfman.LinkRecord)
 // second half of the kernel-side point of no return.
 func (m *Manager) unloadKernelProgram(ctx context.Context, progPinPath bpfman.ProgPinPath) error {
 	return m.kernel.Unload(ctx, progPinPath.String())
-}
-
-// removeProgramLinksDir removes the per-program links pin directory.
-// The directory is empty by the time this runs because detachAllLinks
-// has unpinned each link; removing the directory is filesystem
-// hygiene that lets bpffs reflect the program's absence.
-func (m *Manager) removeProgramLinksDir(linksDir bpfman.LinkDir) error {
-	return m.rt.BPFFS().RemoveLinkDir(linksDir)
 }
 
 // removeProgramMapsPins removes the program's map pins. After the

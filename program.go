@@ -156,7 +156,7 @@ type ProgramRecord struct {
 
 // ProgramStatus is observed state (kernel + filesystem-derived paths).
 //
-// Path fields (ProgPin, MapDir, LinkDir, Bytecode) carry the
+// Path fields (ProgPin, MapDir, Bytecode) carry the
 // canonical filesystem locations bpfman would write to or read
 // from for this program. They are derived from the program ID and
 // runtime layout, not stat'd: a populated path is a claim about
@@ -173,7 +173,6 @@ type ProgramStatus struct {
 	Stats    *kernel.ProgramStats `json:"stats"`
 	ProgPin  ProgPinPath          `json:"prog_pin"`
 	MapDir   MapDir               `json:"map_dir"`
-	LinkDir  LinkDir              `json:"link_dir"`
 	Bytecode string               `json:"bytecode"`
 	Links    []Link               `json:"links"` // [] when none
 	Maps     []MapStatus          `json:"maps"`  // [] when none

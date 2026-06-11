@@ -131,9 +131,6 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 	case action.RemoveProgPin:
 		return nil, e.bpffs.RemoveProgPin(a.Path)
 
-	case action.RemoveLinkDir:
-		return nil, e.bpffs.RemoveLinkDir(a.Path)
-
 	case action.RemoveMapDir:
 		return nil, e.bpffs.RemoveMapDir(a.Path)
 

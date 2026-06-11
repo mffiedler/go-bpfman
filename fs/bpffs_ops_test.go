@@ -112,38 +112,6 @@ func TestBPFFS_RemoveProgPin_ValidatesNumericSuffix(t *testing.T) {
 	}
 }
 
-func TestBPFFS_RemoveLinkDir_ValidatesNumericName(t *testing.T) {
-	t.Parallel()
-
-	root, err := fs.New(t.TempDir())
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-
-	b := root.BPFFS()
-	if err := os.MkdirAll(b.Links(), 0755); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
-	}
-
-	// Valid numeric name.
-	ok := filepath.Join(b.Links(), "456")
-	if err := os.MkdirAll(ok, 0755); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
-	}
-	if err := b.RemoveLinkDir(bpfman.LinkDir(ok)); err != nil {
-		t.Errorf("RemoveLinkDir(%s) = %v; want nil", ok, err)
-	}
-
-	// Non-numeric name - should fail.
-	bad := filepath.Join(b.Links(), "notanumber")
-	if err := os.MkdirAll(bad, 0755); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
-	}
-	if err := b.RemoveLinkDir(bpfman.LinkDir(bad)); err == nil {
-		t.Errorf("RemoveLinkDir(%s) = nil; want error", bad)
-	}
-}
-
 func TestBPFFS_RemoveDispatcherLinkPin_ValidatesPattern(t *testing.T) {
 	t.Parallel()
 

@@ -17,12 +17,10 @@ import (
 // in scanLinkPins and used to set FSPinPath on every LinkRow
 // the snapshot returns.
 //
-// Snapshot needs this because the per-program LinkDirs scan in
-// scanner.go only enters {fs}/links/<program_id>/; extension
-// link pins under {fs}/{type}/dispatcher_*/link_N and TCX link
-// pins under {fs}/tcx-{direction}/ never appear in that scan,
-// so a kernel-only link backed by one of those pins would
-// otherwise look unpinned in the snapshot.
+// The walk covers the whole subtree because link pins live in
+// several places: {fs}/links/{link_id} for standalone links,
+// {fs}/{type}/dispatcher_*/link_N for extension links, and
+// {fs}/tcx-{direction}/ for TCX links.
 type linkPinIndex map[kernel.LinkID]string
 
 // scanLinkPins walks scanner.MountPoint() recursively and

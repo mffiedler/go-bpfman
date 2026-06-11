@@ -82,13 +82,6 @@ func FormatShowPaths(prog bpfman.Program) string {
 		fmt.Fprintf(w, "%s\t%s\n", m.PinPath, presenceStatus(m.Present))
 	}
 
-	// Link directory
-	if len(prog.Status.Links) > 0 {
-		fmt.Fprintf(w, "%s\t(%d pin)\n", prog.Status.LinkDir, len(prog.Status.Links))
-	} else {
-		fmt.Fprintln(w, prog.Status.LinkDir)
-	}
-
 	// Individual link pins
 	for _, l := range prog.Status.Links {
 		if l.Record.PinPath != nil {

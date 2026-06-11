@@ -210,7 +210,6 @@ func (m *Manager) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.P
 			Stats:    stats,
 			ProgPin:  bpffs.ProgPinPath(programID),
 			MapDir:   bpffs.MapPinDir(mapOwner),
-			LinkDir:  bpffs.LinkPinDir(programID),
 			Bytecode: bc.ProgramBytecodePath(programID),
 			Links:    links,
 			Maps:     mapStatuses,

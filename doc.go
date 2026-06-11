@@ -16,7 +16,6 @@
 //	    ├── Kernel      - Live kernel program info (nil if not present)
 //	    ├── ProgPin     - Program pin path (derived from program ID)
 //	    ├── MapDir      - Map pin directory (derived)
-//	    ├── LinkDir     - Link pin directory (derived)
 //	    ├── Bytecode    - Bytecode file path (derived)
 //	    ├── Links       - Attached links with their own record/status
 //	    └── Maps        - Associated kernel maps with pin correlation

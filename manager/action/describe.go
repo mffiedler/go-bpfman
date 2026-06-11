@@ -68,8 +68,6 @@ func Describe(a Action) string {
 	// GC filesystem cleanup
 	case RemoveProgPin:
 		return fmt.Sprintf("remove program pin %s", a.Path)
-	case RemoveLinkDir:
-		return fmt.Sprintf("remove link directory %s", a.Path)
 	case RemoveMapDir:
 		return fmt.Sprintf("remove map directory %s", a.Path)
 	case RemoveDispatcherProgPin:

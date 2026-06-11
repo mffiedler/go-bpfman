@@ -250,13 +250,6 @@ type RemoveProgPin struct {
 
 func (RemoveProgPin) isAction() {}
 
-// RemoveLinkDir removes a link directory via BPFFS.RemoveLinkDir.
-type RemoveLinkDir struct {
-	Path bpfman.LinkDir
-}
-
-func (RemoveLinkDir) isAction() {}
-
 // RemoveMapDir removes a map directory via BPFFS.RemoveMapDir.
 type RemoveMapDir struct {
 	Path bpfman.MapDir

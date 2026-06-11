@@ -166,10 +166,10 @@ type LinkRow struct {
 
 	// FSPinPath is the bpf fs pin file backing this link, when one
 	// is found. Populated from a walk of bpfman's bpf fs subtree
-	// that loads each file as a bpf_link to read its ID, so
-	// kernel-only links pinned under dispatcher or TCX subtrees
-	// (which the per-program LinkDirs scan does not enter) still
-	// surface their pin here. Empty when no pin was located.
+	// that loads each file as a bpf_link to read its ID, so links
+	// pinned under dispatcher or TCX subtrees surface their pin
+	// here alongside links/{link_id} pins. Empty when no pin was
+	// located.
 	FSPinPath string `json:"fs_pin_path,omitempty"`
 
 	Presence Presence `json:"presence"`
@@ -352,7 +352,6 @@ func Snapshot(
 
 	// FS indexes
 	fsProgPins := make(map[kernel.ProgramID]string)  // programID -> path
-	fsLinkDirs := make(map[kernel.ProgramID]string)  // programID -> path
 	fsMapDirs := make(map[kernel.ProgramID]string)   // programID -> path
 	fsDispDirs := make(map[string]*fs.DispatcherDir) // "type/nsid/ifindex" -> dir
 	fsDispLinks := make(map[string]string)           // "type/nsid/ifindex" -> path
@@ -373,14 +372,6 @@ func Snapshot(
 			continue
 		}
 		fsProgPins[pin.ProgramID] = pin.Path
-	}
-
-	for dir, err := range scanner.LinkDirs(ctx) {
-		if err != nil {
-			obs.Meta.Errors = append(obs.Meta.Errors, err)
-			continue
-		}
-		fsLinkDirs[dir.ProgramID] = dir.Path
 	}
 
 	for dir, err := range scanner.MapDirs(ctx) {

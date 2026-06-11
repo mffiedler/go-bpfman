@@ -152,11 +152,6 @@ func TestDescribe(t *testing.T) {
 			contains: "remove program pin /run/bpfman/fs/prog_42",
 		},
 		{
-			name:     "RemoveLinkDir",
-			action:   RemoveLinkDir{Path: "/run/bpfman/fs/link_10"},
-			contains: "remove link directory /run/bpfman/fs/link_10",
-		},
-		{
 			name:     "RemoveMapDir",
 			action:   RemoveMapDir{Path: "/run/bpfman/fs/maps_42"},
 			contains: "remove map directory /run/bpfman/fs/maps_42",
@@ -240,7 +235,6 @@ func TestDescribe_Exhaustive(t *testing.T) {
 		PublishBytecode{},
 		RemoveProgramDir{},
 		RemoveProgPin{},
-		RemoveLinkDir{},
 		RemoveMapDir{},
 		RemoveDispatcherProgPin{},
 		RemoveDispatcherRevDir{},
