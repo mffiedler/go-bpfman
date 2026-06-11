@@ -22,9 +22,8 @@ func (m *Manager) attachTracepoint(ctx context.Context, spec bpfman.TracepointAt
 				return attachPlan{}, err
 			}
 			return attachPlan{
-				target:   target,
-				linkName: fmt.Sprintf("%s_%s", group, name),
-				details:  bpfman.TracepointDetails{Group: group, Name: name},
+				target:  target,
+				details: bpfman.TracepointDetails{Group: group, Name: name},
 				attachAction: func(linkPinPath bpfman.LinkPath) action.Action {
 					return action.AttachTracepoint{
 						ProgPinPath: progPinPath,
@@ -73,14 +72,9 @@ func (m *Manager) attachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 		defaultTarget: fnName,
 		prepare: func(prog bpfman.ProgramRecord, progPinPath bpfman.ProgPinPath) (attachPlan, error) {
 			retprobe := prog.Load.ProgramType() == bpfman.ProgramTypeKretprobe
-			linkName := fnName
-			if retprobe {
-				linkName = "ret_" + linkName
-			}
 			return attachPlan{
-				target:   fnName,
-				linkName: linkName,
-				details:  bpfman.KprobeDetails{FnName: fnName, Offset: offset, Retprobe: retprobe},
+				target:  fnName,
+				details: bpfman.KprobeDetails{FnName: fnName, Offset: offset, Retprobe: retprobe},
 				attachAction: func(linkPinPath bpfman.LinkPath) action.Action {
 					return action.AttachKprobe{
 						ProgPinPath: progPinPath,
@@ -114,10 +108,6 @@ func (m *Manager) attachUprobe(ctx context.Context, scope lock.WriterScope, spec
 			if containerPid > 0 && scope == nil {
 				return attachPlan{}, fmt.Errorf("container uprobe requires lock scope (containerPid=%d)", containerPid)
 			}
-			linkName := fnName
-			if retprobe {
-				linkName = "ret_" + linkName
-			}
 			var attachFn func(linkPinPath bpfman.LinkPath) action.Action
 			if containerPid > 0 {
 				attachFn = func(linkPinPath bpfman.LinkPath) action.Action {
@@ -146,7 +136,6 @@ func (m *Manager) attachUprobe(ctx context.Context, scope lock.WriterScope, spec
 			}
 			return attachPlan{
 				target:       binaryTarget + ":" + fnName,
-				linkName:     linkName,
 				details:      bpfman.UprobeDetails{Target: binaryTarget, FnName: fnName, Offset: offset, Retprobe: retprobe, ContainerPid: containerPid},
 				attachAction: attachFn,
 			}, nil
@@ -166,9 +155,8 @@ func (m *Manager) attachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 				return attachPlan{}, fmt.Errorf("program %d has no attach function (fentry requires attach function at load time)", spec.ProgramID())
 			}
 			return attachPlan{
-				target:   fnName,
-				linkName: "fentry_" + fnName,
-				details:  bpfman.FentryDetails{FnName: fnName},
+				target:  fnName,
+				details: bpfman.FentryDetails{FnName: fnName},
 				attachAction: func(linkPinPath bpfman.LinkPath) action.Action {
 					return action.AttachFentry{
 						ProgPinPath: progPinPath,
@@ -193,9 +181,8 @@ func (m *Manager) attachFexit(ctx context.Context, spec bpfman.FexitAttachSpec) 
 				return attachPlan{}, fmt.Errorf("program %d has no attach function (fexit requires attach function at load time)", spec.ProgramID())
 			}
 			return attachPlan{
-				target:   fnName,
-				linkName: "fexit_" + fnName,
-				details:  bpfman.FexitDetails{FnName: fnName},
+				target:  fnName,
+				details: bpfman.FexitDetails{FnName: fnName},
 				attachAction: func(linkPinPath bpfman.LinkPath) action.Action {
 					return action.AttachFexit{
 						ProgPinPath: progPinPath,

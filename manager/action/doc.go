@@ -11,8 +11,8 @@
 // filesystem.
 //
 //   - Store:      CheckProgramNotInStore, SaveProgram, DeleteProgram,
-//     GetProgramFromStore, CreateLink, DeleteLink, SaveDispatcher,
-//     DeleteDispatcher
+//     GetProgramFromStore, CreateLink, CreatePendingLink,
+//     DeleteLink, FinaliseLink, SaveDispatcher, DeleteDispatcher
 //   - Kernel:     LoadProgram, UnloadProgram, DetachLink, RemovePin,
 //     DetachTCFilter, AttachTracepoint, AttachKprobe, AttachTCX,
 //     AttachUprobeLocal, AttachUprobeContainer, AttachFentry,

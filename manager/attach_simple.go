@@ -12,25 +12,17 @@ import (
 
 // Binding keys for simpleAttach plan nodes.
 var (
-	preparedKey  = operation.NewKey[preparedAttach]("prepared")
-	attachOutKey = operation.NewKey[bpfman.AttachOutput]("kernel-attach")
-	linkKey      = operation.NewKey[bpfman.Link]("link")
+	preparedKey    = operation.NewKey[attachPlan]("prepared")
+	pendingLinkKey = operation.NewKey[bpfman.LinkRecord]("pending-link")
+	attachOutKey   = operation.NewKey[bpfman.AttachOutput]("kernel-attach")
+	linkKey        = operation.NewKey[bpfman.Link]("link")
 )
-
-// preparedAttach bundles the output of getProgram + prepare for use
-// by subsequent plan nodes via bindings.
-type preparedAttach struct {
-	plan        attachPlan
-	linkPinPath bpfman.LinkPath
-}
 
 // attachPlan captures the variable parts of a simple attach operation.
 // Returned by the prepare closure after inspecting the program record.
 type attachPlan struct {
 	// target is the recording target (e.g., "sched/sched_switch").
 	target string
-	// linkName determines the bpffs pin path for the link.
-	linkName string
 	// details is the sealed LinkDetails value for the link record.
 	details bpfman.LinkDetails
 	// attachAction constructs the kernel attach action for the given link pin path.
@@ -72,8 +64,8 @@ func (m *Manager) simpleAttach(ctx context.Context, p attachParams) (bpfman.Link
 	m.logger.InfoContext(ctx, "attached",
 		"link_id", link.Record.ID,
 		"program_id", p.programID,
-		"target", pa.plan.target,
-		"pin_path", pa.linkPinPath)
+		"target", pa.target,
+		"pin_path", link.Record.PinPath)
 
 	return link, nil
 }
@@ -81,47 +73,91 @@ func (m *Manager) simpleAttach(ctx context.Context, p attachParams) (bpfman.Link
 // simpleAttachPlan builds the operation plan for a simple attach.
 //
 // Nodes:
-//  1. Produce preparedKey -- fetch program record, run prepare,
-//     compute link pin path.
-//  2. Produce attachOutKey -- kernel attach via action, with undo
-//     that detaches.
-//  3. Produce linkKey -- construct link record, save to store.
+//  1. Produce preparedKey -- fetch program record, run prepare.
+//  2. Produce pendingLinkKey -- create the link record first,
+//     allocating the bpfman link ID and recording the pin path
+//     links/{link_id} in the same transaction; undo deletes the
+//     record. The pin name is the numeric link ID because bpffs
+//     rejects dots in path components and symbol-derived names
+//     contain them. Recording the pin path before the kernel attach
+//     means a crash at any point leaves a row whose pin path
+//     cleanup can detach -- never a pinned link the store does not
+//     name.
+//  3. Produce attachOutKey -- kernel attach via action, pinning at
+//     the recorded path, with undo that detaches.
+//  4. Produce linkKey -- finalise the record with the captured
+//     kernel link ID.
 func (m *Manager) simpleAttachPlan(p attachParams) operation.Plan {
 	return operation.Build(
 		operation.Produce(preparedKey, p.defaultTarget,
-			func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) (preparedAttach, error) {
+			func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) (attachPlan, error) {
 				prog, err := action.Produce[bpfman.ProgramRecord](ctx, exec, action.GetProgramFromStore{ProgramID: p.programID})
 				if err != nil {
-					return preparedAttach{}, err
+					return attachPlan{}, err
 				}
 				progPinPath := m.rt.BPFFS().ProgPinPath(p.programID)
-				ap, err := p.prepare(prog, progPinPath)
-				if err != nil {
-					return preparedAttach{}, err
-				}
-				linkPinPath := m.rt.BPFFS().LinkPinPath(p.programID, ap.linkName)
-				return preparedAttach{plan: ap, linkPinPath: linkPinPath}, nil
+				return p.prepare(prog, progPinPath)
 			},
+		),
+
+		operation.Produce(pendingLinkKey, p.defaultTarget,
+			func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) (bpfman.LinkRecord, error) {
+				pa := operation.Get(b, preparedKey)
+				spec := bpfman.LinkSpec{
+					ProgramID: p.programID,
+					Kind:      pa.details.Kind(),
+					Details:   pa.details,
+				}
+				return action.Produce[bpfman.LinkRecord](ctx, exec, action.CreatePendingLink{
+					Spec:     spec,
+					LinksDir: m.rt.BPFFS().Links(),
+				})
+			},
+			operation.UndoFrom(func(b *operation.Bindings) []action.Action {
+				record := operation.Get(b, pendingLinkKey)
+				return []action.Action{
+					action.DeleteLink{LinkID: record.ID},
+				}
+			}),
 		),
 
 		operation.Produce(attachOutKey, p.defaultTarget,
 			func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) (bpfman.AttachOutput, error) {
 				pa := operation.Get(b, preparedKey)
-				return action.Produce[bpfman.AttachOutput](ctx, exec, pa.plan.attachAction(pa.linkPinPath))
+				record := operation.Get(b, pendingLinkKey)
+				return action.Produce[bpfman.AttachOutput](ctx, exec, pa.attachAction(*record.PinPath))
 			},
 			operation.UndoFrom(func(b *operation.Bindings) []action.Action {
-				pa := operation.Get(b, preparedKey)
+				record := operation.Get(b, pendingLinkKey)
 				return []action.Action{
-					action.DetachLink{PinPath: pa.linkPinPath},
+					action.DetachLink{PinPath: *record.PinPath},
 				}
 			}),
 		),
 
-		saveLinkNode(p.programID, p.defaultTarget, func(b *operation.Bindings) (bpfman.LinkDetails, bpfman.AttachOutput) {
-			pa := operation.Get(b, preparedKey)
-			out := operation.Get(b, attachOutKey)
-			return pa.plan.details, out
-		}),
+		operation.Produce(linkKey, p.defaultTarget,
+			func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) (bpfman.Link, error) {
+				pa := operation.Get(b, preparedKey)
+				record := operation.Get(b, pendingLinkKey)
+				out := operation.Get(b, attachOutKey)
+				finalised, err := action.Produce[bpfman.LinkRecord](ctx, exec, action.FinaliseLink{
+					LinkID:       record.ID,
+					KernelLinkID: out.KernelLinkID,
+				})
+				if err != nil {
+					return bpfman.Link{}, fmt.Errorf("save link metadata: %w", err)
+				}
+				finalised.Details = pa.details
+				return bpfman.Link{
+					Record: finalised,
+					Status: bpfman.LinkStatus{
+						Kernel:     out.KernelLink,
+						KernelSeen: out.KernelLink != nil,
+						PinPresent: out.PinPath != "",
+					},
+				}, nil
+			},
+		),
 	)
 }
 

@@ -47,6 +47,26 @@ type DeleteLink struct {
 
 func (DeleteLink) isAction() {}
 
+// CreatePendingLink saves a standalone link to the store before the
+// kernel attach happens. The store allocates the bpfman link ID and
+// records the pin path {LinksDir}/{link_id} in the same transaction,
+// so no observable state has a bpffs pin the store does not name.
+type CreatePendingLink struct {
+	Spec     bpfman.LinkSpec
+	LinksDir string
+}
+
+func (CreatePendingLink) isAction() {}
+
+// FinaliseLink records the captured kernel link ID on a pending link
+// row created by CreatePendingLink, completing the attach.
+type FinaliseLink struct {
+	LinkID       bpfman.LinkID
+	KernelLinkID *kernel.LinkID
+}
+
+func (FinaliseLink) isAction() {}
+
 // Kernel actions - operations on the BPF subsystem
 
 // GetProgramFromStore fetches a program record from the store by

@@ -117,6 +117,22 @@ func (s *sqliteStore) prepareLinkRegistryStatements(ctx context.Context) error {
 		return fmt.Errorf("prepare InsertLinkRegistry: %w", err)
 	}
 
+	const sqlSetLinkPinPath = `
+		UPDATE links SET pin_path = ?
+		WHERE id = ?
+		RETURNING id, kind, kernel_prog_id, kernel_link_id, pin_path, created_at`
+	if s.stmtSetLinkPinPath, err = s.db.PrepareContext(ctx, sqlSetLinkPinPath); err != nil {
+		return fmt.Errorf("prepare SetLinkPinPath: %w", err)
+	}
+
+	const sqlFinaliseLink = `
+		UPDATE links SET kernel_link_id = ?
+		WHERE id = ?
+		RETURNING id, kind, kernel_prog_id, kernel_link_id, pin_path, created_at`
+	if s.stmtFinaliseLink, err = s.db.PrepareContext(ctx, sqlFinaliseLink); err != nil {
+		return fmt.Errorf("prepare FinaliseLink: %w", err)
+	}
+
 	const sqlListTCXLinksByInterface = `
 		SELECT l.id, l.kernel_link_id, l.kernel_prog_id, td.priority
 		FROM links l

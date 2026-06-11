@@ -138,11 +138,14 @@ func (b BPFFS) LinkPinDir(programID kernel.ProgramID) bpfman.LinkDir {
 	return bpfman.LinkDir(filepath.Join(b.linksDir(), strconv.FormatUint(uint64(programID), 10)))
 }
 
-// LinkPinPath returns the pin path for a specific link.
-// Format: {base}/fs/links/{program_id}/{link_name}
-func (b BPFFS) LinkPinPath(programID kernel.ProgramID, linkName string) bpfman.LinkPath {
+// LinkPinPath returns the pin path for a specific link, named by its
+// bpfman link ID. The name is purely numeric because bpffs rejects
+// path components containing dots (reserved in bpf_lookup), and
+// symbol-derived names -- Go symbols in particular -- contain them.
+// Format: {base}/fs/links/{link_id}
+func (b BPFFS) LinkPinPath(linkID bpfman.LinkID) bpfman.LinkPath {
 	b.mustValid()
-	return bpfman.LinkPath(filepath.Join(b.linksDir(), strconv.FormatUint(uint64(programID), 10), linkName))
+	return bpfman.LinkPath(filepath.Join(b.linksDir(), strconv.FormatUint(uint64(linkID), 10)))
 }
 
 // MapPinPath returns the pin path for a specific map.

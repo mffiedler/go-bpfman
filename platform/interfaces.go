@@ -38,6 +38,22 @@ type LinkWriter interface {
 	// error if the link is dispatcher-backed (XDP/TC); those must
 	// be removed via DispatcherStore lifecycle operations.
 	DeleteLink(ctx context.Context, linkID bpfman.LinkID) error
+
+	// CreatePendingLink persists a standalone link record before
+	// the kernel attach happens, allocating a bpfman LinkID and --
+	// in the same transaction -- recording the link's pin path as
+	// {linksDir}/{link_id}. Writing the pin path at creation means
+	// no observable state has a bpffs pin that the store does not
+	// name: a crash between pin and finalise still leaves a row
+	// whose pin path cleanup can detach. The returned record
+	// carries the pin path; KernelLinkID is nil until
+	// FinaliseLink.
+	CreatePendingLink(ctx context.Context, spec bpfman.LinkSpec, linksDir string) (bpfman.LinkRecord, error)
+
+	// FinaliseLink records the captured kernel link ID on a
+	// pending link row created by CreatePendingLink. Returns the
+	// updated record without details.
+	FinaliseLink(ctx context.Context, linkID bpfman.LinkID, kernelLinkID *kernel.LinkID) (bpfman.LinkRecord, error)
 }
 
 // LinkReader reads link metadata from the store.

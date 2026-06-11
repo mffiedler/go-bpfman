@@ -29,15 +29,20 @@
 //
 // # Calling Conventions
 //
-// This store is a pure data access layer with no internal transaction
-// management. Individual methods execute against s.conn, which may be
-// either the underlying *sql.DB (autocommit mode) or a *sql.Tx
-// (transactional mode).
+// Individual methods execute against s.conn, which may be either the
+// underlying *sql.DB (autocommit mode) or a *sql.Tx (transactional
+// mode).
 //
-// For operations that require atomicity across multiple calls, use
-// RunInTransaction:
+// Store methods whose body spans multiple statements own their
+// atomicity: CreateLink (registry row plus detail row),
+// CreatePendingLink (CreateLink plus the pin-path update), and
+// ReplaceDispatcherSnapshot wrap their statements in a transaction
+// internally, so every caller gets the schema's atomicity guarantees
+// without knowing to ask for them.
 //
-//	err := store.RunInTransaction(ctx, func(txStore platform.Store) error {
+// For atomicity across multiple store calls, use RunInTransaction:
+//
+//	err := store.RunInTransaction(ctx, "example", func(txStore platform.Store) error {
 //	    if err := txStore.Save(ctx, id, prog); err != nil {
 //	        return err // triggers rollback
 //	    }
@@ -45,19 +50,17 @@
 //	    return err // commits if nil
 //	})
 //
+// A self-owned transaction entered from inside a RunInTransaction
+// callback flattens into the caller's transaction rather than
+// beginning a second one, so the two conventions compose.
+//
 // # Autocommit Behaviour
 //
 // When methods are called outside a transaction (directly on the
 // store), each SQL statement executes in its own implicit transaction
-// that commits immediately upon completion. This means:
-//
-//   - Single-statement methods (Get, Delete, List) are atomic by
-//     themselves.
-//   - Multi-statement methods (Save, CreateLink) are NOT atomic: if the
-//     second statement fails, the first statement's changes are
-//     already committed. For example, Save inserts the program, then
-//     deletes old metadata index entries, then inserts new ones. A
-//     failure partway through leaves partial state.
+// that commits immediately upon completion. Single-statement methods
+// (Get, Save, Delete, List) are therefore atomic by themselves, and
+// the multi-statement methods above provide their own transactions.
 //
 // # WAL Mode and Reader/Writer Implications
 //

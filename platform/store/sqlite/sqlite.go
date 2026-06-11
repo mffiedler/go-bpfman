@@ -150,6 +150,8 @@ type sqliteStore struct {
 	stmtListLinks          *sql.Stmt
 	stmtListLinksByProgram *sql.Stmt
 	stmtInsertLinkRegistry *sql.Stmt
+	stmtSetLinkPinPath     *sql.Stmt
+	stmtFinaliseLink       *sql.Stmt
 
 	// Prepared statements for TCX link queries
 	stmtListTCXLinksByInterface *sql.Stmt
@@ -387,6 +389,8 @@ func (s *sqliteStore) closeStatements() {
 		s.stmtListLinks,
 		s.stmtListLinksByProgram,
 		s.stmtInsertLinkRegistry,
+		s.stmtSetLinkPinPath,
+		s.stmtFinaliseLink,
 		s.stmtListTCXLinksByInterface,
 		s.stmtGetTracepointDetails,
 		s.stmtGetKprobeDetails,
@@ -590,6 +594,17 @@ func (s *sqliteStore) prepareStatements(ctx context.Context) error {
 // handles from the still-valid masters. The masters are never invalidated by
 // transaction lifecycle events.
 func (s *sqliteStore) RunInTransaction(ctx context.Context, name string, fn func(platform.Store) error) error {
+	return s.runInTx(ctx, name, func(tx *sqliteStore) error { return fn(tx) })
+}
+
+// runInTx is the package-internal transaction runner behind
+// RunInTransaction. Store methods that own their atomicity
+// (CreateLink, CreatePendingLink) call it directly: the concrete
+// callback type gives them transaction-bound access to unexported
+// helpers without downcasting the platform.Store value the public
+// interface hands to callbacks, which decorating wrappers are free
+// to replace.
+func (s *sqliteStore) runInTx(ctx context.Context, name string, fn func(*sqliteStore) error) error {
 	// Timing instrumentation mirrors lock.RunWithTiming's shape.
 	// wait_ms is how long BeginTx blocked waiting for sqlite's
 	// writer lock; with _txlock=immediate the IMMEDIATE acquire
@@ -607,6 +622,15 @@ func (s *sqliteStore) RunInTransaction(ctx context.Context, name string, fn func
 	// that succeeded part-way and rolled back -- every
 	// RunInTransaction site in this tree is (snapshot-based
 	// dispatcher rebuilds, idempotent inserts, deletes).
+	//
+	// Flatten nesting: when s is already a transaction-bound clone
+	// (self-wrapping store methods re-enter here), run fn directly
+	// inside the caller's transaction rather than beginning a
+	// second one on the shared *sql.DB.
+	if _, ok := s.conn.(*sql.Tx); ok {
+		return fn(s)
+	}
+
 	logger := s.logger.With("component", "store", "tx", name)
 	for attempt := 0; ; attempt++ {
 		err := s.runTransactionAttempt(ctx, logger, attempt, fn)
@@ -640,7 +664,7 @@ func (s *sqliteStore) RunInTransaction(ctx context.Context, name string, fn func
 	}
 }
 
-func (s *sqliteStore) runTransactionAttempt(ctx context.Context, logger *slog.Logger, attempt int, fn func(platform.Store) error) error {
+func (s *sqliteStore) runTransactionAttempt(ctx context.Context, logger *slog.Logger, attempt int, fn func(*sqliteStore) error) error {
 	start := time.Now()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -673,6 +697,8 @@ func (s *sqliteStore) runTransactionAttempt(ctx context.Context, logger *slog.Lo
 		stmtListLinks:               tx.StmtContext(ctx, s.stmtListLinks),
 		stmtListLinksByProgram:      tx.StmtContext(ctx, s.stmtListLinksByProgram),
 		stmtInsertLinkRegistry:      tx.StmtContext(ctx, s.stmtInsertLinkRegistry),
+		stmtSetLinkPinPath:          tx.StmtContext(ctx, s.stmtSetLinkPinPath),
+		stmtFinaliseLink:            tx.StmtContext(ctx, s.stmtFinaliseLink),
 		stmtListTCXLinksByInterface: tx.StmtContext(ctx, s.stmtListTCXLinksByInterface),
 		// Link detail get statements
 		stmtGetTracepointDetails: tx.StmtContext(ctx, s.stmtGetTracepointDetails),

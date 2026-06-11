@@ -72,6 +72,14 @@ func (s *stubStore) DeleteLink(ctx context.Context, linkID bpfman.LinkID) error 
 	panic("stubStore.DeleteLink not implemented")
 }
 
+func (s *stubStore) CreatePendingLink(ctx context.Context, spec bpfman.LinkSpec, linksDir string) (bpfman.LinkRecord, error) {
+	panic("stubStore.CreatePendingLink not implemented")
+}
+
+func (s *stubStore) FinaliseLink(ctx context.Context, linkID bpfman.LinkID, kernelLinkID *kernel.LinkID) (bpfman.LinkRecord, error) {
+	panic("stubStore.FinaliseLink not implemented")
+}
+
 // LinkReader
 func (s *stubStore) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkRecord, error) {
 	panic("stubStore.GetLink not implemented")

@@ -12,8 +12,12 @@ func Describe(a Action) string {
 		return fmt.Sprintf("delete program %d from store", a.ProgramID)
 	case CreateLink:
 		return "create link in store"
+	case CreatePendingLink:
+		return "create pending link in store"
 	case DeleteLink:
 		return fmt.Sprintf("delete link %d from store", a.LinkID)
+	case FinaliseLink:
+		return fmt.Sprintf("finalise link %d in store", a.LinkID)
 	case GetProgramFromStore:
 		return fmt.Sprintf("get program %d from store", a.ProgramID)
 	case CheckProgramNotInStore:

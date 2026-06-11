@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
+	"strconv"
 	"time"
 
 	bpfman "github.com/frobware/go-bpfman"
@@ -54,6 +56,71 @@ func (s *sqliteStore) DeleteLink(ctx context.Context, linkID bpfman.LinkID) erro
 	}
 
 	return nil
+}
+
+// CreatePendingLink persists a standalone link record before the
+// kernel attach happens. The insert allocates the bpfman link ID and
+// a second statement records the pin path {linksDir}/{link_id}; both
+// run inside one transaction owned here, so no committed state has a
+// link row without its pin path regardless of the caller.
+// KernelLinkID stays NULL until FinaliseLink.
+func (s *sqliteStore) CreatePendingLink(ctx context.Context, spec bpfman.LinkSpec, linksDir string) (bpfman.LinkRecord, error) {
+	var record bpfman.LinkRecord
+	err := s.runInTx(ctx, "create_pending_link", func(tx *sqliteStore) error {
+		created, err := tx.createLink(ctx, spec)
+		if err != nil {
+			return err
+		}
+		record, err = tx.setLinkPinPath(ctx, created.ID, linksDir)
+		return err
+	})
+	if err != nil {
+		return bpfman.LinkRecord{}, err
+	}
+
+	record.Details = spec.Details
+	return record, nil
+}
+
+// setLinkPinPath records pin_path = {linksDir}/{link_id} on the link
+// row and returns the updated record without details. Callers own the
+// transaction boundary.
+func (s *sqliteStore) setLinkPinPath(ctx context.Context, id bpfman.LinkID, linksDir string) (bpfman.LinkRecord, error) {
+	start := time.Now()
+	pin := filepath.Join(linksDir, strconv.FormatUint(uint64(id), 10))
+	row := s.stmtSetLinkPinPath.QueryRowContext(ctx, pin, id)
+	record, err := s.scanLinkRecord(row)
+	if err != nil {
+		s.logger.Debug("sql", "stmt", "SetLinkPinPath", "args", []any{pin, id}, "duration_ms", msec(time.Since(start)), "error", err)
+		return bpfman.LinkRecord{}, fmt.Errorf("failed to set link pin path: %w", err)
+	}
+	s.logger.Debug("sql", "stmt", "SetLinkPinPath", "args", []any{pin, id}, "duration_ms", msec(time.Since(start)))
+	return record, nil
+}
+
+// FinaliseLink records the captured kernel link ID on a pending link
+// row created by CreatePendingLink. Returns the updated record
+// without details.
+func (s *sqliteStore) FinaliseLink(ctx context.Context, linkID bpfman.LinkID, kernelLinkID *kernel.LinkID) (bpfman.LinkRecord, error) {
+	start := time.Now()
+
+	var kid sql.NullInt64
+	if kernelLinkID != nil {
+		kid = sql.NullInt64{Int64: int64(*kernelLinkID), Valid: true}
+	}
+
+	row := s.stmtFinaliseLink.QueryRowContext(ctx, kid, linkID)
+	record, err := s.scanLinkRecord(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return bpfman.LinkRecord{}, fmt.Errorf("link %d: %w", linkID, platform.ErrRecordNotFound)
+	}
+	if err != nil {
+		s.logger.Debug("sql", "stmt", "FinaliseLink", "args", []any{kid, linkID}, "duration_ms", msec(time.Since(start)), "error", err)
+		return bpfman.LinkRecord{}, fmt.Errorf("failed to finalise link: %w", err)
+	}
+
+	s.logger.Debug("sql", "stmt", "FinaliseLink", "args", []any{kid, linkID}, "duration_ms", msec(time.Since(start)))
+	return record, nil
 }
 
 // GetLink retrieves link metadata by link ID using two-phase lookup.
@@ -346,7 +413,24 @@ func (s *sqliteStore) populateLinkDetails(ctx context.Context, links []bpfman.Li
 // CreateLink saves a link spec with its details and returns the store-allocated
 // bpfman management handle.
 // Dispatches to the appropriate detail table based on spec.Details.Kind().
+// The registry row and detail row are inserted inside one transaction
+// owned here, so every caller gets the schema's atomicity guarantee.
 func (s *sqliteStore) CreateLink(ctx context.Context, spec bpfman.LinkSpec) (bpfman.LinkRecord, error) {
+	var record bpfman.LinkRecord
+	err := s.runInTx(ctx, "create_link", func(tx *sqliteStore) error {
+		var err error
+		record, err = tx.createLink(ctx, spec)
+		return err
+	})
+	if err != nil {
+		return bpfman.LinkRecord{}, err
+	}
+	return record, nil
+}
+
+// createLink inserts the registry row and the kind-specific detail
+// row. Callers own the transaction boundary.
+func (s *sqliteStore) createLink(ctx context.Context, spec bpfman.LinkSpec) (bpfman.LinkRecord, error) {
 	switch spec.Kind {
 	case bpfman.LinkKindXDP, bpfman.LinkKindTC:
 		return bpfman.LinkRecord{}, fmt.Errorf("%s links are dispatcher-backed; use ReplaceDispatcherSnapshot", spec.Kind)
