@@ -279,12 +279,8 @@ func (e *executor) rebuildXDPDispatcher(
 		})
 	}
 
-	var completed platform.DispatcherSnapshot
-	if err := e.store.RunInTransaction(ctx, "dispatcher_replace_snapshot", func(tx platform.Store) error {
-		var err error
-		completed, err = tx.ReplaceDispatcherSnapshot(ctx, newSnap)
-		return err
-	}); err != nil {
+	completed, err := e.store.ReplaceDispatcherSnapshot(ctx, newSnap)
+	if err != nil {
 		e.logger.ErrorContext(ctx, "persist failed, rolling back XDP dispatcher",
 			"ifindex", ops.ifindex, "error", err)
 		if firstAttach {
@@ -612,12 +608,8 @@ func (e *executor) rebuildTCDispatcher(
 		})
 	}
 
-	var completed platform.DispatcherSnapshot
-	if err := e.store.RunInTransaction(ctx, "dispatcher_replace_snapshot", func(tx platform.Store) error {
-		var err error
-		completed, err = tx.ReplaceDispatcherSnapshot(ctx, newSnap)
-		return err
-	}); err != nil {
+	completed, err := e.store.ReplaceDispatcherSnapshot(ctx, newSnap)
+	if err != nil {
 		e.logger.ErrorContext(ctx, "persist failed, rolling back TC dispatcher",
 			"ifindex", ops.ifindex, "error", err)
 		parent := dispatcher.TCParentHandle(dispType)
@@ -908,10 +900,7 @@ func (e *executor) rebuildXDPForDetach(
 		})
 	}
 
-	if err := e.store.RunInTransaction(ctx, "dispatcher_replace_snapshot", func(tx platform.Store) error {
-		_, err := tx.ReplaceDispatcherSnapshot(ctx, newSnap)
-		return err
-	}); err != nil {
+	if _, err := e.store.ReplaceDispatcherSnapshot(ctx, newSnap); err != nil {
 		oldProgPinPath := e.bpffs.DispatcherProgPath(key.Type, key.Nsid, key.Ifindex, snap.Revision)
 		if rbErr := e.kernel.UpdateXDPDispatcherLink(ctx, linkPinPath, oldProgPinPath); rbErr != nil {
 			e.logger.ErrorContext(ctx, "rollback: restore XDP detach-rebuild dispatcher link failed",
@@ -1090,10 +1079,7 @@ func (e *executor) rebuildTCForDetach(
 		})
 	}
 
-	if err := e.store.RunInTransaction(ctx, "dispatcher_replace_snapshot", func(tx platform.Store) error {
-		_, err := tx.ReplaceDispatcherSnapshot(ctx, newSnap)
-		return err
-	}); err != nil {
+	if _, err := e.store.ReplaceDispatcherSnapshot(ctx, newSnap); err != nil {
 		parent := dispatcher.TCParentHandle(dispType)
 		if rbErr := e.kernel.DetachTCFilter(ctx, int(key.Ifindex), snapInterfaceName(snap), parent, result.Priority, result.Handle, snap.Runtime.NetnsPath); rbErr != nil {
 			e.logger.ErrorContext(ctx, "rollback: remove TC detach-rebuild filter failed",

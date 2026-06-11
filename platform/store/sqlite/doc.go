@@ -35,8 +35,9 @@
 //
 // Store methods whose body spans multiple statements own their
 // atomicity: CreateLink (registry row plus detail row),
-// CreatePendingLink (CreateLink plus the pin-path update), and
-// ReplaceDispatcherSnapshot wrap their statements in a transaction
+// CreatePendingLink (createLink plus the pin-path update), and the
+// dispatcher snapshot operations (ReplaceDispatcherSnapshot,
+// DeleteDispatcherSnapshot) wrap their statements in a transaction
 // internally, so every caller gets the schema's atomicity guarantees
 // without knowing to ask for them.
 //

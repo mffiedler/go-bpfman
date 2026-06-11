@@ -23,30 +23,15 @@ type failDispatcherSnapshotStore struct {
 	err        error
 }
 
-func (s *failDispatcherSnapshotStore) RunInTransaction(
-	ctx context.Context,
-	name string,
-	fn func(platform.Store) error,
-) error {
-	return s.Store.RunInTransaction(ctx, name, func(tx platform.Store) error {
-		return fn(&failDispatcherSnapshotTx{Store: tx, parent: s})
-	})
-}
-
-type failDispatcherSnapshotTx struct {
-	platform.Store
-	parent *failDispatcherSnapshotStore
-}
-
-func (tx *failDispatcherSnapshotTx) ReplaceDispatcherSnapshot(
+func (s *failDispatcherSnapshotStore) ReplaceDispatcherSnapshot(
 	ctx context.Context,
 	snap platform.DispatcherSnapshotSpec,
 ) (platform.DispatcherSnapshot, error) {
-	tx.parent.calls++
-	if tx.parent.calls == tx.parent.failOnCall {
-		return platform.DispatcherSnapshot{}, tx.parent.err
+	s.calls++
+	if s.calls == s.failOnCall {
+		return platform.DispatcherSnapshot{}, s.err
 	}
-	return tx.Store.ReplaceDispatcherSnapshot(ctx, snap)
+	return s.Store.ReplaceDispatcherSnapshot(ctx, snap)
 }
 
 // =============================================================================

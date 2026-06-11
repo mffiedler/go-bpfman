@@ -312,8 +312,23 @@ func (s *sqliteStore) ListDispatcherSummaries(ctx context.Context) ([]platform.D
 // ReplaceDispatcherSnapshot atomically replaces all persisted state
 // for a dispatcher's attach point. Deletes old extension link records
 // by attach point, upserts the dispatcher row, and inserts new
-// member link records.
+// member link records, all inside one transaction owned here.
 func (s *sqliteStore) ReplaceDispatcherSnapshot(ctx context.Context, snap platform.DispatcherSnapshotSpec) (platform.DispatcherSnapshot, error) {
+	var completed platform.DispatcherSnapshot
+	err := s.runInTx(ctx, "dispatcher_replace_snapshot", func(tx *sqliteStore) error {
+		var err error
+		completed, err = tx.replaceDispatcherSnapshot(ctx, snap)
+		return err
+	})
+	if err != nil {
+		return platform.DispatcherSnapshot{}, err
+	}
+	return completed, nil
+}
+
+// replaceDispatcherSnapshot performs the snapshot replacement
+// statements. Callers own the transaction boundary.
+func (s *sqliteStore) replaceDispatcherSnapshot(ctx context.Context, snap platform.DispatcherSnapshotSpec) (platform.DispatcherSnapshot, error) {
 	start := time.Now()
 	now := time.Now().UTC().Format(time.RFC3339)
 	completed := platform.DispatcherSnapshot{
@@ -422,8 +437,17 @@ func (s *sqliteStore) ReplaceDispatcherSnapshot(ctx context.Context, snap platfo
 }
 
 // DeleteDispatcherSnapshot removes a dispatcher and all its extension
-// link records by attach point key.
+// link records by attach point key, inside one transaction owned
+// here.
 func (s *sqliteStore) DeleteDispatcherSnapshot(ctx context.Context, key dispatcher.Key) error {
+	return s.runInTx(ctx, "dispatcher_delete_snapshot", func(tx *sqliteStore) error {
+		return tx.deleteDispatcherSnapshot(ctx, key)
+	})
+}
+
+// deleteDispatcherSnapshot performs the snapshot deletion statements.
+// Callers own the transaction boundary.
+func (s *sqliteStore) deleteDispatcherSnapshot(ctx context.Context, key dispatcher.Key) error {
 	start := time.Now()
 
 	// Step 1: Delete extension link base rows by attach point.
