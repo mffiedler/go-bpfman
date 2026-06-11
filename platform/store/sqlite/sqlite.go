@@ -439,7 +439,7 @@ func (s *sqliteStore) closeStatements() {
 
 // schemaVersion is the current schema version. Increment this when the schema changes.
 // Migrations are supported from version 2 onwards.
-const schemaVersion = 12
+const schemaVersion = 13
 
 // debugLinkIDSequenceSeed makes store-allocated bpfman link handles
 // visually distinct from small kernel bpf_link IDs while the link identity

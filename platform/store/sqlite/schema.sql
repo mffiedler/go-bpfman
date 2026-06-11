@@ -205,6 +205,16 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_links_kernel_link_id
     ON links(kernel_link_id)
     WHERE kernel_link_id IS NOT NULL;
 
+-- Pin paths are deterministic per attachment key (e.g. TCX:
+-- direction, nsid, ifindex, program), so two records sharing one
+-- pin is the corrupted two-records-one-pin state the manager's
+-- duplicate-attach rejection prevents. The index makes that state
+-- unrepresentable even if a future code path skips the manager
+-- check. Ephemeral links carry NULL pins and are exempt.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_links_pin_path
+    ON links(pin_path)
+    WHERE pin_path IS NOT NULL;
+
 --------------------------------------------------------------------------------
 -- Type-Specific Detail Tables
 --------------------------------------------------------------------------------

@@ -1526,3 +1526,70 @@ func TestListLinksByProgram_ReturnsDetails(t *testing.T) {
 		require.True(t, ok, "expected TracepointDetails for link %d", link.ID)
 	}
 }
+
+// TestCreateLink_DuplicatePinPathRejected pins the schema backstop
+// behind the manager's duplicate-attach rejection: pin paths are
+// deterministic per attachment key, so two records sharing one pin
+// is the corrupted state, and the unique index refuses it even if
+// a future code path skips the manager check. Ephemeral links
+// carry NULL pins and stay exempt.
+func TestCreateLink_DuplicatePinPathRejected(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store, err := sqlite.NewInMemory(ctx, testLogger())
+	require.NoError(t, err)
+	defer store.Close()
+
+	prog := testProgram()
+	require.NoError(t, store.Save(ctx, 4001, prog))
+
+	pin := bpfman.LinkPath("/run/bpfman/fs/tcx-ingress/link_1_2_4001")
+	details := bpfman.TCXDetails{Interface: "eth0", Ifindex: 2, Direction: bpfman.TCDirectionIngress, Priority: 50, Nsid: 1}
+
+	_, err = store.CreateLink(ctx, bpfman.NewPinnedLinkSpec(4001, ptr(kernel.LinkID(11)), details, pin))
+	require.NoError(t, err)
+
+	_, err = store.CreateLink(ctx, bpfman.NewPinnedLinkSpec(4001, ptr(kernel.LinkID(12)), details, pin))
+	require.Error(t, err, "a second record sharing the pin path must be rejected")
+
+	// NULL pins remain exempt: two ephemeral links coexist.
+	_, err = store.CreateLink(ctx, bpfman.NewEphemeralLinkSpec(4001, ptr(kernel.LinkID(13)), details))
+	require.NoError(t, err)
+	_, err = store.CreateLink(ctx, bpfman.NewEphemeralLinkSpec(4001, ptr(kernel.LinkID(14)), details))
+	require.NoError(t, err)
+}
+
+// TestRunInTransaction_DuplicatePinPathRollsBack proves a unique
+// index violation inside a transaction leaves no partial writes:
+// the first insert in the same transaction rolls back with the
+// failed second, so a constraint error cannot strand half a
+// multi-link write.
+func TestRunInTransaction_DuplicatePinPathRollsBack(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store, err := sqlite.NewInMemory(ctx, testLogger())
+	require.NoError(t, err)
+	defer store.Close()
+
+	prog := testProgram()
+	require.NoError(t, store.Save(ctx, 4002, prog))
+
+	pin := bpfman.LinkPath("/run/bpfman/fs/tcx-ingress/link_1_3_4002")
+	details := bpfman.TCXDetails{Interface: "eth1", Ifindex: 3, Direction: bpfman.TCDirectionIngress, Priority: 50, Nsid: 1}
+
+	err = store.RunInTransaction(ctx, "dup-pin-test", func(tx platform.Store) error {
+		if _, err := tx.CreateLink(ctx, bpfman.NewPinnedLinkSpec(4002, ptr(kernel.LinkID(21)), details, pin)); err != nil {
+			return err
+		}
+		_, err := tx.CreateLink(ctx, bpfman.NewPinnedLinkSpec(4002, ptr(kernel.LinkID(22)), details, pin))
+		require.Error(t, err, "duplicate pin inside the transaction must fail")
+		return err
+	})
+	require.Error(t, err)
+
+	links, err := store.ListLinks(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, links, "the constraint failure must roll back the whole transaction")
+}
