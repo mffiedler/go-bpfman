@@ -97,11 +97,12 @@ defer kill $launcher
 # host-visible worker PID that bpfman needs is unshare's child --
 # pid 1 inside the new pid namespace.
 poll timeout 5s every 100ms {
-    let discovered <- exec sh -c 'p=$(pgrep -P "$1" | head -n1); test -n "$p" || exit 1; printf %s "$p"' sh $launcher.pid
-    retry "waiting for target worker pid" unless $discovered.ok
+    let children <- process children $launcher.pid
+    retry "waiting for target worker pid" unless $children.value.count > 0
 }
-guard discovered <- exec sh -c 'p=$(pgrep -P "$1" | head -n1); test -n "$p" || exit 1; printf %s "$p"' sh $launcher.pid
-let target_pid = $discovered.stdout |> jq "tonumber"
+guard children <- process children $launcher.pid
+assert $children.count == 1
+let target_pid = $children.pids[0]
 
 guard self_mnt_ns <- exec readlink /proc/self/ns/mnt
 guard self_pid_ns <- exec readlink /proc/self/ns/pid
