@@ -122,7 +122,7 @@ func (s *sqliteStore) prepareLinkRegistryStatements(ctx context.Context) error {
 		FROM links l
 		JOIN link_tcx_details td ON l.id = td.id
 		WHERE td.nsid = ? AND td.ifindex = ? AND td.direction = ?
-		ORDER BY td.priority ASC`
+		ORDER BY td.priority ASC, l.id ASC`
 	if s.stmtListTCXLinksByInterface, err = s.db.PrepareContext(ctx, sqlListTCXLinksByInterface); err != nil {
 		return fmt.Errorf("prepare ListTCXLinksByInterface: %w", err)
 	}

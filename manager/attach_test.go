@@ -2637,3 +2637,41 @@ func TestTracepointAttach_PreflightSkippedWhenListEmpty(t *testing.T) {
 	require.NoError(t, err, "attach should succeed when tracepoint list is empty")
 	assert.NotZero(t, link.Record.ID)
 }
+
+// TestTCX_EqualPriorityOrderIsInsertionOrder pins the listing
+// contract the attach-order anchor depends on: links sharing a
+// priority come back in insertion order (the SQL tiebreaks on the
+// link id), so equal-priority TCX programs anchor FIFO rather than
+// in whatever order the database happens to return.
+func TestTCX_EqualPriorityOrderIsInsertionOrder(t *testing.T) {
+	t.Parallel()
+
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	var progIDs []kernel.ProgramID
+	var firstLink bpfman.Link
+	for range 3 {
+		spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tcx.o"), "tcx_pass", bpfman.ProgramTypeTCX)
+		require.NoError(t, err)
+		prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+		require.NoError(t, err)
+		attachSpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+		require.NoError(t, err)
+		attachSpec = attachSpec.WithPriority(50)
+		link, err := fix.Attach(ctx, attachSpec)
+		require.NoError(t, err)
+		if firstLink.Record.ID == 0 {
+			firstLink = link
+		}
+		progIDs = append(progIDs, prog.Record.ProgramID)
+	}
+
+	details := firstLink.Record.Details.(bpfman.TCXDetails)
+	listed, err := fix.Store.ListTCXLinksByInterface(ctx, details.Nsid, details.Ifindex, "ingress")
+	require.NoError(t, err)
+	require.Len(t, listed, 3)
+	for i, want := range progIDs {
+		assert.Equal(t, want, listed[i].KernelProgramID, "equal-priority listing must be insertion-ordered at index %d", i)
+	}
+}
