@@ -133,10 +133,16 @@ type Store interface {
 	Transactional
 }
 
-// Transactional provides atomic execution of store operations.
-// The callback receives a Store that participates in the transaction.
-// If the callback returns nil, the transaction commits.
-// If the callback returns an error, the transaction rolls back.
+// Transactional composes several store operations into one larger
+// atomic unit. Store methods are themselves atomic domain primitives
+// (multi-statement methods own a transaction internally), so reach
+// for RunInTransaction only when a caller needs several of them to
+// commit together. The callback receives a Store that participates
+// in the transaction. If the callback returns nil, the transaction
+// commits. If the callback returns an error, the transaction rolls
+// back. A primitive's self-owned transaction entered from inside the
+// callback flattens into the caller's transaction, so the two
+// conventions compose.
 //
 // name identifies the transaction class for instrumentation: the
 // store-side timing logs (wait_ms, held_ms) carry it as the tx

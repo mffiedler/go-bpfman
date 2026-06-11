@@ -33,15 +33,21 @@
 // underlying *sql.DB (autocommit mode) or a *sql.Tx (transactional
 // mode).
 //
-// Store methods whose body spans multiple statements own their
-// atomicity: CreateLink (registry row plus detail row),
+// Store methods are atomic domain primitives. platform.Store is the
+// persistence boundary for bpfman domain operations, not a statement
+// executor: a method named ReplaceDispatcherSnapshot means "replace
+// the snapshot", not "run one fragment of a replacement and hope the
+// caller supplied atomicity". A method that needs several SQL
+// statements to honour its name therefore owns a transaction
+// internally: CreateLink (registry row plus detail row),
 // CreatePendingLink (createLink plus the pin-path update), and the
 // dispatcher snapshot operations (ReplaceDispatcherSnapshot,
-// DeleteDispatcherSnapshot) wrap their statements in a transaction
-// internally, so every caller gets the schema's atomicity guarantees
-// without knowing to ask for them.
+// DeleteDispatcherSnapshot). Every caller gets the schema's
+// atomicity guarantees without knowing to ask for them.
 //
-// For atomicity across multiple store calls, use RunInTransaction:
+// RunInTransaction is for the other axis: composing several domain
+// operations into one larger atomic unit, as load does when it
+// commits a batch of program saves together. For example:
 //
 //	err := store.RunInTransaction(ctx, "example", func(txStore platform.Store) error {
 //	    if err := txStore.Save(ctx, id, prog); err != nil {
