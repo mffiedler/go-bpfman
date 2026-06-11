@@ -1,0 +1,83 @@
+# -*- mode: bpfman -*-
+# Uprobe attach to a dotted Go symbol.
+#
+# Go symbols carry their package path, so real-world Go uprobe
+# targets (the operator's `main.getCount`, this fixture's
+# `github.com/.../fixturemode.FireUprobeTarget`) contain dots.
+# bpffs rejects any pin path component containing a dot
+# (bpf_lookup in kernel/bpf/inode.c reserves them), so a link pin
+# name derived from the function name fails with EPERM at attach
+# time. This script is the regression test: the pin name must not
+# contain the symbol.
+#
+# Attaches to the nosplit Go leaf the fixture enters once per
+# event, so the counter advances by exactly weight per event --
+# the same arithmetic as the cgo symbol. The target must be
+# nosplit: an ordinary Go function's stack-check prologue
+# re-executes the entry after stack growth, double-firing the
+# uprobe under load.
+#
+# Invoke from e2e/:
+#
+#   cd e2e
+#   sudo bpfman-shell scripts/TestUprobe_GoSymbolTraffic.bpfman
+#
+# Requires root.
+
+import ../lib.bpfman
+
+let calls = 5
+let weight = 11
+
+guard target <- uprobe target
+
+guard loaded <- bpfman program load file \
+    --path testdata/bpf/uprobe_exact.bpf.o \
+    --programs uprobe:uprobe_counter \
+    -g "expected_pid=0x${u32le $target.pid}" \
+    -g "weight=0x${u64le $weight}"
+let prog = $loaded.programs[0]
+let pid = $prog.record.program_id
+defer bpfman program unload $pid
+
+guard link <- bpfman link attach uprobe --target $target.path --fn-name $target.go_symbol $prog
+let linkID = $link.record.id
+expect_pinned_link_identity $link
+
+assert $link.record.kind == uprobe
+assert $link.record.program_id == $pid
+assert $link.record.details.target == $target.path
+assert $link.record.details.fn_name == $target.go_symbol
+
+guard gotLink <- bpfman link get $linkID
+expect_link_get_identity $gotLink $link $linkID
+
+# Trigger the Go target once per event and assert exact counter
+# arithmetic.
+let mapID = $prog |> jq '[.status.maps[] | select(.name == "up_count") | .id][0]'
+let counter_filter = "fromjson | .[0].formatted.value | tonumber"
+
+guard _ <- uprobe fire $calls
+
+guard dump <- bpftool map dump id $mapID -j
+let count = $dump.stdout |> jq $counter_filter
+let want = $calls * $weight
+print "uprobe go-symbol count: got=${count} want=${want}"
+assert $count == $want
+
+# Detach, then verify the probe stops counting.
+bpfman link detach $link
+assert fail bpfman link get $linkID
+
+# Let any async detach teardown settle before establishing
+# the detached baseline.
+sleep 0.1
+
+guard dumpDetached <- bpftool map dump id $mapID -j
+let detached = $dumpDetached.stdout |> jq $counter_filter
+guard _ <- uprobe fire 1
+
+guard dumpAfterDetach <- bpftool map dump id $mapID -j
+let afterDetach = $dumpAfterDetach.stdout |> jq $counter_filter
+print "uprobe go-symbol after-detach=${afterDetach} want=${detached}"
+assert $afterDetach == $detached

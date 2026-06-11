@@ -52,9 +52,10 @@ func handleUprobeTarget(args []runtime.Arg) (runtime.Value, error) {
 		return runtime.Value{}, fmt.Errorf("uprobe target: resolve executable path: %w", err)
 	}
 	return runtime.ValueFromMap(map[string]any{
-		"path":   exe,
-		"pid":    json.Number(strconv.Itoa(os.Getpid())),
-		"symbol": fixturemode.UprobeTargetSymbol,
+		"path":      exe,
+		"pid":       json.Number(strconv.Itoa(os.Getpid())),
+		"symbol":    fixturemode.UprobeTargetSymbol,
+		"go_symbol": fixturemode.UprobeGoTargetSymbol,
 	}), nil
 }
 
