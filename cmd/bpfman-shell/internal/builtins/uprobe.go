@@ -3,6 +3,7 @@
 package builtins
 
 import (
+	"debug/elf"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -21,9 +22,11 @@ func init() {
 		Usage:    "uprobe target  |  uprobe fire N",
 		Summary:  "Resolve and fire the bpfman-shell uprobe fixture target.",
 		Detail: "uprobe target returns the running bpfman-shell ELF path, " +
-			"fixture symbol, and current PID. Attach uprobe/uretprobe " +
-			"programs to that path and symbol, pass pid as expected_pid, " +
-			"then use uprobe fire N to synchronously call the target N times.",
+			"fixture symbol, the symbol's absolute file offset (for " +
+			"offset-only attaches with no --fn-name), and current PID. " +
+			"Attach uprobe/uretprobe programs to that path and symbol, " +
+			"pass pid as expected_pid, then use uprobe fire N to " +
+			"synchronously call the target N times.",
 	})
 }
 
@@ -51,12 +54,47 @@ func handleUprobeTarget(args []runtime.Arg) (runtime.Value, error) {
 	if err != nil {
 		return runtime.Value{}, fmt.Errorf("uprobe target: resolve executable path: %w", err)
 	}
+	symbolOffset, err := elfSymbolFileOffset(exe, fixturemode.UprobeTargetSymbol)
+	if err != nil {
+		return runtime.Value{}, fmt.Errorf("uprobe target: %w", err)
+	}
 	return runtime.ValueFromMap(map[string]any{
-		"path":      exe,
-		"pid":       json.Number(strconv.Itoa(os.Getpid())),
-		"symbol":    fixturemode.UprobeTargetSymbol,
-		"go_symbol": fixturemode.UprobeGoTargetSymbol,
+		"path":          exe,
+		"pid":           json.Number(strconv.Itoa(os.Getpid())),
+		"symbol":        fixturemode.UprobeTargetSymbol,
+		"symbol_offset": json.Number(strconv.FormatUint(symbolOffset, 10)),
+		"go_symbol":     fixturemode.UprobeGoTargetSymbol,
 	}), nil
+}
+
+// elfSymbolFileOffset resolves a symbol's absolute file offset in
+// the ELF at path: the symbol table value is a virtual address,
+// translated through the containing PT_LOAD segment. This is the
+// offset shape an offset-only uprobe attach (no fn_name) takes,
+// and the same translation cilium performs when it resolves a
+// symbol itself.
+func elfSymbolFileOffset(path, symbol string) (uint64, error) {
+	f, err := elf.Open(path)
+	if err != nil {
+		return 0, fmt.Errorf("open ELF %s: %w", path, err)
+	}
+	defer f.Close()
+	syms, err := f.Symbols()
+	if err != nil {
+		return 0, fmt.Errorf("read symbols of %s: %w", path, err)
+	}
+	for _, s := range syms {
+		if s.Name != symbol {
+			continue
+		}
+		for _, p := range f.Progs {
+			if p.Type == elf.PT_LOAD && s.Value >= p.Vaddr && s.Value < p.Vaddr+p.Memsz {
+				return s.Value - p.Vaddr + p.Off, nil
+			}
+		}
+		return 0, fmt.Errorf("symbol %s at %#x is outside every PT_LOAD segment of %s", symbol, s.Value, path)
+	}
+	return 0, fmt.Errorf("symbol %s not found in %s", symbol, path)
 }
 
 func handleUprobeFire(args []runtime.Arg) (runtime.Value, error) {

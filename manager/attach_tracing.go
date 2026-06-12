@@ -106,6 +106,9 @@ func (m *Manager) attachUprobe(ctx context.Context, scope lock.WriterScope, spec
 		defaultTarget: binaryTarget + ":" + fnName,
 		prepare: func(prog bpfman.ProgramRecord, progPinPath bpfman.ProgPinPath) (attachPlan, error) {
 			retprobe := prog.Load.ProgramType() == bpfman.ProgramTypeUretprobe
+			if fnName == "" && offset == 0 {
+				return attachPlan{}, fmt.Errorf("uprobe attach requires a function name or a non-zero offset")
+			}
 			if containerPid > 0 && scope == nil {
 				return attachPlan{}, fmt.Errorf("container uprobe requires lock scope (containerPid=%d)", containerPid)
 			}

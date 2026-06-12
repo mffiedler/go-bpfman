@@ -2807,3 +2807,57 @@ func TestUprobe_NoPidFilterDefaultsToZero(t *testing.T) {
 	assert.Equal(t, int32(0), details.PID)
 	assert.Equal(t, []int32{0}, fix.Kernel.UprobeAttachPids())
 }
+
+// TestUprobe_OffsetOnlyAttachSucceeds pins the offset-only attach
+// form: fn_name is optional, and an attach at a bare file offset
+// must construct a link whose details carry the offset and an
+// empty function name. Rust attaches at the absolute offset when
+// fn_name is absent; the symbol-resolution path must not run.
+func TestUprobe_OffsetOnlyAttachSucceeds(t *testing.T) {
+	t.Parallel()
+
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("uprobe.o"), "uprobe_prog", bpfman.ProgramTypeUprobe)
+	require.NoError(t, err)
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	attachSpec, err := bpfman.NewUprobeAttachSpec(prog.Record.ProgramID, "/usr/lib/libc.so.6")
+	require.NoError(t, err)
+	attachSpec = attachSpec.WithOffset(0x1234)
+
+	link, err := fix.Attach(ctx, attachSpec)
+	require.NoError(t, err, "offset-only attach must succeed")
+
+	details, ok := link.Record.Details.(bpfman.UprobeDetails)
+	require.True(t, ok)
+	assert.Equal(t, "", details.FnName)
+	assert.Equal(t, uint64(0x1234), details.Offset)
+}
+
+// TestUprobe_NeitherFnNameNorOffset_Fails pins the designed error
+// for an unanchorable attach: no function name and no offset
+// names no location at all, and the rejection happens before any
+// kernel work rather than surfacing as a raw symbol-resolution
+// failure.
+func TestUprobe_NeitherFnNameNorOffset_Fails(t *testing.T) {
+	t.Parallel()
+
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("uprobe.o"), "uprobe_prog", bpfman.ProgramTypeUprobe)
+	require.NoError(t, err)
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	attachSpec, err := bpfman.NewUprobeAttachSpec(prog.Record.ProgramID, "/usr/lib/libc.so.6")
+	require.NoError(t, err)
+
+	_, err = fix.Attach(ctx, attachSpec)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "requires a function name or a non-zero offset")
+	assert.Equal(t, 0, fix.Kernel.LinkCount(), "rejection must happen before any kernel attach")
+}

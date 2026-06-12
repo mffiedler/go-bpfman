@@ -133,3 +133,33 @@ func commandExitError(t *testing.T, code int) error {
 	}
 	return err
 }
+
+func TestUprobeOptionsSymbolRelative(t *testing.T) {
+	t.Parallel()
+
+	symbol, opts := uprobeOptions("malloc", 8, 4242)
+	if symbol != "malloc" {
+		t.Fatalf("symbol: got %q, want %q", symbol, "malloc")
+	}
+	if opts.Offset != 8 || opts.Address != 0 {
+		t.Fatalf("with a symbol the offset is symbol-relative: got Offset=%d Address=%d", opts.Offset, opts.Address)
+	}
+	if opts.PID != 4242 {
+		t.Fatalf("pid: got %d, want 4242", opts.PID)
+	}
+}
+
+func TestUprobeOptionsOffsetOnly(t *testing.T) {
+	t.Parallel()
+
+	symbol, opts := uprobeOptions("", 0x1234, 0)
+	if symbol != "" {
+		t.Fatalf("offset-only attach must not pass a symbol: got %q", symbol)
+	}
+	if opts.Address != 0x1234 || opts.Offset != 0 {
+		t.Fatalf("offset-only means absolute file offset via Address: got Address=%#x Offset=%d", opts.Address, opts.Offset)
+	}
+	if opts.PID != 0 {
+		t.Fatalf("pid: got %d, want 0", opts.PID)
+	}
+}

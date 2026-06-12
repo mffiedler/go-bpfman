@@ -88,6 +88,21 @@ func (k *kernelAdapter) AttachUprobeContainer(ctx context.Context, scope lock.Wr
 	}, nil
 }
 
+// uprobeOptions translates the spec's (fnName, offset) pair into the
+// symbol and options cilium expects. With a function name, the
+// offset is relative to that symbol. Without one, the attach is
+// offset-only and the offset is an absolute file offset into the
+// binary -- cilium's Address bypasses symbol resolution and is used
+// raw where the resolved (vaddr-to-file-offset translated) symbol
+// value would go, which is the same contract Rust's offset-only
+// attach has.
+func uprobeOptions(fnName string, offset uint64, pid int32) (string, *link.UprobeOptions) {
+	if fnName == "" {
+		return "", &link.UprobeOptions{Address: offset, PID: int(pid)}
+	}
+	return fnName, &link.UprobeOptions{Offset: offset, PID: int(pid)}
+}
+
 // doAttachUprobeLocal attaches a uprobe directly (no namespace switching).
 // pid > 0 scopes the perf event to that process; cilium maps 0 to
 // "all threads", so the unfiltered default needs no special-casing.
@@ -103,14 +118,17 @@ func (k *kernelAdapter) doAttachUprobeLocal(progPinPath, target, fnName string, 
 		return 0, nil, fmt.Errorf("open executable %s: %w", target, err)
 	}
 
-	opts := &link.UprobeOptions{Offset: offset, PID: int(pid)}
+	symbol, opts := uprobeOptions(fnName, offset, pid)
 	var lnk link.Link
 	if retprobe {
-		lnk, err = ex.Uretprobe(fnName, prog, opts)
+		lnk, err = ex.Uretprobe(symbol, prog, opts)
 	} else {
-		lnk, err = ex.Uprobe(fnName, prog, opts)
+		lnk, err = ex.Uprobe(symbol, prog, opts)
 	}
 	if err != nil {
+		if fnName == "" {
+			return 0, nil, fmt.Errorf("attach uprobe at offset %#x in %s: %w", offset, target, err)
+		}
 		return 0, nil, fmt.Errorf("attach uprobe to %s in %s: %w", fnName, target, err)
 	}
 
