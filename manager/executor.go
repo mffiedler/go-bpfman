@@ -97,10 +97,10 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 		return e.kernel.AttachKprobe(ctx, a.ProgPinPath, a.FnName, a.Offset, a.Retprobe, a.LinkPinPath)
 
 	case action.AttachUprobeLocal:
-		return e.kernel.AttachUprobeLocal(ctx, a.ProgPinPath, a.Target, a.FnName, a.Offset, a.Retprobe, a.LinkPinPath)
+		return e.kernel.AttachUprobeLocal(ctx, a.ProgPinPath, a.Target, a.FnName, a.Offset, a.Pid, a.Retprobe, a.LinkPinPath)
 
 	case action.AttachUprobeContainer:
-		return e.kernel.AttachUprobeContainer(ctx, a.Scope, a.ProgPinPath, a.Target, a.FnName, a.Offset, a.Retprobe, a.LinkPinPath, a.ContainerPid)
+		return e.kernel.AttachUprobeContainer(ctx, a.Scope, a.ProgPinPath, a.Target, a.FnName, a.Offset, a.Pid, a.Retprobe, a.LinkPinPath, a.ContainerPid)
 
 	case action.AttachFentry:
 		return e.kernel.AttachFentry(ctx, a.ProgPinPath, a.FnName, a.LinkPinPath)

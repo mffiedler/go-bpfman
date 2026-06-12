@@ -99,6 +99,7 @@ func (m *Manager) attachUprobe(ctx context.Context, scope lock.WriterScope, spec
 	binaryTarget := spec.Target()
 	fnName := spec.FnName()
 	offset := spec.Offset()
+	pid := spec.Pid()
 	containerPid := spec.ContainerPid()
 	return m.simpleAttach(ctx, attachParams{
 		programID:     spec.ProgramID(),
@@ -117,6 +118,7 @@ func (m *Manager) attachUprobe(ctx context.Context, scope lock.WriterScope, spec
 						Target:       binaryTarget,
 						FnName:       fnName,
 						Offset:       offset,
+						Pid:          pid,
 						Retprobe:     retprobe,
 						LinkPinPath:  linkPinPath,
 						ContainerPid: containerPid,
@@ -129,6 +131,7 @@ func (m *Manager) attachUprobe(ctx context.Context, scope lock.WriterScope, spec
 						Target:      binaryTarget,
 						FnName:      fnName,
 						Offset:      offset,
+						Pid:         pid,
 						Retprobe:    retprobe,
 						LinkPinPath: linkPinPath,
 					}
@@ -136,7 +139,7 @@ func (m *Manager) attachUprobe(ctx context.Context, scope lock.WriterScope, spec
 			}
 			return attachPlan{
 				target:       binaryTarget + ":" + fnName,
-				details:      bpfman.UprobeDetails{Target: binaryTarget, FnName: fnName, Offset: offset, Retprobe: retprobe, ContainerPid: containerPid},
+				details:      bpfman.UprobeDetails{Target: binaryTarget, FnName: fnName, Offset: offset, PID: pid, Retprobe: retprobe, ContainerPid: containerPid},
 				attachAction: attachFn,
 			}, nil
 		},

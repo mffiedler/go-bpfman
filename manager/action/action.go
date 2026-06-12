@@ -133,12 +133,14 @@ type AttachKprobe struct {
 func (AttachKprobe) isAction() {}
 
 // AttachUprobeLocal attaches a pinned program to a user-space function
-// in the current namespace.
+// in the current namespace. Pid > 0 scopes the probe to that process;
+// 0 traces all processes.
 type AttachUprobeLocal struct {
 	ProgPinPath bpfman.ProgPinPath
 	Target      string
 	FnName      string
 	Offset      uint64
+	Pid         int32
 	Retprobe    bool
 	LinkPinPath bpfman.LinkPath
 }
@@ -147,13 +149,17 @@ func (AttachUprobeLocal) isAction() {}
 
 // AttachUprobeContainer attaches a pinned program to a user-space
 // function in a container's mount namespace. Requires a WriterScope
-// to pass the lock fd to the helper subprocess.
+// to pass the lock fd to the helper subprocess. Pid > 0 scopes the
+// probe to that process (distinct from ContainerPid, which selects
+// the mount namespace the target path resolves in); 0 traces all
+// processes.
 type AttachUprobeContainer struct {
 	Scope        lock.WriterScope
 	ProgPinPath  bpfman.ProgPinPath
 	Target       string
 	FnName       string
 	Offset       uint64
+	Pid          int32
 	Retprobe     bool
 	LinkPinPath  bpfman.LinkPath
 	ContainerPid int32

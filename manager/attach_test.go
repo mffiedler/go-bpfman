@@ -2739,3 +2739,71 @@ func TestTCX_EqualPriorityOrderIsInsertionOrder(t *testing.T) {
 		assert.Equal(t, want, listed[i].KernelProgramID, "equal-priority listing must be insertion-ordered at index %d", i)
 	}
 }
+
+// TestUprobe_PidFilterFlowsToKernelAndDetails pins the pid-filter
+// contract end to end at the manager boundary: a spec carrying a
+// pid must surface it in the link details, persist it through the
+// store, and -- the part that was silently dropped before -- hand
+// it to the kernel attach so the probe is scoped to one process
+// rather than firing machine-wide.
+func TestUprobe_PidFilterFlowsToKernelAndDetails(t *testing.T) {
+	t.Parallel()
+
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("uprobe.o"), "uprobe_prog", bpfman.ProgramTypeUprobe)
+	require.NoError(t, err)
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	attachSpec, err := bpfman.NewUprobeAttachSpec(prog.Record.ProgramID, "/usr/lib/libc.so.6")
+	require.NoError(t, err)
+	attachSpec = attachSpec.WithFnName("malloc").WithPid(4242)
+
+	link, err := fix.Attach(ctx, attachSpec)
+	require.NoError(t, err)
+
+	details, ok := link.Record.Details.(bpfman.UprobeDetails)
+	require.True(t, ok, "uprobe link must carry UprobeDetails, got %T", link.Record.Details)
+	assert.Equal(t, int32(4242), details.PID, "attach response details must carry the pid filter")
+
+	// The kernel boundary actually received the pid: without this,
+	// the details could claim a scope the probe does not have.
+	assert.Equal(t, []int32{4242}, fix.Kernel.UprobeAttachPids(), "kernel attach must receive the pid filter")
+
+	// Store round-trip: list returns the persisted pid.
+	links, err := fix.Store.ListLinks(ctx)
+	require.NoError(t, err)
+	require.Len(t, links, 1)
+	stored, ok := links[0].Details.(bpfman.UprobeDetails)
+	require.True(t, ok)
+	assert.Equal(t, int32(4242), stored.PID, "store must persist the pid filter")
+}
+
+// TestUprobe_NoPidFilterDefaultsToZero pins the unfiltered default:
+// no WithPid means pid 0 everywhere -- details, store, and the
+// kernel boundary (where 0 is "trace all processes").
+func TestUprobe_NoPidFilterDefaultsToZero(t *testing.T) {
+	t.Parallel()
+
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("uprobe.o"), "uprobe_prog", bpfman.ProgramTypeUprobe)
+	require.NoError(t, err)
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	attachSpec, err := bpfman.NewUprobeAttachSpec(prog.Record.ProgramID, "/usr/lib/libc.so.6")
+	require.NoError(t, err)
+	attachSpec = attachSpec.WithFnName("malloc")
+
+	link, err := fix.Attach(ctx, attachSpec)
+	require.NoError(t, err)
+
+	details, ok := link.Record.Details.(bpfman.UprobeDetails)
+	require.True(t, ok)
+	assert.Equal(t, int32(0), details.PID)
+	assert.Equal(t, []int32{0}, fix.Kernel.UprobeAttachPids())
+}

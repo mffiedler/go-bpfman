@@ -212,11 +212,11 @@ func (k *stubKernel) AttachKprobe(ctx context.Context, progPinPath bpfman.ProgPi
 	panic("stubKernel.AttachKprobe not implemented")
 }
 
-func (k *stubKernel) AttachUprobeLocal(ctx context.Context, progPinPath bpfman.ProgPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
+func (k *stubKernel) AttachUprobeLocal(ctx context.Context, progPinPath bpfman.ProgPinPath, target, fnName string, offset uint64, pid int32, retprobe bool, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
 	panic("stubKernel.AttachUprobeLocal not implemented")
 }
 
-func (k *stubKernel) AttachUprobeContainer(ctx context.Context, scope lock.WriterScope, progPinPath bpfman.ProgPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath bpfman.LinkPath, containerPid int32) (bpfman.AttachOutput, error) {
+func (k *stubKernel) AttachUprobeContainer(ctx context.Context, scope lock.WriterScope, progPinPath bpfman.ProgPinPath, target, fnName string, offset uint64, pid int32, retprobe bool, linkPinPath bpfman.LinkPath, containerPid int32) (bpfman.AttachOutput, error) {
 	panic("stubKernel.AttachUprobeContainer not implemented")
 }
 

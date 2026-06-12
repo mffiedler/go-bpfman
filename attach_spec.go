@@ -85,6 +85,7 @@ type UprobeAttachSpec struct {
 	target       string
 	fnName       string // optional - can use offset only
 	offset       uint64
+	pid          int32 // if > 0, scope the probe to this process
 	containerPid int32 // if > 0, attach in this container's mount namespace
 }
 
@@ -104,6 +105,7 @@ func (s UprobeAttachSpec) ProgramID() kernel.ProgramID { return s.programID }
 func (s UprobeAttachSpec) Target() string              { return s.target }
 func (s UprobeAttachSpec) FnName() string              { return s.fnName }
 func (s UprobeAttachSpec) Offset() uint64              { return s.offset }
+func (s UprobeAttachSpec) Pid() int32                  { return s.pid }
 func (s UprobeAttachSpec) ContainerPid() int32         { return s.containerPid }
 
 // WithFnName returns a new UprobeAttachSpec with the function name set.
@@ -115,6 +117,16 @@ func (s UprobeAttachSpec) WithFnName(fnName string) UprobeAttachSpec {
 // WithOffset returns a new UprobeAttachSpec with the offset set.
 func (s UprobeAttachSpec) WithOffset(offset uint64) UprobeAttachSpec {
 	s.offset = offset
+	return s
+}
+
+// WithPid returns a new UprobeAttachSpec with the pid filter set.
+// If pid > 0, the probe fires only for that process; 0 traces all
+// processes. Distinct from the container pid, which selects the
+// mount namespace the target path resolves in, not which process
+// triggers the probe.
+func (s UprobeAttachSpec) WithPid(pid int32) UprobeAttachSpec {
+	s.pid = pid
 	return s
 }
 

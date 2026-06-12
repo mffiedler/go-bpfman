@@ -211,6 +211,7 @@ type AttachUprobeCmd struct {
 	Target       string               `name:"target" required:"" help:"Path to target binary or library."`
 	FnName       string               `short:"f" name:"fn-name" help:"Function name to attach to."`
 	Offset       uint64               `name:"offset" help:"Offset within the function." default:"0"`
+	Pid          int32                `name:"pid" help:"Only trace this process ID (0 traces all processes)."`
 	ContainerPid int32                `name:"container-pid" help:"Container PID for namespace-aware uprobe attachment."`
 	Metadata     []bpfmancli.KeyValue `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
 	ProgramID    bpfmancli.ProgramID  `arg:"" name:"program-id" help:"Program ID to attach."`
@@ -227,6 +228,9 @@ func (c *AttachUprobeCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 		}
 		if c.Offset != 0 {
 			spec = spec.WithOffset(c.Offset)
+		}
+		if c.Pid > 0 {
+			spec = spec.WithPid(c.Pid)
 		}
 		if c.ContainerPid > 0 {
 			spec = spec.WithContainerPid(c.ContainerPid)

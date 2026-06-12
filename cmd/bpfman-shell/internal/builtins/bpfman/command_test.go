@@ -856,6 +856,16 @@ func TestParseLinkAttachUprobe(t *testing.T) {
 			wantErr: "invalid container-pid",
 		},
 		{
+			name:       "pid filter",
+			args:       []runtime.Arg{word("uprobe"), word("--target"), word("/bin/foo"), word("--pid"), word("1234"), word("42")},
+			wantOutput: "table",
+		},
+		{
+			name:    "invalid pid",
+			args:    []runtime.Arg{word("uprobe"), word("--target"), word("/bin/foo"), word("--pid"), word("abc"), word("42")},
+			wantErr: "invalid pid",
+		},
+		{
 			name:    "metadata flag rejected",
 			args:    []runtime.Arg{word("uprobe"), word("--target"), word("/bin/foo"), word("-m"), word("k=v"), word("42")},
 			wantErr: "not supported for attach",
@@ -875,6 +885,22 @@ func TestParseLinkAttachUprobe(t *testing.T) {
 			assert.Equal(t, tt.wantOutput, cmd.Output.Output.Value)
 		})
 	}
+}
+
+// TestParseLinkAttachUprobe_PidReachesSpec pins that --pid lands on
+// the spec rather than merely parsing: the spec is what crosses into
+// the manager, so a parsed-but-dropped pid would silently trace
+// every process.
+func TestParseLinkAttachUprobe_PidReachesSpec(t *testing.T) {
+	t.Parallel()
+
+	cmd, err := parseLinkAttach([]runtime.Arg{
+		word("uprobe"), word("--target"), word("/bin/foo"), word("--pid"), word("1234"), word("42"),
+	})
+	require.NoError(t, err)
+	spec, ok := cmd.Spec.(bpfman.UprobeAttachSpec)
+	require.True(t, ok, "expected UprobeAttachSpec, got %T", cmd.Spec)
+	assert.Equal(t, int32(1234), spec.Pid())
 }
 
 func TestParseLinkAttachFentry(t *testing.T) {

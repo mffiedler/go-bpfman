@@ -252,15 +252,17 @@ type ProgramAttacher interface {
 	// AttachUprobeLocal attaches a pinned program to a user-space function
 	// in the current namespace. Does not spawn a helper, so no lock scope needed.
 	// target is the path to the binary or library (e.g., /usr/lib/libc.so.6).
+	// pid > 0 scopes the probe to that process; 0 traces all processes.
 	// If retprobe is true, attaches as a uretprobe instead of uprobe.
-	AttachUprobeLocal(ctx context.Context, progPinPath bpfman.ProgPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error)
+	AttachUprobeLocal(ctx context.Context, progPinPath bpfman.ProgPinPath, target, fnName string, offset uint64, pid int32, retprobe bool, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error)
 	// AttachUprobeContainer attaches a pinned program to a user-space function
 	// in a container's mount namespace. Spawns bpfman-ns helper, so requires
 	// lock scope to pass fd.
 	// target is the path to the binary or library (resolved in the container's namespace).
+	// pid > 0 scopes the probe to that process; 0 traces all processes.
 	// If retprobe is true, attaches as a uretprobe instead of uprobe.
 	// containerPid identifies the target container.
-	AttachUprobeContainer(ctx context.Context, scope lock.WriterScope, progPinPath bpfman.ProgPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath bpfman.LinkPath, containerPid int32) (bpfman.AttachOutput, error)
+	AttachUprobeContainer(ctx context.Context, scope lock.WriterScope, progPinPath bpfman.ProgPinPath, target, fnName string, offset uint64, pid int32, retprobe bool, linkPinPath bpfman.LinkPath, containerPid int32) (bpfman.AttachOutput, error)
 	// AttachFentry attaches a pinned program to a kernel function entry point.
 	// The fnName was specified at load time and stored with the program.
 	AttachFentry(ctx context.Context, progPinPath bpfman.ProgPinPath, fnName string, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error)

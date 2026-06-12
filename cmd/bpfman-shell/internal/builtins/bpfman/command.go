@@ -1105,13 +1105,14 @@ func parseLinkAttachKprobe(args []runtime.Arg) (*LinkAttachCommand, error) {
 
 // parseLinkAttachUprobe parses "link attach uprobe" arguments.
 //
-//	--target <path> [-f <fn-name>] [--offset <n>] [--container-pid <pid>]
-//	[-o <format>] <program-id>
+//	--target <path> [-f <fn-name>] [--offset <n>] [--pid <pid>]
+//	[--container-pid <pid>] [-o <format>] <program-id>
 func parseLinkAttachUprobe(args []runtime.Arg) (*LinkAttachCommand, error) {
 	var (
 		target       string
 		fnName       string
 		offset       uint64
+		pid          int32
 		containerPid int32
 		progArg      runtime.Arg
 		output       = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}}
@@ -1142,6 +1143,16 @@ func parseLinkAttachUprobe(args []runtime.Arg) (*LinkAttachCommand, error) {
 				return nil, fmt.Errorf("link attach uprobe: invalid offset %q: %w", driver.ArgText(args[i]), err)
 			}
 			offset = v
+		case "--pid":
+			i++
+			if i >= len(args) {
+				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i-1]), "link attach uprobe: --pid requires a value")
+			}
+			v, err := strconv.ParseInt(driver.ArgText(args[i]), 10, 32)
+			if err != nil {
+				return nil, fmt.Errorf("link attach uprobe: invalid pid %q: %w", driver.ArgText(args[i]), err)
+			}
+			pid = int32(v)
 		case "--container-pid":
 			i++
 			if i >= len(args) {
@@ -1195,6 +1206,9 @@ func parseLinkAttachUprobe(args []runtime.Arg) (*LinkAttachCommand, error) {
 	}
 	if offset != 0 {
 		spec = spec.WithOffset(offset)
+	}
+	if pid > 0 {
+		spec = spec.WithPid(pid)
 	}
 	if containerPid > 0 {
 		spec = spec.WithContainerPid(containerPid)

@@ -213,10 +213,11 @@ type fakeKernel struct {
 	xdpDispatcherLinks map[string]string
 
 	// Operation recording for verification
-	ops        []kernelOp
-	removePins []string         // paths passed to RemovePin
-	tcDetaches []tcFilterDetach // TC filters detached
-	mu         sync.Mutex
+	ops              []kernelOp
+	removePins       []string         // paths passed to RemovePin
+	tcDetaches       []tcFilterDetach // TC filters detached
+	uprobeAttachPids []int32          // pid filters received by uprobe attaches
+	mu               sync.Mutex
 
 	// Error injection - set these to control behaviour
 	failOnProgram map[string]error // fail Load if program name matches
@@ -639,6 +640,17 @@ func (f *fakeKernel) ProgramCount() int {
 
 // LinkCount returns the number of links currently tracked. Links
 // whose pin files have been removed are garbage-collected.
+// UprobeAttachPids returns the pid filters received by uprobe
+// attaches, in attach order. Tests use it to prove the pid crossed
+// the kernel boundary rather than only decorating the details.
+func (f *fakeKernel) UprobeAttachPids() []int32 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]int32, len(f.uprobeAttachPids))
+	copy(out, f.uprobeAttachPids)
+	return out
+}
+
 func (f *fakeKernel) LinkCount() int {
 	for id, link := range f.links {
 		if link.Record.PinPath != nil {
@@ -832,9 +844,12 @@ func (f *fakeKernel) AttachKprobe(_ context.Context, progPinPath bpfman.ProgPinP
 	}, nil
 }
 
-func (f *fakeKernel) AttachUprobeLocal(_ context.Context, progPinPath bpfman.ProgPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
+func (f *fakeKernel) AttachUprobeLocal(_ context.Context, progPinPath bpfman.ProgPinPath, target, fnName string, offset uint64, pid int32, retprobe bool, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
 	linkID := kernel.LinkID(f.nextID.Add(1))
 	createPinFile(linkPinPath)
+	f.mu.Lock()
+	f.uprobeAttachPids = append(f.uprobeAttachPids, pid)
+	f.mu.Unlock()
 	linkKind := bpfman.LinkKindUprobe
 	kernelLinkType := "uprobe"
 	if retprobe {
@@ -850,7 +865,7 @@ func (f *fakeKernel) AttachUprobeLocal(_ context.Context, progPinPath bpfman.Pro
 			KernelLinkID: &linkID,
 			PinPath:      bpfman.NewLinkPath(linkPinPath),
 			CreatedAt:    time.Now(),
-			Details:      bpfman.UprobeDetails{Target: target, FnName: fnName, Offset: offset, Retprobe: retprobe, ContainerPid: 0},
+			Details:      bpfman.UprobeDetails{Target: target, FnName: fnName, Offset: offset, PID: pid, Retprobe: retprobe, ContainerPid: 0},
 		},
 		Status: bpfman.LinkStatus{
 			Kernel:     &kl,
@@ -866,9 +881,12 @@ func (f *fakeKernel) AttachUprobeLocal(_ context.Context, progPinPath bpfman.Pro
 	}, nil
 }
 
-func (f *fakeKernel) AttachUprobeContainer(_ context.Context, _ lock.WriterScope, progPinPath bpfman.ProgPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath bpfman.LinkPath, containerPid int32) (bpfman.AttachOutput, error) {
+func (f *fakeKernel) AttachUprobeContainer(_ context.Context, _ lock.WriterScope, progPinPath bpfman.ProgPinPath, target, fnName string, offset uint64, pid int32, retprobe bool, linkPinPath bpfman.LinkPath, containerPid int32) (bpfman.AttachOutput, error) {
 	linkID := kernel.LinkID(f.nextID.Add(1))
 	createPinFile(linkPinPath)
+	f.mu.Lock()
+	f.uprobeAttachPids = append(f.uprobeAttachPids, pid)
+	f.mu.Unlock()
 	linkKind := bpfman.LinkKindUprobe
 	kernelLinkType := "uprobe"
 	if retprobe {
@@ -883,7 +901,7 @@ func (f *fakeKernel) AttachUprobeContainer(_ context.Context, _ lock.WriterScope
 			KernelLinkID: &linkID,
 			PinPath:      bpfman.NewLinkPath(linkPinPath),
 			CreatedAt:    time.Now(),
-			Details:      bpfman.UprobeDetails{Target: target, FnName: fnName, Offset: offset, Retprobe: retprobe, ContainerPid: containerPid},
+			Details:      bpfman.UprobeDetails{Target: target, FnName: fnName, Offset: offset, PID: pid, Retprobe: retprobe, ContainerPid: containerPid},
 		},
 		Status: bpfman.LinkStatus{
 			Kernel:     &kl,
