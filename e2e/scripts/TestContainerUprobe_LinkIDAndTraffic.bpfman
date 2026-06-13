@@ -64,12 +64,12 @@ guard listed <- bpfman link list -o json
 expect_link_list_identity $listed $link $linkID uprobe
 
 print "container-uprobe target-pid=${target.pid} link-id=${linkID} kernel-link-id=${link.record.kernel_link_id}"
-guard programsWide <- exec bpfman program list -o wide
-print $programsWide.stdout
+guard programsTable <- exec bpfman program list
+print $programsTable.stdout
 guard linkDetail <- exec bpfman link get $linkID
 print $linkDetail.stdout
-guard linksWide <- exec bpfman link list -o wide
-print $linksWide.stdout
+guard linksTable <- exec bpfman link list
+print $linksTable.stdout
 
 let mapID = $prog |> jq '[.status.maps[] | select(.name == "up_count") | .id][0]'
 let counter_filter = "fromjson | .[0].formatted.value | tonumber"
