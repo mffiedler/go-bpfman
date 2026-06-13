@@ -869,7 +869,7 @@ func formatLoadedProgramsTable(programs []bpfman.Program) string {
 // FormatProgramsComposite renders the `program list` result: a set of
 // summary entries, one per program, with observation metadata, in the
 // requested output format.
-func FormatProgramsComposite(result bpfman.ProgramEntryListResult, flags *OutputFlags) (string, error) {
+func FormatProgramsComposite(result bpfman.ProgramListResult, flags *OutputFlags) (string, error) {
 	if result.Programs == nil {
 		result.Programs = []bpfman.ProgramListEntry{}
 	}
@@ -903,7 +903,7 @@ const numListLinks = 3
 // without a second command. The per-entry fields are precomputed by
 // the manager, so kernel-only rows render with their kernel type and
 // name and an empty application and links cell.
-func formatProgramsCompositeTable(result bpfman.ProgramEntryListResult) string {
+func formatProgramsCompositeTable(result bpfman.ProgramListResult) string {
 	var b strings.Builder
 	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
 

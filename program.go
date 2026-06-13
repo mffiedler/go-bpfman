@@ -301,15 +301,6 @@ func TestLoadSpecWithPath(programType ProgramType, objectPath string) LoadSpec {
 		WithObjectPath(objectPath)
 }
 
-// HostInfo contains system information about the observed host.
-type HostInfo struct {
-	Sysname  string `json:"sysname"`
-	Nodename string `json:"nodename"`
-	Release  string `json:"release"`
-	Version  string `json:"version"`
-	Machine  string `json:"machine"`
-}
-
 // ProgramListEntry is one row of `program list`. It summarises a
 // program rather than carrying the full managed Program: the common
 // columns are top-level fields, so a kernel-only program -- one loaded
@@ -332,19 +323,18 @@ type ProgramListEntry struct {
 	Kernel *kernel.Program `json:"kernel"`
 }
 
-// ProgramEntryListResult is the result of `program list`: a set of
-// summary entries with observation metadata. It is distinct from the
-// internal []Program list returned by ListPrograms so the listing can
-// carry kernel-only rows without a synthetic Program.
-type ProgramEntryListResult struct {
-	ObservedAt time.Time          `json:"observed_at"`
-	Host       HostInfo           `json:"host"`
-	Programs   []ProgramListEntry `json:"programs"`
+// ProgramListResult is the result of `program list`: summary entries
+// wrapped in a stable top-level `programs` key, matching LoadResult
+// and LinkListResult. It carries summary entries rather than full
+// managed programs so the listing can include kernel-only rows (under
+// --all) without a synthetic Program.
+type ProgramListResult struct {
+	Programs []ProgramListEntry `json:"programs"`
 }
 
 // LoadResult wraps the programs returned by Manager.Load. The
 // wrapper exists so CLI JSON output exposes a stable top-level
-// `programs` key matching ProgramEntryListResult and LinkListResult.
+// `programs` key matching ProgramListResult and LinkListResult.
 //
 // Programs are returned in the same order as the input ProgramSpec
 // slice. Tests rely on this ordering contract; do not break it.

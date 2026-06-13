@@ -56,8 +56,7 @@
 // and do not build plans, since they are purely observational.
 //
 // The platform layer (platform/) provides the I/O abstractions for
-// BPF operations. Minor exceptions exist (e.g., GetHostInfo calls
-// unix.Uname directly).
+// BPF operations.
 //
 // # Atomic Load Model
 //

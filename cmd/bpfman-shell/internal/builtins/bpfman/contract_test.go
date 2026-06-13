@@ -20,7 +20,7 @@ import (
 // the type the external dispatch decoder produces for that command. It
 // is the guard that would have caught the program-list DTO drift,
 // where the static shape and the in-process backend moved to
-// ProgramEntryListResult while the external decoder still produced the
+// ProgramListResult while the external decoder still produced the
 // old type.
 //
 // Only the program and link commands are covered: those are the ones
@@ -40,7 +40,7 @@ func TestBpfmanCommandResultContract(t *testing.T) {
 	}{
 		{"program load", []string{"program", "load"}, bpfman.LoadResult{Programs: []bpfman.Program{}}},
 		{"program get", []string{"program", "get"}, prog},
-		{"program list", []string{"program", "list"}, bpfman.ProgramEntryListResult{Programs: []bpfman.ProgramListEntry{}}},
+		{"program list", []string{"program", "list"}, bpfman.ProgramListResult{Programs: []bpfman.ProgramListEntry{}}},
 		{"link get", []string{"link", "get"}, link},
 		{"link attach", []string{"link", "attach"}, link},
 		{"link list", []string{"link", "list"}, bpfman.LinkListResult{Links: []bpfman.LinkRecord{}}},

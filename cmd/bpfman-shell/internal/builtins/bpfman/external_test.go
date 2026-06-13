@@ -13,7 +13,7 @@ import (
 )
 
 // TestDecodeBpfmanResult_ProgramListDTO proves the external dispatch
-// backend decodes `program list` into the ProgramEntryListResult DTO,
+// backend decodes `program list` into the ProgramListResult DTO,
 // preserving the top-level summary fields and -- crucially -- a
 // kernel-only entry's null record. Decoding into the old []Program
 // shape would silently drop those, so this locks external/library
@@ -24,7 +24,7 @@ func TestDecodeBpfmanResult_ProgramListDTO(t *testing.T) {
 	const managedID = kernel.ProgramID(11)
 	const strayID = kernel.ProgramID(900)
 
-	result := bpfman.ProgramEntryListResult{
+	result := bpfman.ProgramListResult{
 		Programs: []bpfman.ProgramListEntry{
 			{
 				ProgramID:    managedID,
@@ -56,8 +56,8 @@ func TestDecodeBpfmanResult_ProgramListDTO(t *testing.T) {
 	v, err := decodeBpfmanResult([]runtime.Arg{word("program"), word("list")}, stdout)
 	require.NoError(t, err)
 
-	decoded, ok := v.Origin().(bpfman.ProgramEntryListResult)
-	require.True(t, ok, "program list must decode into ProgramEntryListResult, not the old []Program shape")
+	decoded, ok := v.Origin().(bpfman.ProgramListResult)
+	require.True(t, ok, "program list must decode into ProgramListResult, not the old []Program shape")
 	require.Len(t, decoded.Programs, 2)
 
 	managed := decoded.Programs[0]

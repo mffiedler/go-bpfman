@@ -10,8 +10,6 @@ import (
 	"slices"
 	"strings"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/inspect"
@@ -41,21 +39,6 @@ func (e ErrProgramRequiresReconciliation) Error() string {
 
 func (e ErrProgramRequiresReconciliation) Unwrap() error {
 	return e.Cause
-}
-
-// GetHostInfo returns system information from uname.
-func GetHostInfo() bpfman.HostInfo {
-	var utsname unix.Utsname
-	if err := unix.Uname(&utsname); err != nil {
-		return bpfman.HostInfo{}
-	}
-	return bpfman.HostInfo{
-		Sysname:  unix.ByteSliceToString(utsname.Sysname[:]),
-		Nodename: unix.ByteSliceToString(utsname.Nodename[:]),
-		Release:  unix.ByteSliceToString(utsname.Release[:]),
-		Version:  unix.ByteSliceToString(utsname.Version[:]),
-		Machine:  unix.ByteSliceToString(utsname.Machine[:]),
-	}
 }
 
 // Get retrieves a managed program by its kernel ID with full
@@ -465,13 +448,13 @@ func (m *Manager) ListPrograms(ctx context.Context, opts ...bpfman.ListOption) (
 // The snapshot already enumerates every kernel program and tags its
 // presence, so including kernel-only rows reuses data already
 // collected: there is no second kernel walk and no per-program lookup.
-func (m *Manager) ListProgramEntries(ctx context.Context, opts ...bpfman.ListOption) (bpfman.ProgramEntryListResult, error) {
+func (m *Manager) ListProgramEntries(ctx context.Context, opts ...bpfman.ListOption) (bpfman.ProgramListResult, error) {
 	filter := bpfman.ApplyListOptions(opts...)
 
 	scanner := m.rt.BPFFS().Scanner()
 	obs, err := inspect.Snapshot(ctx, m.store, m.kernel, scanner)
 	if err != nil {
-		return bpfman.ProgramEntryListResult{}, fmt.Errorf("snapshot: %w", err)
+		return bpfman.ProgramListResult{}, fmt.Errorf("snapshot: %w", err)
 	}
 
 	entries := []bpfman.ProgramListEntry{}
@@ -499,11 +482,7 @@ func (m *Manager) ListProgramEntries(ctx context.Context, opts ...bpfman.ListOpt
 		return cmp.Compare(a.ProgramID, b.ProgramID)
 	})
 
-	return bpfman.ProgramEntryListResult{
-		ObservedAt: obs.Meta.ObservedAt,
-		Host:       GetHostInfo(),
-		Programs:   entries,
-	}, nil
+	return bpfman.ProgramListResult{Programs: entries}, nil
 }
 
 // managedProgramEntry builds a list entry for a bpfman-managed program.

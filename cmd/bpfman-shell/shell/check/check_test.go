@@ -1298,35 +1298,6 @@ print $listed.programs[0].record.program_id`
 	assert.Empty(t, issues)
 }
 
-func TestCheck_BPFManProgramListShape_WrapperFieldsAreClean(t *testing.T) {
-	t.Parallel()
-
-	// The sealed wrapper exposes observed_at and host alongside
-	// programs; all three are valid top-level fields. Guards
-	// against the reflected shape dropping a wrapper field the
-	// CLI's JSON still emits, which programs-only coverage misses.
-	src := `guard listed <- bpfman program list -o json
-print $listed.observed_at
-print $listed.host
-print $listed.programs[0].record.program_id`
-	issues := checkSource(t, src)
-	assert.Empty(t, issues)
-}
-
-func TestCheck_BPFManProgramListShape_WrapperFieldTypoRejected(t *testing.T) {
-	t.Parallel()
-
-	// A typo on a non-programs wrapper field is rejected too, so the
-	// sealing covers the whole wrapper, not just the programs slot.
-	src := `guard listed <- bpfman program list -o json
-print $listed.observed_att`
-	issues := checkSource(t, src)
-	require.Len(t, issues, 1)
-	assert.Contains(t, issues[0].Msg, "listed has no field")
-	assert.Contains(t, issues[0].Msg, `"observed_att"`)
-	assert.Contains(t, issues[0].Msg, `"observed_at"`)
-}
-
 func TestCheck_BPFManProgramListShape_ProgramFieldsAreChecked(t *testing.T) {
 	t.Parallel()
 

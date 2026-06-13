@@ -17,7 +17,7 @@ import (
 func TestFormatProgramsCompositeTable_Columns(t *testing.T) {
 	t.Parallel()
 
-	result := bpfman.ProgramEntryListResult{
+	result := bpfman.ProgramListResult{
 		Programs: []bpfman.ProgramListEntry{
 			{
 				ProgramID:    42,
