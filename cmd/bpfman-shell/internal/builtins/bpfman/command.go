@@ -614,9 +614,8 @@ func execLoadFile(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 // The AttachSpec is constructed at parse time from the type-specific
 // flags; execution simply runs it under lock.
 type LinkAttachCommand struct {
-	Spec     bpfman.AttachSpec
-	Metadata []bpfmancli.KeyValue
-	Output   cliformat.OutputFlags
+	Spec   bpfman.AttachSpec
+	Output cliformat.OutputFlags
 }
 
 func (*LinkAttachCommand) isCommand() {}
@@ -767,7 +766,7 @@ func parseLinkAttachXDP(args []runtime.Arg) (*LinkAttachCommand, error) {
 		spec = spec.WithNetns(netns)
 	}
 
-	return &LinkAttachCommand{Spec: spec, Metadata: metadata, Output: output}, nil
+	return &LinkAttachCommand{Spec: spec.WithMetadata(bpfmancli.MetadataMap(metadata)), Output: output}, nil
 }
 
 // parseLinkAttachTC parses "link attach tc" arguments.
@@ -873,7 +872,7 @@ func parseLinkAttachTC(args []runtime.Arg) (*LinkAttachCommand, error) {
 		spec = spec.WithNetns(netns)
 	}
 
-	return &LinkAttachCommand{Spec: spec, Metadata: metadata, Output: output}, nil
+	return &LinkAttachCommand{Spec: spec.WithMetadata(bpfmancli.MetadataMap(metadata)), Output: output}, nil
 }
 
 // parseLinkAttachTCX parses "link attach tcx" arguments.
@@ -962,7 +961,7 @@ func parseLinkAttachTCX(args []runtime.Arg) (*LinkAttachCommand, error) {
 		spec = spec.WithNetns(netns)
 	}
 
-	return &LinkAttachCommand{Spec: spec, Metadata: metadata, Output: output}, nil
+	return &LinkAttachCommand{Spec: spec.WithMetadata(bpfmancli.MetadataMap(metadata)), Output: output}, nil
 }
 
 // parseLinkAttachTracepoint parses "link attach tracepoint" arguments.
@@ -1027,7 +1026,7 @@ func parseLinkAttachTracepoint(args []runtime.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach tracepoint: %w", err)
 	}
 
-	return &LinkAttachCommand{Spec: spec, Metadata: metadata, Output: output}, nil
+	return &LinkAttachCommand{Spec: spec.WithMetadata(bpfmancli.MetadataMap(metadata)), Output: output}, nil
 }
 
 // parseLinkAttachKprobe parses "link attach kprobe" arguments.
@@ -1102,7 +1101,7 @@ func parseLinkAttachKprobe(args []runtime.Arg) (*LinkAttachCommand, error) {
 		spec = spec.WithOffset(offset)
 	}
 
-	return &LinkAttachCommand{Spec: spec, Metadata: metadata, Output: output}, nil
+	return &LinkAttachCommand{Spec: spec.WithMetadata(bpfmancli.MetadataMap(metadata)), Output: output}, nil
 }
 
 // parseLinkAttachUprobe parses "link attach uprobe" arguments.
@@ -1216,7 +1215,7 @@ func parseLinkAttachUprobe(args []runtime.Arg) (*LinkAttachCommand, error) {
 		spec = spec.WithContainerPid(containerPid)
 	}
 
-	return &LinkAttachCommand{Spec: spec, Metadata: metadata, Output: output}, nil
+	return &LinkAttachCommand{Spec: spec.WithMetadata(bpfmancli.MetadataMap(metadata)), Output: output}, nil
 }
 
 // parseLinkAttachFentry parses "link attach fentry" arguments.
@@ -1273,7 +1272,7 @@ func parseLinkAttachFentry(args []runtime.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach fentry: %w", err)
 	}
 
-	return &LinkAttachCommand{Spec: spec, Metadata: metadata, Output: output}, nil
+	return &LinkAttachCommand{Spec: spec.WithMetadata(bpfmancli.MetadataMap(metadata)), Output: output}, nil
 }
 
 // parseLinkAttachFexit parses "link attach fexit" arguments.
@@ -1330,20 +1329,13 @@ func parseLinkAttachFexit(args []runtime.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach fexit: %w", err)
 	}
 
-	return &LinkAttachCommand{Spec: spec, Metadata: metadata, Output: output}, nil
+	return &LinkAttachCommand{Spec: spec.WithMetadata(bpfmancli.MetadataMap(metadata)), Output: output}, nil
 }
 
 // execLinkAttach executes a parsed LinkAttachCommand, attaching the
 // BPF program under lock, printing output, and returning a structured
 // Value for optional variable assignment.
 func execLinkAttach(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *LinkAttachCommand) (runtime.Value, error) {
-	// Link metadata is recognised by the parser for Rust CLI parity but
-	// persisting it on links is not implemented yet. Reject it before
-	// attaching rather than silently discarding it.
-	if len(cmd.Metadata) > 0 {
-		return runtime.Value{}, fmt.Errorf("link metadata is not implemented yet")
-	}
-
 	link, err := bpfmancli.RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (bpfman.Link, error) {
 		return mgr.Attach(ctx, writeLock, cmd.Spec)
 	})

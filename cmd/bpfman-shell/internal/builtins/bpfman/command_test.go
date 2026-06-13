@@ -1149,7 +1149,7 @@ func TestParseLinkAttachTCX_Errors(t *testing.T) {
 	}
 }
 
-func TestParseLinkAttachMetadataRecognisedButRejected(t *testing.T) {
+func TestParseLinkAttachMetadataThreadedToSpec(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -1196,19 +1196,12 @@ func TestParseLinkAttachMetadataRecognisedButRejected(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			// Recognised: -m/--metadata is part of the attach grammar,
-			// so parsing succeeds and the metadata is retained.
+			// -m/--metadata is parsed and threaded onto the attach spec,
+			// so the metadata reaches the manager and is persisted.
 			cmd, err := parseLinkAttach(tt.args)
 			require.NoError(t, err)
-			require.Len(t, cmd.Metadata, 1)
-			assert.Equal(t, "k", cmd.Metadata[0].Key)
-			assert.Equal(t, "v", cmd.Metadata[0].Value)
-
-			// Not implemented: supplying it fails before any attach,
-			// rather than being silently discarded. The guard runs
-			// before cli/mgr are touched, so nil is safe here.
-			_, execErr := execLinkAttach(context.Background(), nil, nil, cmd)
-			require.ErrorContains(t, execErr, "link metadata is not implemented yet")
+			assert.Equal(t, map[string]string{"k": "v"}, cmd.Spec.Metadata(),
+				"-m metadata must be threaded onto the attach spec")
 		})
 	}
 }

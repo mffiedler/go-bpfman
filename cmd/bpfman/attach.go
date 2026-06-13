@@ -63,9 +63,6 @@ type AttachXDPCmd struct {
 }
 
 func (c *AttachXDPCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
-	if err := c.errIfMetadataSet(); err != nil {
-		return err
-	}
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		if c.Priority < 0 {
 			return attachResult{}, fmt.Errorf("--priority must be non-negative, got %d", c.Priority)
@@ -79,6 +76,8 @@ func (c *AttachXDPCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 		if c.Netns != "" {
 			spec = spec.WithNetns(c.Netns)
 		}
+
+		spec = spec.WithMetadata(bpfmancli.MetadataMap(c.Metadata))
 
 		link, err := mgr.Attach(ctx, writeLock, spec)
 		if err != nil {
@@ -102,9 +101,6 @@ type AttachTCCmd struct {
 }
 
 func (c *AttachTCCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
-	if err := c.errIfMetadataSet(); err != nil {
-		return err
-	}
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		if c.Priority < 0 {
 			return attachResult{}, fmt.Errorf("--priority must be non-negative, got %d", c.Priority)
@@ -118,6 +114,8 @@ func (c *AttachTCCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 		if c.Netns != "" {
 			spec = spec.WithNetns(c.Netns)
 		}
+
+		spec = spec.WithMetadata(bpfmancli.MetadataMap(c.Metadata))
 
 		link, err := mgr.Attach(ctx, writeLock, spec)
 		if err != nil {
@@ -140,9 +138,6 @@ type AttachTCXCmd struct {
 }
 
 func (c *AttachTCXCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
-	if err := c.errIfMetadataSet(); err != nil {
-		return err
-	}
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		if c.Priority < 0 {
 			return attachResult{}, fmt.Errorf("--priority must be non-negative, got %d", c.Priority)
@@ -156,6 +151,8 @@ func (c *AttachTCXCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 		if c.Netns != "" {
 			spec = spec.WithNetns(c.Netns)
 		}
+
+		spec = spec.WithMetadata(bpfmancli.MetadataMap(c.Metadata))
 
 		link, err := mgr.Attach(ctx, writeLock, spec)
 		if err != nil {
@@ -175,14 +172,13 @@ type AttachTracepointCmd struct {
 }
 
 func (c *AttachTracepointCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
-	if err := c.errIfMetadataSet(); err != nil {
-		return err
-	}
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		spec, err := bpfman.NewTracepointAttachSpec(c.ProgramID.Value, c.Tracepoint)
 		if err != nil {
 			return attachResult{}, fmt.Errorf("invalid tracepoint spec: %w", err)
 		}
+
+		spec = spec.WithMetadata(bpfmancli.MetadataMap(c.Metadata))
 
 		link, err := mgr.Attach(ctx, writeLock, spec)
 		if err != nil {
@@ -203,9 +199,6 @@ type AttachKprobeCmd struct {
 }
 
 func (c *AttachKprobeCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
-	if err := c.errIfMetadataSet(); err != nil {
-		return err
-	}
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		spec, err := bpfman.NewKprobeAttachSpec(c.ProgramID.Value, c.FnName)
 		if err != nil {
@@ -214,6 +207,8 @@ func (c *AttachKprobeCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 		if c.Offset != 0 {
 			spec = spec.WithOffset(c.Offset)
 		}
+
+		spec = spec.WithMetadata(bpfmancli.MetadataMap(c.Metadata))
 
 		link, err := mgr.Attach(ctx, writeLock, spec)
 		if err != nil {
@@ -237,9 +232,6 @@ type AttachUprobeCmd struct {
 }
 
 func (c *AttachUprobeCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
-	if err := c.errIfMetadataSet(); err != nil {
-		return err
-	}
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		spec, err := bpfman.NewUprobeAttachSpec(c.ProgramID.Value, c.Target)
 		if err != nil {
@@ -258,6 +250,8 @@ func (c *AttachUprobeCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 			spec = spec.WithContainerPid(c.ContainerPid)
 		}
 
+		spec = spec.WithMetadata(bpfmancli.MetadataMap(c.Metadata))
+
 		link, err := mgr.Attach(ctx, writeLock, spec)
 		if err != nil {
 			return attachResult{}, err
@@ -275,14 +269,13 @@ type AttachFentryCmd struct {
 }
 
 func (c *AttachFentryCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
-	if err := c.errIfMetadataSet(); err != nil {
-		return err
-	}
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		spec, err := bpfman.NewFentryAttachSpec(c.ProgramID.Value)
 		if err != nil {
 			return attachResult{}, fmt.Errorf("invalid fentry spec: %w", err)
 		}
+
+		spec = spec.WithMetadata(bpfmancli.MetadataMap(c.Metadata))
 
 		link, err := mgr.Attach(ctx, writeLock, spec)
 		if err != nil {
@@ -301,14 +294,13 @@ type AttachFexitCmd struct {
 }
 
 func (c *AttachFexitCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
-	if err := c.errIfMetadataSet(); err != nil {
-		return err
-	}
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		spec, err := bpfman.NewFexitAttachSpec(c.ProgramID.Value)
 		if err != nil {
 			return attachResult{}, fmt.Errorf("invalid fexit spec: %w", err)
 		}
+
+		spec = spec.WithMetadata(bpfmancli.MetadataMap(c.Metadata))
 
 		link, err := mgr.Attach(ctx, writeLock, spec)
 		if err != nil {
