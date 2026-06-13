@@ -892,25 +892,73 @@ func FormatProgramsComposite(result bpfman.ProgramListResult, flags *OutputFlags
 	}
 }
 
+// numListLinks bounds how many link IDs the LINKS column lists before
+// truncating with ", ...".
+const numListLinks = 3
+
+// applicationMetadataKey is the metadata key bpfman uses to group
+// programs loaded under one application. It mirrors
+// manager.ApplicationMetadataKey, duplicated here so the presentation
+// layer need not depend on the manager package.
+const applicationMetadataKey = "bpfman.io/application"
+
+// formatProgramsCompositeTable renders the default program-list table.
+// The columns -- Program ID, Application, Type, Function Name, Links --
+// let the listing answer "which application?" and "is it attached?"
+// without a second command.
 func formatProgramsCompositeTable(result bpfman.ProgramListResult) string {
 	var b strings.Builder
 	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
 
-	fmt.Fprintln(w, "PROGRAM ID\tTYPE\tNAME\tSOURCE")
+	fmt.Fprintln(w, "PROGRAM ID\tAPPLICATION\tTYPE\tFUNCTION NAME\tLINKS")
 
 	for _, p := range result.Programs {
-		id := p.Record.ProgramID
-
-		// Get info from spec (always present as value type)
-		name := p.Record.Meta.Name
-		progType := p.Record.Load.ProgramType().String()
-		source := p.Record.Load.ObjectPath()
-
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\n", id, progType, name, source)
+		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n",
+			p.Record.ProgramID,
+			p.Record.Meta.Metadata[applicationMetadataKey],
+			p.Record.Load.ProgramType().String(),
+			programFunctionName(p),
+			programLinksColumn(p),
+		)
 	}
 
 	w.Flush()
 	return b.String()
+}
+
+// programFunctionName is the BPF function name for the Function Name
+// column. For managed programs the stored name is authoritative and
+// carries the full ELF function name; the kernel name is the fallback
+// for unmanaged programs, where it is the only value available (and is
+// truncated to the kernel's 15-char limit).
+func programFunctionName(p bpfman.Program) string {
+	if p.Record.Meta.Name != "" {
+		return p.Record.Meta.Name
+	}
+	if p.Status.Kernel != nil {
+		return p.Status.Kernel.Name
+	}
+	return ""
+}
+
+// programLinksColumn renders the program's links as a count followed
+// by up to numListLinks IDs, with ", ..." when more exist and an empty
+// cell when there are none.
+func programLinksColumn(p bpfman.Program) string {
+	count := len(p.Status.Links)
+	if count == 0 {
+		return ""
+	}
+	shown := min(count, numListLinks)
+	ids := make([]string, shown)
+	for i := range shown {
+		ids[i] = fmt.Sprintf("%d", p.Status.Links[i].Record.ID)
+	}
+	list := strings.Join(ids, ", ")
+	if count > numListLinks {
+		list += ", ..."
+	}
+	return fmt.Sprintf("(%d) %s", count, list)
 }
 
 // FormatDispatcherList formats a list of dispatcher summaries.
