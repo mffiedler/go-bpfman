@@ -103,6 +103,14 @@ func shapeFromType(t reflect.Type, kind OriginKind) Shape {
 	return buildShape(t, map[reflect.Type]bool{}, kind)
 }
 
+// ShapeFromType derives the inferred Shape for a Go type -- the public
+// entry to the same derivation the bind-shape registry uses. Tests use
+// it to assert that a decoded value's type matches a command's static
+// shape.
+func ShapeFromType(t reflect.Type) Shape {
+	return shapeFromType(t, OriginUnknown)
+}
+
 func buildShape(t reflect.Type, seen map[reflect.Type]bool, kind OriginKind) Shape {
 	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
