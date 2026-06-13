@@ -457,3 +457,110 @@ func (m *Manager) ListPrograms(ctx context.Context, opts ...bpfman.ListOption) (
 		Programs:   programs,
 	}, nil
 }
+
+// ListProgramEntries lists programs as summary entries for the user-
+// facing `program list` command. Managed programs are always included;
+// kernel-only programs (loaded in the kernel but not managed by
+// bpfman) are included only when WithIncludeUnmanaged is set -- the
+// `--all` surface. Each entry carries the common columns as top-level
+// fields; managed entries also carry the full store Record, while
+// kernel-only entries carry only the kernel observation and no Record.
+//
+// The snapshot already enumerates every kernel program and tags its
+// presence, so including kernel-only rows reuses data already
+// collected: there is no second kernel walk and no per-program lookup.
+func (m *Manager) ListProgramEntries(ctx context.Context, opts ...bpfman.ListOption) (bpfman.ProgramEntryListResult, error) {
+	filter := bpfman.ApplyListOptions(opts...)
+
+	scanner := m.rt.BPFFS().Scanner()
+	obs, err := inspect.Snapshot(ctx, m.store, m.kernel, scanner)
+	if err != nil {
+		return bpfman.ProgramEntryListResult{}, fmt.Errorf("snapshot: %w", err)
+	}
+
+	entries := []bpfman.ProgramListEntry{}
+	for _, row := range obs.Programs {
+		switch {
+		case row.Presence.InStore:
+			prog, ok := row.AsProgram()
+			if !ok {
+				continue
+			}
+			if filter.Matches(&prog) {
+				entries = append(entries, managedProgramEntry(prog))
+			}
+		case filter.IncludeUnmanaged() && row.Presence.KernelOnly():
+			if row.Kernel == nil {
+				continue
+			}
+			if filter.MatchesKernelOnly(row.Kernel.ProgramType.String()) {
+				entries = append(entries, kernelOnlyProgramEntry(*row.Kernel))
+			}
+		}
+	}
+
+	slices.SortFunc(entries, func(a, b bpfman.ProgramListEntry) int {
+		return cmp.Compare(a.ProgramID, b.ProgramID)
+	})
+
+	return bpfman.ProgramEntryListResult{
+		ObservedAt: obs.Meta.ObservedAt,
+		Host:       GetHostInfo(),
+		Programs:   entries,
+	}, nil
+}
+
+// managedProgramEntry builds a list entry for a bpfman-managed program.
+func managedProgramEntry(p bpfman.Program) bpfman.ProgramListEntry {
+	rec := p.Record
+	return bpfman.ProgramListEntry{
+		ProgramID:    p.Record.ProgramID,
+		Managed:      true,
+		Application:  p.Record.Meta.Metadata[ApplicationMetadataKey],
+		Type:         p.Record.Load.ProgramType().String(),
+		FunctionName: programEntryFunctionName(p.Record.Meta.Name, p.Status.Kernel),
+		Links:        linkIDs(p.Status.Links),
+		Record:       &rec,
+		Kernel:       p.Status.Kernel,
+	}
+}
+
+// kernelOnlyProgramEntry builds a list entry for a kernel program that
+// bpfman does not manage. It carries only the kernel observation; the
+// managed Record is nil and there are no bpfman-tracked links.
+func kernelOnlyProgramEntry(kp kernel.Program) bpfman.ProgramListEntry {
+	k := kp
+	return bpfman.ProgramListEntry{
+		ProgramID:    kp.ID,
+		Managed:      false,
+		Type:         kp.ProgramType.String(),
+		FunctionName: kp.Name,
+		Links:        []bpfman.LinkID{},
+		Record:       nil,
+		Kernel:       &k,
+	}
+}
+
+// programEntryFunctionName is the function name for a list entry: the
+// stored ELF name when present (managed programs), falling back to the
+// kernel name (the only value available for kernel-only programs).
+func programEntryFunctionName(metaName string, k *kernel.Program) string {
+	if metaName != "" {
+		return metaName
+	}
+	if k != nil {
+		return k.Name
+	}
+	return ""
+}
+
+// linkIDs extracts the bpfman link IDs from a program's links. It
+// returns a non-nil empty slice when there are none so the wire shape
+// is always a JSON array.
+func linkIDs(links []bpfman.Link) []bpfman.LinkID {
+	ids := make([]bpfman.LinkID, 0, len(links))
+	for _, l := range links {
+		ids = append(ids, l.Record.ID)
+	}
+	return ids
+}

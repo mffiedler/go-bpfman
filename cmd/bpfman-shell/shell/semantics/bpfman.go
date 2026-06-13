@@ -24,9 +24,9 @@ var (
 	programShape = shapeFromType(reflect.TypeFor[bpfman.Program](), OriginProgram)
 	linkShape    = shapeFromType(reflect.TypeFor[bpfman.Link](), OriginLink)
 
-	loadResultShape        = shapeFromType(reflect.TypeFor[bpfman.LoadResult](), OriginUnknown)
-	programListResultShape = shapeFromType(reflect.TypeFor[bpfman.ProgramListResult](), OriginUnknown)
-	linkListResultShape    = shapeFromType(reflect.TypeFor[bpfman.LinkListResult](), OriginUnknown)
+	loadResultShape       = shapeFromType(reflect.TypeFor[bpfman.LoadResult](), OriginUnknown)
+	programEntryListShape = shapeFromType(reflect.TypeFor[bpfman.ProgramEntryListResult](), OriginUnknown)
+	linkListResultShape   = shapeFromType(reflect.TypeFor[bpfman.LinkListResult](), OriginUnknown)
 
 	linkDetailsShapes = buildLinkDetailsShapes()
 )
@@ -63,7 +63,7 @@ func inferBpfmanBindShape(args []syntax.Expr) Shape {
 		case "get":
 			return KindShape(OriginProgram)
 		case "list":
-			return programListResultShape
+			return programEntryListShape
 		}
 	case "link":
 		switch verb.Text {

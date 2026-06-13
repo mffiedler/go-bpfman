@@ -8,33 +8,24 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/kernel"
 )
 
 // TestFormatProgramsCompositeTable_Columns asserts the default
 // program-list table carries the Program ID, Application, Type,
-// Function Name and Links columns, and that the Links cell shows a
-// count with its IDs.
+// Function Name and Links columns from the precomputed entry fields,
+// and that the Links cell shows a count with its IDs.
 func TestFormatProgramsCompositeTable_Columns(t *testing.T) {
 	t.Parallel()
 
-	result := bpfman.ProgramListResult{
-		Programs: []bpfman.Program{
+	result := bpfman.ProgramEntryListResult{
+		Programs: []bpfman.ProgramListEntry{
 			{
-				Record: bpfman.ProgramRecord{
-					ProgramID: 42,
-					Load:      bpfman.TestLoadSpec(bpfman.ProgramTypeXDP),
-					Meta: bpfman.ProgramMeta{
-						Name:     "xdp_stats",
-						Metadata: map[string]string{applicationMetadataKey: "demo"},
-					},
-				},
-				Status: bpfman.ProgramStatus{
-					Links: []bpfman.Link{
-						{Record: bpfman.LinkRecord{ID: 100, Kind: bpfman.LinkKindXDP}},
-						{Record: bpfman.LinkRecord{ID: 101, Kind: bpfman.LinkKindXDP}},
-					},
-				},
+				ProgramID:    42,
+				Managed:      true,
+				Application:  "demo",
+				Type:         "xdp",
+				FunctionName: "xdp_stats",
+				Links:        []bpfman.LinkID{100, 101},
 			},
 		},
 	}
@@ -55,42 +46,13 @@ func TestFormatProgramsCompositeTable_Columns(t *testing.T) {
 	assert.Contains(t, lines[1], "(2) 100, 101")
 }
 
-// TestProgramFunctionName_FallsBackToKernelName proves the Function
-// Name column prefers the stored ELF name and falls back to the
-// kernel name only when no managed name is present.
-func TestProgramFunctionName_FallsBackToKernelName(t *testing.T) {
-	t.Parallel()
-
-	managed := bpfman.Program{
-		Record: bpfman.ProgramRecord{Meta: bpfman.ProgramMeta{Name: "full_elf_name"}},
-		Status: bpfman.ProgramStatus{Kernel: &kernel.Program{Name: "trunc_kernel"}},
-	}
-	assert.Equal(t, "full_elf_name", programFunctionName(managed))
-
-	kernelOnly := bpfman.Program{
-		Status: bpfman.ProgramStatus{Kernel: &kernel.Program{Name: "trunc_kernel"}},
-	}
-	assert.Equal(t, "trunc_kernel", programFunctionName(kernelOnly))
-}
-
 // TestProgramLinksColumn_CountAndTruncation proves the Links cell is
 // empty with no links, lists a count with IDs, and truncates beyond
 // numListLinks.
 func TestProgramLinksColumn_CountAndTruncation(t *testing.T) {
 	t.Parallel()
 
-	none := bpfman.Program{}
-	assert.Equal(t, "", programLinksColumn(none))
-
-	link := func(id bpfman.LinkID) bpfman.Link {
-		return bpfman.Link{Record: bpfman.LinkRecord{ID: id}}
-	}
-
-	two := bpfman.Program{Status: bpfman.ProgramStatus{Links: []bpfman.Link{link(1), link(2)}}}
-	assert.Equal(t, "(2) 1, 2", programLinksColumn(two))
-
-	five := bpfman.Program{Status: bpfman.ProgramStatus{Links: []bpfman.Link{
-		link(1), link(2), link(3), link(4), link(5),
-	}}}
-	assert.Equal(t, "(5) 1, 2, 3, ...", programLinksColumn(five))
+	assert.Equal(t, "", programLinksColumn(nil))
+	assert.Equal(t, "(2) 1, 2", programLinksColumn([]bpfman.LinkID{1, 2}))
+	assert.Equal(t, "(5) 1, 2, 3, ...", programLinksColumn([]bpfman.LinkID{1, 2, 3, 4, 5}))
 }

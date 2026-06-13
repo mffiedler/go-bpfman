@@ -317,6 +317,38 @@ type ProgramListResult struct {
 	Programs   []Program `json:"programs"`
 }
 
+// ProgramListEntry is one row of `program list`. It summarises a
+// program rather than carrying the full managed Program: the common
+// columns are top-level fields, so a kernel-only program -- one loaded
+// in the kernel but not managed by bpfman, surfaced by `program list
+// --all` -- is represented honestly without a synthetic Record. Record
+// is present only for managed programs; Kernel is present whenever the
+// program was observed in the kernel.
+type ProgramListEntry struct {
+	ProgramID    kernel.ProgramID `json:"program_id"`
+	Managed      bool             `json:"managed"`
+	Application  string           `json:"application"`
+	Type         string           `json:"type"`
+	FunctionName string           `json:"function_name"`
+	Links        []LinkID         `json:"links"`
+	// Record is the managed store record, non-nil only when Managed is
+	// true; it is null for kernel-only programs.
+	Record *ProgramRecord `json:"record"`
+	// Kernel is the kernel observation, non-nil when the program is
+	// loaded in the kernel.
+	Kernel *kernel.Program `json:"kernel"`
+}
+
+// ProgramEntryListResult is the result of `program list`: a set of
+// summary entries with observation metadata. It is distinct from
+// ProgramListResult (the internal []Program primitive) so the listing
+// can carry kernel-only rows without a synthetic Program.
+type ProgramEntryListResult struct {
+	ObservedAt time.Time          `json:"observed_at"`
+	Host       HostInfo           `json:"host"`
+	Programs   []ProgramListEntry `json:"programs"`
+}
+
 // LoadResult wraps the programs returned by Manager.Load. The
 // wrapper exists so CLI JSON output exposes a stable top-level
 // `programs` key matching ProgramListResult and LinkListResult.
@@ -332,9 +364,10 @@ type ListOption func(*listOptions)
 
 // listOptions holds the accumulated filter state.
 type listOptions struct {
-	attached *bool // nil = don't filter, true = attached only, false = unattached only
-	types    map[ProgramType]struct{}
-	selector labels.Selector
+	attached         *bool // nil = don't filter, true = attached only, false = unattached only
+	types            map[ProgramType]struct{}
+	selector         labels.Selector
+	includeUnmanaged bool
 }
 
 // Matches returns true if the program matches all filter criteria.
@@ -430,4 +463,43 @@ func MatchingSelector(sel labels.Selector) ListOption {
 	return func(o *listOptions) {
 		o.selector = sel
 	}
+}
+
+// WithIncludeUnmanaged includes kernel-only programs in the listing --
+// programs loaded in the kernel that bpfman does not manage. This is
+// the `program list --all` surface. Without it, only managed programs
+// are listed.
+func WithIncludeUnmanaged() ListOption {
+	return func(o *listOptions) {
+		o.includeUnmanaged = true
+	}
+}
+
+// IncludeUnmanaged reports whether kernel-only programs should be listed.
+func (o *listOptions) IncludeUnmanaged() bool {
+	return o.includeUnmanaged
+}
+
+// MatchesKernelOnly reports whether a kernel-only program of the given
+// kernel program type passes the filter. Kernel-only programs carry no
+// bpfman link or metadata state, so an attachment filter
+// (--attached/--unattached) or any label/metadata selector excludes
+// them; only the program-type filter applies, compared against the
+// kernel program type.
+func (o *listOptions) MatchesKernelOnly(kernelType string) bool {
+	if o.attached != nil {
+		return false
+	}
+	if o.selector != nil && !o.selector.Empty() {
+		return false
+	}
+	if len(o.types) == 0 {
+		return true
+	}
+	for t := range o.types {
+		if t.String() == kernelType {
+			return true
+		}
+	}
+	return false
 }

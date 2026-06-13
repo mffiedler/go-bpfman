@@ -194,9 +194,9 @@ func decodeBpfmanResult(args []runtime.Arg, stdout []byte) (runtime.Value, error
 			}
 			return v.WithKind(semantics.OriginProgram), nil
 		case "list":
-			var result bpfman.ProgramListResult
+			var result bpfman.ProgramEntryListResult
 			if err := json.Unmarshal(stdout, &result); err != nil {
-				return runtime.Value{}, fmt.Errorf("decode ProgramListResult: %w", err)
+				return runtime.Value{}, fmt.Errorf("decode ProgramEntryListResult: %w", err)
 			}
 			return runtime.ValueFromStruct(result)
 		case "load":

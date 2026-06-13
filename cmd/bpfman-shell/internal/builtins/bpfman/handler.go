@@ -23,7 +23,7 @@ var topLevelNouns = map[string]bool{
 const HelpDetail = `Subcommands:
 
   Program management:
-    bpfman program list [flags]                         List managed BPF programs
+    bpfman program list [flags]                         List BPF programs (--all includes unmanaged)
     bpfman program get <id>                             Get program details (assignable)
     bpfman program load file <path> [flags]             Load from a local object file (assignable)
     bpfman program load image <image> [flags]           Load from an OCI image (assignable)

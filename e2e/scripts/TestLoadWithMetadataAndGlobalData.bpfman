@@ -63,7 +63,7 @@ let progFilter = ".programs[] | select(.record.program_id == ${pid})"
 let ours = $listed |> jq $progFilter
 require not null ours
 assert $ours.record.meta.name == $prog.record.meta.name
-assert $ours.status.kernel.id == $prog.status.kernel.id
+assert $ours.kernel.id == $prog.status.kernel.id
 assert $ours.record.meta.metadata.owner == test-team
 assert $ours.record.load.global_data.config_u8 == "Qg=="
 

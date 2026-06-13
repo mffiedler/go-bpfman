@@ -1338,6 +1338,33 @@ print $listed.programs[0].record.program_idd`
 	assert.Contains(t, issues[0].Msg, `"program_id"`)
 }
 
+func TestCheck_BPFManProgramListEntryShape_TopLevelFieldsAreClean(t *testing.T) {
+	t.Parallel()
+
+	// The list entry exposes the summary columns as top-level fields,
+	// plus the nullable kernel observation. All are part of the sealed
+	// entry shape.
+	src := `guard listed <- bpfman program list -o json
+print $listed.programs[0].managed
+print $listed.programs[0].type
+print $listed.programs[0].function_name
+print $listed.programs[0].application
+print $listed.programs[0].kernel.id`
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
+func TestCheck_BPFManProgramListEntryShape_TopLevelFieldTypoRejected(t *testing.T) {
+	t.Parallel()
+
+	src := `guard listed <- bpfman program list -o json
+print $listed.programs[0].managd`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, `"managd"`)
+	assert.Contains(t, issues[0].Msg, `"managed"`)
+}
+
 func TestCheck_BPFManProgramLoadResultShape_ValidProgramFieldIsClean(t *testing.T) {
 	t.Parallel()
 

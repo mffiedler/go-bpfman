@@ -220,7 +220,7 @@ guard listed <- bpfman program list -o json
 let ours = $listed |> jq ".programs[] | select(.record.program_id == ${pid})"
 assert present $ours
 assert $ours.record.meta.name == $prog.record.meta.name
-assert $ours.status.kernel.id == $prog.status.kernel.id
+assert $ours.kernel.id == $prog.status.kernel.id
 
 # ---- Unload and verify the program is gone. ----
 bpfman program unload $pid

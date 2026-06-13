@@ -2087,7 +2087,11 @@ func execListPrograms(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Mana
 		opts = append(opts, bpfman.MatchingSelector(combineSelectors(selectors...)))
 	}
 
-	result, err := mgr.ListPrograms(ctx, opts...)
+	if cmd.All {
+		opts = append(opts, bpfman.WithIncludeUnmanaged())
+	}
+
+	result, err := mgr.ListProgramEntries(ctx, opts...)
 	if err != nil {
 		return runtime.Value{}, err
 	}
@@ -2096,7 +2100,7 @@ func execListPrograms(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Mana
 		if cmd.Quiet {
 			var b strings.Builder
 			for _, p := range result.Programs {
-				fmt.Fprintf(&b, "program/%d\n", p.Record.ProgramID)
+				fmt.Fprintf(&b, "program/%d\n", p.ProgramID)
 			}
 			if err := cli.PrintOut(b.String()); err != nil {
 				return runtime.Value{}, err

@@ -13,7 +13,7 @@ import (
 	"github.com/frobware/go-bpfman/manager"
 )
 
-// ListProgramsCmd lists managed BPF programs.
+// ListProgramsCmd lists BPF programs; --all also includes unmanaged kernel programs.
 type ListProgramsCmd struct {
 	cliformat.OutputFlags
 	Quiet            bool                 `short:"q" help:"Output only program IDs, one per line."`
@@ -23,7 +23,7 @@ type ListProgramsCmd struct {
 	ProgramType      []bpfman.ProgramType `name:"program-type" short:"p" sep:"," help:"Filter by program type (Rust-compatible alias for --type)."`
 	Application      string               `name:"application" help:"Filter by application metadata."`
 	MetadataSelector []bpfmancli.KeyValue `name:"metadata-selector" short:"m" help:"Filter by KEY=VALUE metadata (can be repeated)."`
-	All              bool                 `name:"all" short:"a" help:"Accepted for Rust CLI compatibility; Go lists all managed programs by default."`
+	All              bool                 `name:"all" short:"a" help:"Include unmanaged kernel programs (those loaded outside bpfman)."`
 	Selector         string               `name:"selector" short:"l" help:"Label selector (e.g., app=myapp,version!=v1)."`
 }
 
@@ -74,6 +74,10 @@ func (c *ListProgramsCmd) buildListOptions() ([]bpfman.ListOption, error) {
 		opts = append(opts, bpfman.MatchingSelector(combineSelectors(selectors...)))
 	}
 
+	if c.All {
+		opts = append(opts, bpfman.WithIncludeUnmanaged())
+	}
+
 	return opts, nil
 }
 
@@ -106,7 +110,7 @@ func (c *ListProgramsCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 		return err
 	}
 
-	result, err := mgr.ListPrograms(ctx, opts...)
+	result, err := mgr.ListProgramEntries(ctx, opts...)
 	if err != nil {
 		return err
 	}
@@ -118,7 +122,7 @@ func (c *ListProgramsCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	if c.Quiet {
 		var b strings.Builder
 		for _, p := range result.Programs {
-			fmt.Fprintf(&b, "program/%d\n", p.Record.ProgramID)
+			fmt.Fprintf(&b, "program/%d\n", p.ProgramID)
 		}
 		return cli.PrintOut(b.String())
 	}

@@ -866,11 +866,12 @@ func formatLoadedProgramsTable(programs []bpfman.Program) string {
 	return b.String()
 }
 
-// FormatProgramsComposite formats bpfman.ProgramListResult with full spec/status.
-// This returns the canonical domain type with both Spec and Status, plus observation metadata.
-func FormatProgramsComposite(result bpfman.ProgramListResult, flags *OutputFlags) (string, error) {
+// FormatProgramsComposite renders the `program list` result: a set of
+// summary entries, one per program, with observation metadata, in the
+// requested output format.
+func FormatProgramsComposite(result bpfman.ProgramEntryListResult, flags *OutputFlags) (string, error) {
 	if result.Programs == nil {
-		result.Programs = []bpfman.Program{}
+		result.Programs = []bpfman.ProgramListEntry{}
 	}
 	format, err := flags.Format()
 	if err != nil {
@@ -896,29 +897,25 @@ func FormatProgramsComposite(result bpfman.ProgramListResult, flags *OutputFlags
 // truncating with ", ...".
 const numListLinks = 3
 
-// applicationMetadataKey is the metadata key bpfman uses to group
-// programs loaded under one application. It mirrors
-// manager.ApplicationMetadataKey, duplicated here so the presentation
-// layer need not depend on the manager package.
-const applicationMetadataKey = "bpfman.io/application"
-
 // formatProgramsCompositeTable renders the default program-list table.
 // The columns -- Program ID, Application, Type, Function Name, Links --
 // let the listing answer "which application?" and "is it attached?"
-// without a second command.
-func formatProgramsCompositeTable(result bpfman.ProgramListResult) string {
+// without a second command. The per-entry fields are precomputed by
+// the manager, so kernel-only rows render with their kernel type and
+// name and an empty application and links cell.
+func formatProgramsCompositeTable(result bpfman.ProgramEntryListResult) string {
 	var b strings.Builder
 	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
 
 	fmt.Fprintln(w, "PROGRAM ID\tAPPLICATION\tTYPE\tFUNCTION NAME\tLINKS")
 
-	for _, p := range result.Programs {
+	for _, e := range result.Programs {
 		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n",
-			p.Record.ProgramID,
-			p.Record.Meta.Metadata[applicationMetadataKey],
-			p.Record.Load.ProgramType().String(),
-			programFunctionName(p),
-			programLinksColumn(p),
+			e.ProgramID,
+			e.Application,
+			e.Type,
+			e.FunctionName,
+			programLinksColumn(e.Links),
 		)
 	}
 
@@ -926,33 +923,18 @@ func formatProgramsCompositeTable(result bpfman.ProgramListResult) string {
 	return b.String()
 }
 
-// programFunctionName is the BPF function name for the Function Name
-// column. For managed programs the stored name is authoritative and
-// carries the full ELF function name; the kernel name is the fallback
-// for unmanaged programs, where it is the only value available (and is
-// truncated to the kernel's 15-char limit).
-func programFunctionName(p bpfman.Program) string {
-	if p.Record.Meta.Name != "" {
-		return p.Record.Meta.Name
-	}
-	if p.Status.Kernel != nil {
-		return p.Status.Kernel.Name
-	}
-	return ""
-}
-
-// programLinksColumn renders the program's links as a count followed
-// by up to numListLinks IDs, with ", ..." when more exist and an empty
+// programLinksColumn renders a program's links as a count followed by
+// up to numListLinks IDs, with ", ..." when more exist and an empty
 // cell when there are none.
-func programLinksColumn(p bpfman.Program) string {
-	count := len(p.Status.Links)
+func programLinksColumn(links []bpfman.LinkID) string {
+	count := len(links)
 	if count == 0 {
 		return ""
 	}
 	shown := min(count, numListLinks)
 	ids := make([]string, shown)
 	for i := range shown {
-		ids[i] = fmt.Sprintf("%d", p.Status.Links[i].Record.ID)
+		ids[i] = fmt.Sprintf("%d", links[i])
 	}
 	list := strings.Join(ids, ", ")
 	if count > numListLinks {
