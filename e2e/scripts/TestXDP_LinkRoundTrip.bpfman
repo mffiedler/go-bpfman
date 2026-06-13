@@ -34,7 +34,7 @@ let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 defer bpfman program unload $pid
 
-guard link <- bpfman link attach xdp $prog $pair.host_link
+guard link <- bpfman link attach xdp $prog $pair.host_link -m owner=xdp
 let linkID = $link.record.id
 expect_pinned_link_identity $link
 
@@ -42,6 +42,7 @@ expect_pinned_link_identity $link
 # dispatcher's identity and the attach interface; there is no
 # direction or priority in the user-facing attach surface.
 assert $link.record.kind == xdp
+assert $link.record.metadata.owner == xdp
 assert $link.record.program_id == $pid
 assert $link.record.details.interface == $pair.host_link
 assert $link.record.details.dispatcher_id > 0
@@ -53,6 +54,7 @@ guard gotLink <- bpfman link get $linkID
 expect_link_get_identity $gotLink $link $linkID
 assert $gotLink.record.id == $linkID
 assert $gotLink.record.kind == xdp
+assert $gotLink.record.metadata.owner == xdp
 assert $gotLink.record.program_id == $pid
 assert $gotLink.record.details.interface == $pair.host_link
 assert $gotLink.record.details.dispatcher_id == $link.record.details.dispatcher_id

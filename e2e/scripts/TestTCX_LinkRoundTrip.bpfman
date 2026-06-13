@@ -34,13 +34,14 @@ let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 defer bpfman program unload $pid
 
-guard link <- bpfman link attach tcx $prog $pair.host_link ingress --priority 50
+guard link <- bpfman link attach tcx $prog $pair.host_link ingress --priority 50 -m owner=tcx
 let linkID = $link.record.id
 expect_pinned_link_identity $link
 
 # Structural shape of the attach response. TCX has no dispatcher;
 # details carry the attach point directly.
 assert $link.record.kind == tcx
+assert $link.record.metadata.owner == tcx
 assert $link.record.program_id == $pid
 assert $link.record.details.interface == $pair.host_link
 assert $link.record.details.direction == ingress
@@ -52,6 +53,7 @@ guard gotLink <- bpfman link get $linkID
 expect_link_get_identity $gotLink $link $linkID
 assert $gotLink.record.id == $linkID
 assert $gotLink.record.kind == tcx
+assert $gotLink.record.metadata.owner == tcx
 assert $gotLink.record.program_id == $pid
 assert $gotLink.record.details.interface == $pair.host_link
 assert $gotLink.record.details.direction == ingress
