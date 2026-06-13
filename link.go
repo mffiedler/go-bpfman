@@ -364,11 +364,12 @@ func ParseLinkKind(s string) (LinkKind, error) {
 // LinkSpec is the requested managed-link row before the store has allocated a
 // bpfman LinkID.
 type LinkSpec struct {
-	ProgramID    kernel.ProgramID `json:"program_id"`
-	KernelLinkID *kernel.LinkID   `json:"kernel_link_id"`
-	Kind         LinkKind         `json:"kind"`
-	PinPath      *LinkPath        `json:"pin_path"`
-	Details      LinkDetails      `json:"details"`
+	ProgramID    kernel.ProgramID  `json:"program_id"`
+	KernelLinkID *kernel.LinkID    `json:"kernel_link_id"`
+	Kind         LinkKind          `json:"kind"`
+	PinPath      *LinkPath         `json:"pin_path"`
+	Details      LinkDetails       `json:"details"`
+	Metadata     map[string]string `json:"metadata"` // user key/value labels, for selection; nil means none
 }
 
 // LinkRecord is the stored record of an attached link. ID is the bpfman-owned
@@ -386,6 +387,9 @@ type LinkRecord struct {
 	// null in that case.
 	Details   LinkDetails `json:"details"`
 	CreatedAt time.Time   `json:"created_at"`
+	// Metadata holds user-supplied key/value labels attached at attach time,
+	// used for selection by `link list`. Empty (or nil) means none.
+	Metadata map[string]string `json:"metadata"`
 	// Note: When Details is non-nil, Kind must equal Details.Kind(); constructors enforce this
 }
 
@@ -481,13 +485,14 @@ func LinkAttachKindDetailsType(attachKind string) reflect.Type {
 // not *bpfman.TCDetails).
 func (r *LinkRecord) UnmarshalJSON(data []byte) error {
 	type alias struct {
-		ID           LinkID           `json:"id"`
-		ProgramID    kernel.ProgramID `json:"program_id"`
-		KernelLinkID *kernel.LinkID   `json:"kernel_link_id"`
-		Kind         LinkKind         `json:"kind"`
-		PinPath      *LinkPath        `json:"pin_path"`
-		Details      json.RawMessage  `json:"details"`
-		CreatedAt    time.Time        `json:"created_at"`
+		ID           LinkID            `json:"id"`
+		ProgramID    kernel.ProgramID  `json:"program_id"`
+		KernelLinkID *kernel.LinkID    `json:"kernel_link_id"`
+		Kind         LinkKind          `json:"kind"`
+		PinPath      *LinkPath         `json:"pin_path"`
+		Details      json.RawMessage   `json:"details"`
+		CreatedAt    time.Time         `json:"created_at"`
+		Metadata     map[string]string `json:"metadata"`
 	}
 	var a alias
 	if err := json.Unmarshal(data, &a); err != nil {
@@ -499,6 +504,16 @@ func (r *LinkRecord) UnmarshalJSON(data []byte) error {
 	r.Kind = a.Kind
 	r.PinPath = a.PinPath
 	r.CreatedAt = a.CreatedAt
+	// Canonical in-memory form is nil for "no metadata". There is
+	// deliberately no custom LinkRecord marshaler: a json.Marshaler would
+	// unseal this shell-visible record in the bpfman-shell shape deriver and
+	// weaken static field checking, so absent metadata encodes as
+	// "metadata": null under standard encoding. An empty object decodes back
+	// to nil here so a metadata-less record round-trips identically.
+	r.Metadata = a.Metadata
+	if len(r.Metadata) == 0 {
+		r.Metadata = nil
+	}
 	r.Details = nil
 	if len(a.Details) == 0 || bytes.Equal(a.Details, []byte("null")) {
 		return nil

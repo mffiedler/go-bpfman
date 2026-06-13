@@ -72,6 +72,26 @@ func TestBindShape_LinkAttachAcrossEveryRegisteredKind(t *testing.T) {
 	}
 }
 
+func TestBindShape_LinkMetadataIsOpenButRecordStaysSealed(t *testing.T) {
+	t.Parallel()
+
+	// record.metadata is a map[string]string, so its keys are
+	// user-defined and dynamic: arbitrary keys must be allowed. Crucially,
+	// the map field must NOT unseal the record -- a top-level field typo is
+	// still caught. (A json.Marshaler on LinkRecord would unseal it; a
+	// plain map does not.)
+	okMeta := `guard l <- bpfman link attach kprobe 1 do_unlinkat
+print $l.record.metadata.owner`
+	assert.Empty(t, checkSource(t, okMeta), "record.metadata.<key> must be allowed (open map)")
+
+	typo := `guard l <- bpfman link attach kprobe 1 do_unlinkat
+print $l.record.detials`
+	issues := checkSource(t, typo)
+	require.Len(t, issues, 1, "record must stay sealed: a top-level field typo is caught")
+	assert.Contains(t, issues[0].Msg, `"detials"`)
+	assert.Contains(t, issues[0].Msg, "details")
+}
+
 func TestBindShape_LinkAttachUnknownKindFallsBackToGenericLink(t *testing.T) {
 	t.Parallel()
 

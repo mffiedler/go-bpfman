@@ -89,30 +89,30 @@ func (s *sqliteStore) prepareLinkRegistryStatements(ctx context.Context) error {
 	}
 
 	const sqlGetLinkRegistry = `
-		SELECT id, kind, kernel_prog_id, kernel_link_id, pin_path, created_at
+		SELECT id, kind, kernel_prog_id, kernel_link_id, pin_path, metadata_json, created_at
 		FROM links WHERE id = ?`
 	if s.stmtGetLinkRegistry, err = s.db.PrepareContext(ctx, sqlGetLinkRegistry); err != nil {
 		return fmt.Errorf("prepare GetLinkRegistry: %w", err)
 	}
 
 	const sqlListLinks = `
-		SELECT id, kind, kernel_prog_id, kernel_link_id, pin_path, created_at
+		SELECT id, kind, kernel_prog_id, kernel_link_id, pin_path, metadata_json, created_at
 		FROM links`
 	if s.stmtListLinks, err = s.db.PrepareContext(ctx, sqlListLinks); err != nil {
 		return fmt.Errorf("prepare ListLinks: %w", err)
 	}
 
 	const sqlListLinksByProgram = `
-		SELECT id, kind, kernel_prog_id, kernel_link_id, pin_path, created_at
+		SELECT id, kind, kernel_prog_id, kernel_link_id, pin_path, metadata_json, created_at
 		FROM links WHERE kernel_prog_id = ?`
 	if s.stmtListLinksByProgram, err = s.db.PrepareContext(ctx, sqlListLinksByProgram); err != nil {
 		return fmt.Errorf("prepare ListLinksByProgram: %w", err)
 	}
 
 	const sqlInsertLinkRegistry = `
-		INSERT INTO links (kind, kernel_prog_id, kernel_link_id, pin_path, created_at)
-		VALUES (?, ?, ?, ?, ?)
-		RETURNING id, kind, kernel_prog_id, kernel_link_id, pin_path, created_at`
+		INSERT INTO links (kind, kernel_prog_id, kernel_link_id, pin_path, metadata_json, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		RETURNING id, kind, kernel_prog_id, kernel_link_id, pin_path, metadata_json, created_at`
 	if s.stmtInsertLinkRegistry, err = s.db.PrepareContext(ctx, sqlInsertLinkRegistry); err != nil {
 		return fmt.Errorf("prepare InsertLinkRegistry: %w", err)
 	}
@@ -120,7 +120,7 @@ func (s *sqliteStore) prepareLinkRegistryStatements(ctx context.Context) error {
 	const sqlSetLinkPinPath = `
 		UPDATE links SET pin_path = ?
 		WHERE id = ?
-		RETURNING id, kind, kernel_prog_id, kernel_link_id, pin_path, created_at`
+		RETURNING id, kind, kernel_prog_id, kernel_link_id, pin_path, metadata_json, created_at`
 	if s.stmtSetLinkPinPath, err = s.db.PrepareContext(ctx, sqlSetLinkPinPath); err != nil {
 		return fmt.Errorf("prepare SetLinkPinPath: %w", err)
 	}
@@ -128,7 +128,7 @@ func (s *sqliteStore) prepareLinkRegistryStatements(ctx context.Context) error {
 	const sqlFinaliseLink = `
 		UPDATE links SET kernel_link_id = ?
 		WHERE id = ?
-		RETURNING id, kind, kernel_prog_id, kernel_link_id, pin_path, created_at`
+		RETURNING id, kind, kernel_prog_id, kernel_link_id, pin_path, metadata_json, created_at`
 	if s.stmtFinaliseLink, err = s.db.PrepareContext(ctx, sqlFinaliseLink); err != nil {
 		return fmt.Errorf("prepare FinaliseLink: %w", err)
 	}

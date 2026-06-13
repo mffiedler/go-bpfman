@@ -110,7 +110,7 @@ func (s *sqliteStore) prepareDispatcherStatements(ctx context.Context) error {
 
 	const insertExtLinkSQL = `INSERT INTO links (kind, kernel_prog_id, kernel_link_id, pin_path, created_at)
 		VALUES (?, ?, ?, ?, ?)
-		RETURNING id, kind, kernel_prog_id, kernel_link_id, pin_path, created_at`
+		RETURNING id, kind, kernel_prog_id, kernel_link_id, pin_path, metadata_json, created_at`
 
 	s.stmtInsertExtLink, err = s.db.PrepareContext(ctx, insertExtLinkSQL)
 	if err != nil {
@@ -119,7 +119,7 @@ func (s *sqliteStore) prepareDispatcherStatements(ctx context.Context) error {
 
 	const insertExtLinkWithIDSQL = `INSERT INTO links (id, kind, kernel_prog_id, kernel_link_id, pin_path, created_at)
 		VALUES (?, ?, ?, ?, ?, ?)
-		RETURNING id, kind, kernel_prog_id, kernel_link_id, pin_path, created_at`
+		RETURNING id, kind, kernel_prog_id, kernel_link_id, pin_path, metadata_json, created_at`
 
 	s.stmtInsertExtLinkWithID, err = s.db.PrepareContext(ctx, insertExtLinkWithIDSQL)
 	if err != nil {

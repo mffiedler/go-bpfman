@@ -29,7 +29,7 @@ func (s *sqliteStore) DeleteLink(ctx context.Context, linkID bpfman.LinkID) erro
 	// Check if this is a dispatcher-backed link.
 	var kind string
 	err := s.stmtGetLinkRegistry.QueryRowContext(ctx, linkID).Scan(
-		new(int64), &kind, new(int64), new(sql.NullInt64), new(sql.NullString), new(string))
+		new(int64), &kind, new(int64), new(sql.NullInt64), new(sql.NullString), new(sql.NullString), new(string))
 	if errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("link %d: %w", linkID, platform.ErrRecordNotFound)
 	}
@@ -535,6 +535,34 @@ func (s *sqliteStore) saveDetails(
 // Helper Functions
 // ----------------------------------------------------------------------------
 
+// marshalLinkMetadata encodes user link metadata for the metadata_json
+// column, mirroring the program metadata encoding. An empty or nil map
+// encodes as "{}".
+func marshalLinkMetadata(metadata map[string]string) (string, error) {
+	if len(metadata) == 0 {
+		return "{}", nil
+	}
+	b, err := json.Marshal(metadata)
+	if err != nil {
+		return "", fmt.Errorf("marshal link metadata: %w", err)
+	}
+	return string(b), nil
+}
+
+// unmarshalLinkMetadata decodes the metadata_json column, returning nil
+// when the value is absent or the empty object so a metadata-less link
+// round-trips as nil rather than an empty map.
+func unmarshalLinkMetadata(col sql.NullString, linkID int64) (map[string]string, error) {
+	if !col.Valid || col.String == "" || col.String == "{}" {
+		return nil, nil
+	}
+	var m map[string]string
+	if err := json.Unmarshal([]byte(col.String), &m); err != nil {
+		return nil, fmt.Errorf("unmarshal link metadata for link %d: %w", linkID, err)
+	}
+	return m, nil
+}
+
 // insertLinkRegistry inserts a spec into the links table.
 func (s *sqliteStore) insertLinkRegistry(ctx context.Context, spec bpfman.LinkSpec) (bpfman.LinkRecord, error) {
 	start := time.Now()
@@ -550,9 +578,14 @@ func (s *sqliteStore) insertLinkRegistry(ctx context.Context, spec bpfman.LinkSp
 		kernelLinkID = sql.NullInt64{Int64: int64(*spec.KernelLinkID), Valid: true}
 	}
 
+	metadataJSON, err := marshalLinkMetadata(spec.Metadata)
+	if err != nil {
+		return bpfman.LinkRecord{}, err
+	}
+
 	row := s.stmtInsertLinkRegistry.QueryRowContext(ctx,
 		spec.Kind.String(), spec.ProgramID, kernelLinkID,
-		pinPath, time.Now().UTC().Format(time.RFC3339))
+		pinPath, metadataJSON, time.Now().UTC().Format(time.RFC3339))
 	record, err := s.scanLinkRecord(row)
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "InsertLinkRegistry", "args", []any{spec.Kind, spec.ProgramID, kernelLinkID, pinPath, "(timestamp)"}, "duration_ms", msec(time.Since(start)), "error", err)
@@ -565,7 +598,7 @@ func (s *sqliteStore) insertLinkRegistry(ctx context.Context, spec bpfman.LinkSp
 }
 
 // scanLinkRecord scans a single row into a LinkRecord (without details).
-// Row format: id, kind, kernel_prog_id, kernel_link_id, pin_path, created_at
+// Row format: id, kind, kernel_prog_id, kernel_link_id, pin_path, metadata_json, created_at
 func (s *sqliteStore) scanLinkRecord(row *sql.Row) (bpfman.LinkRecord, error) {
 	var record bpfman.LinkRecord
 	var linkID int64
@@ -573,9 +606,10 @@ func (s *sqliteStore) scanLinkRecord(row *sql.Row) (bpfman.LinkRecord, error) {
 	var programID kernel.ProgramID
 	var kernelLinkID sql.NullInt64
 	var pinPath sql.NullString
+	var metadataJSON sql.NullString
 	var createdAtStr string
 
-	err := row.Scan(&linkID, &kindStr, &programID, &kernelLinkID, &pinPath, &createdAtStr)
+	err := row.Scan(&linkID, &kindStr, &programID, &kernelLinkID, &pinPath, &metadataJSON, &createdAtStr)
 	if err == sql.ErrNoRows {
 		return bpfman.LinkRecord{}, platform.ErrRecordNotFound
 	}
@@ -598,6 +632,10 @@ func (s *sqliteStore) scanLinkRecord(row *sql.Row) (bpfman.LinkRecord, error) {
 		pin := bpfman.LinkPath(pinPath.String)
 		record.PinPath = &pin
 	}
+	record.Metadata, err = unmarshalLinkMetadata(metadataJSON, linkID)
+	if err != nil {
+		return bpfman.LinkRecord{}, err
+	}
 	createdAt, err := time.Parse(time.RFC3339, createdAtStr)
 	if err != nil {
 		return bpfman.LinkRecord{}, fmt.Errorf("invalid created_at timestamp for link %d: %q: %w", linkID, createdAtStr, err)
@@ -608,7 +646,7 @@ func (s *sqliteStore) scanLinkRecord(row *sql.Row) (bpfman.LinkRecord, error) {
 }
 
 // scanLinkRecords scans multiple rows into a slice of LinkRecord (without details).
-// Row format: id, kind, kernel_prog_id, kernel_link_id, pin_path, created_at
+// Row format: id, kind, kernel_prog_id, kernel_link_id, pin_path, metadata_json, created_at
 func (s *sqliteStore) scanLinkRecords(rows *sql.Rows) ([]bpfman.LinkRecord, error) {
 	var result []bpfman.LinkRecord
 
@@ -618,9 +656,10 @@ func (s *sqliteStore) scanLinkRecords(rows *sql.Rows) ([]bpfman.LinkRecord, erro
 		var programID kernel.ProgramID
 		var kernelLinkID sql.NullInt64
 		var pinPath sql.NullString
+		var metadataJSON sql.NullString
 		var createdAtStr string
 
-		err := rows.Scan(&linkID, &kindStr, &programID, &kernelLinkID, &pinPath, &createdAtStr)
+		err := rows.Scan(&linkID, &kindStr, &programID, &kernelLinkID, &pinPath, &metadataJSON, &createdAtStr)
 		if err != nil {
 			return nil, err
 		}
@@ -641,6 +680,10 @@ func (s *sqliteStore) scanLinkRecords(rows *sql.Rows) ([]bpfman.LinkRecord, erro
 		if pinPath.Valid {
 			pin := bpfman.LinkPath(pinPath.String)
 			record.PinPath = &pin
+		}
+		record.Metadata, err = unmarshalLinkMetadata(metadataJSON, linkID)
+		if err != nil {
+			return nil, err
 		}
 		createdAt, err := time.Parse(time.RFC3339, createdAtStr)
 		if err != nil {

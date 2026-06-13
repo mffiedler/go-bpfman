@@ -62,6 +62,17 @@ func createPinnedLink(t *testing.T, ctx context.Context, store platform.Store, p
 	return record
 }
 
+func findLinkByID(t *testing.T, links []bpfman.LinkRecord, id bpfman.LinkID) bpfman.LinkRecord {
+	t.Helper()
+	for _, l := range links {
+		if l.ID == id {
+			return l
+		}
+	}
+	t.Fatalf("link %d not found among %d links", id, len(links))
+	return bpfman.LinkRecord{}
+}
+
 func TestNewRequiresWriterLock(t *testing.T) {
 	t.Parallel()
 
@@ -306,6 +317,61 @@ func TestLinkRegistry_TracepointRoundTrip(t *testing.T) {
 	require.True(t, ok, "expected TracepointDetails")
 	assert.Equal(t, details.Group, tpDetails.Group)
 	assert.Equal(t, details.Name, tpDetails.Name)
+}
+
+func TestLinkRegistry_MetadataRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	store, err := sqlite.NewInMemory(context.Background(), testLogger())
+	require.NoError(t, err, "failed to create store")
+	defer store.Close()
+
+	ctx := context.Background()
+
+	prog := testProgram()
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(42), prog), "Save failed")
+
+	// A link carrying user metadata.
+	klid := kernel.LinkID(100)
+	spec := bpfman.NewPinnedLinkSpec(
+		kernel.ProgramID(42), &klid,
+		bpfman.TracepointDetails{Group: "syscalls", Name: "sys_enter_openat"},
+		bpfman.LinkPath("/sys/fs/bpf/bpfman/test/link"),
+	)
+	spec.Metadata = map[string]string{"owner": "acme", "env": "test"}
+
+	record, err := store.CreateLink(ctx, spec)
+	require.NoError(t, err, "CreateLink failed")
+	assert.Equal(t, spec.Metadata, record.Metadata, "CreateLink should return the metadata it persisted")
+
+	want := map[string]string{"owner": "acme", "env": "test"}
+
+	got, err := store.GetLink(ctx, record.ID)
+	require.NoError(t, err, "GetLink failed")
+	assert.Equal(t, want, got.Metadata,
+		"metadata must round-trip through GetLink within the link's own transaction")
+
+	// scanLinkRecords backs both list read paths; assert metadata survives each.
+	listed, err := store.ListLinks(ctx)
+	require.NoError(t, err, "ListLinks failed")
+	assert.Equal(t, want, findLinkByID(t, listed, record.ID).Metadata, "metadata must survive ListLinks")
+
+	byProgram, err := store.ListLinksByProgram(ctx, kernel.ProgramID(42))
+	require.NoError(t, err, "ListLinksByProgram failed")
+	assert.Equal(t, want, findLinkByID(t, byProgram, record.ID).Metadata, "metadata must survive ListLinksByProgram")
+
+	// A link with no metadata round-trips as empty, not an error.
+	klid2 := kernel.LinkID(101)
+	bare := bpfman.NewPinnedLinkSpec(
+		kernel.ProgramID(42), &klid2,
+		bpfman.TracepointDetails{Group: "syscalls", Name: "sys_enter_close"},
+		bpfman.LinkPath("/sys/fs/bpf/bpfman/test/link2"),
+	)
+	bareRec, err := store.CreateLink(ctx, bare)
+	require.NoError(t, err, "CreateLink (no metadata) failed")
+	gotBare, err := store.GetLink(ctx, bareRec.ID)
+	require.NoError(t, err, "GetLink (no metadata) failed")
+	assert.Empty(t, gotBare.Metadata, "absent metadata round-trips as empty")
 }
 
 func TestLinkRegistry_UpsertUpdatesPinPath(t *testing.T) {

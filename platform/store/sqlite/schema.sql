@@ -191,6 +191,8 @@ CREATE TABLE IF NOT EXISTS links (
     kernel_prog_id  INTEGER NOT NULL,     -- useful for queries
     kernel_link_id  INTEGER,
     pin_path        TEXT,
+    metadata_json   TEXT NOT NULL DEFAULT '{}'
+                        CHECK (json_valid(metadata_json)),  -- user key/value labels
     created_at      TEXT NOT NULL,
 
     -- Deleting a program cascades here, removing all its links.

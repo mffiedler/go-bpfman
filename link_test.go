@@ -117,6 +117,38 @@ func TestLinkRecord_UnmarshalJSON_AcceptsNilDetails(t *testing.T) {
 	assert.Equal(t, bpfman.LinkKindKprobe, got.Kind)
 }
 
+// TestLinkRecord_JSON_MetadataRoundTrip verifies user metadata survives a
+// marshal/unmarshal cycle, and that an absent map decodes to nil rather
+// than an empty map so the in-memory form stays canonical.
+func TestLinkRecord_JSON_MetadataRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	withMeta := bpfman.LinkRecord{
+		ID:        bpfman.LinkID(1),
+		ProgramID: kernel.ProgramID(2),
+		Kind:      bpfman.LinkKindTracepoint,
+		Details:   bpfman.TracepointDetails{Group: "sched", Name: "sched_switch"},
+		Metadata:  map[string]string{"owner": "acme", "env": "test"},
+	}
+	data, err := json.Marshal(withMeta)
+	require.NoError(t, err)
+	var got bpfman.LinkRecord
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.Equal(t, map[string]string{"owner": "acme", "env": "test"}, got.Metadata)
+
+	bare := bpfman.LinkRecord{
+		ID:        bpfman.LinkID(1),
+		ProgramID: kernel.ProgramID(2),
+		Kind:      bpfman.LinkKindTracepoint,
+		Details:   bpfman.TracepointDetails{Group: "sched", Name: "sched_switch"},
+	}
+	data, err = json.Marshal(bare)
+	require.NoError(t, err)
+	var gotBare bpfman.LinkRecord
+	require.NoError(t, json.Unmarshal(data, &gotBare))
+	assert.Nil(t, gotBare.Metadata, "absent metadata decodes to nil, not an empty map")
+}
+
 func TestParseTCDirection(t *testing.T) {
 	t.Parallel()
 
