@@ -223,18 +223,18 @@ func DefaultColumns() ColumnSet {
 // This is the authoritative source - DefaultLinkColumns derives from it.
 func LinkColumnRegistry() []ColumnInfo {
 	return []ColumnInfo{
-		{Name: "LINK_ID", Description: "Link ID",
+		{Name: "LINK ID", Description: "Link ID",
 			ExtractLink: func(l bpfman.LinkRecord) string {
 				return strconv.FormatUint(uint64(l.ID), 10)
 			}},
-		{Name: "KERNEL_LINK_ID", Description: "Captured kernel link ID",
+		{Name: "KERNEL LINK ID", Description: "Captured kernel link ID",
 			ExtractLink: func(l bpfman.LinkRecord) string {
 				if l.KernelLinkID == nil {
 					return "<none>"
 				}
 				return strconv.FormatUint(uint64(*l.KernelLinkID), 10)
 			}},
-		{Name: "PROGRAM_ID", Description: "Associated program ID",
+		{Name: "PROGRAM ID", Description: "Associated program ID",
 			ExtractLink: func(l bpfman.LinkRecord) string {
 				return strconv.FormatUint(uint64(l.ProgramID), 10)
 			}},
@@ -242,14 +242,14 @@ func LinkColumnRegistry() []ColumnInfo {
 			ExtractLink: func(l bpfman.LinkRecord) string {
 				return l.Kind.String()
 			}},
-		{Name: "PIN_PATH", Description: "Pinned path in bpffs",
+		{Name: "PIN PATH", Description: "Pinned path in bpffs",
 			ExtractLink: func(l bpfman.LinkRecord) string {
 				if l.PinPath == nil {
 					return "<none>"
 				}
 				return l.PinPath.String()
 			}},
-		{Name: "CREATED_AT", Description: "Creation timestamp",
+		{Name: "CREATED AT", Description: "Creation timestamp",
 			ExtractLink: func(l bpfman.LinkRecord) string {
 				if l.CreatedAt.IsZero() {
 					return "<none>"
@@ -305,7 +305,7 @@ func selectLinkColumns(names []string) (ColumnSet, error) {
 }
 
 // Link column names for the default output.
-var defaultLinkColumnNames = []string{"LINK_ID", "KERNEL_LINK_ID", "KIND", "PROGRAM_ID", "PIN_PATH"}
+var defaultLinkColumnNames = []string{"LINK ID", "KERNEL LINK ID", "KIND", "PROGRAM ID", "PIN PATH"}
 
 // DefaultLinkColumns returns the standard table columns for links.
 func DefaultLinkColumns() ColumnSet {
