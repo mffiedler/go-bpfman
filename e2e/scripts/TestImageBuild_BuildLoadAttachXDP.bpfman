@@ -26,10 +26,7 @@ def main() {
     assert $inspected.digest != ""
 
     print "image-build: loading ${image}"
-    guard loaded <- bpfman program load image \
-        --image-url $image \
-        --pull-policy Always \
-        --programs xdp:pass
+    guard loaded <- bpfman program load image $image --pull-policy Always --programs xdp:pass
     let prog = $loaded.programs[0]
     let pid = $prog.record.program_id
     defer print "image-build: unloaded program pid=${pid}"
@@ -47,7 +44,7 @@ def main() {
     print "image-build: veth host=${pair.host_link} peer=${pair.peer_link}"
 
     print "image-build: attaching xdp pid=${pid} iface=${pair.host_link}"
-    guard link <- bpfman link attach xdp --iface $pair.host_link $prog
+    guard link <- bpfman link attach xdp $prog $pair.host_link
     let linkID = $link.record.id
     expect_pinned_link_identity $link
     print "image-build: attached link=${linkID}"

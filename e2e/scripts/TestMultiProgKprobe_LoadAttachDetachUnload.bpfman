@@ -25,12 +25,7 @@ defer kfunc release $fn
 # Load all three kprobe programs from one object file. The new
 # load contract returns {programs: [...]} with all loaded
 # programs in input order; pull each one by index.
-guard loaded <- bpfman program load file \
-    --path testdata/bpf/multi_prog_kprobe_kmod_counter.bpf.o \
-    --programs kprobe:mkp_a,kprobe:mkp_b,kprobe:mkp_c \
-    -g "weight_a=0x${u64le $weight_a}" \
-    -g "weight_b=0x${u64le $weight_b}" \
-    -g "weight_c=0x${u64le $weight_c}"
+guard loaded <- bpfman program load file testdata/bpf/multi_prog_kprobe_kmod_counter.bpf.o --programs kprobe:mkp_a,kprobe:mkp_b,kprobe:mkp_c -g "weight_a=0x${u64le $weight_a}" -g "weight_b=0x${u64le $weight_b}" -g "weight_c=0x${u64le $weight_c}"
 
 # A loaded program is a typed handle that carries its kernel-ID
 # origin, so it is re-passable to a bpfman command directly; no need
@@ -52,9 +47,9 @@ let mapID_b = $b |> jq '[.status.maps[] | select(.name == "mkp_b_count") | .id][
 let mapID_c = $c |> jq '[.status.maps[] | select(.name == "mkp_c_count") | .id][0]'
 
 # Attach all three programs to the leased slot.
-guard link_a <- bpfman link attach kprobe --fn-name $fn.name $a
-guard link_b <- bpfman link attach kprobe --fn-name $fn.name $b
-guard link_c <- bpfman link attach kprobe --fn-name $fn.name $c
+guard link_a <- bpfman link attach kprobe $a $fn.name
+guard link_b <- bpfman link attach kprobe $b $fn.name
+guard link_c <- bpfman link attach kprobe $c $fn.name
 
 let counter_filter = "fromjson | .[0].formatted.value | tonumber"
 

@@ -260,7 +260,7 @@ func TestFormatSource_PreservesCommandContinuationInBind(t *testing.T) {
 
 	src := strings.Join([]string{
 		`guard loaded <- bpfman program load file \`,
-		` --path testdata/bpf/fentry_counter.bpf.o \`,
+		` testdata/bpf/fentry_counter.bpf.o \`,
 		`        --programs "fentry:test_fentry:${fn.name}" \`,
 		`  -m owner=e2e \`,
 		`      -m purpose=load-and-get`,
@@ -273,7 +273,7 @@ func TestFormatSource_PreservesCommandContinuationInBind(t *testing.T) {
 
 	want := strings.Join([]string{
 		`guard loaded <- bpfman program load file \`,
-		`    --path testdata/bpf/fentry_counter.bpf.o \`,
+		`    testdata/bpf/fentry_counter.bpf.o \`,
 		`    --programs "fentry:test_fentry:${fn.name}" \`,
 		`    -m owner=e2e \`,
 		`    -m purpose=load-and-get`,

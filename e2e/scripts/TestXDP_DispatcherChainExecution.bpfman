@@ -39,10 +39,10 @@ require_host_route_to_peer $pair
 # the bind-collect body keeps each program's lifecycle paired
 # with its slot.
 guard links <- foreach _ in range 10 {
-    guard loaded <- bpfman program load file --path testdata/bpf/xdp_counter.bpf.o --programs xdp:xdp_stats
+    guard loaded <- bpfman program load file testdata/bpf/xdp_counter.bpf.o --programs xdp:xdp_stats
     let prog = $loaded.programs[0]
     defer bpfman program unload $prog
-    bpfman link attach xdp -i $pair.host_link $prog
+    bpfman link attach xdp $prog $pair.host_link
 }
 
 foreach l in $links {

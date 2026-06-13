@@ -20,9 +20,7 @@
 guard pair <- net veth-pair
 defer net release $pair
 
-guard loaded <- bpfman program load file \
-    --path testdata/bpf/tc_counter.bpf.o \
-    --programs tc:stats
+guard loaded <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
 let prog = $loaded.programs[0]
 defer bpfman program unload $prog
 
@@ -30,7 +28,7 @@ defer bpfman program unload $prog
 let priorities = [100 200 300 400 500 600 700 800 900 1000]
 
 guard links <- foreach prio in $priorities {
-    bpfman link attach tc -i $pair.host_link -d ingress -p $prio $prog
+    bpfman link attach tc $prog $pair.host_link ingress -p $prio
 }
 
 foreach l in $links {
@@ -39,6 +37,6 @@ foreach l in $links {
 
 # Eleventh attach must fail. `let <-` keeps the outcome inspectable
 # even though the attach never produced a Link.
-let rc <- bpfman link attach tc -i $pair.host_link -d ingress -p 1100 $prog
+let rc <- bpfman link attach tc $prog $pair.host_link ingress -p 1100
 assert not $rc.ok
 assert contains $rc.stderr "no free dispatcher slots"

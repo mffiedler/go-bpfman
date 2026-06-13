@@ -29,14 +29,12 @@ guard pair <- net veth-pair
 defer net release $pair
 require_host_route_to_peer $pair
 
-guard loaded <- bpfman program load file \
-    --path testdata/bpf/tc_counter.bpf.o \
-    --programs tc:stats
+guard loaded <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
 let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 defer bpfman program unload $pid
 
-guard link <- bpfman link attach tc --iface $pair.host_link --direction ingress --priority 50 $prog
+guard link <- bpfman link attach tc $prog $pair.host_link ingress --priority 50
 let linkID = $link.record.id
 expect_pinned_link_identity $link
 

@@ -39,14 +39,12 @@
 guard pair <- net veth-pair
 defer net release $pair
 
-guard loaded <- bpfman program load file \
-    --path testdata/bpf/tc_counter.bpf.o \
-    --programs tc:stats
+guard loaded <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
 let prog = $loaded.programs[0]
 defer bpfman program unload $prog
 
 # Phase 1: attach one program; dispatcher comes into being.
-guard l1 <- bpfman link attach tc -i $pair.host_link -d ingress -p 100 $prog
+guard l1 <- bpfman link attach tc $prog $pair.host_link ingress -p 100
 guard snap1 <- bpfman dispatcher get tc-ingress $pair.host_nsid $pair.host_ifindex
 let members1 = $snap1 |> jq ".members | length"
 assert $members1 == 1
@@ -58,7 +56,7 @@ assert fail bpfman dispatcher get tc-ingress $pair.host_nsid $pair.host_ifindex
 
 # Phase 3: reattach; a fresh dispatcher is created with a new
 # kernel program ID.
-guard l2 <- bpfman link attach tc -i $pair.host_link -d ingress -p 200 $prog
+guard l2 <- bpfman link attach tc $prog $pair.host_link ingress -p 200
 defer bpfman link detach $l2
 
 guard snap2 <- bpfman dispatcher get tc-ingress $pair.host_nsid $pair.host_ifindex

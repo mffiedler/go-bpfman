@@ -43,16 +43,16 @@ done
 echo "target pid=$ns_pid in separate mount namespace ($targ_ns vs $self_ns)"
 
 prog=$(bpfman program load file \
-    --path e2e/testdata/bpf/uprobe_counter.bpf.o \
+    e2e/testdata/bpf/uprobe_counter.bpf.o \
     --programs uprobe:uprobe_counter \
     -o jsonpath='{.programs[0].record.program_id}')
 echo "loaded uprobe program $prog"
 
 link=$(bpfman link attach uprobe \
-    --target "$target_bin" \
+    "$prog" \
+    "$target_bin" \
     --fn-name "$target_fn" \
     --container-pid "$ns_pid" \
-    "$prog" \
     -o jsonpath='{.record.id}')
 echo "attached container uprobe link $link"
 

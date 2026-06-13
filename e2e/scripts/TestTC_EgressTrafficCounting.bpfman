@@ -25,9 +25,9 @@ guard pair <- net veth-pair
 defer net release $pair
 require_host_route_to_peer $pair
 
-guard loaded_a <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard loaded_b <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard loaded_c <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard loaded_a <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard loaded_b <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard loaded_c <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
 
 let prog_a = $loaded_a.programs[0]
 let prog_b = $loaded_b.programs[0]
@@ -40,9 +40,9 @@ let mapID_a = $prog_a |> jq '[.status.maps[] | select(.name == "tc_stats_map") |
 let mapID_b = $prog_b |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 let mapID_c = $prog_c |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 
-guard l_a <- bpfman link attach tc -i $pair.host_link -d egress -p 100 --proceed-on ok,pipe,dispatcher_return $prog_a
-guard l_b <- bpfman link attach tc -i $pair.host_link -d egress -p 200 --proceed-on ok,pipe,dispatcher_return $prog_b
-guard l_c <- bpfman link attach tc -i $pair.host_link -d egress -p 300 --proceed-on ok,pipe,dispatcher_return $prog_c
+guard l_a <- bpfman link attach tc $prog_a $pair.host_link egress -p 100 --proceed-on ok,pipe,dispatcher_return
+guard l_b <- bpfman link attach tc $prog_b $pair.host_link egress -p 200 --proceed-on ok,pipe,dispatcher_return
+guard l_c <- bpfman link attach tc $prog_c $pair.host_link egress -p 300 --proceed-on ok,pipe,dispatcher_return
 defer bpfman link detach $l_a
 defer bpfman link detach $l_b
 defer bpfman link detach $l_c

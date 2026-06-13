@@ -36,12 +36,7 @@ defer kfunc release $fn
 # Load three fentry programs. Each --programs spec is a 3-tuple
 # TYPE:NAME:ATTACH_FUNC because fentry/fexit encode the target
 # function at load time (no separate --fn-name on attach).
-guard loaded <- bpfman program load file \
-    --path testdata/bpf/multi_prog_fentry_kmod_counter.bpf.o \
-    --programs "fentry:mfe_a:${fn.name},fentry:mfe_b:${fn.name},fentry:mfe_c:${fn.name}" \
-    -g "weight_a=0x${u64le $weight_a}" \
-    -g "weight_b=0x${u64le $weight_b}" \
-    -g "weight_c=0x${u64le $weight_c}"
+guard loaded <- bpfman program load file testdata/bpf/multi_prog_fentry_kmod_counter.bpf.o --programs "fentry:mfe_a:${fn.name},fentry:mfe_b:${fn.name},fentry:mfe_c:${fn.name}" -g "weight_a=0x${u64le $weight_a}" -g "weight_b=0x${u64le $weight_b}" -g "weight_c=0x${u64le $weight_c}"
 
 let a = $loaded.programs[0]
 let b = $loaded.programs[1]

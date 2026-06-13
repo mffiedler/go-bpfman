@@ -64,16 +64,16 @@ let sumFilter = "fromjson | [.[].formatted.values[].value.rx_packets | tonumber]
 # Peak 0: load + attach ten programs at priorities 0..900.
 # ============================================================
 
-guard ld_0 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard ld_100 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard ld_200 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard ld_300 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard ld_400 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard ld_500 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard ld_600 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard ld_700 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard ld_800 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard ld_900 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_0 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_100 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_200 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_300 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_400 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_500 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_600 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_700 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_800 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_900 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
 
 let p_0 = $ld_0.programs[0]
 let p_100 = $ld_100.programs[0]
@@ -108,16 +108,16 @@ let m_700 = $p_700 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .i
 let m_800 = $p_800 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 let m_900 = $p_900 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 
-guard l_0 <- bpfman link attach tc -i $pair.host_link -d ingress -p 0 --proceed-on ok,pipe,dispatcher_return $p_0
-guard l_100 <- bpfman link attach tc -i $pair.host_link -d ingress -p 100 --proceed-on ok,pipe,dispatcher_return $p_100
-guard l_200 <- bpfman link attach tc -i $pair.host_link -d ingress -p 200 --proceed-on ok,pipe,dispatcher_return $p_200
-guard l_300 <- bpfman link attach tc -i $pair.host_link -d ingress -p 300 --proceed-on ok,pipe,dispatcher_return $p_300
-guard l_400 <- bpfman link attach tc -i $pair.host_link -d ingress -p 400 --proceed-on ok,pipe,dispatcher_return $p_400
-guard l_500 <- bpfman link attach tc -i $pair.host_link -d ingress -p 500 --proceed-on ok,pipe,dispatcher_return $p_500
-guard l_600 <- bpfman link attach tc -i $pair.host_link -d ingress -p 600 --proceed-on ok,pipe,dispatcher_return $p_600
-guard l_700 <- bpfman link attach tc -i $pair.host_link -d ingress -p 700 --proceed-on ok,pipe,dispatcher_return $p_700
-guard l_800 <- bpfman link attach tc -i $pair.host_link -d ingress -p 800 --proceed-on ok,pipe,dispatcher_return $p_800
-guard l_900 <- bpfman link attach tc -i $pair.host_link -d ingress -p 900 --proceed-on ok,pipe,dispatcher_return $p_900
+guard l_0 <- bpfman link attach tc $p_0 $pair.host_link ingress -p 0 --proceed-on ok,pipe,dispatcher_return
+guard l_100 <- bpfman link attach tc $p_100 $pair.host_link ingress -p 100 --proceed-on ok,pipe,dispatcher_return
+guard l_200 <- bpfman link attach tc $p_200 $pair.host_link ingress -p 200 --proceed-on ok,pipe,dispatcher_return
+guard l_300 <- bpfman link attach tc $p_300 $pair.host_link ingress -p 300 --proceed-on ok,pipe,dispatcher_return
+guard l_400 <- bpfman link attach tc $p_400 $pair.host_link ingress -p 400 --proceed-on ok,pipe,dispatcher_return
+guard l_500 <- bpfman link attach tc $p_500 $pair.host_link ingress -p 500 --proceed-on ok,pipe,dispatcher_return
+guard l_600 <- bpfman link attach tc $p_600 $pair.host_link ingress -p 600 --proceed-on ok,pipe,dispatcher_return
+guard l_700 <- bpfman link attach tc $p_700 $pair.host_link ingress -p 700 --proceed-on ok,pipe,dispatcher_return
+guard l_800 <- bpfman link attach tc $p_800 $pair.host_link ingress -p 800 --proceed-on ok,pipe,dispatcher_return
+guard l_900 <- bpfman link attach tc $p_900 $pair.host_link ingress -p 900 --proceed-on ok,pipe,dispatcher_return
 
 # Peak-0 links: none survive to script exit. Slots 0..5 (l_0
 # through l_500) are detached in trough 1; slots 6..9 (l_600
@@ -203,12 +203,12 @@ assert ($snap_t1 |> jq ".members | length") == 4
 # Peak 1: refill six slots with priorities 950 850 750 650 550 450.
 # ============================================================
 
-guard ld_950 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard ld_850 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard ld_750 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard ld_650 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard ld_550 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard ld_450 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_950 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_850 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_750 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_650 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_550 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_450 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
 
 let p_950 = $ld_950.programs[0]
 let p_850 = $ld_850.programs[0]
@@ -231,12 +231,12 @@ let m_650 = $p_650 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .i
 let m_550 = $p_550 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 let m_450 = $p_450 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 
-guard l_950 <- bpfman link attach tc -i $pair.host_link -d ingress -p 950 --proceed-on ok,pipe,dispatcher_return $p_950
-guard l_850 <- bpfman link attach tc -i $pair.host_link -d ingress -p 850 --proceed-on ok,pipe,dispatcher_return $p_850
-guard l_750 <- bpfman link attach tc -i $pair.host_link -d ingress -p 750 --proceed-on ok,pipe,dispatcher_return $p_750
-guard l_650 <- bpfman link attach tc -i $pair.host_link -d ingress -p 650 --proceed-on ok,pipe,dispatcher_return $p_650
-guard l_550 <- bpfman link attach tc -i $pair.host_link -d ingress -p 550 --proceed-on ok,pipe,dispatcher_return $p_550
-guard l_450 <- bpfman link attach tc -i $pair.host_link -d ingress -p 450 --proceed-on ok,pipe,dispatcher_return $p_450
+guard l_950 <- bpfman link attach tc $p_950 $pair.host_link ingress -p 950 --proceed-on ok,pipe,dispatcher_return
+guard l_850 <- bpfman link attach tc $p_850 $pair.host_link ingress -p 850 --proceed-on ok,pipe,dispatcher_return
+guard l_750 <- bpfman link attach tc $p_750 $pair.host_link ingress -p 750 --proceed-on ok,pipe,dispatcher_return
+guard l_650 <- bpfman link attach tc $p_650 $pair.host_link ingress -p 650 --proceed-on ok,pipe,dispatcher_return
+guard l_550 <- bpfman link attach tc $p_550 $pair.host_link ingress -p 550 --proceed-on ok,pipe,dispatcher_return
+guard l_450 <- bpfman link attach tc $p_450 $pair.host_link ingress -p 450 --proceed-on ok,pipe,dispatcher_return
 
 # Peak-1 links: none survive to script exit. l_650, l_550,
 # l_450 are detached in trough 2 (slots 3..5). l_950, l_850,
@@ -324,13 +324,13 @@ assert ($snap_t2 |> jq ".members | length") == 3
 # Peak 2: refill seven slots with priorities 25 125 225 325 425 525 625.
 # ============================================================
 
-guard ld_25 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard ld_125 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard ld_225 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard ld_325 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard ld_425 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard ld_525 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard ld_625 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_25 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_125 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_225 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_325 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_425 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_525 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_625 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
 
 let p_25 = $ld_25.programs[0]
 let p_125 = $ld_125.programs[0]
@@ -356,13 +356,13 @@ let m_425 = $p_425 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .i
 let m_525 = $p_525 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 let m_625 = $p_625 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 
-guard l_25 <- bpfman link attach tc -i $pair.host_link -d ingress -p 25 --proceed-on ok,pipe,dispatcher_return $p_25
-guard l_125 <- bpfman link attach tc -i $pair.host_link -d ingress -p 125 --proceed-on ok,pipe,dispatcher_return $p_125
-guard l_225 <- bpfman link attach tc -i $pair.host_link -d ingress -p 225 --proceed-on ok,pipe,dispatcher_return $p_225
-guard l_325 <- bpfman link attach tc -i $pair.host_link -d ingress -p 325 --proceed-on ok,pipe,dispatcher_return $p_325
-guard l_425 <- bpfman link attach tc -i $pair.host_link -d ingress -p 425 --proceed-on ok,pipe,dispatcher_return $p_425
-guard l_525 <- bpfman link attach tc -i $pair.host_link -d ingress -p 525 --proceed-on ok,pipe,dispatcher_return $p_525
-guard l_625 <- bpfman link attach tc -i $pair.host_link -d ingress -p 625 --proceed-on ok,pipe,dispatcher_return $p_625
+guard l_25 <- bpfman link attach tc $p_25 $pair.host_link ingress -p 25 --proceed-on ok,pipe,dispatcher_return
+guard l_125 <- bpfman link attach tc $p_125 $pair.host_link ingress -p 125 --proceed-on ok,pipe,dispatcher_return
+guard l_225 <- bpfman link attach tc $p_225 $pair.host_link ingress -p 225 --proceed-on ok,pipe,dispatcher_return
+guard l_325 <- bpfman link attach tc $p_325 $pair.host_link ingress -p 325 --proceed-on ok,pipe,dispatcher_return
+guard l_425 <- bpfman link attach tc $p_425 $pair.host_link ingress -p 425 --proceed-on ok,pipe,dispatcher_return
+guard l_525 <- bpfman link attach tc $p_525 $pair.host_link ingress -p 525 --proceed-on ok,pipe,dispatcher_return
+guard l_625 <- bpfman link attach tc $p_625 $pair.host_link ingress -p 625 --proceed-on ok,pipe,dispatcher_return
 
 # Peak-2 survivors (slots 8..9 after trough 3): 525, 625.
 defer bpfman link detach $l_525
@@ -451,14 +451,14 @@ assert ($snap_t3 |> jq ".members | length") == 2
 # All eight survive to script exit.
 # ============================================================
 
-guard ld_62 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard ld_162 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard ld_262 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard ld_362 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard ld_462 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard ld_562 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard ld_662 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard ld_762 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_62 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_162 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_262 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_362 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_462 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_562 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_662 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard ld_762 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
 
 let p_62 = $ld_62.programs[0]
 let p_162 = $ld_162.programs[0]
@@ -487,14 +487,14 @@ let m_562 = $p_562 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .i
 let m_662 = $p_662 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 let m_762 = $p_762 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 
-guard l_62 <- bpfman link attach tc -i $pair.host_link -d ingress -p 62 --proceed-on ok,pipe,dispatcher_return $p_62
-guard l_162 <- bpfman link attach tc -i $pair.host_link -d ingress -p 162 --proceed-on ok,pipe,dispatcher_return $p_162
-guard l_262 <- bpfman link attach tc -i $pair.host_link -d ingress -p 262 --proceed-on ok,pipe,dispatcher_return $p_262
-guard l_362 <- bpfman link attach tc -i $pair.host_link -d ingress -p 362 --proceed-on ok,pipe,dispatcher_return $p_362
-guard l_462 <- bpfman link attach tc -i $pair.host_link -d ingress -p 462 --proceed-on ok,pipe,dispatcher_return $p_462
-guard l_562 <- bpfman link attach tc -i $pair.host_link -d ingress -p 562 --proceed-on ok,pipe,dispatcher_return $p_562
-guard l_662 <- bpfman link attach tc -i $pair.host_link -d ingress -p 662 --proceed-on ok,pipe,dispatcher_return $p_662
-guard l_762 <- bpfman link attach tc -i $pair.host_link -d ingress -p 762 --proceed-on ok,pipe,dispatcher_return $p_762
+guard l_62 <- bpfman link attach tc $p_62 $pair.host_link ingress -p 62 --proceed-on ok,pipe,dispatcher_return
+guard l_162 <- bpfman link attach tc $p_162 $pair.host_link ingress -p 162 --proceed-on ok,pipe,dispatcher_return
+guard l_262 <- bpfman link attach tc $p_262 $pair.host_link ingress -p 262 --proceed-on ok,pipe,dispatcher_return
+guard l_362 <- bpfman link attach tc $p_362 $pair.host_link ingress -p 362 --proceed-on ok,pipe,dispatcher_return
+guard l_462 <- bpfman link attach tc $p_462 $pair.host_link ingress -p 462 --proceed-on ok,pipe,dispatcher_return
+guard l_562 <- bpfman link attach tc $p_562 $pair.host_link ingress -p 562 --proceed-on ok,pipe,dispatcher_return
+guard l_662 <- bpfman link attach tc $p_662 $pair.host_link ingress -p 662 --proceed-on ok,pipe,dispatcher_return
+guard l_762 <- bpfman link attach tc $p_762 $pair.host_link ingress -p 762 --proceed-on ok,pipe,dispatcher_return
 
 defer bpfman link detach $l_62
 defer bpfman link detach $l_162

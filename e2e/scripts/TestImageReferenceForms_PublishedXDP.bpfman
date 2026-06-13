@@ -12,10 +12,7 @@ def expect_xdp_ref(image) {
     assert $published.manifest.maps.xdp_stats_map == per_cpu_array
 
     print "image-ref: loading ${image}"
-    guard loaded <- bpfman program load image \
-        --image-url $image \
-        --pull-policy Always \
-        --programs xdp:xdp_stats
+    guard loaded <- bpfman program load image $image --pull-policy Always --programs xdp:xdp_stats
     let prog = $loaded.programs[0]
     let pid = $prog.record.program_id
     defer print "image-ref: unloaded ${image} pid=${pid}"

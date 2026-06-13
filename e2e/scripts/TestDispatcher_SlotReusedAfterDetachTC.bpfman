@@ -32,9 +32,7 @@
 guard pair <- net veth-pair
 defer net release $pair
 
-guard loaded <- bpfman program load file \
-    --path testdata/bpf/tc_counter.bpf.o \
-    --programs tc:stats
+guard loaded <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
 let prog = $loaded.programs[0]
 defer bpfman program unload $prog
 
@@ -44,7 +42,7 @@ defer bpfman program unload $prog
 let keep_priorities = [100 200 300 500 600 700 800 900 1000]
 
 guard kept <- foreach prio in $keep_priorities {
-    bpfman link attach tc -i $pair.host_link -d ingress -p $prio $prog
+    bpfman link attach tc $prog $pair.host_link ingress -p $prio
 }
 
 foreach l in $kept {
@@ -53,7 +51,7 @@ foreach l in $kept {
 
 # Sacrificial link at priority 400. Detached explicitly below;
 # no defer.
-guard l_400 <- bpfman link attach tc -i $pair.host_link -d ingress -p 400 $prog
+guard l_400 <- bpfman link attach tc $prog $pair.host_link ingress -p 400
 
 guard snap_full <- bpfman dispatcher get tc-ingress $pair.host_nsid $pair.host_ifindex
 let count_full = $snap_full |> jq ".members | length"
@@ -65,7 +63,7 @@ guard snap_partial <- bpfman dispatcher get tc-ingress $pair.host_nsid $pair.hos
 let count_partial = $snap_partial |> jq ".members | length"
 assert $count_partial == 9
 
-guard l_350 <- bpfman link attach tc -i $pair.host_link -d ingress -p 350 $prog
+guard l_350 <- bpfman link attach tc $prog $pair.host_link ingress -p 350
 defer bpfman link detach $l_350
 
 guard snap_refilled <- bpfman dispatcher get tc-ingress $pair.host_nsid $pair.host_ifindex

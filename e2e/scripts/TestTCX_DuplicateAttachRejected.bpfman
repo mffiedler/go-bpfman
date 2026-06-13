@@ -17,33 +17,19 @@ guard pair <- net veth-pair
 defer net release $pair
 require_host_route_to_peer $pair
 
-guard loaded <- bpfman program load file \
-    --path testdata/bpf/tcx_counter.bpf.o \
-    --programs tcx:tcx_stats
+guard loaded <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
 let prog = $loaded.programs[0]
 defer bpfman program unload $prog
 
-guard link <- bpfman link attach tcx \
-    --iface $pair.host_link \
-    --direction ingress \
-    --priority 50 \
-    $prog
+guard link <- bpfman link attach tcx $prog $pair.host_link ingress --priority 50
 defer bpfman link detach $link
 
-assert fail bpfman link attach tcx \
-    --iface $pair.host_link \
-    --direction ingress \
-    --priority 60 \
-    $prog
+assert fail bpfman link attach tcx $prog $pair.host_link ingress --priority 60
 
 # Equal priority is the exact deterministic pin-key collision,
 # independent of ordering; and the rejection must fail usefully,
 # naming the surviving link so the user knows what to detach.
-let dup <- bpfman link attach tcx \
-    --iface $pair.host_link \
-    --direction ingress \
-    --priority 50 \
-    $prog
+let dup <- bpfman link attach tcx $prog $pair.host_link ingress --priority 50
 assert $dup.ok == false
 assert contains $dup.stderr "as link ${link.record.id}"
 

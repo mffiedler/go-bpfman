@@ -10,10 +10,7 @@ guard published <- inspect_published_image $image tracepoint_kill_recorder
 assert $published.manifest.programs.tracepoint_kill_recorder == tracepoint
 assert $published.manifest.maps.tracepoint_stats_map == per_cpu_array
 
-guard loaded <- bpfman program load image \
-    --image-url $image \
-    --pull-policy Always \
-    --programs tracepoint:tracepoint_kill_recorder
+guard loaded <- bpfman program load image $image --pull-policy Always --programs tracepoint:tracepoint_kill_recorder
 let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 defer bpfman program unload $pid

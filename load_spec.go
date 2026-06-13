@@ -111,7 +111,7 @@ func NewAttachLoadSpec(objectPath, programName string, programType ProgramType, 
 // load input and is not preserved past Phase A; the stored copy
 // is the canonical location bpfman reads from afterwards. Round
 // tripping a load response back through a comparison against the
-// caller's --path argument will not match by design.
+// caller's original path operand will not match by design.
 func (s LoadSpec) ObjectPath() string               { return s.objectPath }
 func (s LoadSpec) ProgramName() string              { return s.programName }
 func (s LoadSpec) ProgramType() ProgramType         { return s.programType }
@@ -207,7 +207,7 @@ type imageSourceJSON struct {
 // (GlobalData) marshal as {} when empty. The contract is a stable
 // schema for consumers; absence is never used to encode meaning.
 type loadSpecJSON struct {
-	ObjectPath  string            `json:"object_path"` // bpfman's stored bytecode path post-load (<runtime-dir>/programs/<id>/bytecode.o), not the caller's original --path input
+	ObjectPath  string            `json:"object_path"` // bpfman's stored bytecode path post-load (<runtime-dir>/programs/<id>/bytecode.o), not the caller's original path operand
 	ProgramName string            `json:"program_name"`
 	ProgramType ProgramType       `json:"program_type"`
 	GlobalData  map[string][]byte `json:"global_data"`  // always emit; {} when no globals

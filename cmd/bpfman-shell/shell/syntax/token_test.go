@@ -44,11 +44,10 @@ func TestTokenise(t *testing.T) {
 		},
 		{
 			name:  "flags",
-			input: "load file --path foo.o -m app=test",
+			input: "load file foo.o -m app=test",
 			want: []Token{
 				{Kind: TokenWord, Text: "load"},
 				{Kind: TokenWord, Text: "file"},
-				{Kind: TokenWord, Text: "--path"},
 				{Kind: TokenWord, Text: "foo.o"},
 				{Kind: TokenWord, Text: "-m"},
 				{Kind: TokenWord, Text: "app=test"},
@@ -644,12 +643,11 @@ func TestTokeniseLineContinuation(t *testing.T) {
 		},
 		{
 			name:  "multiple continuations in one command",
-			input: "bpfman load file \\\n--path foo.o \\\n--programs xdp:pass",
+			input: "bpfman load file \\\nfoo.o \\\n--programs xdp:pass",
 			want: []Token{
 				{Kind: TokenWord, Text: "bpfman"},
 				{Kind: TokenWord, Text: "load"},
 				{Kind: TokenWord, Text: "file"},
-				{Kind: TokenWord, Text: "--path"},
 				{Kind: TokenWord, Text: "foo.o"},
 				{Kind: TokenWord, Text: "--programs"},
 				{Kind: TokenWord, Text: "xdp:pass"},

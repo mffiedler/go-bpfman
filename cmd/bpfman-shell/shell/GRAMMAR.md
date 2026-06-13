@@ -63,15 +63,15 @@ shell history can usually be pasted after `let NAME <-`,
 rewriting. Worked example from the e2e corpus:
 
     guard loaded <- bpfman program load file \
-        --path testdata/bpf/multi_prog_tcx_counter.bpf.o \
+        testdata/bpf/multi_prog_tcx_counter.bpf.o \
         --programs tcx:mtcx_a,tcx:mtcx_b,tcx:mtcx_c \
         -g "weight_a=0x${u64le $weight_a}" \
         -g "weight_b=0x${u64le $weight_b}" \
         -g "weight_c=0x${u64le $weight_c}"
 
 At command position these arguments lex as boring Word tokens:
-`--path`, the bytecode path, `--programs`, the comma-separated
-program-spec list, `-g`, then an InterpString containing
+the bytecode path, `--programs`, the comma-separated program-spec
+list, `-g`, then an InterpString containing
 `weight_a=0x${u64le $weight_a}`. A "clean" lexer that split `:`,
 `,`, `/`, `.`, `=`, `-` everywhere would force every CLI-shaped
 argument to be quoted; that is the wrong direction for an
@@ -543,17 +543,17 @@ The `BindRHS` has three shapes:
 
 Examples:
 
-    let result <- bpfman program load file --path foo.o
+    let result <- bpfman program load file foo.o
     require $result.ok
     let loaded = $result.value
-    guard pid <- bpfman program load file --path foo.o
+    guard pid <- bpfman program load file foo.o
     guard _ <- touch "${sentinel}.1"
 
     guard links <- foreach prio in $priorities {
-        bpfman link attach tc -i $iface -d ingress -p $prio $pid
+        bpfman link attach tc $pid $iface ingress -p $prio
     }
     guard links <- foreach _ in (range 10) {
-        bpfman link attach xdp -i $iface generic 50 $pid
+        bpfman link attach xdp $pid $iface -p 50
     }
 
 ### ForEachStmt
@@ -780,9 +780,9 @@ the existing list / destructure story:
 
     def load_xdp(path iface) {
         guard prog <- bpfman program load file \
-            --path $path --type xdp
+            $path --programs xdp:pass
         guard link <- bpfman link attach xdp \
-            -i $iface generic 50 $prog
+            $prog $iface -p 50
         return [prog link]
     }
 

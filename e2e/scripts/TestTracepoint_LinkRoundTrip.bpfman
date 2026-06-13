@@ -26,11 +26,7 @@ let weight = 17
 guard fn <- kfunc acquire
 defer kfunc release $fn
 
-guard loaded <- bpfman program load file \
-    --path testdata/bpf/tracepoint_kmod_counter.bpf.o \
-    --programs tracepoint:tracepoint_kmod_recorder \
-    -g "expected_slot=0x${u32le $fn.index}" \
-    -g "weight=0x${u64le $weight}"
+guard loaded <- bpfman program load file testdata/bpf/tracepoint_kmod_counter.bpf.o --programs tracepoint:tracepoint_kmod_recorder -g "expected_slot=0x${u32le $fn.index}" -g "weight=0x${u64le $weight}"
 let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 

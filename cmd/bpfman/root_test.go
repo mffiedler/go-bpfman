@@ -34,8 +34,8 @@ func TestSelectedCommandAllowsRootless(t *testing.T) {
 //nolint:paralleltest // mutates the os.Args process global via newCLIForArgs; cannot run in parallel.
 func TestSelectedCommandRequiresRootByDefault(t *testing.T) {
 	for _, args := range [][]string{
-		{"bpfman", "program", "load", "file", "--path", "x.o"},
-		{"bpfman", "program", "load", "image", "--image-url", "example.test/x:latest"},
+		{"bpfman", "program", "load", "file", "x.o"},
+		{"bpfman", "program", "load", "image", "example.test/x:latest"},
 		{"bpfman", "program", "list"},
 		{"bpfman", "link", "list"},
 		{"bpfman", "serve"},

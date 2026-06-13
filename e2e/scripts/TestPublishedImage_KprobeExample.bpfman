@@ -13,10 +13,7 @@ assert $published.manifest.maps.kprobe_stats_map == per_cpu_array
 guard fn <- kfunc acquire
 defer kfunc release $fn
 
-guard loaded <- bpfman program load image \
-    --image-url $image \
-    --pull-policy Always \
-    --programs kprobe:kprobe_counter
+guard loaded <- bpfman program load image $image --pull-policy Always --programs kprobe:kprobe_counter
 let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 defer bpfman program unload $pid
@@ -24,7 +21,7 @@ defer bpfman program unload $pid
 expect_program_load $prog kprobe kprobe kprobe_counter
 expect_loaded_image_source $prog $image $published.inspected
 
-guard link <- bpfman link attach kprobe --fn-name $fn.name $prog
+guard link <- bpfman link attach kprobe $prog $fn.name
 let linkID = $link.record.id
 expect_pinned_link_identity $link
 assert $link.record.kind == kprobe

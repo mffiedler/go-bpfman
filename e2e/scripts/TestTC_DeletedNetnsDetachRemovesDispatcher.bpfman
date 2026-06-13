@@ -19,33 +19,17 @@ require_host_route_to_peer $pair
 let netns = "/var/run/netns/${pair.ns}"
 let sumFilter = "fromjson | [.[] | select(.formatted.key == 0) | .formatted.values[].value.rx_packets] | add"
 
-guard firstLoad <- bpfman program load file \
-    --path testdata/bpf/tc_counter.bpf.o \
-    --programs tc:stats
+guard firstLoad <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
 let firstProg = $firstLoad.programs[0]
 defer bpfman program unload $firstProg
 
-guard secondLoad <- bpfman program load file \
-    --path testdata/bpf/tc_counter.bpf.o \
-    --programs tc:stats
+guard secondLoad <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
 let secondProg = $secondLoad.programs[0]
 defer bpfman program unload $secondProg
 
-guard firstLink <- bpfman link attach tc \
-    --iface $pair.peer_link \
-    --direction ingress \
-    --priority 50 \
-    --proceed-on ok,pipe,dispatcher_return \
-    --netns $netns \
-    $firstProg
+guard firstLink <- bpfman link attach tc $firstProg $pair.peer_link ingress --priority 50 --proceed-on ok,pipe,dispatcher_return --netns $netns
 
-guard secondLink <- bpfman link attach tc \
-    --iface $pair.peer_link \
-    --direction ingress \
-    --priority 60 \
-    --proceed-on ok,pipe,dispatcher_return \
-    --netns $netns \
-    $secondProg
+guard secondLink <- bpfman link attach tc $secondProg $pair.peer_link ingress --priority 60 --proceed-on ok,pipe,dispatcher_return --netns $netns
 
 let nsid = $firstLink.record.details.nsid
 let ifindex = $firstLink.record.details.ifindex

@@ -8,34 +8,20 @@ import ../lib.bpfman
 guard pair <- net veth-pair
 defer net release $pair
 
-guard firstLoad <- bpfman program load file \
-    --path testdata/bpf/tc_counter.bpf.o \
-    --programs tc:stats
+guard firstLoad <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
 let firstProg = $firstLoad.programs[0]
 
-guard secondLoad <- bpfman program load file \
-    --path testdata/bpf/tc_counter.bpf.o \
-    --programs tc:stats
+guard secondLoad <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
 let secondProg = $secondLoad.programs[0]
 defer bpfman program unload $secondProg
 
-guard firstLink <- bpfman link attach tc \
-    --iface $pair.host_link \
-    --direction ingress \
-    --priority 50 \
-    --proceed-on ok,pipe,dispatcher_return \
-    $firstProg
+guard firstLink <- bpfman link attach tc $firstProg $pair.host_link ingress --priority 50 --proceed-on ok,pipe,dispatcher_return
 
 let filterCount = 'fromjson | [ .[] | select(.kind == "bpf") ] | length'
 guard firstFilters <- tc -j filter show dev $pair.host_link ingress
 let firstFilterCount = $firstFilters.stdout |> jq $filterCount
 
-guard secondLink <- bpfman link attach tc \
-    --iface $pair.host_link \
-    --direction ingress \
-    --priority 60 \
-    --proceed-on ok,pipe,dispatcher_return \
-    $secondProg
+guard secondLink <- bpfman link attach tc $secondProg $pair.host_link ingress --priority 60 --proceed-on ok,pipe,dispatcher_return
 defer bpfman link detach $secondLink
 
 guard beforeFilters <- tc -j filter show dev $pair.host_link ingress

@@ -57,34 +57,18 @@ guard worker <- start env BPFMAN_SHELL_MODE=uprobe-fire-worker \
     1
 defer kill $worker
 
-guard loadedA <- bpfman program load file \
-    --path testdata/bpf/uprobe_exact.bpf.o \
-    --programs uprobe:uprobe_counter \
-    -g "expected_pid=0x${u32le $target.pid}" \
-    -g "weight=0x${u64le $weight}"
+guard loadedA <- bpfman program load file testdata/bpf/uprobe_exact.bpf.o --programs uprobe:uprobe_counter -g "expected_pid=0x${u32le $target.pid}" -g "weight=0x${u64le $weight}"
 let progA = $loadedA.programs[0]
 defer bpfman program unload $progA
 
-guard loadedB <- bpfman program load file \
-    --path testdata/bpf/uprobe_exact.bpf.o \
-    --programs uprobe:uprobe_counter \
-    -g "expected_pid=0x${u32le $worker.pid}" \
-    -g "weight=0x${u64le $weight}"
+guard loadedB <- bpfman program load file testdata/bpf/uprobe_exact.bpf.o --programs uprobe:uprobe_counter -g "expected_pid=0x${u32le $worker.pid}" -g "weight=0x${u64le $weight}"
 let progB = $loadedB.programs[0]
 defer bpfman program unload $progB
 
-guard linkA <- bpfman link attach uprobe \
-    --target $target.path \
-    --fn-name $target.symbol \
-    --pid $target.pid \
-    $progA
+guard linkA <- bpfman link attach uprobe $progA $target.path --fn-name $target.symbol --pid $target.pid
 defer bpfman link detach $linkA
 
-guard linkB <- bpfman link attach uprobe \
-    --target $target.path \
-    --fn-name $target.symbol \
-    --pid $target.pid \
-    $progB
+guard linkB <- bpfman link attach uprobe $progB $target.path --fn-name $target.symbol --pid $target.pid
 defer bpfman link detach $linkB
 
 # The pid filter is part of the link's identity: the attach

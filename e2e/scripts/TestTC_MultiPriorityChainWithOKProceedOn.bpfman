@@ -22,9 +22,9 @@ guard pair <- net veth-pair
 defer net release $pair
 require_host_route_to_peer $pair
 
-guard loaded_0 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard loaded_55 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard loaded_100 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard loaded_0 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard loaded_55 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard loaded_100 <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
 
 let prog_0 = $loaded_0.programs[0]
 let prog_55 = $loaded_55.programs[0]
@@ -39,9 +39,9 @@ let mapID_100 = $prog_100 |> jq '[.status.maps[] | select(.name == "tc_stats_map
 
 # Explicit proceed-on includes OK; the chain runs through every
 # member instead of halting at position 0.
-guard l_0 <- bpfman link attach tc -i $pair.host_link -d ingress -p 0 --proceed-on ok,pipe,dispatcher_return $prog_0
-guard l_55 <- bpfman link attach tc -i $pair.host_link -d ingress -p 55 --proceed-on ok,pipe,dispatcher_return $prog_55
-guard l_100 <- bpfman link attach tc -i $pair.host_link -d ingress -p 100 --proceed-on ok,pipe,dispatcher_return $prog_100
+guard l_0 <- bpfman link attach tc $prog_0 $pair.host_link ingress -p 0 --proceed-on ok,pipe,dispatcher_return
+guard l_55 <- bpfman link attach tc $prog_55 $pair.host_link ingress -p 55 --proceed-on ok,pipe,dispatcher_return
+guard l_100 <- bpfman link attach tc $prog_100 $pair.host_link ingress -p 100 --proceed-on ok,pipe,dispatcher_return
 defer bpfman link detach $l_0
 defer bpfman link detach $l_55
 defer bpfman link detach $l_100

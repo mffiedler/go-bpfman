@@ -33,7 +33,7 @@ func init() {
 			"blocks on sentinel.W, fires --count=N events, and creates ack.W per " +
 			"wave W in 1..K. --waves defaults to 1. Uprobe kinds publish " +
 			"target_binary on the returned $job so 'bpfman link attach uprobe " +
-			"--target $work.target_binary' attaches to the running bpfman-shell ELF. " +
+			"$work.target_binary' attaches to the running bpfman-shell ELF. " +
 			"start env BPFMAN_SHELL_MODE=... remains valid as a debug escape hatch.",
 	})
 }

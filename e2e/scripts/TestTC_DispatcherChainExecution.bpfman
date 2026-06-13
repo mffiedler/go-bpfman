@@ -39,10 +39,10 @@ require_host_route_to_peer $pair
 let priorities = [500 100 300 200 400]
 
 guard links <- foreach prio in $priorities {
-    guard loaded <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
+    guard loaded <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
     let prog = $loaded.programs[0]
     defer bpfman program unload $prog
-    bpfman link attach tc -i $pair.host_link -d ingress -p $prio --proceed-on ok,pipe,dispatcher_return $prog
+    bpfman link attach tc $prog $pair.host_link ingress -p $prio --proceed-on ok,pipe,dispatcher_return
 }
 
 foreach l in $links {

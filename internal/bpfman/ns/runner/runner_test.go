@@ -27,7 +27,7 @@ func TestDetectNamespaceHelperInvocation_ModeEnvVar(t *testing.T) {
 	t.Parallel()
 
 	inv, ok, err := DetectNamespaceHelperInvocation(
-		[]string{"bpfman", "uprobe", "--target=/bin/bash"},
+		[]string{"bpfman", "link", "attach", "uprobe", "42", "/bin/bash"},
 		ns.ModeBPFManNS, // BPFMAN_MODE=bpfman-ns
 	)
 	if err != nil {
@@ -38,7 +38,7 @@ func TestDetectNamespaceHelperInvocation_ModeEnvVar(t *testing.T) {
 	}
 
 	// For env-triggered invocation, strip argv[0] and pass through the rest.
-	wantArgs := []string{"uprobe", "--target=/bin/bash"}
+	wantArgs := []string{"link", "attach", "uprobe", "42", "/bin/bash"}
 	if !reflect.DeepEqual(inv.Args, wantArgs) {
 		t.Fatalf("args mismatch:\nwant: %#v\ngot:  %#v", wantArgs, inv.Args)
 	}
@@ -122,7 +122,7 @@ func TestHandleNamespaceHelperInvocation_Helper_RunsAndReturnsHandled(t *testing
 		return nil
 	}
 
-	argv := []string{"bpfman", "uprobe", "--target=/bin/bash"}
+	argv := []string{"bpfman", "link", "attach", "uprobe", "42", "/bin/bash"}
 	handled, err := HandleNamespaceHelperInvocation(
 		argv,
 		ns.ModeBPFManNS,
@@ -135,7 +135,7 @@ func TestHandleNamespaceHelperInvocation_Helper_RunsAndReturnsHandled(t *testing
 		t.Fatalf("expected handled=true, got false")
 	}
 
-	wantArgs := []string{"uprobe", "--target=/bin/bash"}
+	wantArgs := []string{"link", "attach", "uprobe", "42", "/bin/bash"}
 	if !reflect.DeepEqual(got.Args, wantArgs) {
 		t.Fatalf("invocation args mismatch:\nwant: %#v\ngot:  %#v", wantArgs, got.Args)
 	}

@@ -40,20 +40,12 @@ guard target_ns <- exec readlink "/proc/${target.pid}/ns/mnt"
 print "container-uprobe namespaces: self=${self_ns.stdout} target=${target_ns.stdout}"
 assert $self_ns.stdout != $target_ns.stdout
 
-guard loaded <- bpfman program load file \
-    --path testdata/bpf/uprobe_exact.bpf.o \
-    --programs uprobe:uprobe_counter \
-    -g "expected_pid=0x${u32le $target.pid}" \
-    -g "weight=0x${u64le $weight}"
+guard loaded <- bpfman program load file testdata/bpf/uprobe_exact.bpf.o --programs uprobe:uprobe_counter -g "expected_pid=0x${u32le $target.pid}" -g "weight=0x${u64le $weight}"
 let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 defer bpfman program unload $pid
 
-guard link <- bpfman link attach uprobe \
-    --target $shell_path.stdout \
-    --fn-name $target_info.symbol \
-    --container-pid $target.pid \
-    $prog
+guard link <- bpfman link attach uprobe $prog $shell_path.stdout --fn-name $target_info.symbol --container-pid $target.pid
 defer bpfman link detach $link
 let linkID = $link.record.id
 

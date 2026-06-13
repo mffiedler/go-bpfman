@@ -20,9 +20,7 @@
 guard pair <- net veth-pair
 defer net release $pair
 
-guard loaded <- bpfman program load file \
-    --path testdata/bpf/xdp_pass.bpf.o \
-    --programs xdp:pass
+guard loaded <- bpfman program load file testdata/bpf/xdp_pass.bpf.o --programs xdp:pass
 let prog = $loaded.programs[0]
 defer bpfman program unload $prog
 
@@ -33,7 +31,7 @@ defer bpfman program unload $prog
 # changes; there is no index-by-variable in path lookups today,
 # so each step is spelled out.
 guard links <- foreach _ in range 10 {
-    bpfman link attach xdp -i $pair.host_link $prog
+    bpfman link attach xdp $prog $pair.host_link
 }
 
 # $links[0] .. $links[8] are detached explicitly mid-script;

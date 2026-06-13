@@ -38,26 +38,20 @@ let initialCount = $initial |> jq "[.programs[]] | length"
 require $initialCount == 0
 
 # Load one owner and three dependants that all share its maps.
-guard ownerA <- bpfman program load file \
-    --path testdata/bpf/tcx_counter.bpf.o \
-    --programs tcx:tcx_stats \
-    -m role=owner
+guard ownerA <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats -m role=owner
 let progOwnerA = $ownerA.programs[0]
 let oA = $progOwnerA.record.program_id
 expect_program_load $progOwnerA tcx schedcls tcx_stats
 
-guard depA1 <- bpfman program load file \
-    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oA
+guard depA1 <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oA
 let dA1 = $depA1.programs[0].record.program_id
 assert $depA1.programs[0].record.handles.map_owner_id == $oA
 
-guard depA2 <- bpfman program load file \
-    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oA
+guard depA2 <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oA
 let dA2 = $depA2.programs[0].record.program_id
 assert $depA2.programs[0].record.handles.map_owner_id == $oA
 
-guard depA3 <- bpfman program load file \
-    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oA
+guard depA3 <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oA
 let dA3 = $depA3.programs[0].record.program_id
 assert $depA3.programs[0].record.handles.map_owner_id == $oA
 print "A: owner=${oA} with dependants ${dA1}, ${dA2}, ${dA3} sharing its maps"
@@ -84,17 +78,13 @@ print "A: scrambled batch (${dA2} ${oA} ${dA3} ${dA1}) deleted all four"
 # Recursive delete from the owner expands to every unnamed dependant.
 # ----------------------------------------------------------------------
 
-guard ownerB <- bpfman program load file \
-    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
+guard ownerB <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
 let oB = $ownerB.programs[0].record.program_id
-guard depB1 <- bpfman program load file \
-    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oB
+guard depB1 <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oB
 let dB1 = $depB1.programs[0].record.program_id
-guard depB2 <- bpfman program load file \
-    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oB
+guard depB2 <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oB
 let dB2 = $depB2.programs[0].record.program_id
-guard depB3 <- bpfman program load file \
-    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oB
+guard depB3 <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oB
 let dB3 = $depB3.programs[0].record.program_id
 assert $depB1.programs[0].record.handles.map_owner_id == $oB
 assert $depB3.programs[0].record.handles.map_owner_id == $oB
@@ -112,17 +102,13 @@ print "B: recursive delete of ${oB} removed unnamed dependants ${dB1}, ${dB2}, $
 # re-deleted.
 # ----------------------------------------------------------------------
 
-guard ownerC <- bpfman program load file \
-    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
+guard ownerC <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
 let oC = $ownerC.programs[0].record.program_id
-guard depC1 <- bpfman program load file \
-    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oC
+guard depC1 <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oC
 let dC1 = $depC1.programs[0].record.program_id
-guard depC2 <- bpfman program load file \
-    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oC
+guard depC2 <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oC
 let dC2 = $depC2.programs[0].record.program_id
-guard depC3 <- bpfman program load file \
-    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oC
+guard depC3 <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oC
 let dC3 = $depC3.programs[0].record.program_id
 assert $depC1.programs[0].record.handles.map_owner_id == $oC
 assert $depC2.programs[0].record.handles.map_owner_id == $oC
@@ -139,15 +125,11 @@ print "C: recursive owner-plus-named batch (${oC} ${dC2} ${dC1}) deduped all dep
 # --all orders the whole fan-out dependants-first and clears the store.
 # ----------------------------------------------------------------------
 
-guard ownerD <- bpfman program load file \
-    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
+guard ownerD <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
 let oD = $ownerD.programs[0].record.program_id
-guard depD1 <- bpfman program load file \
-    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oD
-guard depD2 <- bpfman program load file \
-    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oD
-guard depD3 <- bpfman program load file \
-    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oD
+guard depD1 <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oD
+guard depD2 <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oD
+guard depD3 <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oD
 assert $depD1.programs[0].record.handles.map_owner_id == $oD
 
 bpfman program delete --all

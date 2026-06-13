@@ -34,12 +34,7 @@ defer net release $pair
 require_host_route_to_peer $pair
 
 
-guard loaded <- bpfman program load file \
-    --path testdata/bpf/multi_prog_tc_chain_stops_at_ok.bpf.o \
-    --programs tc:mtc_chain_a,tc:mtc_chain_b,tc:mtc_chain_c \
-    -g "weight_a=0x${u64le $weight_a}" \
-    -g "weight_b=0x${u64le $weight_b}" \
-    -g "weight_c=0x${u64le $weight_c}"
+guard loaded <- bpfman program load file testdata/bpf/multi_prog_tc_chain_stops_at_ok.bpf.o --programs tc:mtc_chain_a,tc:mtc_chain_b,tc:mtc_chain_c -g "weight_a=0x${u64le $weight_a}" -g "weight_b=0x${u64le $weight_b}" -g "weight_c=0x${u64le $weight_c}"
 
 let a = $loaded.programs[0]
 let b = $loaded.programs[1]
@@ -55,9 +50,9 @@ let mapID_c = $c |> jq '[.status.maps[] | select(.name == "mcc_count") | .id][0]
 
 # Default proceed-on (`pipe, dispatcher_return`); the script does
 # not pass --proceed-on so the dispatcher uses defaults.
-guard link_a <- bpfman link attach tc -i $pair.host_link -d ingress -p 50 $a
-guard link_b <- bpfman link attach tc -i $pair.host_link -d ingress -p 60 $b
-guard link_c <- bpfman link attach tc -i $pair.host_link -d ingress -p 70 $c
+guard link_a <- bpfman link attach tc $a $pair.host_link ingress -p 50
+guard link_b <- bpfman link attach tc $b $pair.host_link ingress -p 60
+guard link_c <- bpfman link attach tc $c $pair.host_link ingress -p 70
 
 let counter_filter = "fromjson | .[0].formatted.value | tonumber"
 

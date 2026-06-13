@@ -45,7 +45,7 @@ const (
 	// TokenBind is the '<-' sigil at a token boundary. It binds
 	// the result of running a command form on its right to the
 	// name on its left: "let r <- bpfman program get $pid" or
-	// "guard r <- bpfman program load file --path foo.o". Inside
+	// "guard r <- bpfman program load file foo.o". Inside
 	// a bare word the bytes '<-' stay part of the surrounding
 	// literal; '<-' only emits as TokenBind when it sits at a
 	// token boundary (whitespace or start of input on the left).

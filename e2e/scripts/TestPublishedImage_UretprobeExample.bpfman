@@ -12,10 +12,7 @@ assert $published.manifest.maps.uretprobe_stats_map == per_cpu_array
 
 guard target <- uprobe target
 
-guard loaded <- bpfman program load image \
-    --image-url $image \
-    --pull-policy Always \
-    --programs uretprobe:uretprobe_counter
+guard loaded <- bpfman program load image $image --pull-policy Always --programs uretprobe:uretprobe_counter
 let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 defer bpfman program unload $pid
@@ -23,7 +20,7 @@ defer bpfman program unload $pid
 expect_program_load $prog uretprobe kprobe uretprobe_counter
 expect_loaded_image_source $prog $image $published.inspected
 
-guard link <- bpfman link attach uprobe --target $target.path --fn-name $target.symbol $prog
+guard link <- bpfman link attach uprobe $prog $target.path --fn-name $target.symbol
 let linkID = $link.record.id
 expect_pinned_link_identity $link
 assert $link.record.kind == uretprobe

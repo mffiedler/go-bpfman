@@ -25,11 +25,7 @@
 
 import ../lib.bpfman
 
-guard loaded <- bpfman program load file \
-    --path testdata/bpf/xdp_pass.bpf.o \
-    --programs xdp:pass \
-    -m owner=e2e \
-    -m purpose=load-and-get
+guard loaded <- bpfman program load file testdata/bpf/xdp_pass.bpf.o --programs xdp:pass -m owner=e2e -m purpose=load-and-get
 
 let prog = $loaded.programs[0]
 let pid = $prog.record.program_id

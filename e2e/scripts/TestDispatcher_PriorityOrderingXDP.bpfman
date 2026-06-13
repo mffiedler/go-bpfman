@@ -28,16 +28,14 @@
 guard pair <- net veth-pair
 defer net release $pair
 
-guard loaded <- bpfman program load file \
-    --path testdata/bpf/xdp_counter.bpf.o \
-    --programs xdp:xdp_stats
+guard loaded <- bpfman program load file testdata/bpf/xdp_counter.bpf.o --programs xdp:xdp_stats
 let prog = $loaded.programs[0]
 defer bpfman program unload $prog
 
 let priorities = [500 100 800 300 900 200 700 400 600 50]
 
 guard links <- foreach prio in $priorities {
-    bpfman link attach xdp -i $pair.host_link -p $prio $prog
+    bpfman link attach xdp $prog $pair.host_link -p $prio
 }
 
 foreach l in $links {

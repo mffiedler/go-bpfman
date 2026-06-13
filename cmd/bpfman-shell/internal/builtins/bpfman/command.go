@@ -476,7 +476,7 @@ func (*LoadFileCommand) isCommand() {}
 // parseLoadFile resolves expanded shell arguments into a
 // LoadFileCommand. The grammar is:
 //
-//	-p <path> [--programs <spec>]... [-m <key=val>]... [-g <name=hex>]...
+//	<path> [--programs <spec>]... [-m <key=val>]... [-g <name=hex>]...
 //	[-a <app>] [--map-owner-id <id>] [-o <format>]
 func parseLoadFile(args []runtime.Arg) (*LoadFileCommand, error) {
 	cmd := &LoadFileCommand{
@@ -486,12 +486,6 @@ func parseLoadFile(args []runtime.Arg) (*LoadFileCommand, error) {
 	for i := 0; i < len(args); i++ {
 		text := driver.ArgText(args[i])
 		switch text {
-		case "-p", "--path":
-			i++
-			if i >= len(args) {
-				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i-1]), "load file: %s requires a value", text)
-			}
-			cmd.Path = driver.ArgText(args[i])
 		case "--programs":
 			i++
 			if i >= len(args) {
@@ -553,12 +547,15 @@ func parseLoadFile(args []runtime.Arg) (*LoadFileCommand, error) {
 			if strings.HasPrefix(text, "-") {
 				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i]), "load file: unknown flag %q", text)
 			}
-			return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i]), "load file: unexpected argument %q", text)
+			if cmd.Path != "" {
+				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i]), "load file: unexpected argument %q", text)
+			}
+			cmd.Path = text
 		}
 	}
 
 	if cmd.Path == "" {
-		return nil, fmt.Errorf("load file: --path is required")
+		return nil, fmt.Errorf("load file: requires a path")
 	}
 
 	return cmd, nil
@@ -617,16 +614,16 @@ func execLoadFile(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 // The AttachSpec is constructed at parse time from the type-specific
 // flags; execution simply runs it under lock.
 type LinkAttachCommand struct {
-	Spec   bpfman.AttachSpec
-	Output cliformat.OutputFlags
+	Spec     bpfman.AttachSpec
+	Metadata []bpfmancli.KeyValue
+	Output   cliformat.OutputFlags
 }
 
 func (*LinkAttachCommand) isCommand() {}
 
 // parseLinkAttach parses "link attach <type> <args...>" into a
 // LinkAttachCommand. The first argument is the attach type; the
-// remaining arguments are type-specific flags and one required
-// program ID.
+// remaining arguments are type-specific positionals and flags.
 func parseLinkAttach(args []runtime.Arg) (*LinkAttachCommand, error) {
 	if len(args) == 0 {
 		return nil, fmt.Errorf("link attach requires a type (xdp, tc, tcx, tracepoint, kprobe, uprobe, fentry, fexit)")
@@ -657,10 +654,22 @@ func parseLinkAttach(args []runtime.Arg) (*LinkAttachCommand, error) {
 	}
 }
 
+func parseMetadataFlag(args []runtime.Arg, i int, context, flag string) (bpfmancli.KeyValue, int, error) {
+	i++
+	if i >= len(args) {
+		return bpfmancli.KeyValue{}, i, syntax.SpanErrorf(runtime.ArgSpan(args[i-1]), "%s: %s requires a value", context, flag)
+	}
+	kv, err := bpfmancli.ParseKeyValue(driver.ArgText(args[i]))
+	if err != nil {
+		return bpfmancli.KeyValue{}, i, fmt.Errorf("%s: %w", context, err)
+	}
+	return kv, i, nil
+}
+
 // parseLinkAttachXDP parses "link attach xdp" arguments.
 //
-//	-i <iface> [-p <priority>] [--proceed-on <actions>]...
-//	[-n <netns>] [-o <format>] <program-id>
+//	<program-id> <iface> [-p <priority>] [--proceed-on <actions>]...
+//	[-n <netns>] [-o <format>]
 func parseLinkAttachXDP(args []runtime.Arg) (*LinkAttachCommand, error) {
 	var (
 		iface     string
@@ -668,6 +677,8 @@ func parseLinkAttachXDP(args []runtime.Arg) (*LinkAttachCommand, error) {
 		proceedOn []string
 		netns     string
 		progArg   runtime.Arg
+		pos       []runtime.Arg
+		metadata  []bpfmancli.KeyValue
 		output    = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}}
 	)
 
@@ -675,12 +686,6 @@ func parseLinkAttachXDP(args []runtime.Arg) (*LinkAttachCommand, error) {
 	for i := 0; i < len(args); i++ {
 		text := driver.ArgText(args[i])
 		switch text {
-		case "-i", "--iface":
-			i++
-			if i >= len(args) {
-				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i-1]), "link attach xdp: %s requires a value", text)
-			}
-			iface = driver.ArgText(args[i])
 		case "-p", "--priority":
 			i++
 			if i >= len(args) {
@@ -705,7 +710,12 @@ func parseLinkAttachXDP(args []runtime.Arg) (*LinkAttachCommand, error) {
 			}
 			netns = driver.ArgText(args[i])
 		case "-m", "--metadata":
-			return nil, fmt.Errorf("link attach xdp: metadata is not supported for attach commands")
+			kv, next, err := parseMetadataFlag(args, i, "link attach xdp", text)
+			if err != nil {
+				return nil, err
+			}
+			metadata = append(metadata, kv)
+			i = next
 		case "-o":
 			if output.Output.IsSet {
 				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i]), "link attach xdp: duplicate -o flag")
@@ -719,18 +729,20 @@ func parseLinkAttachXDP(args []runtime.Arg) (*LinkAttachCommand, error) {
 			if strings.HasPrefix(text, "-") {
 				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i]), "link attach xdp: unknown flag %q", text)
 			}
-			if progArg != nil {
+			if len(pos) >= 2 {
 				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i]), "link attach xdp: unexpected argument %q", text)
 			}
-			progArg = args[i]
+			pos = append(pos, args[i])
 		}
 	}
 
-	if iface == "" {
-		return nil, fmt.Errorf("link attach xdp: --iface is required")
+	if len(pos) < 2 {
+		return nil, fmt.Errorf("link attach xdp: requires <program-id> <iface>")
 	}
-	if progArg == nil {
-		return nil, fmt.Errorf("link attach xdp: requires a program ID")
+	progArg = pos[0]
+	iface = driver.ArgText(pos[1])
+	if priority < 0 {
+		return nil, fmt.Errorf("link attach xdp: --priority must be non-negative, got %d", priority)
 	}
 
 	progID, err := parseProgramIDArg(progArg)
@@ -755,13 +767,13 @@ func parseLinkAttachXDP(args []runtime.Arg) (*LinkAttachCommand, error) {
 		spec = spec.WithNetns(netns)
 	}
 
-	return &LinkAttachCommand{Spec: spec, Output: output}, nil
+	return &LinkAttachCommand{Spec: spec, Metadata: metadata, Output: output}, nil
 }
 
 // parseLinkAttachTC parses "link attach tc" arguments.
 //
-//	-i <iface> -d <direction> [-p <priority>] [--proceed-on <actions>]...
-//	[-n <netns>] [-o <format>] <program-id>
+//	<program-id> <iface> <direction> [-p <priority>]
+//	[--proceed-on <actions>]... [-n <netns>] [-o <format>]
 func parseLinkAttachTC(args []runtime.Arg) (*LinkAttachCommand, error) {
 	var (
 		iface     string
@@ -770,6 +782,8 @@ func parseLinkAttachTC(args []runtime.Arg) (*LinkAttachCommand, error) {
 		proceedOn []string
 		netns     string
 		progArg   runtime.Arg
+		pos       []runtime.Arg
+		metadata  []bpfmancli.KeyValue
 		output    = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}}
 	)
 
@@ -777,18 +791,6 @@ func parseLinkAttachTC(args []runtime.Arg) (*LinkAttachCommand, error) {
 	for i := 0; i < len(args); i++ {
 		text := driver.ArgText(args[i])
 		switch text {
-		case "-i", "--iface":
-			i++
-			if i >= len(args) {
-				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i-1]), "link attach tc: %s requires a value", text)
-			}
-			iface = driver.ArgText(args[i])
-		case "-d", "--direction":
-			i++
-			if i >= len(args) {
-				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i-1]), "link attach tc: %s requires a value", text)
-			}
-			direction = driver.ArgText(args[i])
 		case "-p", "--priority":
 			i++
 			if i >= len(args) {
@@ -813,7 +815,12 @@ func parseLinkAttachTC(args []runtime.Arg) (*LinkAttachCommand, error) {
 			}
 			netns = driver.ArgText(args[i])
 		case "-m", "--metadata":
-			return nil, fmt.Errorf("link attach tc: metadata is not supported for attach commands")
+			kv, next, err := parseMetadataFlag(args, i, "link attach tc", text)
+			if err != nil {
+				return nil, err
+			}
+			metadata = append(metadata, kv)
+			i = next
 		case "-o":
 			if output.Output.IsSet {
 				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i]), "link attach tc: duplicate -o flag")
@@ -827,22 +834,19 @@ func parseLinkAttachTC(args []runtime.Arg) (*LinkAttachCommand, error) {
 			if strings.HasPrefix(text, "-") {
 				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i]), "link attach tc: unknown flag %q", text)
 			}
-			if progArg != nil {
+			if len(pos) >= 3 {
 				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i]), "link attach tc: unexpected argument %q", text)
 			}
-			progArg = args[i]
+			pos = append(pos, args[i])
 		}
 	}
 
-	if iface == "" {
-		return nil, fmt.Errorf("link attach tc: --iface is required")
+	if len(pos) < 3 {
+		return nil, fmt.Errorf("link attach tc: requires <program-id> <iface> <direction>")
 	}
-	if direction == "" {
-		return nil, fmt.Errorf("link attach tc: --direction is required")
-	}
-	if progArg == nil {
-		return nil, fmt.Errorf("link attach tc: requires a program ID")
-	}
+	progArg = pos[0]
+	iface = driver.ArgText(pos[1])
+	direction = driver.ArgText(pos[2])
 	if priority < 0 {
 		return nil, fmt.Errorf("link attach tc: --priority must be non-negative, got %d", priority)
 	}
@@ -869,13 +873,13 @@ func parseLinkAttachTC(args []runtime.Arg) (*LinkAttachCommand, error) {
 		spec = spec.WithNetns(netns)
 	}
 
-	return &LinkAttachCommand{Spec: spec, Output: output}, nil
+	return &LinkAttachCommand{Spec: spec, Metadata: metadata, Output: output}, nil
 }
 
 // parseLinkAttachTCX parses "link attach tcx" arguments.
 //
-//	-i <iface> -d <direction> [-p <priority>] [-n <netns>]
-//	[-o <format>] <program-id>
+//	<program-id> <iface> <direction> [-p <priority>] [-n <netns>]
+//	[-o <format>]
 func parseLinkAttachTCX(args []runtime.Arg) (*LinkAttachCommand, error) {
 	var (
 		iface     string
@@ -883,24 +887,14 @@ func parseLinkAttachTCX(args []runtime.Arg) (*LinkAttachCommand, error) {
 		priority  int
 		netns     string
 		progArg   runtime.Arg
+		pos       []runtime.Arg
+		metadata  []bpfmancli.KeyValue
 		output    = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}}
 	)
 
 	for i := 0; i < len(args); i++ {
 		text := driver.ArgText(args[i])
 		switch text {
-		case "-i", "--iface":
-			i++
-			if i >= len(args) {
-				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i-1]), "link attach tcx: %s requires a value", text)
-			}
-			iface = driver.ArgText(args[i])
-		case "-d", "--direction":
-			i++
-			if i >= len(args) {
-				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i-1]), "link attach tcx: %s requires a value", text)
-			}
-			direction = driver.ArgText(args[i])
 		case "-p", "--priority":
 			i++
 			if i >= len(args) {
@@ -918,7 +912,12 @@ func parseLinkAttachTCX(args []runtime.Arg) (*LinkAttachCommand, error) {
 			}
 			netns = driver.ArgText(args[i])
 		case "-m", "--metadata":
-			return nil, fmt.Errorf("link attach tcx: metadata is not supported for attach commands")
+			kv, next, err := parseMetadataFlag(args, i, "link attach tcx", text)
+			if err != nil {
+				return nil, err
+			}
+			metadata = append(metadata, kv)
+			i = next
 		case "-o":
 			if output.Output.IsSet {
 				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i]), "link attach tcx: duplicate -o flag")
@@ -932,22 +931,19 @@ func parseLinkAttachTCX(args []runtime.Arg) (*LinkAttachCommand, error) {
 			if strings.HasPrefix(text, "-") {
 				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i]), "link attach tcx: unknown flag %q", text)
 			}
-			if progArg != nil {
+			if len(pos) >= 3 {
 				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i]), "link attach tcx: unexpected argument %q", text)
 			}
-			progArg = args[i]
+			pos = append(pos, args[i])
 		}
 	}
 
-	if iface == "" {
-		return nil, fmt.Errorf("link attach tcx: --iface is required")
+	if len(pos) < 3 {
+		return nil, fmt.Errorf("link attach tcx: requires <program-id> <iface> <direction>")
 	}
-	if direction == "" {
-		return nil, fmt.Errorf("link attach tcx: --direction is required")
-	}
-	if progArg == nil {
-		return nil, fmt.Errorf("link attach tcx: requires a program ID")
-	}
+	progArg = pos[0]
+	iface = driver.ArgText(pos[1])
+	direction = driver.ArgText(pos[2])
 	if priority < 0 {
 		return nil, fmt.Errorf("link attach tcx: --priority must be non-negative, got %d", priority)
 	}
@@ -966,7 +962,7 @@ func parseLinkAttachTCX(args []runtime.Arg) (*LinkAttachCommand, error) {
 		spec = spec.WithNetns(netns)
 	}
 
-	return &LinkAttachCommand{Spec: spec, Output: output}, nil
+	return &LinkAttachCommand{Spec: spec, Metadata: metadata, Output: output}, nil
 }
 
 // parseLinkAttachTracepoint parses "link attach tracepoint" arguments.
@@ -976,6 +972,7 @@ func parseLinkAttachTracepoint(args []runtime.Arg) (*LinkAttachCommand, error) {
 	var (
 		progArg    runtime.Arg
 		tracepoint string
+		metadata   []bpfmancli.KeyValue
 		output     = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}}
 	)
 
@@ -983,7 +980,12 @@ func parseLinkAttachTracepoint(args []runtime.Arg) (*LinkAttachCommand, error) {
 		text := driver.ArgText(args[i])
 		switch text {
 		case "-m", "--metadata":
-			return nil, fmt.Errorf("link attach tracepoint: metadata is not supported for attach commands")
+			kv, next, err := parseMetadataFlag(args, i, "link attach tracepoint", text)
+			if err != nil {
+				return nil, err
+			}
+			metadata = append(metadata, kv)
+			i = next
 		case "-o":
 			if output.Output.IsSet {
 				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i]), "link attach tracepoint: duplicate -o flag")
@@ -1025,29 +1027,25 @@ func parseLinkAttachTracepoint(args []runtime.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach tracepoint: %w", err)
 	}
 
-	return &LinkAttachCommand{Spec: spec, Output: output}, nil
+	return &LinkAttachCommand{Spec: spec, Metadata: metadata, Output: output}, nil
 }
 
 // parseLinkAttachKprobe parses "link attach kprobe" arguments.
 //
-//	-f <fn-name> [--offset <n>] [-o <format>] <program-id>
+//	<program-id> <fn-name> [--offset <n>] [-o <format>]
 func parseLinkAttachKprobe(args []runtime.Arg) (*LinkAttachCommand, error) {
 	var (
-		fnName  string
-		offset  uint64
-		progArg runtime.Arg
-		output  = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}}
+		fnName   string
+		offset   uint64
+		progArg  runtime.Arg
+		pos      []runtime.Arg
+		metadata []bpfmancli.KeyValue
+		output   = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}}
 	)
 
 	for i := 0; i < len(args); i++ {
 		text := driver.ArgText(args[i])
 		switch text {
-		case "-f", "--fn-name":
-			i++
-			if i >= len(args) {
-				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i-1]), "link attach kprobe: %s requires a value", text)
-			}
-			fnName = driver.ArgText(args[i])
 		case "--offset":
 			i++
 			if i >= len(args) {
@@ -1059,7 +1057,12 @@ func parseLinkAttachKprobe(args []runtime.Arg) (*LinkAttachCommand, error) {
 			}
 			offset = v
 		case "-m", "--metadata":
-			return nil, fmt.Errorf("link attach kprobe: metadata is not supported for attach commands")
+			kv, next, err := parseMetadataFlag(args, i, "link attach kprobe", text)
+			if err != nil {
+				return nil, err
+			}
+			metadata = append(metadata, kv)
+			i = next
 		case "-o":
 			if output.Output.IsSet {
 				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i]), "link attach kprobe: duplicate -o flag")
@@ -1073,19 +1076,18 @@ func parseLinkAttachKprobe(args []runtime.Arg) (*LinkAttachCommand, error) {
 			if strings.HasPrefix(text, "-") {
 				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i]), "link attach kprobe: unknown flag %q", text)
 			}
-			if progArg != nil {
+			if len(pos) >= 2 {
 				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i]), "link attach kprobe: unexpected argument %q", text)
 			}
-			progArg = args[i]
+			pos = append(pos, args[i])
 		}
 	}
 
-	if fnName == "" {
-		return nil, fmt.Errorf("link attach kprobe: --fn-name is required")
+	if len(pos) < 2 {
+		return nil, fmt.Errorf("link attach kprobe: requires <program-id> <fn-name>")
 	}
-	if progArg == nil {
-		return nil, fmt.Errorf("link attach kprobe: requires a program ID")
-	}
+	progArg = pos[0]
+	fnName = driver.ArgText(pos[1])
 
 	progID, err := parseProgramIDArg(progArg)
 	if err != nil {
@@ -1100,13 +1102,13 @@ func parseLinkAttachKprobe(args []runtime.Arg) (*LinkAttachCommand, error) {
 		spec = spec.WithOffset(offset)
 	}
 
-	return &LinkAttachCommand{Spec: spec, Output: output}, nil
+	return &LinkAttachCommand{Spec: spec, Metadata: metadata, Output: output}, nil
 }
 
 // parseLinkAttachUprobe parses "link attach uprobe" arguments.
 //
-//	--target <path> [-f <fn-name>] [--offset <n>] [--pid <pid>]
-//	[--container-pid <pid>] [-o <format>] <program-id>
+//	<program-id> <target> [-f <fn-name>] [--offset <n>] [--pid <pid>]
+//	[--container-pid <pid>] [-o <format>]
 func parseLinkAttachUprobe(args []runtime.Arg) (*LinkAttachCommand, error) {
 	var (
 		target       string
@@ -1115,18 +1117,14 @@ func parseLinkAttachUprobe(args []runtime.Arg) (*LinkAttachCommand, error) {
 		pid          int32
 		containerPid int32
 		progArg      runtime.Arg
+		pos          []runtime.Arg
+		metadata     []bpfmancli.KeyValue
 		output       = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}}
 	)
 
 	for i := 0; i < len(args); i++ {
 		text := driver.ArgText(args[i])
 		switch text {
-		case "--target":
-			i++
-			if i >= len(args) {
-				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i-1]), "link attach uprobe: --target requires a value")
-			}
-			target = driver.ArgText(args[i])
 		case "-f", "--fn-name":
 			i++
 			if i >= len(args) {
@@ -1164,7 +1162,12 @@ func parseLinkAttachUprobe(args []runtime.Arg) (*LinkAttachCommand, error) {
 			}
 			containerPid = int32(v)
 		case "-m", "--metadata":
-			return nil, fmt.Errorf("link attach uprobe: metadata is not supported for attach commands")
+			kv, next, err := parseMetadataFlag(args, i, "link attach uprobe", text)
+			if err != nil {
+				return nil, err
+			}
+			metadata = append(metadata, kv)
+			i = next
 		case "-o":
 			if output.Output.IsSet {
 				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i]), "link attach uprobe: duplicate -o flag")
@@ -1178,19 +1181,18 @@ func parseLinkAttachUprobe(args []runtime.Arg) (*LinkAttachCommand, error) {
 			if strings.HasPrefix(text, "-") {
 				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i]), "link attach uprobe: unknown flag %q", text)
 			}
-			if progArg != nil {
+			if len(pos) >= 2 {
 				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i]), "link attach uprobe: unexpected argument %q", text)
 			}
-			progArg = args[i]
+			pos = append(pos, args[i])
 		}
 	}
 
-	if target == "" {
-		return nil, fmt.Errorf("link attach uprobe: --target is required")
+	if len(pos) < 2 {
+		return nil, fmt.Errorf("link attach uprobe: requires <program-id> <target>")
 	}
-	if progArg == nil {
-		return nil, fmt.Errorf("link attach uprobe: requires a program ID")
-	}
+	progArg = pos[0]
+	target = driver.ArgText(pos[1])
 
 	progID, err := parseProgramIDArg(progArg)
 	if err != nil {
@@ -1214,7 +1216,7 @@ func parseLinkAttachUprobe(args []runtime.Arg) (*LinkAttachCommand, error) {
 		spec = spec.WithContainerPid(containerPid)
 	}
 
-	return &LinkAttachCommand{Spec: spec, Output: output}, nil
+	return &LinkAttachCommand{Spec: spec, Metadata: metadata, Output: output}, nil
 }
 
 // parseLinkAttachFentry parses "link attach fentry" arguments.
@@ -1222,15 +1224,21 @@ func parseLinkAttachUprobe(args []runtime.Arg) (*LinkAttachCommand, error) {
 //	[-o <format>] <program-id>
 func parseLinkAttachFentry(args []runtime.Arg) (*LinkAttachCommand, error) {
 	var (
-		progArg runtime.Arg
-		output  = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}}
+		progArg  runtime.Arg
+		metadata []bpfmancli.KeyValue
+		output   = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}}
 	)
 
 	for i := 0; i < len(args); i++ {
 		text := driver.ArgText(args[i])
 		switch text {
 		case "-m", "--metadata":
-			return nil, fmt.Errorf("link attach fentry: metadata is not supported for attach commands")
+			kv, next, err := parseMetadataFlag(args, i, "link attach fentry", text)
+			if err != nil {
+				return nil, err
+			}
+			metadata = append(metadata, kv)
+			i = next
 		case "-o":
 			if output.Output.IsSet {
 				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i]), "link attach fentry: duplicate -o flag")
@@ -1265,7 +1273,7 @@ func parseLinkAttachFentry(args []runtime.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach fentry: %w", err)
 	}
 
-	return &LinkAttachCommand{Spec: spec, Output: output}, nil
+	return &LinkAttachCommand{Spec: spec, Metadata: metadata, Output: output}, nil
 }
 
 // parseLinkAttachFexit parses "link attach fexit" arguments.
@@ -1273,15 +1281,21 @@ func parseLinkAttachFentry(args []runtime.Arg) (*LinkAttachCommand, error) {
 //	[-o <format>] <program-id>
 func parseLinkAttachFexit(args []runtime.Arg) (*LinkAttachCommand, error) {
 	var (
-		progArg runtime.Arg
-		output  = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}}
+		progArg  runtime.Arg
+		metadata []bpfmancli.KeyValue
+		output   = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}}
 	)
 
 	for i := 0; i < len(args); i++ {
 		text := driver.ArgText(args[i])
 		switch text {
 		case "-m", "--metadata":
-			return nil, fmt.Errorf("link attach fexit: metadata is not supported for attach commands")
+			kv, next, err := parseMetadataFlag(args, i, "link attach fexit", text)
+			if err != nil {
+				return nil, err
+			}
+			metadata = append(metadata, kv)
+			i = next
 		case "-o":
 			if output.Output.IsSet {
 				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i]), "link attach fexit: duplicate -o flag")
@@ -1316,13 +1330,20 @@ func parseLinkAttachFexit(args []runtime.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach fexit: %w", err)
 	}
 
-	return &LinkAttachCommand{Spec: spec, Output: output}, nil
+	return &LinkAttachCommand{Spec: spec, Metadata: metadata, Output: output}, nil
 }
 
 // execLinkAttach executes a parsed LinkAttachCommand, attaching the
 // BPF program under lock, printing output, and returning a structured
 // Value for optional variable assignment.
 func execLinkAttach(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *LinkAttachCommand) (runtime.Value, error) {
+	// Link metadata is recognised by the parser for Rust CLI parity but
+	// persisting it on links is not implemented yet. Reject it before
+	// attaching rather than silently discarding it.
+	if len(cmd.Metadata) > 0 {
+		return runtime.Value{}, fmt.Errorf("link metadata is not implemented yet")
+	}
+
 	link, err := bpfmancli.RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (bpfman.Link, error) {
 		return mgr.Attach(ctx, writeLock, cmd.Spec)
 	})
@@ -1395,6 +1416,18 @@ func splitComma(s string) []string {
 	return result
 }
 
+func combineSelectors(selectors ...labels.Selector) labels.Selector {
+	combined := labels.NewSelector()
+	for _, sel := range selectors {
+		requirements, selectable := sel.Requirements()
+		if !selectable {
+			return labels.Nothing()
+		}
+		combined = combined.Add(requirements...)
+	}
+	return combined
+}
+
 // LoadImageCommand represents a fully parsed "load image" command.
 type LoadImageCommand struct {
 	ImageURL     string
@@ -1413,7 +1446,7 @@ func (*LoadImageCommand) isCommand() {}
 // parseLoadImage resolves expanded shell arguments into a
 // LoadImageCommand. The grammar is:
 //
-//	-i <url> [--programs <spec>]... [-p <policy>] [--registry-auth <auth>]
+//	<image> [--programs <spec>]... [-p <policy>] [--registry-auth <auth>]
 //	[-a <app>] [--map-owner-id <id>] [-m <key=val>]... [-g <name=hex>]...
 //	[-o <format>]
 func parseLoadImage(args []runtime.Arg) (*LoadImageCommand, error) {
@@ -1425,12 +1458,6 @@ func parseLoadImage(args []runtime.Arg) (*LoadImageCommand, error) {
 	for i := 0; i < len(args); i++ {
 		text := driver.ArgText(args[i])
 		switch text {
-		case "-i", "--image-url":
-			i++
-			if i >= len(args) {
-				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i-1]), "load image: %s requires a value", text)
-			}
-			cmd.ImageURL = driver.ArgText(args[i])
 		case "--programs":
 			i++
 			if i >= len(args) {
@@ -1504,12 +1531,15 @@ func parseLoadImage(args []runtime.Arg) (*LoadImageCommand, error) {
 			if strings.HasPrefix(text, "-") {
 				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i]), "load image: unknown flag %q", text)
 			}
-			return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i]), "load image: unexpected argument %q", text)
+			if cmd.ImageURL != "" {
+				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i]), "load image: unexpected argument %q", text)
+			}
+			cmd.ImageURL = text
 		}
 	}
 
 	if cmd.ImageURL == "" {
-		return nil, fmt.Errorf("load image: --image-url is required")
+		return nil, fmt.Errorf("load image: requires an image")
 	}
 
 	return cmd, nil
@@ -1936,12 +1966,15 @@ func execDeleteLink(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manage
 // ListProgramsCommand represents a fully parsed "program list"
 // command with filter flags and output format.
 type ListProgramsCommand struct {
-	Quiet      bool
-	Attached   bool
-	Unattached bool
-	Types      []bpfman.ProgramType
-	Selector   string
-	Output     cliformat.OutputFlags
+	Quiet            bool
+	Attached         bool
+	Unattached       bool
+	All              bool
+	Types            []bpfman.ProgramType
+	Application      string
+	MetadataSelector []bpfmancli.KeyValue
+	Selector         string
+	Output           cliformat.OutputFlags
 }
 
 func (*ListProgramsCommand) isCommand() {}
@@ -1950,7 +1983,8 @@ func (*ListProgramsCommand) isCommand() {}
 // ListProgramsCommand. The grammar is:
 //
 //	[-q] [--attached|--unattached] [--type <types>]...
-//	[-l <selector>] [-o <format>]
+//	[--program-type <types>]... [--application <app>]
+//	[-m <key=val>]... [-l <selector>] [-a] [-o <format>]
 func parseListPrograms(args []runtime.Arg) (*ListProgramsCommand, error) {
 	cmd := &ListProgramsCommand{
 		Output: cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}},
@@ -1965,10 +1999,12 @@ func parseListPrograms(args []runtime.Arg) (*ListProgramsCommand, error) {
 			cmd.Attached = true
 		case "--unattached":
 			cmd.Unattached = true
-		case "--type":
+		case "-a", "--all":
+			cmd.All = true
+		case "--type", "-p", "--program-type":
 			i++
 			if i >= len(args) {
-				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i-1]), "program list: --type requires a value")
+				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i-1]), "program list: %s requires a value", text)
 			}
 			for _, part := range splitComma(driver.ArgText(args[i])) {
 				progType, err := bpfman.ParseProgramType(strings.ToLower(strings.TrimSpace(part)))
@@ -1977,6 +2013,19 @@ func parseListPrograms(args []runtime.Arg) (*ListProgramsCommand, error) {
 				}
 				cmd.Types = append(cmd.Types, progType)
 			}
+		case "--application":
+			i++
+			if i >= len(args) {
+				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i-1]), "program list: --application requires a value")
+			}
+			cmd.Application = driver.ArgText(args[i])
+		case "-m", "--metadata-selector":
+			kv, next, err := parseMetadataFlag(args, i, "program list", text)
+			if err != nil {
+				return nil, err
+			}
+			cmd.MetadataSelector = append(cmd.MetadataSelector, kv)
+			i = next
 		case "-l", "--selector":
 			i++
 			if i >= len(args) {
@@ -2024,12 +2073,23 @@ func execListPrograms(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Mana
 		opts = append(opts, bpfman.WithTypes(cmd.Types...))
 	}
 
+	var selectors []labels.Selector
+	metadata := bpfmancli.MetadataMap(cmd.MetadataSelector)
+	if cmd.Application != "" {
+		metadata[manager.ApplicationMetadataKey] = cmd.Application
+	}
+	if len(metadata) > 0 {
+		selectors = append(selectors, labels.SelectorFromSet(labels.Set(metadata)))
+	}
 	if s := strings.TrimSpace(cmd.Selector); s != "" {
 		sel, err := labels.Parse(s)
 		if err != nil {
 			return runtime.Value{}, fmt.Errorf("invalid label selector: %w", err)
 		}
-		opts = append(opts, bpfman.MatchingSelector(sel))
+		selectors = append(selectors, sel)
+	}
+	if len(selectors) > 0 {
+		opts = append(opts, bpfman.MatchingSelector(combineSelectors(selectors...)))
 	}
 
 	result, err := mgr.ListPrograms(ctx, opts...)
@@ -2067,10 +2127,13 @@ func execListPrograms(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Mana
 // ListLinksCommand represents a fully parsed "link list" command with
 // filter flags and output format.
 type ListLinksCommand struct {
-	Quiet     bool
-	ProgramID *kernel.ProgramID
-	Kinds     []bpfman.LinkKind
-	Output    cliformat.OutputFlags
+	Quiet            bool
+	ProgramID        *kernel.ProgramID
+	Kinds            []bpfman.LinkKind
+	ProgramTypes     []bpfman.ProgramType
+	Application      string
+	MetadataSelector []bpfmancli.KeyValue
+	Output           cliformat.OutputFlags
 }
 
 func (*ListLinksCommand) isCommand() {}
@@ -2078,7 +2141,9 @@ func (*ListLinksCommand) isCommand() {}
 // parseListLinks resolves expanded shell arguments into a
 // ListLinksCommand. The grammar is:
 //
-//	[-q] [--program-id <id>] [--kind <kinds>]... [-o <format>]
+//	[-q] [--program-id <id>] [--kind <kinds>]...
+//	[--program-type <types>]... [--application <app>]
+//	[-m <key=val>]... [-o <format>]
 func parseListLinks(args []runtime.Arg) (*ListLinksCommand, error) {
 	cmd := &ListLinksCommand{
 		Output: cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}},
@@ -2111,6 +2176,31 @@ func parseListLinks(args []runtime.Arg) (*ListLinksCommand, error) {
 				}
 				cmd.Kinds = append(cmd.Kinds, kind)
 			}
+		case "-p", "--program-type":
+			i++
+			if i >= len(args) {
+				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i-1]), "link list: %s requires a value", text)
+			}
+			for _, part := range splitComma(driver.ArgText(args[i])) {
+				progType, err := bpfman.ParseProgramType(strings.ToLower(strings.TrimSpace(part)))
+				if err != nil {
+					return nil, fmt.Errorf("link list: %w", err)
+				}
+				cmd.ProgramTypes = append(cmd.ProgramTypes, progType)
+			}
+		case "--application":
+			i++
+			if i >= len(args) {
+				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i-1]), "link list: --application requires a value")
+			}
+			cmd.Application = driver.ArgText(args[i])
+		case "-m", "--metadata-selector":
+			kv, next, err := parseMetadataFlag(args, i, "link list", text)
+			if err != nil {
+				return nil, err
+			}
+			cmd.MetadataSelector = append(cmd.MetadataSelector, kv)
+			i = next
 		case "-o":
 			if cmd.Output.Output.IsSet {
 				return nil, syntax.SpanErrorf(runtime.ArgSpan(args[i]), "link list: duplicate -o flag")

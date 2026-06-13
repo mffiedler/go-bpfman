@@ -20,15 +20,13 @@ let events = 5
 guard fn <- kfunc acquire
 defer kfunc release $fn
 
-guard loaded <- bpfman program load file \
-    --path testdata/bpf/kprobe_counter.bpf.o \
-    --programs kretprobe:kprobe_counter
+guard loaded <- bpfman program load file testdata/bpf/kprobe_counter.bpf.o --programs kretprobe:kprobe_counter
 let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 
 expect_program_load $prog kretprobe kprobe kprobe_counter
 
-guard link <- bpfman link attach kprobe --fn-name $fn.name $prog
+guard link <- bpfman link attach kprobe $prog $fn.name
 let linkID = $link.record.id
 expect_pinned_link_identity $link
 

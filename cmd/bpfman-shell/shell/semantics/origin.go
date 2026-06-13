@@ -209,7 +209,7 @@ var (
 				// NeedsBinary == true and by plain start (best-
 				// effort identity from argv[0]); the static
 				// checker accepts the path here so a script can
-				// pass it to bpfman link attach uprobe --target.
+				// pass it as a bpfman link attach uprobe target.
 				// The runtime ValueFromJob only writes the field
 				// when the producer set Job.TargetBinary, so a
 				// read on a Job that never carried a target is a

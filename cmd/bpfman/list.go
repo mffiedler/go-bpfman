@@ -10,16 +10,21 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/internal/cliformat"
+	"github.com/frobware/go-bpfman/manager"
 )
 
 // ListProgramsCmd lists managed BPF programs.
 type ListProgramsCmd struct {
 	cliformat.OutputFlags
-	Quiet      bool                 `short:"q" help:"Output only program IDs, one per line."`
-	Attached   bool                 `name:"attached" help:"Show only programs with active links."`
-	Unattached bool                 `name:"unattached" help:"Show only programs without active links."`
-	Type       []bpfman.ProgramType `name:"type" sep:"," help:"Filter by program type (case-insensitive, e.g., --type=xdp,kprobe)."`
-	Selector   string               `name:"selector" short:"l" help:"Label selector (e.g., app=myapp,version!=v1)."`
+	Quiet            bool                 `short:"q" help:"Output only program IDs, one per line."`
+	Attached         bool                 `name:"attached" help:"Show only programs with active links."`
+	Unattached       bool                 `name:"unattached" help:"Show only programs without active links."`
+	Type             []bpfman.ProgramType `name:"type" sep:"," help:"Filter by program type (case-insensitive, e.g., --type=xdp,kprobe)."`
+	ProgramType      []bpfman.ProgramType `name:"program-type" short:"p" sep:"," help:"Filter by program type (Rust-compatible alias for --type)."`
+	Application      string               `name:"application" help:"Filter by application metadata."`
+	MetadataSelector []bpfmancli.KeyValue `name:"metadata-selector" short:"m" help:"Filter by KEY=VALUE metadata (can be repeated)."`
+	All              bool                 `name:"all" short:"a" help:"Accepted for Rust CLI compatibility; Go lists all managed programs by default."`
+	Selector         string               `name:"selector" short:"l" help:"Label selector (e.g., app=myapp,version!=v1)."`
 }
 
 // Validate checks that the command flags are consistent.
@@ -40,21 +45,45 @@ func (c *ListProgramsCmd) buildListOptions() ([]bpfman.ListOption, error) {
 		opts = append(opts, bpfman.WithUnattached())
 	}
 
-	// Type filter
 	if len(c.Type) > 0 {
 		opts = append(opts, bpfman.WithTypes(c.Type...))
 	}
+	if len(c.ProgramType) > 0 {
+		opts = append(opts, bpfman.WithTypes(c.ProgramType...))
+	}
 
-	// Label selector
+	var selectors []labels.Selector
+	metadata := bpfmancli.MetadataMap(c.MetadataSelector)
+	if c.Application != "" {
+		metadata[manager.ApplicationMetadataKey] = c.Application
+	}
+	if len(metadata) > 0 {
+		selectors = append(selectors, labels.SelectorFromSet(labels.Set(metadata)))
+	}
 	if s := strings.TrimSpace(c.Selector); s != "" {
 		sel, err := labels.Parse(s)
 		if err != nil {
 			return nil, fmt.Errorf("invalid label selector: %w", err)
 		}
-		opts = append(opts, bpfman.MatchingSelector(sel))
+		selectors = append(selectors, sel)
+	}
+	if len(selectors) > 0 {
+		opts = append(opts, bpfman.MatchingSelector(combineSelectors(selectors...)))
 	}
 
 	return opts, nil
+}
+
+func combineSelectors(selectors ...labels.Selector) labels.Selector {
+	combined := labels.NewSelector()
+	for _, sel := range selectors {
+		requirements, selectable := sel.Requirements()
+		if !selectable {
+			return labels.Nothing()
+		}
+		combined = combined.Add(requirements...)
+	}
+	return combined
 }
 
 // Run executes the list programs command.
@@ -101,9 +130,12 @@ func (c *ListProgramsCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 // ListLinksCmd lists managed links.
 type ListLinksCmd struct {
 	cliformat.OutputFlags
-	Quiet     bool                 `short:"q" help:"Output only link IDs, one per line."`
-	ProgramID *bpfmancli.ProgramID `name:"program-id" help:"Filter by program ID (supports hex with 0x prefix)."`
-	Kind      []bpfman.LinkKind    `name:"kind" sep:"," help:"Filter by link kind (e.g., --kind=xdp,kprobe)."`
+	Quiet            bool                 `short:"q" help:"Output only link IDs, one per line."`
+	ProgramID        *bpfmancli.ProgramID `name:"program-id" help:"Filter by program ID (supports hex with 0x prefix)."`
+	Kind             []bpfman.LinkKind    `name:"kind" sep:"," help:"Filter by link kind (e.g., --kind=xdp,kprobe)."`
+	ProgramType      []bpfman.ProgramType `name:"program-type" short:"p" sep:"," help:"Accepted for Rust CLI compatibility; link metadata filtering is not wired yet."`
+	Application      string               `name:"application" help:"Accepted for Rust CLI compatibility; link metadata filtering is not wired yet."`
+	MetadataSelector []bpfmancli.KeyValue `name:"metadata-selector" short:"m" help:"Accepted for Rust CLI compatibility; link metadata filtering is not wired yet."`
 }
 
 func (c *ListLinksCmd) buildLinkListOptions() ([]bpfman.LinkListOption, error) {

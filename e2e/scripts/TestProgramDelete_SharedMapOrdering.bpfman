@@ -38,19 +38,12 @@ print "PROOF: shared-map program delete ordering (owner-first / dependant-first 
 # changes nothing; then an explicit owner-first batch deletes both.
 # ----------------------------------------------------------------------
 
-guard ownerA <- bpfman program load file \
-    --path testdata/bpf/tcx_counter.bpf.o \
-    --programs tcx:tcx_stats \
-    -m role=owner
+guard ownerA <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats -m role=owner
 let progOwnerA = $ownerA.programs[0]
 let oA = $progOwnerA.record.program_id
 expect_program_load $progOwnerA tcx schedcls tcx_stats
 
-guard depA <- bpfman program load file \
-    --path testdata/bpf/tcx_counter.bpf.o \
-    --programs tcx:tcx_stats \
-    --map-owner-id $oA \
-    -m role=dependent
+guard depA <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oA -m role=dependent
 let dA = $depA.programs[0].record.program_id
 
 # If the dependant does not actually share the owner's maps the rest of
@@ -78,11 +71,9 @@ print "A: owner-first batch deleted ${oA} and ${dA}"
 # as owner-first (order independence).
 # ----------------------------------------------------------------------
 
-guard ownerB <- bpfman program load file \
-    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
+guard ownerB <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
 let oB = $ownerB.programs[0].record.program_id
-guard depB <- bpfman program load file \
-    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oB
+guard depB <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oB
 let dB = $depB.programs[0].record.program_id
 assert $depB.programs[0].record.handles.map_owner_id == $oB
 
@@ -96,11 +87,9 @@ print "B: dependant-first batch deleted ${oB} and ${dB}"
 # dependant and removes both.
 # ----------------------------------------------------------------------
 
-guard ownerC <- bpfman program load file \
-    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
+guard ownerC <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
 let oC = $ownerC.programs[0].record.program_id
-guard depC <- bpfman program load file \
-    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oC
+guard depC <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oC
 let dC = $depC.programs[0].record.program_id
 assert $depC.programs[0].record.handles.map_owner_id == $oC
 
@@ -114,11 +103,9 @@ print "C: recursive delete of ${oC} removed unnamed dependant ${dC}"
 # and clears the store.
 # ----------------------------------------------------------------------
 
-guard ownerD <- bpfman program load file \
-    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
+guard ownerD <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
 let oD = $ownerD.programs[0].record.program_id
-guard depD <- bpfman program load file \
-    --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oD
+guard depD <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oD
 let dD = $depD.programs[0].record.program_id
 assert $depD.programs[0].record.handles.map_owner_id == $oD
 

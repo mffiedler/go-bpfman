@@ -29,17 +29,12 @@ defer net release $pair
 
 let netns = "/var/run/netns/${pair.a.ns}"
 
-guard loaded <- bpfman program load file \
-    --path testdata/bpf/xdp_pass.bpf.o \
-    --programs xdp:pass
+guard loaded <- bpfman program load file testdata/bpf/xdp_pass.bpf.o --programs xdp:pass
 let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 defer bpfman program unload $pid
 
-guard link <- bpfman link attach xdp \
-    --iface $pair.a.link \
-    --netns $netns \
-    $prog
+guard link <- bpfman link attach xdp $prog $pair.a.link --netns $netns
 let linkID = $link.record.id
 expect_pinned_link_identity $link
 

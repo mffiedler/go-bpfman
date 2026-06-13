@@ -151,7 +151,7 @@ guard arg_after <- diff file:$a file:$b
 
 # A typed operation captured with 'let' exposes its conditional
 # payload through `.value`; a guarded bind unwraps it directly.
-let loaded_result <- bpfman program load file --path ./foo.o --programs xdp:pass
+let loaded_result <- bpfman program load file ./foo.o --programs xdp:pass
 require $loaded_result.ok
 let loaded = $loaded_result.value
 let prog = $loaded.programs[0]
@@ -174,10 +174,10 @@ let collected <- foreach id in $ids {
 # exit, on both normal completion and guard halt. Argument
 # values are captured at defer-statement time, so a later
 # rebinding of the variable does not change the deferred call.
-guard loaded2 <- bpfman program load file --path ./bar.o --programs xdp:bar
+guard loaded2 <- bpfman program load file ./bar.o --programs xdp:bar
 let prog2 = $loaded2.programs[0]
 defer bpfman program unload $prog2
-guard link2 <- bpfman link attach xdp -i bpfman-demo $prog2
+guard link2 <- bpfman link attach xdp $prog2 bpfman-demo
 defer bpfman link detach $link2
 
 # ---- 5. Binary comparisons (textual vs numeric) ----
@@ -324,17 +324,17 @@ bpfman gc --dry-run
 
 # ---- 14. Load and attach: every attach kind ----
 
-guard p_file <- bpfman program load file --path ./foo.o --programs xdp:xdp_pass
-guard p_image <- bpfman program load image -i quay.io/example/xdp:latest --programs xdp:pass
+guard p_file <- bpfman program load file ./foo.o --programs xdp:xdp_pass
+guard p_image <- bpfman program load image quay.io/example/xdp:latest --programs xdp:pass
 
-guard l_xdp <- bpfman link attach xdp        -i eth0 $p_file
-guard l_tc <- bpfman link attach tc         -i eth0 $p_file
-guard l_tcx <- bpfman link attach tcx        -i eth0 $p_file
+guard l_xdp <- bpfman link attach xdp        $p_file eth0
+guard l_tc <- bpfman link attach tc         $p_file eth0 ingress
+guard l_tcx <- bpfman link attach tcx        $p_file eth0 ingress
 guard l_tracepoint <- bpfman link attach tracepoint $p_file syscalls/sys_enter_kill
-guard l_kprobe <- bpfman link attach kprobe     --function vfs_read $p_file
-guard l_uprobe <- bpfman link attach uprobe     --function __libc_start_main $p_file
-guard l_fentry <- bpfman link attach fentry     --function vfs_read $p_file
-guard l_fexit <- bpfman link attach fexit      --function vfs_read $p_file
+guard l_kprobe <- bpfman link attach kprobe     $p_file vfs_read
+guard l_uprobe <- bpfman link attach uprobe     $p_file /lib64/libc.so.6 --fn-name __libc_start_main
+guard l_fentry <- bpfman link attach fentry     $p_file
+guard l_fexit <- bpfman link attach fexit      $p_file
 
 # ---- 15. Every flag shape ----
 
@@ -346,7 +346,7 @@ guard l_fexit <- bpfman link attach fexit      --function vfs_read $p_file
 # to make one line unreadable.
 
 bpfman program load file             \
-    --path ./prog.o                  \
+    ./prog.o                         \
     --programs xdp:xdp_stats         \
     -m      app=stats                \
     -m      team=networking          \
@@ -359,7 +359,7 @@ bpfman program load file             \
 # Continuation works on the right of a bind too.
 
 guard p_multi <- bpfman program load file        \
-    --path ./prog.o                              \
+    ./prog.o                                     \
     --programs xdp:xdp_stats                     \
     -m owner=test-team                           \
     -g SAMPLING_RATE=0x0a000000

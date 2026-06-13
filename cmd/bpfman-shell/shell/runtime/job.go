@@ -103,14 +103,14 @@ type Job struct {
 	//
 	// fire kinds with NeedsBinary == true populate this with the
 	// running bpfman-shell ELF (/proc/self/exe) so the script can
-	// pass it to `bpfman link attach uprobe --target ...`. Plain
+	// pass it to `bpfman link attach uprobe <program-id> ...`. Plain
 	// start populates it with argv[0] as best-effort identity; the
 	// semantic guarantee belongs only to fire kinds.
 	//
 	// Empty when the producer did not publish a target binary.
 	// Path-walking the absent field is a runtime error, not a
 	// silent empty string, so a typo cannot flow into a downstream
-	// `--target ""` undetected.
+	// empty target operands undetected.
 	TargetBinary string
 }
 

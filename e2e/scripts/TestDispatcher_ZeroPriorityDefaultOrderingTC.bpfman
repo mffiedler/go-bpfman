@@ -30,15 +30,13 @@
 guard pair <- net veth-pair
 defer net release $pair
 
-guard loaded <- bpfman program load file \
-    --path testdata/bpf/tc_counter.bpf.o \
-    --programs tc:stats
+guard loaded <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
 let prog = $loaded.programs[0]
 defer bpfman program unload $prog
 
-guard l_25 <- bpfman link attach tc -i $pair.host_link -d ingress -p 25 $prog
-guard l_0 <- bpfman link attach tc -i $pair.host_link -d ingress -p 0 $prog
-guard l_75 <- bpfman link attach tc -i $pair.host_link -d ingress -p 75 $prog
+guard l_25 <- bpfman link attach tc $prog $pair.host_link ingress -p 25
+guard l_0 <- bpfman link attach tc $prog $pair.host_link ingress -p 0
+guard l_75 <- bpfman link attach tc $prog $pair.host_link ingress -p 75
 
 defer bpfman link detach $l_25
 defer bpfman link detach $l_0

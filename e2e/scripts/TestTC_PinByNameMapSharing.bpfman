@@ -47,8 +47,8 @@ guard pair <- net veth-pair
 defer net release $pair
 require_host_route_to_peer $pair
 
-guard loaded_a <- bpfman program load file --path testdata/bpf/tc_counter_pinned.bpf.o --programs tc:stats
-guard loaded_b <- bpfman program load file --path testdata/bpf/tc_counter_pinned.bpf.o --programs tc:stats
+guard loaded_a <- bpfman program load file testdata/bpf/tc_counter_pinned.bpf.o --programs tc:stats
+guard loaded_b <- bpfman program load file testdata/bpf/tc_counter_pinned.bpf.o --programs tc:stats
 
 let prog_a = $loaded_a.programs[0]
 let prog_b = $loaded_b.programs[0]
@@ -72,8 +72,8 @@ assert $mapID_a == $mapID_b
 # would leak the links until the next test that flushes them;
 # the trade-off is unavoidable without a defer-cancellation
 # primitive.
-guard l_a <- bpfman link attach tc -i $pair.host_link -d ingress -p 100 --proceed-on ok,pipe,dispatcher_return $prog_a
-guard l_b <- bpfman link attach tc -i $pair.host_link -d ingress -p 200 --proceed-on ok,pipe,dispatcher_return $prog_b
+guard l_a <- bpfman link attach tc $prog_a $pair.host_link ingress -p 100 --proceed-on ok,pipe,dispatcher_return
+guard l_b <- bpfman link attach tc $prog_b $pair.host_link ingress -p 200 --proceed-on ok,pipe,dispatcher_return
 
 # The shared pin lives at the bpffs-derived path. Default
 # runtime dir /run/bpfman + fs/shared/{map_name} per

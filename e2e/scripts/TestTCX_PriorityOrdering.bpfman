@@ -42,10 +42,10 @@ defer net release $pair
 let priorities = [500 100 800 300 55]
 
 guard links <- foreach prio in $priorities {
-    guard loaded <- bpfman program load file --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
+    guard loaded <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
     let prog = $loaded.programs[0]
     defer bpfman program unload $prog
-    bpfman link attach tcx -i $pair.host_link -d ingress -p $prio $prog
+    bpfman link attach tcx $prog $pair.host_link ingress -p $prio
 }
 
 foreach l in $links {

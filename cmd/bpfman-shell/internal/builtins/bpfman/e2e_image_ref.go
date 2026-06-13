@@ -37,10 +37,20 @@ func resolveE2EImageRefsInArgs(args []runtime.Arg) ([]runtime.Arg, error) {
 		}
 		out[2] = runtime.WordArg{Text: resolved}
 	}
+	if len(out) >= 4 &&
+		driver.ArgText(out[0]) == "program" &&
+		driver.ArgText(out[1]) == "load" &&
+		driver.ArgText(out[2]) == "image" {
+		resolved, err := resolveE2EImageRef(driver.ArgText(out[3]))
+		if err != nil {
+			return nil, err
+		}
+		out[3] = runtime.WordArg{Text: resolved}
+	}
 	for i := range out {
 		text := driver.ArgText(out[i])
 		switch text {
-		case "--image-url", "-i", "--tag", "-t":
+		case "--tag", "-t":
 			if i+1 >= len(out) {
 				continue
 			}
@@ -50,7 +60,7 @@ func resolveE2EImageRefsInArgs(args []runtime.Arg) ([]runtime.Arg, error) {
 			}
 			out[i+1] = runtime.WordArg{Text: resolved}
 		default:
-			for _, prefix := range []string{"--image-url=", "-i=", "--tag=", "-t="} {
+			for _, prefix := range []string{"--tag=", "-t="} {
 				if after, ok := strings.CutPrefix(text, prefix); ok {
 					resolved, err := resolveE2EImageRef(after)
 					if err != nil {

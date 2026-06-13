@@ -44,11 +44,7 @@
 #  4. Ask bpfman to attach that BPF program to the userspace function
 #     inside the container-like process:
 #
-#         bpfman link attach uprobe \
-#             --target /path/to/bpfman-shell \
-#             --fn-name github.com/.../fixturemode.GoUprobeTarget \
-#             --container-pid <container-process-host-pid> \
-#             <bpf-program-id>
+# bpfman link attach uprobe # /path/to/bpfman-shell --fn-name github.com/.../fixturemode.GoUprobeTarget --container-pid <container-process-host-pid> # # # <bpf-program-id>
 #
 #  5. bpfman uses --container-pid to resolve the target binary from
 #     inside that process's mount namespace.
@@ -118,20 +114,12 @@ print "container-uprobe pidns namespaces: self-mnt=${self_mnt_ns.stdout} target-
 assert $self_mnt_ns.stdout != $target_mnt_ns.stdout
 assert $self_pid_ns.stdout != $target_pid_ns.stdout
 
-guard loaded <- bpfman program load file \
-    --path testdata/bpf/uprobe_exact.bpf.o \
-    --programs uprobe:uprobe_counter \
-    -g "expected_pid=0x${u32le $target_pid}" \
-    -g "weight=0x${u64le $weight}"
+guard loaded <- bpfman program load file testdata/bpf/uprobe_exact.bpf.o --programs uprobe:uprobe_counter -g "expected_pid=0x${u32le $target_pid}" -g "weight=0x${u64le $weight}"
 let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 defer bpfman program unload $pid
 
-guard link <- bpfman link attach uprobe \
-    --target $shell_path.stdout \
-    --fn-name $target_info.go_symbol \
-    --container-pid $target_pid \
-    $prog
+guard link <- bpfman link attach uprobe $prog $shell_path.stdout --fn-name $target_info.go_symbol --container-pid $target_pid
 defer bpfman link detach $link
 let linkID = $link.record.id
 

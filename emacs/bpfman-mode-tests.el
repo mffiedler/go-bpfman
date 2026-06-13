@@ -242,10 +242,10 @@ not exercise."
 (ert-deftest bpfman-indentation-plan-handles-continuations ()
   "Plan one continuation indentation level from the chain start."
   (should (equal (bpfman-test--planned-indents
-                  "bpfman program load \\\n--path foo.o \\\n--name foo\nprint done\n")
+                  "bpfman program load file \\\nfoo.o \\\n--programs xdp:foo\nprint done\n")
                  '(0 4 4 0)))
   (should (equal (bpfman-test--planned-indents
-                  "def helper() {\nbpfman program load \\\n--path foo.o\n}\n")
+                  "def helper() {\nbpfman program load file \\\nfoo.o\n}\n")
                  '(0 4 8 0))))
 
 (ert-deftest bpfman-indent-line-applies-indentation-plan ()
@@ -270,14 +270,14 @@ not exercise."
                    (keyword "=")
                    (variable "$input"))))
   (should (equal (bpfman-test--classified-roles
-                  "guard loaded <- bpfman program load --path foo.o")
+                  "guard loaded <- bpfman program load file foo.o")
                  '((keyword "guard")
                    (variable "loaded")
                    (keyword "<-")
                    (keyword "bpfman")
                    (builtin "program")
                    (builtin "load")
-                   (constant "--path"))))
+                   (builtin "file"))))
   (should (equal (bpfman-test--classified-roles "let (a b _) = $items")
                  '((keyword "let")
                    (variable "a")

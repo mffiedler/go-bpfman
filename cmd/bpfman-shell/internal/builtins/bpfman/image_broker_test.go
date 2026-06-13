@@ -14,7 +14,7 @@ func TestLoadImageArgsFromLoadFilePreservesOptions(t *testing.T) {
 	t.Parallel()
 
 	loadFile, err := parseLoadFile([]runtime.Arg{
-		word("--path"), word("testdata/bpf/xdp_pass.bpf.o"),
+		word("testdata/bpf/xdp_pass.bpf.o"),
 		word("--programs"), word("xdp:pass"),
 		word("--metadata"), word("owner=e2e"),
 		word("--global"), word("threshold=0x01020304"),
@@ -29,7 +29,7 @@ func TestLoadImageArgsFromLoadFilePreservesOptions(t *testing.T) {
 	got := driver.ArgTexts(loadImageArgsFromLoadFile(loadFile, "127.0.0.1:5000/bpfman-e2e/xdp-pass:tag"))
 	want := []string{
 		"program", "load", "image",
-		"--image-url", "127.0.0.1:5000/bpfman-e2e/xdp-pass:tag",
+		"127.0.0.1:5000/bpfman-e2e/xdp-pass:tag",
 		"--pull-policy", "Always",
 		"--programs", "xdp:pass",
 		"--metadata", "owner=e2e",

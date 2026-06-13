@@ -14,10 +14,7 @@ guard pair <- net veth-pair
 defer net release $pair
 require_host_route_to_peer $pair
 
-guard loaded <- bpfman program load image \
-    --image-url $image \
-    --pull-policy Always \
-    --programs tc:stats
+guard loaded <- bpfman program load image $image --pull-policy Always --programs tc:stats
 let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 defer bpfman program unload $pid
@@ -25,7 +22,7 @@ defer bpfman program unload $pid
 expect_program_load $prog tc extension stats
 expect_loaded_image_source $prog $image $published.inspected
 
-guard link <- bpfman link attach tc --iface $pair.host_link --direction ingress --priority 50 $prog
+guard link <- bpfman link attach tc $prog $pair.host_link ingress --priority 50
 let linkID = $link.record.id
 expect_pinned_link_identity $link
 assert $link.record.kind == tc

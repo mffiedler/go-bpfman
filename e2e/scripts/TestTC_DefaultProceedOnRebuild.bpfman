@@ -25,8 +25,8 @@ guard pair <- net veth-pair
 defer net release $pair
 require_host_route_to_peer $pair
 
-guard loaded_existing <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard loaded_incoming <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard loaded_existing <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard loaded_incoming <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
 
 let prog_existing = $loaded_existing.programs[0]
 let prog_incoming = $loaded_incoming.programs[0]
@@ -41,8 +41,8 @@ let mapID_incoming = $prog_incoming |> jq '[.status.maps[] | select(.name == "tc
 # Attach existing first, then incoming at the same priority. No
 # explicit --proceed-on; the default (pipe, dispatcher_return)
 # is the value under test.
-guard l_existing <- bpfman link attach tc -i $pair.host_link -d ingress -p 55 $prog_existing
-guard l_incoming <- bpfman link attach tc -i $pair.host_link -d ingress -p 55 $prog_incoming
+guard l_existing <- bpfman link attach tc $prog_existing $pair.host_link ingress -p 55
+guard l_incoming <- bpfman link attach tc $prog_incoming $pair.host_link ingress -p 55
 defer bpfman link detach $l_existing
 defer bpfman link detach $l_incoming
 

@@ -41,7 +41,7 @@ func TestValueFromJob_AbsentFieldsErrorRatherThanReturnEmpty(t *testing.T) {
 	// not through $job.<field>. Confirm that fields not on the
 	// mirror error rather than silently returning an empty
 	// string; an empty string could flow into a downstream
-	// `--target ""` undetected.
+	// empty target operands undetected.
 	v := ValueFromJob(&Job{PID: 99})
 	for _, field := range []string{"stdout", "stderr", "exit_code", "killed", "target_binary"} {
 		t.Run(field, func(t *testing.T) {

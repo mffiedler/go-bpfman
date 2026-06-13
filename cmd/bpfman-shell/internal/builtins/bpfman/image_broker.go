@@ -62,7 +62,7 @@ func loadImageArgsFromLoadFile(cmd *LoadFileCommand, imageRef string) []runtime.
 	var argv []string
 	argv = append(argv,
 		"program", "load", "image",
-		"--image-url", imageRef,
+		imageRef,
 		"--pull-policy", e2eImageBrokerPullPolicy,
 	)
 	if len(cmd.Programs) > 0 {

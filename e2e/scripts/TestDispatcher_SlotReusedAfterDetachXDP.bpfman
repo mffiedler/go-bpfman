@@ -32,9 +32,7 @@
 guard pair <- net veth-pair
 defer net release $pair
 
-guard loaded <- bpfman program load file \
-    --path testdata/bpf/xdp_counter.bpf.o \
-    --programs xdp:xdp_stats
+guard loaded <- bpfman program load file testdata/bpf/xdp_counter.bpf.o --programs xdp:xdp_stats
 let prog = $loaded.programs[0]
 defer bpfman program unload $prog
 
@@ -44,7 +42,7 @@ defer bpfman program unload $prog
 let keep_priorities = [100 200 300 500 600 700 800 900 1000]
 
 guard kept <- foreach prio in $keep_priorities {
-    bpfman link attach xdp -i $pair.host_link -p $prio $prog
+    bpfman link attach xdp $prog $pair.host_link -p $prio
 }
 
 foreach l in $kept {
@@ -53,7 +51,7 @@ foreach l in $kept {
 
 # Sacrificial link at priority 400. Detached explicitly below;
 # no defer.
-guard l_400 <- bpfman link attach xdp -i $pair.host_link -p 400 $prog
+guard l_400 <- bpfman link attach xdp $prog $pair.host_link -p 400
 
 guard snap_full <- bpfman dispatcher get xdp $pair.host_nsid $pair.host_ifindex
 let count_full = $snap_full |> jq ".members | length"
@@ -65,7 +63,7 @@ guard snap_partial <- bpfman dispatcher get xdp $pair.host_nsid $pair.host_ifind
 let count_partial = $snap_partial |> jq ".members | length"
 assert $count_partial == 9
 
-guard l_350 <- bpfman link attach xdp -i $pair.host_link -p 350 $prog
+guard l_350 <- bpfman link attach xdp $prog $pair.host_link -p 350
 defer bpfman link detach $l_350
 
 guard snap_refilled <- bpfman dispatcher get xdp $pair.host_nsid $pair.host_ifindex

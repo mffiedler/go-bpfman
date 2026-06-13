@@ -19,11 +19,7 @@
 
 import ../lib.bpfman
 
-guard loaded <- bpfman program load file \
-    --path testdata/bpf/tc_counter.bpf.o \
-    --programs tc:stats \
-    -m owner=e2e \
-    -m purpose=load-and-get
+guard loaded <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats -m owner=e2e -m purpose=load-and-get
 
 let prog = $loaded.programs[0]
 let pid = $prog.record.program_id

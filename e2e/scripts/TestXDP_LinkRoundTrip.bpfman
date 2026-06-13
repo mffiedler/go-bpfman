@@ -29,14 +29,12 @@ guard pair <- net veth-pair
 defer net release $pair
 require_host_route_to_peer $pair
 
-guard loaded <- bpfman program load file \
-    --path testdata/bpf/xdp_pass.bpf.o \
-    --programs xdp:pass
+guard loaded <- bpfman program load file testdata/bpf/xdp_pass.bpf.o --programs xdp:pass
 let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 defer bpfman program unload $pid
 
-guard link <- bpfman link attach xdp --iface $pair.host_link $prog
+guard link <- bpfman link attach xdp $prog $pair.host_link
 let linkID = $link.record.id
 expect_pinned_link_identity $link
 

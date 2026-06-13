@@ -121,8 +121,8 @@ func handleStart(c driver.Ctx) (runtime.Value, error) {
 	argv := driver.ArgTexts(resolved)
 
 	// Best-effort identity: plain start populates target_binary
-	// from argv[0] so a downstream `--target $job.target_binary`
-	// has the executable path the user pointed at. The semantic
+	// from argv[0] so a downstream uprobe attach has the
+	// executable path the user pointed at. The semantic
 	// guarantee (stable image for kernel attachment) belongs only
 	// to fire kinds with NeedsBinary == true; here the field is
 	// just what the user asked us to launch.

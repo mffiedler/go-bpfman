@@ -33,21 +33,13 @@ let weight = 11
 
 guard target <- uprobe target
 
-guard loaded <- bpfman program load file \
-    --path testdata/bpf/uprobe_exact.bpf.o \
-    --programs uprobe:uprobe_counter \
-    -g "expected_pid=0x${u32le $target.pid}" \
-    -g "weight=0x${u64le $weight}"
+guard loaded <- bpfman program load file testdata/bpf/uprobe_exact.bpf.o --programs uprobe:uprobe_counter -g "expected_pid=0x${u32le $target.pid}" -g "weight=0x${u64le $weight}"
 let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 defer bpfman program unload $pid
 
 # Offset-only attach: file offset, no --fn-name.
-guard link <- bpfman link attach uprobe \
-    --target $target.path \
-    --offset $target.symbol_offset \
-    --pid $target.pid \
-    $prog
+guard link <- bpfman link attach uprobe $prog $target.path --offset $target.symbol_offset --pid $target.pid
 let linkID = $link.record.id
 expect_pinned_link_identity $link
 

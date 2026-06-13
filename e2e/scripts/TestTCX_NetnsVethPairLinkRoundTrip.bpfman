@@ -31,19 +31,12 @@ defer net release $pair
 
 let netns = "/var/run/netns/${pair.a.ns}"
 
-guard loaded <- bpfman program load file \
-    --path testdata/bpf/tcx_counter.bpf.o \
-    --programs tcx:tcx_stats
+guard loaded <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
 let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 defer bpfman program unload $pid
 
-guard link <- bpfman link attach tcx \
-    --iface $pair.a.link \
-    --direction ingress \
-    --priority 50 \
-    --netns $netns \
-    $prog
+guard link <- bpfman link attach tcx $prog $pair.a.link ingress --priority 50 --netns $netns
 let linkID = $link.record.id
 expect_pinned_link_identity $link
 

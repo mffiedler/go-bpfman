@@ -37,14 +37,14 @@ func TestBindShape_LinkAttachKindSpecialisesDetails(t *testing.T) {
 	// concrete LinkDetails implementer; a typo against a real
 	// TCDetails field must surface, and a legitimate field must
 	// stay clean.
-	bogus := `guard l <- bpfman link attach tc -i v -d ingress -p 100 1
+	bogus := `guard l <- bpfman link attach tc 1 v ingress -p 100
 print $l.record.details.priroity`
 	issues := checkSource(t, bogus)
 	require.Len(t, issues, 1)
 	assert.Contains(t, issues[0].Msg, `"priroity"`)
 	assert.Contains(t, issues[0].Msg, "priority")
 
-	ok := `guard l <- bpfman link attach tc -i v -d ingress -p 100 1
+	ok := `guard l <- bpfman link attach tc 1 v ingress -p 100
 print $l.record.details.priority
 print $l.record.details.position`
 	assert.Empty(t, checkSource(t, ok))

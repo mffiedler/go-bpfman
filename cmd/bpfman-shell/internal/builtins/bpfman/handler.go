@@ -23,24 +23,29 @@ var topLevelNouns = map[string]bool{
 const HelpDetail = `Subcommands:
 
   Program management:
-    bpfman program list [flags]                     List managed BPF programs
-    bpfman program get <id>                         Get program details (assignable)
-    bpfman program load file [flags]                Load from a local object file (assignable)
-    bpfman program load image [flags]               Load from an OCI image (assignable)
-    bpfman program unload <ids>                     Unload programs
-    bpfman program delete (<ids> | --all) [-r]      Delete with cascading cleanup
-    bpfman show program <id> [view] [-o]            Inspect (views: links, maps, paths)
+    bpfman program list [flags]                         List managed BPF programs
+    bpfman program get <id>                             Get program details (assignable)
+    bpfman program load file <path> [flags]             Load from a local object file (assignable)
+    bpfman program load image <image> [flags]           Load from an OCI image (assignable)
+    bpfman program unload <ids>                         Unload programs
+    bpfman program delete (<ids> | --all) [-r]          Delete with cascading cleanup
+    bpfman show program <id> [view] [-o]                Inspect (views: links, maps, paths)
 
   Image management:
-    bpfman image build <image> <bytecode> [flags]   Build and publish a bytecode image
-    bpfman image inspect <image>                    Inspect bytecode image metadata
+    bpfman image build <image> <bytecode> [flags]       Build and publish a bytecode image
+    bpfman image inspect <image>                        Inspect bytecode image metadata
 
   Link management:
-    bpfman link attach <type> [flags] <id>          Attach a program (assignable)
-    bpfman link detach <link-ids>                   Detach links
-    bpfman link get <link-id>                       Get link details (assignable)
-    bpfman link list [flags]                        List managed links
-    bpfman link delete <link-ids> [-r]              Delete with cascading cleanup
+    bpfman link attach xdp <id> <iface> [flags]         Attach an XDP program (assignable)
+    bpfman link attach tc <id> <iface> <dir> [flags]    Attach a TC program (assignable)
+    bpfman link attach tcx <id> <iface> <dir> [flags]   Attach a TCX program (assignable)
+    bpfman link attach tracepoint <id> <group/name>     Attach a tracepoint program (assignable)
+    bpfman link attach kprobe <id> <fn> [flags]         Attach a kprobe program (assignable)
+    bpfman link attach uprobe <id> <target> [flags]     Attach a uprobe program (assignable)
+    bpfman link detach <link-ids>                       Detach links
+    bpfman link get <link-id>                           Get link details (assignable)
+    bpfman link list [flags]                            List managed links
+    bpfman link delete <link-ids> [-r]                  Delete with cascading cleanup
 
   Dispatcher management:
     bpfman dispatcher list [--type <type>] [--nsid <nsid>] [--ifindex <ifindex>]  List dispatchers

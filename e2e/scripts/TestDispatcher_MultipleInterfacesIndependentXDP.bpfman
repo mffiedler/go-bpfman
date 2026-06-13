@@ -26,24 +26,22 @@ defer net release $pair_a
 guard pair_b <- net veth-pair
 defer net release $pair_b
 
-guard loaded <- bpfman program load file \
-    --path testdata/bpf/xdp_counter.bpf.o \
-    --programs xdp:xdp_stats
+guard loaded <- bpfman program load file testdata/bpf/xdp_counter.bpf.o --programs xdp:xdp_stats
 let prog = $loaded.programs[0]
 defer bpfman program unload $prog
 
 # Three members on A (priorities 100, 200, 300).
-guard a_100 <- bpfman link attach xdp -i $pair_a.host_link -p 100 $prog
-guard a_200 <- bpfman link attach xdp -i $pair_a.host_link -p 200 $prog
-guard a_300 <- bpfman link attach xdp -i $pair_a.host_link -p 300 $prog
+guard a_100 <- bpfman link attach xdp $prog $pair_a.host_link -p 100
+guard a_200 <- bpfman link attach xdp $prog $pair_a.host_link -p 200
+guard a_300 <- bpfman link attach xdp $prog $pair_a.host_link -p 300
 defer bpfman link detach $a_100
 defer bpfman link detach $a_200
 defer bpfman link detach $a_300
 
 # Two members on B (priorities 100, 200). No defers: the script
 # detaches them mid-test as the operation under test.
-guard b_100 <- bpfman link attach xdp -i $pair_b.host_link -p 100 $prog
-guard b_200 <- bpfman link attach xdp -i $pair_b.host_link -p 200 $prog
+guard b_100 <- bpfman link attach xdp $prog $pair_b.host_link -p 100
+guard b_200 <- bpfman link attach xdp $prog $pair_b.host_link -p 200
 
 guard snap_a <- bpfman dispatcher get xdp $pair_a.host_nsid $pair_a.host_ifindex
 let count_a = $snap_a |> jq ".members | length"
