@@ -55,6 +55,9 @@ func (c *ListProgramsCmd) buildListOptions() ([]bpfman.ListOption, error) {
 	var selectors []labels.Selector
 	metadata := bpfmancli.MetadataMap(c.MetadataSelector)
 	if c.Application != "" {
+		if metadata == nil {
+			metadata = map[string]string{}
+		}
 		metadata[manager.ApplicationMetadataKey] = c.Application
 	}
 	if len(metadata) > 0 {
@@ -133,9 +136,9 @@ type ListLinksCmd struct {
 	Quiet            bool                 `short:"q" help:"Output only link IDs, one per line."`
 	ProgramID        *bpfmancli.ProgramID `name:"program-id" help:"Filter by program ID (supports hex with 0x prefix)."`
 	Kind             []bpfman.LinkKind    `name:"kind" sep:"," help:"Filter by link kind (e.g., --kind=xdp,kprobe)."`
-	ProgramType      []bpfman.ProgramType `name:"program-type" short:"p" sep:"," help:"Accepted for Rust CLI compatibility; link metadata filtering is not wired yet."`
-	Application      string               `name:"application" help:"Accepted for Rust CLI compatibility; link metadata filtering is not wired yet."`
-	MetadataSelector []bpfmancli.KeyValue `name:"metadata-selector" short:"m" help:"Accepted for Rust CLI compatibility; link metadata filtering is not wired yet."`
+	ProgramType      []bpfman.ProgramType `name:"program-type" short:"p" sep:"," help:"Filter by the owning program's type (e.g. xdp,kprobe)."`
+	Application      string               `name:"application" help:"Filter by the owning program's application metadata."`
+	MetadataSelector []bpfmancli.KeyValue `name:"metadata-selector" short:"m" help:"Filter by the owning program's KEY=VALUE metadata (can be repeated)."`
 }
 
 func (c *ListLinksCmd) buildLinkListOptions() ([]bpfman.LinkListOption, error) {
@@ -152,6 +155,35 @@ func (c *ListLinksCmd) buildLinkListOptions() ([]bpfman.LinkListOption, error) {
 	return opts, nil
 }
 
+// programScopeOptions builds the program-list options for Rust-style
+// program-scoped link filtering: --program-type, --application and
+// --metadata-selector select the owning program. The bool reports whether
+// any program-scope filter was supplied; when false, all links are listed
+// (subject only to the link-level filters).
+func (c *ListLinksCmd) programScopeOptions() ([]bpfman.ListOption, bool) {
+	var opts []bpfman.ListOption
+	scoped := false
+
+	if len(c.ProgramType) > 0 {
+		opts = append(opts, bpfman.WithTypes(c.ProgramType...))
+		scoped = true
+	}
+
+	metadata := bpfmancli.MetadataMap(c.MetadataSelector)
+	if c.Application != "" {
+		if metadata == nil {
+			metadata = map[string]string{}
+		}
+		metadata[manager.ApplicationMetadataKey] = c.Application
+	}
+	if len(metadata) > 0 {
+		opts = append(opts, bpfman.MatchingSelector(labels.SelectorFromSet(labels.Set(metadata))))
+		scoped = true
+	}
+
+	return opts, scoped
+}
+
 // Run executes the list links command.
 func (c *ListLinksCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	mgr, cleanup, err := cli.NewManager(ctx)
@@ -165,7 +197,12 @@ func (c *ListLinksCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 		return err
 	}
 
-	links, err := mgr.ListLinks(ctx, opts...)
+	var links []bpfman.LinkRecord
+	if progOpts, scoped := c.programScopeOptions(); scoped {
+		links, err = mgr.ListLinksScopedToPrograms(ctx, progOpts, opts)
+	} else {
+		links, err = mgr.ListLinks(ctx, opts...)
+	}
 	if err != nil {
 		return err
 	}

@@ -253,6 +253,35 @@ func (m *Manager) ListLinks(ctx context.Context, opts ...bpfman.LinkListOption) 
 	return result, nil
 }
 
+// ListLinksScopedToPrograms lists links whose owning program matches the
+// given program list options, then applies the link options. This is the
+// Rust-faithful program-scoped link filter: --program-type, --application
+// and --metadata-selector on `link list` select the owning program (its
+// type and load-time metadata), and the result is that program's links.
+// The link's own attach-time metadata is not the filter key.
+func (m *Manager) ListLinksScopedToPrograms(ctx context.Context, programOpts []bpfman.ListOption, linkOpts []bpfman.LinkListOption) ([]bpfman.LinkRecord, error) {
+	progs, err := m.ListPrograms(ctx, programOpts...)
+	if err != nil {
+		return nil, err
+	}
+	allowed := make(map[kernel.ProgramID]struct{}, len(progs.Programs))
+	for _, p := range progs.Programs {
+		allowed[p.Record.ProgramID] = struct{}{}
+	}
+
+	links, err := m.ListLinks(ctx, linkOpts...)
+	if err != nil {
+		return nil, err
+	}
+	result := []bpfman.LinkRecord{}
+	for _, l := range links {
+		if _, ok := allowed[l.ProgramID]; ok {
+			result = append(result, l)
+		}
+	}
+	return result, nil
+}
+
 // ListLinksByProgram returns all links for a given program.
 func (m *Manager) ListLinksByProgram(ctx context.Context, programID kernel.ProgramID) ([]bpfman.LinkRecord, error) {
 	return m.store.ListLinksByProgram(ctx, programID)

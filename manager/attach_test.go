@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/labels"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/kernel"
@@ -368,6 +369,48 @@ func TestAttachXDP_RebuildPreservesExistingMemberMetadata(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{"owner": "a"}, gotA.Metadata,
 		"rebuild must preserve the existing member's metadata")
+}
+
+// TestListLinksScopedToPrograms verifies the Rust-faithful program-scoped
+// link filter: a selector over program metadata returns only the links of
+// the matching programs, not links of other programs.
+func TestListLinksScopedToPrograms(t *testing.T) {
+	t.Parallel()
+
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	// Two kprobe programs with distinct program (load-time) metadata.
+	specA, err := bpfman.NewLoadSpec(fix.BytecodeFile("kprobe.o"), "kprobe_a", bpfman.ProgramTypeKprobe)
+	require.NoError(t, err)
+	progA, err := fix.Load(ctx, specA, manager.LoadOpts{UserMetadata: map[string]string{"owner": "acme"}})
+	require.NoError(t, err)
+
+	specB, err := bpfman.NewLoadSpec(fix.BytecodeFile("kprobe.o"), "kprobe_b", bpfman.ProgramTypeKprobe)
+	require.NoError(t, err)
+	progB, err := fix.Load(ctx, specB, manager.LoadOpts{UserMetadata: map[string]string{"owner": "other"}})
+	require.NoError(t, err)
+
+	// One link on each program.
+	attachA, err := bpfman.NewKprobeAttachSpec(progA.Record.ProgramID, "do_unlinkat")
+	require.NoError(t, err)
+	linkA, err := fix.Attach(ctx, attachA)
+	require.NoError(t, err)
+
+	attachB, err := bpfman.NewKprobeAttachSpec(progB.Record.ProgramID, "do_sys_open")
+	require.NoError(t, err)
+	_, err = fix.Attach(ctx, attachB)
+	require.NoError(t, err)
+
+	// owner=acme selects progA only, so only its link is returned.
+	progOpts := []bpfman.ListOption{
+		bpfman.MatchingSelector(labels.SelectorFromSet(labels.Set{"owner": "acme"})),
+	}
+	links, err := fix.Manager.ListLinksScopedToPrograms(ctx, progOpts, nil)
+	require.NoError(t, err)
+	require.Len(t, links, 1, "only progA's link matches owner=acme")
+	assert.Equal(t, linkA.Record.ID, links[0].ID)
+	assert.Equal(t, progA.Record.ProgramID, links[0].ProgramID)
 }
 
 // TestAttachTC_RebuildPreservesExistingMemberMetadata mirrors the XDP

@@ -194,3 +194,26 @@ func TestParseProgramTypes_CaseInsensitivity(t *testing.T) {
 		})
 	}
 }
+
+// TestListLinksProgramScopeOptions_ApplicationOnly guards against a nil
+// map panic: --application without --metadata-selector must build a
+// program-scope selector rather than writing to a nil map.
+func TestListLinksProgramScopeOptions_ApplicationOnly(t *testing.T) {
+	t.Parallel()
+
+	c := &ListLinksCmd{Application: "demo"}
+	opts, scoped := c.programScopeOptions()
+	assert.True(t, scoped, "expected scoped=true when --application is set")
+	assert.NotEmpty(t, opts, "expected a program-list option for --application")
+}
+
+// TestListProgramsBuildOptions_ApplicationOnly guards the same nil map
+// panic on the program list path.
+func TestListProgramsBuildOptions_ApplicationOnly(t *testing.T) {
+	t.Parallel()
+
+	c := &ListProgramsCmd{Application: "demo"}
+	opts, err := c.buildListOptions()
+	require.NoError(t, err)
+	assert.NotEmpty(t, opts, "expected a selector option for --application")
+}

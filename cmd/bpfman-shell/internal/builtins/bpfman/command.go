@@ -2068,6 +2068,9 @@ func execListPrograms(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Mana
 	var selectors []labels.Selector
 	metadata := bpfmancli.MetadataMap(cmd.MetadataSelector)
 	if cmd.Application != "" {
+		if metadata == nil {
+			metadata = map[string]string{}
+		}
 		metadata[manager.ApplicationMetadataKey] = cmd.Application
 	}
 	if len(metadata) > 0 {
@@ -2213,6 +2216,31 @@ func parseListLinks(args []runtime.Arg) (*ListLinksCommand, error) {
 	return cmd, nil
 }
 
+// linkProgramScopeOptions builds program-list options for program-scoped
+// link filtering (--program-type/--application/-m select the owning
+// program), mirroring the cmd/bpfman link list path. The bool reports
+// whether any program-scope filter was supplied.
+func linkProgramScopeOptions(cmd *ListLinksCommand) ([]bpfman.ListOption, bool) {
+	var opts []bpfman.ListOption
+	scoped := false
+	if len(cmd.ProgramTypes) > 0 {
+		opts = append(opts, bpfman.WithTypes(cmd.ProgramTypes...))
+		scoped = true
+	}
+	metadata := bpfmancli.MetadataMap(cmd.MetadataSelector)
+	if cmd.Application != "" {
+		if metadata == nil {
+			metadata = map[string]string{}
+		}
+		metadata[manager.ApplicationMetadataKey] = cmd.Application
+	}
+	if len(metadata) > 0 {
+		opts = append(opts, bpfman.MatchingSelector(labels.SelectorFromSet(labels.Set(metadata))))
+		scoped = true
+	}
+	return opts, scoped
+}
+
 // execListLinks executes a parsed ListLinksCommand, listing links
 // from the store and rendering output.
 func execListLinks(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *ListLinksCommand) (runtime.Value, error) {
@@ -2226,7 +2254,13 @@ func execListLinks(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager
 		opts = append(opts, bpfman.WithKinds(cmd.Kinds...))
 	}
 
-	links, err := mgr.ListLinks(ctx, opts...)
+	var links []bpfman.LinkRecord
+	var err error
+	if progOpts, scoped := linkProgramScopeOptions(cmd); scoped {
+		links, err = mgr.ListLinksScopedToPrograms(ctx, progOpts, opts)
+	} else {
+		links, err = mgr.ListLinks(ctx, opts...)
+	}
 	if err != nil {
 		return runtime.Value{}, err
 	}
