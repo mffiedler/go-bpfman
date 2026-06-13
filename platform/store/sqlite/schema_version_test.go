@@ -9,8 +9,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/frobware/go-bpfman/lock"
 	"github.com/stretchr/testify/require"
+
+	"github.com/frobware/go-bpfman/lock"
 )
 
 // TestSchemaVersionMismatchRecreatesDatabase locks in the wipe-and-recreate

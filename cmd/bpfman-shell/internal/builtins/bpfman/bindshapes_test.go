@@ -85,10 +85,10 @@ print $l.record.metadata.owner`
 	assert.Empty(t, checkSource(t, okMeta), "record.metadata.<key> must be allowed (open map)")
 
 	typo := `guard l <- bpfman link attach kprobe 1 do_unlinkat
-print $l.record.detials`
+print $l.record.detailz`
 	issues := checkSource(t, typo)
 	require.Len(t, issues, 1, "record must stay sealed: a top-level field typo is caught")
-	assert.Contains(t, issues[0].Msg, `"detials"`)
+	assert.Contains(t, issues[0].Msg, `"detailz"`)
 	assert.Contains(t, issues[0].Msg, "details")
 }
 
