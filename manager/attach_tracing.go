@@ -16,6 +16,7 @@ func (m *Manager) attachTracepoint(ctx context.Context, spec bpfman.TracepointAt
 	target := group + "/" + name
 	return m.simpleAttach(ctx, attachParams{
 		programID:     spec.ProgramID(),
+		metadata:      spec.Metadata(),
 		defaultTarget: target,
 		prepare: func(_ bpfman.ProgramRecord, progPinPath bpfman.ProgPinPath) (attachPlan, error) {
 			if err := m.validateTracepointExists(ctx, group, name); err != nil {
@@ -69,6 +70,7 @@ func (m *Manager) attachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 	fnName, offset := spec.FnName(), spec.Offset()
 	return m.simpleAttach(ctx, attachParams{
 		programID:     spec.ProgramID(),
+		metadata:      spec.Metadata(),
 		defaultTarget: fnName,
 		prepare: func(prog bpfman.ProgramRecord, progPinPath bpfman.ProgPinPath) (attachPlan, error) {
 			retprobe := prog.Load.ProgramType() == bpfman.ProgramTypeKretprobe
@@ -103,6 +105,7 @@ func (m *Manager) attachUprobe(ctx context.Context, scope lock.WriterScope, spec
 	containerPid := spec.ContainerPid()
 	return m.simpleAttach(ctx, attachParams{
 		programID:     spec.ProgramID(),
+		metadata:      spec.Metadata(),
 		defaultTarget: binaryTarget + ":" + fnName,
 		prepare: func(prog bpfman.ProgramRecord, progPinPath bpfman.ProgPinPath) (attachPlan, error) {
 			retprobe := prog.Load.ProgramType() == bpfman.ProgramTypeUretprobe
@@ -154,6 +157,7 @@ func (m *Manager) attachUprobe(ctx context.Context, scope lock.WriterScope, spec
 func (m *Manager) attachFentry(ctx context.Context, spec bpfman.FentryAttachSpec) (bpfman.Link, error) {
 	return m.simpleAttach(ctx, attachParams{
 		programID:     spec.ProgramID(),
+		metadata:      spec.Metadata(),
 		defaultTarget: fmt.Sprintf("fentry/program/%d", spec.ProgramID()),
 		prepare: func(prog bpfman.ProgramRecord, progPinPath bpfman.ProgPinPath) (attachPlan, error) {
 			fnName := prog.Load.AttachFunc()
@@ -180,6 +184,7 @@ func (m *Manager) attachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 func (m *Manager) attachFexit(ctx context.Context, spec bpfman.FexitAttachSpec) (bpfman.Link, error) {
 	return m.simpleAttach(ctx, attachParams{
 		programID:     spec.ProgramID(),
+		metadata:      spec.Metadata(),
 		defaultTarget: fmt.Sprintf("fexit/program/%d", spec.ProgramID()),
 		prepare: func(prog bpfman.ProgramRecord, progPinPath bpfman.ProgPinPath) (attachPlan, error) {
 			fnName := prog.Load.AttachFunc()

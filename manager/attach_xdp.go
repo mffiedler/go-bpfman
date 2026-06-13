@@ -56,6 +56,7 @@ func (m *Manager) attachXDP(ctx context.Context, spec bpfman.XDPAttachSpec) (bpf
 				ProgramName: prog.Meta.Name,
 				Priority:    priority,
 				ProceedOn:   proceedOnMask,
+				Metadata:    spec.Metadata(),
 			}
 		},
 	})

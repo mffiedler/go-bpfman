@@ -32,7 +32,7 @@ func (s *sqliteStore) prepareDispatcherStatements(ctx context.Context) error {
 
 	const getXDPMembersSQL = `
 		SELECT d.position, d.priority, p.program_name, d.proceed_on,
-		       p.pin_path, l.id, l.kernel_link_id, l.kernel_prog_id, l.pin_path, d.interface
+		       p.pin_path, l.id, l.kernel_link_id, l.kernel_prog_id, l.pin_path, d.interface, l.metadata_json
 		FROM link_xdp_details d
 		JOIN links l ON d.id = l.id
 		JOIN managed_programs p ON l.kernel_prog_id = p.program_id
@@ -46,7 +46,7 @@ func (s *sqliteStore) prepareDispatcherStatements(ctx context.Context) error {
 
 	const getTCMembersSQL = `
 		SELECT d.position, d.priority, p.program_name, d.proceed_on,
-		       p.pin_path, l.id, l.kernel_link_id, l.kernel_prog_id, l.pin_path, d.interface
+		       p.pin_path, l.id, l.kernel_link_id, l.kernel_prog_id, l.pin_path, d.interface, l.metadata_json
 		FROM link_tc_details d
 		JOIN links l ON d.id = l.id
 		JOIN managed_programs p ON l.kernel_prog_id = p.program_id
@@ -108,8 +108,8 @@ func (s *sqliteStore) prepareDispatcherStatements(ctx context.Context) error {
 		return fmt.Errorf("prepare UpsertDispatcher: %w", err)
 	}
 
-	const insertExtLinkSQL = `INSERT INTO links (kind, kernel_prog_id, kernel_link_id, pin_path, created_at)
-		VALUES (?, ?, ?, ?, ?)
+	const insertExtLinkSQL = `INSERT INTO links (kind, kernel_prog_id, kernel_link_id, pin_path, metadata_json, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)
 		RETURNING id, kind, kernel_prog_id, kernel_link_id, pin_path, metadata_json, created_at`
 
 	s.stmtInsertExtLink, err = s.db.PrepareContext(ctx, insertExtLinkSQL)
@@ -117,8 +117,8 @@ func (s *sqliteStore) prepareDispatcherStatements(ctx context.Context) error {
 		return fmt.Errorf("prepare InsertExtLink: %w", err)
 	}
 
-	const insertExtLinkWithIDSQL = `INSERT INTO links (id, kind, kernel_prog_id, kernel_link_id, pin_path, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)
+	const insertExtLinkWithIDSQL = `INSERT INTO links (id, kind, kernel_prog_id, kernel_link_id, pin_path, metadata_json, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 		RETURNING id, kind, kernel_prog_id, kernel_link_id, pin_path, metadata_json, created_at`
 
 	s.stmtInsertExtLinkWithID, err = s.db.PrepareContext(ctx, insertExtLinkWithIDSQL)
@@ -232,8 +232,9 @@ func (s *sqliteStore) GetDispatcherSnapshot(ctx context.Context, key dispatcher.
 		var proceedOnJSON string
 		var kernelLinkID sql.NullInt64
 		var linkPinPath sql.NullString
+		var metadataJSON sql.NullString
 		if err := rows.Scan(&m.Position, &m.Priority, &m.ProgramName, &proceedOnJSON,
-			&m.ProgPinPath, &m.LinkID, &kernelLinkID, &m.ProgramID, &linkPinPath, &m.Ifname); err != nil {
+			&m.ProgPinPath, &m.LinkID, &kernelLinkID, &m.ProgramID, &linkPinPath, &m.Ifname, &metadataJSON); err != nil {
 			return platform.DispatcherSnapshot{}, fmt.Errorf("scan dispatcher member: %w", err)
 		}
 		if kernelLinkID.Valid {
@@ -243,6 +244,11 @@ func (s *sqliteStore) GetDispatcherSnapshot(ctx context.Context, key dispatcher.
 		if linkPinPath.Valid {
 			m.LinkPinPath = bpfman.LinkPath(linkPinPath.String)
 		}
+		meta, err := unmarshalLinkMetadata(metadataJSON, int64(m.LinkID))
+		if err != nil {
+			return platform.DispatcherSnapshot{}, fmt.Errorf("scan dispatcher member metadata: %w", err)
+		}
+		m.Metadata = meta
 
 		var actions []int32
 		if err := json.Unmarshal([]byte(proceedOnJSON), &actions); err != nil {
@@ -383,14 +389,17 @@ func (s *sqliteStore) replaceDispatcherSnapshot(ctx context.Context, snap platfo
 		if spec.KernelLinkID != nil {
 			kernelLinkID = sql.NullInt64{Int64: int64(*spec.KernelLinkID), Valid: true}
 		}
+		metadataJSON, err := marshalLinkMetadata(spec.Metadata)
+		if err != nil {
+			return platform.DispatcherSnapshot{}, fmt.Errorf("marshal extension link metadata: %w", err)
+		}
 		var record bpfman.LinkRecord
-		var err error
 		if spec.ExistingLinkID != nil {
 			record, err = s.scanLinkRecord(s.stmtInsertExtLinkWithID.QueryRowContext(ctx,
-				*spec.ExistingLinkID, kind, spec.ProgramID, kernelLinkID, pinPath, now))
+				*spec.ExistingLinkID, kind, spec.ProgramID, kernelLinkID, pinPath, metadataJSON, now))
 		} else {
 			record, err = s.scanLinkRecord(s.stmtInsertExtLink.QueryRowContext(ctx,
-				kind, spec.ProgramID, kernelLinkID, pinPath, now))
+				kind, spec.ProgramID, kernelLinkID, pinPath, metadataJSON, now))
 		}
 		if err != nil {
 			return platform.DispatcherSnapshot{}, fmt.Errorf("insert extension link: %w", err)
@@ -406,6 +415,7 @@ func (s *sqliteStore) replaceDispatcherSnapshot(ctx context.Context, snap platfo
 			Priority:     spec.Priority,
 			ProceedOn:    spec.ProceedOn,
 			Ifname:       spec.Ifname,
+			Metadata:     spec.Metadata,
 		}
 
 		// Insert detail row.

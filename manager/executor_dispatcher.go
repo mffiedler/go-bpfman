@@ -29,8 +29,9 @@ type rebuildSlot struct {
 	Priority       int // user-specified priority (may be 0 for unspecified)
 	ProceedOn      uint32
 	ExistingLinkID *bpfman.LinkID
-	ProgramID      kernel.ProgramID // managed program's kernel ID
-	Ifname         string           // interface name from detail record
+	ProgramID      kernel.ProgramID  // managed program's kernel ID
+	Ifname         string            // interface name from detail record
+	Metadata       map[string]string // user link labels; new slot from spec, existing slots preserved from the snapshot
 }
 
 // xdpRebuildOps returns the type-specific operations for XDP
@@ -63,6 +64,7 @@ func (e *executor) rebuildXDPDispatcher(
 	programName string,
 	priority int,
 	proceedOn uint32,
+	metadata map[string]string,
 ) (extensionResult, error) {
 	newSlot := rebuildSlot{
 		ProgPinPath: progPinPath,
@@ -71,6 +73,7 @@ func (e *executor) rebuildXDPDispatcher(
 		ProceedOn:   proceedOn,
 		ProgramID:   managedProgramID,
 		Ifname:      ops.ifname,
+		Metadata:    metadata,
 	}
 
 	nsid, err := netns.NSID(ops.netnsPath)
@@ -103,6 +106,7 @@ func (e *executor) rebuildXDPDispatcher(
 			ExistingLinkID: &linkID,
 			ProgramID:      m.ProgramID,
 			Ifname:         m.Ifname,
+			Metadata:       m.Metadata,
 		})
 	}
 	allSlots = append(allSlots, newSlot)
@@ -276,6 +280,7 @@ func (e *executor) rebuildXDPDispatcher(
 			Priority:       slot.Priority,
 			ProceedOn:      slot.ProceedOn,
 			Ifname:         slot.Ifname,
+			Metadata:       slot.Metadata,
 		})
 	}
 
@@ -333,6 +338,7 @@ func (e *executor) rebuildXDPDispatcher(
 		KernelLinkID: newExtLinkRecord.KernelLinkID,
 		Kind:         bpfman.LinkKindXDP,
 		PinPath:      bpfman.NewLinkPath(newExt.pinPath),
+		Metadata:     newExtLinkRecord.Metadata,
 		Details: bpfman.XDPDetails{
 			Interface:    newSlot.Ifname,
 			Ifindex:      ops.ifindex,
@@ -372,6 +378,7 @@ func (e *executor) rebuildTCDispatcher(
 	programName string,
 	priority int,
 	proceedOn uint32,
+	metadata map[string]string,
 ) (extensionResult, error) {
 	newSlot := rebuildSlot{
 		ProgPinPath: progPinPath,
@@ -380,6 +387,7 @@ func (e *executor) rebuildTCDispatcher(
 		ProceedOn:   proceedOn,
 		ProgramID:   managedProgramID,
 		Ifname:      ops.ifname,
+		Metadata:    metadata,
 	}
 
 	nsid, err := netns.NSID(ops.netnsPath)
@@ -412,6 +420,7 @@ func (e *executor) rebuildTCDispatcher(
 			ExistingLinkID: &linkID,
 			ProgramID:      m.ProgramID,
 			Ifname:         m.Ifname,
+			Metadata:       m.Metadata,
 		})
 	}
 	allSlots = append(allSlots, newSlot)
@@ -605,6 +614,7 @@ func (e *executor) rebuildTCDispatcher(
 			Priority:       slot.Priority,
 			ProceedOn:      slot.ProceedOn,
 			Ifname:         slot.Ifname,
+			Metadata:       slot.Metadata,
 		})
 	}
 
@@ -666,6 +676,7 @@ func (e *executor) rebuildTCDispatcher(
 		KernelLinkID: newExtLinkRecord.KernelLinkID,
 		Kind:         bpfman.LinkKindTC,
 		PinPath:      bpfman.NewLinkPath(newExt.pinPath),
+		Metadata:     newExtLinkRecord.Metadata,
 		Details: bpfman.TCDetails{
 			Interface:    newSlot.Ifname,
 			Ifindex:      ops.ifindex,
@@ -897,6 +908,7 @@ func (e *executor) rebuildXDPForDetach(
 			Priority:       slot.Priority,
 			ProceedOn:      slot.ProceedOn,
 			Ifname:         slot.Ifname,
+			Metadata:       slot.Metadata,
 		})
 	}
 
@@ -1076,6 +1088,7 @@ func (e *executor) rebuildTCForDetach(
 			Priority:       slot.Priority,
 			ProceedOn:      slot.ProceedOn,
 			Ifname:         slot.Ifname,
+			Metadata:       slot.Metadata,
 		})
 	}
 

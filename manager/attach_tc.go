@@ -95,6 +95,7 @@ func (m *Manager) attachTC(ctx context.Context, spec bpfman.TCAttachSpec) (bpfma
 				ProgramName: prog.Meta.Name,
 				Priority:    priority,
 				ProceedOn:   tcProceedOnBitmask(proceedOn),
+				Metadata:    spec.Metadata(),
 			}
 		},
 	})
@@ -213,7 +214,7 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 		"order", order)
 
 	// --- Build and execute plan ---
-	plan := m.attachTCXPlan(programID, ifindex, ifname, direction, priority, nsid, netnsPath, linkPinPath, progPinPath, target, order)
+	plan := m.attachTCXPlan(programID, spec.Metadata(), ifindex, ifname, direction, priority, nsid, netnsPath, linkPinPath, progPinPath, target, order)
 	b, err := operation.Run(ctx, m.logger, m.executor, plan)
 	if err != nil {
 		return bpfman.Link{}, err
@@ -240,7 +241,7 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 //     that detaches the link on failure.
 //  2. Produce linkKey -- construct link record, save to store.
 func (m *Manager) attachTCXPlan(
-	programID kernel.ProgramID, ifindex int, ifname string,
+	programID kernel.ProgramID, metadata map[string]string, ifindex int, ifname string,
 	direction bpfman.TCDirection, priority int, nsid uint64,
 	netnsPath string, linkPinPath bpfman.LinkPath, progPinPath bpfman.ProgPinPath, target string,
 	order bpfman.TCXAttachOrder,
@@ -264,7 +265,7 @@ func (m *Manager) attachTCXPlan(
 			}),
 		),
 
-		saveLinkNode(programID, target, func(b *operation.Bindings) (bpfman.LinkDetails, bpfman.AttachOutput) {
+		saveLinkNode(programID, metadata, target, func(b *operation.Bindings) (bpfman.LinkDetails, bpfman.AttachOutput) {
 			out := operation.Get(b, attachOutKey)
 			return bpfman.TCXDetails{
 				Interface: ifname,

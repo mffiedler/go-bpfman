@@ -33,6 +33,9 @@ type attachPlan struct {
 type attachParams struct {
 	// programID is the kernel ID of the program to attach.
 	programID kernel.ProgramID
+	// metadata holds user-supplied key/value link labels to persist on
+	// the link record. nil when the caller supplied none.
+	metadata map[string]string
 	// defaultTarget is used for plan node labels. The actual target
 	// may differ once the program record is fetched (e.g., fentry
 	// resolves the function name from the record).
@@ -107,6 +110,7 @@ func (m *Manager) simpleAttachPlan(p attachParams) operation.Plan {
 					ProgramID: p.programID,
 					Kind:      pa.details.Kind(),
 					Details:   pa.details,
+					Metadata:  p.metadata,
 				}
 				return action.Produce[bpfman.LinkRecord](ctx, exec, action.CreatePendingLink{
 					Spec:     spec,
@@ -167,6 +171,7 @@ func (m *Manager) simpleAttachPlan(p attachParams) operation.Plan {
 // parts: link ID, link details, pin path, and attach output.
 func saveLinkNode(
 	programID kernel.ProgramID,
+	metadata map[string]string,
 	target string,
 	extract func(*operation.Bindings) (bpfman.LinkDetails, bpfman.AttachOutput),
 ) operation.Node {
@@ -179,6 +184,7 @@ func saveLinkNode(
 				Kind:         details.Kind(),
 				PinPath:      bpfman.NewLinkPath(out.PinPath),
 				Details:      details,
+				Metadata:     metadata,
 			}
 			record, err := action.Produce[bpfman.LinkRecord](ctx, exec, action.CreateLink{Spec: spec})
 			if err != nil {

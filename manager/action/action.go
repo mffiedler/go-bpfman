@@ -367,6 +367,7 @@ type RebuildXDPDispatcher struct {
 	ProgramName string
 	Priority    int
 	ProceedOn   uint32
+	Metadata    map[string]string
 }
 
 func (RebuildXDPDispatcher) isAction() {}
@@ -385,6 +386,7 @@ type RebuildTCDispatcher struct {
 	ProgramName string
 	Priority    int
 	ProceedOn   uint32
+	Metadata    map[string]string
 }
 
 func (RebuildTCDispatcher) isAction() {}

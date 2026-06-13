@@ -242,6 +242,204 @@ func TestKprobe_AttachSucceeds(t *testing.T) {
 	assert.Equal(t, 1, fix.Kernel.LinkCount(), "should have 1 link in kernel")
 }
 
+// TestAttach_PersistsLinkMetadata verifies that user metadata on a simple
+// attach spec is threaded into the link record and persisted, surviving a
+// store read.
+func TestAttach_PersistsLinkMetadata(t *testing.T) {
+	t.Parallel()
+
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("kprobe.o"), "kprobe_prog", bpfman.ProgramTypeKprobe)
+	require.NoError(t, err)
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err, "Load should succeed")
+
+	attachSpec, err := bpfman.NewKprobeAttachSpec(prog.Record.ProgramID, "do_sys_open")
+	require.NoError(t, err)
+	attachSpec = attachSpec.WithMetadata(map[string]string{"owner": "acme", "env": "test"})
+
+	link, err := fix.Attach(ctx, attachSpec)
+	require.NoError(t, err, "AttachKprobe should succeed")
+	assert.Equal(t, map[string]string{"owner": "acme", "env": "test"}, link.Record.Metadata,
+		"attach response should carry the metadata")
+
+	// Persistence: re-read from the store.
+	got, err := fix.Store.GetLink(ctx, link.Record.ID)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"owner": "acme", "env": "test"}, got.Metadata,
+		"metadata must persist on the link record")
+}
+
+// TestAttachXDP_PersistsLinkMetadata verifies the XDP dispatcher path
+// threads user metadata onto the extension link record and persists it.
+func TestAttachXDP_PersistsLinkMetadata(t *testing.T) {
+	t.Parallel()
+
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("xdp.o"), "xdp_pass", bpfman.ProgramTypeXDP)
+	require.NoError(t, err)
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err, "Load should succeed")
+
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
+	require.NoError(t, err)
+	attachSpec = attachSpec.WithMetadata(map[string]string{"owner": "acme", "env": "test"})
+
+	link, err := fix.Attach(ctx, attachSpec)
+	require.NoError(t, err, "AttachXDP should succeed")
+	assert.Equal(t, map[string]string{"owner": "acme", "env": "test"}, link.Record.Metadata,
+		"attach response should carry the metadata")
+
+	got, err := fix.Store.GetLink(ctx, link.Record.ID)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"owner": "acme", "env": "test"}, got.Metadata,
+		"metadata must persist on the XDP link record")
+}
+
+// TestAttachTC_PersistsLinkMetadata verifies the TC dispatcher path
+// threads user metadata onto the extension link record and persists it.
+func TestAttachTC_PersistsLinkMetadata(t *testing.T) {
+	t.Parallel()
+
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tc.o"), "tc_pass", bpfman.ProgramTypeTC)
+	require.NoError(t, err)
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err, "Load should succeed")
+
+	attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	require.NoError(t, err)
+	attachSpec = attachSpec.WithMetadata(map[string]string{"owner": "acme", "env": "test"})
+
+	link, err := fix.Attach(ctx, attachSpec)
+	require.NoError(t, err, "AttachTC should succeed")
+	assert.Equal(t, map[string]string{"owner": "acme", "env": "test"}, link.Record.Metadata,
+		"attach response should carry the metadata")
+
+	got, err := fix.Store.GetLink(ctx, link.Record.ID)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"owner": "acme", "env": "test"}, got.Metadata,
+		"metadata must persist on the TC link record")
+}
+
+// TestAttachXDP_RebuildPreservesExistingMemberMetadata is the key
+// dispatcher test: a second attach rebuilds the dispatcher and re-inserts
+// every member row, so the first member's metadata must survive the
+// rebuild (read from the snapshot and re-written) while the new member
+// gets its own. A break anywhere in that chain -- read, copy, write, or
+// the returned record -- fails this test.
+func TestAttachXDP_RebuildPreservesExistingMemberMetadata(t *testing.T) {
+	t.Parallel()
+
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("xdp.o"), "xdp_pass", bpfman.ProgramTypeXDP)
+	require.NoError(t, err)
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	// First member, metadata A.
+	specA, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
+	require.NoError(t, err)
+	specA = specA.WithPriority(10).WithMetadata(map[string]string{"owner": "a"})
+	linkA, err := fix.Attach(ctx, specA)
+	require.NoError(t, err, "first attach should succeed")
+
+	// Second member, metadata B -- triggers a full dispatcher rebuild that
+	// re-inserts link A's row.
+	specB, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
+	require.NoError(t, err)
+	specB = specB.WithPriority(20).WithMetadata(map[string]string{"owner": "b"})
+	linkB, err := fix.Attach(ctx, specB)
+	require.NoError(t, err, "second attach should succeed")
+
+	gotB, err := fix.Store.GetLink(ctx, linkB.Record.ID)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"owner": "b"}, gotB.Metadata, "new member keeps its own metadata")
+
+	gotA, err := fix.Store.GetLink(ctx, linkA.Record.ID)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"owner": "a"}, gotA.Metadata,
+		"rebuild must preserve the existing member's metadata")
+}
+
+// TestAttachTC_RebuildPreservesExistingMemberMetadata mirrors the XDP
+// rebuild-preservation test for the TC dispatcher path, which reads,
+// copies, writes, and returns metadata through separate code from XDP
+// (the TC member SELECT and the TC rebuild loop).
+func TestAttachTC_RebuildPreservesExistingMemberMetadata(t *testing.T) {
+	t.Parallel()
+
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tc.o"), "tc_pass", bpfman.ProgramTypeTC)
+	require.NoError(t, err)
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	// First member, metadata A.
+	specA, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	require.NoError(t, err)
+	specA = specA.WithPriority(10).WithMetadata(map[string]string{"owner": "a"})
+	linkA, err := fix.Attach(ctx, specA)
+	require.NoError(t, err, "first attach should succeed")
+
+	// Second member, metadata B -- triggers a full TC dispatcher rebuild
+	// that re-inserts link A's row.
+	specB, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	require.NoError(t, err)
+	specB = specB.WithPriority(20).WithMetadata(map[string]string{"owner": "b"})
+	linkB, err := fix.Attach(ctx, specB)
+	require.NoError(t, err, "second attach should succeed")
+
+	gotB, err := fix.Store.GetLink(ctx, linkB.Record.ID)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"owner": "b"}, gotB.Metadata, "new member keeps its own metadata")
+
+	gotA, err := fix.Store.GetLink(ctx, linkA.Record.ID)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"owner": "a"}, gotA.Metadata,
+		"rebuild must preserve the existing member's metadata")
+}
+
+// TestAttachTCX_PersistsLinkMetadata verifies the TCX path (saveLinkNode)
+// threads user metadata onto the link record and persists it. TCX is not
+// dispatcher-backed, so it has its own wiring distinct from the simple
+// attach path.
+func TestAttachTCX_PersistsLinkMetadata(t *testing.T) {
+	t.Parallel()
+
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tcx.o"), "tcx_pass", bpfman.ProgramTypeTCX)
+	require.NoError(t, err)
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err, "Load should succeed")
+
+	attachSpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	require.NoError(t, err)
+	attachSpec = attachSpec.WithMetadata(map[string]string{"owner": "acme", "env": "test"})
+
+	link, err := fix.Attach(ctx, attachSpec)
+	require.NoError(t, err, "AttachTCX should succeed")
+	assert.Equal(t, map[string]string{"owner": "acme", "env": "test"}, link.Record.Metadata,
+		"attach response should carry the metadata")
+
+	got, err := fix.Store.GetLink(ctx, link.Record.ID)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"owner": "acme", "env": "test"}, got.Metadata,
+		"metadata must persist on the TCX link record")
+}
+
 // TestKprobe_AttachWithOffset verifies that:
 //
 //	Given a loaded kprobe program,

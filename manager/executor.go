@@ -175,7 +175,7 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 	case action.RebuildXDPDispatcher:
 		return e.rebuildXDPDispatcher(ctx, a.ProgramID,
 			xdpRebuildOps{ifindex: a.Ifindex, ifname: a.Ifname, netnsPath: a.NetnsPath},
-			a.ProgPinPath, a.ProgramName, a.Priority, a.ProceedOn)
+			a.ProgPinPath, a.ProgramName, a.Priority, a.ProceedOn, a.Metadata)
 
 	case action.RebuildTCDispatcher:
 		return e.rebuildTCDispatcher(ctx, a.ProgramID,
@@ -186,7 +186,7 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 				dispType:  a.DispType,
 				netnsPath: a.NetnsPath,
 			},
-			a.ProgPinPath, a.ProgramName, a.Priority, a.ProceedOn)
+			a.ProgPinPath, a.ProgramName, a.Priority, a.ProceedOn, a.Metadata)
 
 	case action.RebuildDispatcherForDetach:
 		return nil, e.rebuildDispatcherForDetach(ctx, a.Key, a.ExcludeLinkID)

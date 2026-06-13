@@ -12,10 +12,24 @@ import (
 type AttachSpec interface {
 	attachSpec() // sealed marker
 	ProgramID() kernel.ProgramID
+	// Metadata returns user-supplied key/value link labels, nil when none.
+	Metadata() map[string]string
 }
+
+// attachMetadata carries user-supplied link labels shared by every attach
+// spec. Embedding it gives each concrete spec the Metadata accessor that
+// satisfies AttachSpec; the per-type WithMetadata builders set it and
+// return the concrete type for fluent chaining.
+type attachMetadata struct {
+	metadata map[string]string
+}
+
+// Metadata returns the user-supplied link labels, nil when none were set.
+func (m attachMetadata) Metadata() map[string]string { return m.metadata }
 
 // TracepointAttachSpec specifies how to attach a tracepoint.
 type TracepointAttachSpec struct {
+	attachMetadata
 	programID kernel.ProgramID
 	group     string
 	name      string
@@ -51,6 +65,7 @@ func (s TracepointAttachSpec) Name() string                { return s.name }
 // KprobeAttachSpec specifies how to attach a kprobe/kretprobe.
 // Note: retprobe is NOT part of the spec - it's derived from the program type.
 type KprobeAttachSpec struct {
+	attachMetadata
 	programID kernel.ProgramID
 	fnName    string
 	offset    uint64
@@ -81,6 +96,7 @@ func (s KprobeAttachSpec) WithOffset(offset uint64) KprobeAttachSpec {
 // UprobeAttachSpec specifies how to attach a uprobe/uretprobe.
 // Note: retprobe is NOT part of the spec - it's derived from the program type.
 type UprobeAttachSpec struct {
+	attachMetadata
 	programID    kernel.ProgramID
 	target       string
 	fnName       string // optional - can use offset only
@@ -141,6 +157,7 @@ func (s UprobeAttachSpec) WithContainerPid(pid int32) UprobeAttachSpec {
 // FentryAttachSpec specifies how to attach fentry.
 // Note: fnName comes from the program's stored metadata, not user input.
 type FentryAttachSpec struct {
+	attachMetadata
 	programID kernel.ProgramID
 }
 
@@ -158,6 +175,7 @@ func (s FentryAttachSpec) ProgramID() kernel.ProgramID { return s.programID }
 // FexitAttachSpec specifies how to attach fexit.
 // Note: fnName comes from the program's stored metadata, not user input.
 type FexitAttachSpec struct {
+	attachMetadata
 	programID kernel.ProgramID
 }
 
@@ -174,6 +192,7 @@ func (s FexitAttachSpec) ProgramID() kernel.ProgramID { return s.programID }
 
 // XDPAttachSpec specifies how to attach XDP.
 type XDPAttachSpec struct {
+	attachMetadata
 	programID kernel.ProgramID
 	ifname    string
 	priority  int
@@ -228,6 +247,7 @@ func (s XDPAttachSpec) WithNetns(netns string) XDPAttachSpec {
 
 // TCAttachSpec specifies how to attach TC.
 type TCAttachSpec struct {
+	attachMetadata
 	programID kernel.ProgramID
 	ifname    string
 	direction TCDirection
@@ -294,6 +314,7 @@ func (s TCAttachSpec) WithNetns(netns string) TCAttachSpec {
 
 // TCXAttachSpec specifies how to attach TCX.
 type TCXAttachSpec struct {
+	attachMetadata
 	programID kernel.ProgramID
 	ifname    string
 	direction TCDirection
@@ -341,5 +362,50 @@ func (s TCXAttachSpec) WithPriority(p int) TCXAttachSpec {
 // If non-empty, attachment is performed in that network namespace.
 func (s TCXAttachSpec) WithNetns(netns string) TCXAttachSpec {
 	s.netns = netns
+	return s
+}
+
+// WithMetadata builders attach user key/value labels to a spec. They are
+// grouped here because the body is identical for every attach kind (set
+// the embedded attachMetadata field, return the concrete type); each
+// returns its own type so it composes with the other WithX builders.
+
+func (s TracepointAttachSpec) WithMetadata(md map[string]string) TracepointAttachSpec {
+	s.metadata = md
+	return s
+}
+
+func (s KprobeAttachSpec) WithMetadata(md map[string]string) KprobeAttachSpec {
+	s.metadata = md
+	return s
+}
+
+func (s UprobeAttachSpec) WithMetadata(md map[string]string) UprobeAttachSpec {
+	s.metadata = md
+	return s
+}
+
+func (s FentryAttachSpec) WithMetadata(md map[string]string) FentryAttachSpec {
+	s.metadata = md
+	return s
+}
+
+func (s FexitAttachSpec) WithMetadata(md map[string]string) FexitAttachSpec {
+	s.metadata = md
+	return s
+}
+
+func (s XDPAttachSpec) WithMetadata(md map[string]string) XDPAttachSpec {
+	s.metadata = md
+	return s
+}
+
+func (s TCAttachSpec) WithMetadata(md map[string]string) TCAttachSpec {
+	s.metadata = md
+	return s
+}
+
+func (s TCXAttachSpec) WithMetadata(md map[string]string) TCXAttachSpec {
+	s.metadata = md
 	return s
 }

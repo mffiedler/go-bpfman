@@ -20,6 +20,7 @@ type DispatcherMember struct {
 	Priority     int                `json:"priority"`
 	ProceedOn    uint32             `json:"proceed_on"`
 	Ifname       string             `json:"ifname"`
+	Metadata     map[string]string  `json:"metadata"`
 }
 
 // DispatcherMemberSpec describes an extension program that should be
@@ -36,6 +37,7 @@ type DispatcherMemberSpec struct {
 	Priority       int                `json:"priority"`
 	ProceedOn      uint32             `json:"proceed_on"`
 	Ifname         string             `json:"ifname"`
+	Metadata       map[string]string  `json:"metadata"`
 }
 
 // DispatcherRuntime holds the kernel-assigned identifiers for the
