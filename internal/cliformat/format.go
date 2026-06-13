@@ -500,7 +500,7 @@ func formatLinkResultTable(link bpfman.Link) string {
 	} else {
 		specFields = append(specFields, "    Kernel Link ID:\tNone")
 	}
-	specFields = append(specFields, "    Metadata:\tNone")
+	specFields = append(specFields, fmt.Sprintf("    Metadata:\t%s", formatMetadata(link.Record.Metadata)))
 	if link.Record.PinPath != nil {
 		specFields = append(specFields, fmt.Sprintf("    Pin Path:\t%s", link.Record.PinPath.String()))
 	} else {

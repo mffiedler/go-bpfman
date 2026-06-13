@@ -35,6 +35,28 @@ func TestFormatLinkResultTable_ExposesManagedAndKernelIDs(t *testing.T) {
 	}
 }
 
+func TestFormatLinkResultTable_ShowsMetadata(t *testing.T) {
+	t.Parallel()
+
+	link := bpfman.Link{
+		Record: bpfman.LinkRecord{
+			ID:        2_123_456_789,
+			ProgramID: 42,
+			Kind:      bpfman.LinkKindTracepoint,
+			Details:   bpfman.TracepointDetails{Group: "sched", Name: "sched_switch"},
+			Metadata:  map[string]string{"owner": "acme"},
+		},
+	}
+
+	output, err := FormatLinkResult(link, &OutputFlags{Output: OutputValue{Value: "table"}})
+	if err != nil {
+		t.Fatalf("FormatLinkResult() error = %v", err)
+	}
+	if !strings.Contains(output, "owner=acme") {
+		t.Errorf("link result table should show metadata owner=acme:\n%s", output)
+	}
+}
+
 func TestFormatDispatcherSnapshotTable_ExposesMemberManagedAndKernelIDs(t *testing.T) {
 	t.Parallel()
 
