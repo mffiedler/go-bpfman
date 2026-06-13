@@ -3,7 +3,6 @@ package cliformat
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/kernel"
@@ -161,22 +160,6 @@ func TestDefaultColumns(t *testing.T) {
 	}
 }
 
-func TestWideColumns(t *testing.T) {
-	t.Parallel()
-
-	cols := WideColumns()
-	if len(cols.Columns) != 8 {
-		t.Errorf("WideColumns() has %d columns, want 8", len(cols.Columns))
-	}
-
-	expected := []string{"PROGRAM_ID", "TYPE", "NAME", "MAP_IDS", "LINK_IDS", "ATTACH", "TAG", "SOURCE"}
-	for i, col := range cols.Columns {
-		if col.Name != expected[i] {
-			t.Errorf("WideColumns()[%d].Name = %q, want %q", i, col.Name, expected[i])
-		}
-	}
-}
-
 func TestDefaultLinkColumns_ExposeManagedAndKernelIDs(t *testing.T) {
 	t.Parallel()
 
@@ -302,68 +285,5 @@ func TestExtractAttach_TracepointDetails(t *testing.T) {
 	got := col.ExtractValue(prog)
 	if got != "syscalls/sys_enter_open" {
 		t.Errorf("ATTACH = %q, want %q", got, "syscalls/sys_enter_open")
-	}
-}
-
-func TestIntegration_FormatProgramsCompositeWide(t *testing.T) {
-	t.Parallel()
-
-	result := bpfman.ProgramListResult{
-		ObservedAt: time.Now(),
-		Programs: []bpfman.Program{
-			{
-				Record: bpfman.ProgramRecord{
-					ProgramID: 42,
-					Load:      bpfman.TestLoadSpecWithPath(bpfman.ProgramTypeXDP, "/path/to/prog.o"),
-					Meta: bpfman.ProgramMeta{
-						Name: "xdp_pass",
-					},
-				},
-				Status: bpfman.ProgramStatus{
-					Kernel: &kernel.Program{
-						ID:     42,
-						Tag:    "abc123",
-						MapIDs: []kernel.MapID{1, 2},
-					},
-					Links: []bpfman.Link{
-						{
-							Record: bpfman.LinkRecord{
-								ID:   100,
-								Kind: bpfman.LinkKindXDP,
-								Details: bpfman.XDPDetails{
-									Interface: "eth0",
-									Position:  1,
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	flags := &OutputFlags{Output: OutputValue{Value: "wide"}}
-	output, err := FormatProgramsComposite(result, flags)
-	if err != nil {
-		t.Fatalf("FormatProgramsComposite() error = %v", err)
-	}
-
-	// Check all wide columns appear in header
-	expectedHeaders := []string{"PROGRAM_ID", "TYPE", "NAME", "MAP_IDS", "LINK_IDS", "ATTACH", "TAG", "SOURCE"}
-	for _, h := range expectedHeaders {
-		if !strings.Contains(output, h) {
-			t.Errorf("Wide output missing header %q: %s", h, output)
-		}
-	}
-
-	// Check data values
-	if !strings.Contains(output, "42") {
-		t.Errorf("Wide output missing program_id: %s", output)
-	}
-	if !strings.Contains(output, "xdp_pass") {
-		t.Errorf("Wide output missing name: %s", output)
-	}
-	if !strings.Contains(output, "abc123") {
-		t.Errorf("Wide output missing tag: %s", output)
 	}
 }

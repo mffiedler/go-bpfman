@@ -19,11 +19,6 @@ func TestOutputFlags_Format(t *testing.T) {
 			want:   OutputFormatTable,
 		},
 		{
-			name:   "wide",
-			output: "wide",
-			want:   OutputFormatWide,
-		},
-		{
 			name:   "tree",
 			output: "tree",
 			want:   OutputFormatTree,

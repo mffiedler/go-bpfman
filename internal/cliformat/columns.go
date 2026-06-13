@@ -33,7 +33,7 @@ type ColumnInfo struct {
 }
 
 // ProgramColumnRegistry returns all available columns for programs.
-// This is the authoritative source - DefaultColumns/WideColumns derive from it.
+// This is the authoritative source - DefaultColumns derives from it.
 func ProgramColumnRegistry() []ColumnInfo {
 	return []ColumnInfo{
 		{Name: "PROGRAM_ID", Description: "Program ID",
@@ -154,7 +154,7 @@ func programColumnIndex() map[string]ColumnInfo {
 }
 
 // MustSelectProgramColumns selects columns by name, panicking if any are unknown.
-// Use this for compile-time-known column sets (default, wide).
+// Use this for compile-time-known column sets (the default).
 func MustSelectProgramColumns(names []string) ColumnSet {
 	cs, err := selectProgramColumns(names)
 	if err != nil {
@@ -180,11 +180,8 @@ func selectProgramColumns(names []string) (ColumnSet, error) {
 	return ColumnSet{Columns: columns}, nil
 }
 
-// Column name constants for default and wide output.
-var (
-	defaultColumnNames = []string{"PROGRAM_ID", "TYPE", "NAME", "SOURCE"}
-	wideColumnNames    = []string{"PROGRAM_ID", "TYPE", "NAME", "MAP_IDS", "LINK_IDS", "ATTACH", "TAG", "SOURCE"}
-)
+// Column names for the default output.
+var defaultColumnNames = []string{"PROGRAM_ID", "TYPE", "NAME", "SOURCE"}
 
 // ExtractValue extracts a value from a program using the column's extractor.
 func (cs ColumnSpec) ExtractValue(prog bpfman.Program) string {
@@ -222,14 +219,8 @@ func DefaultColumns() ColumnSet {
 	return MustSelectProgramColumns(defaultColumnNames)
 }
 
-// WideColumns returns the wide table columns.
-// Includes additional detail: MAP_IDS, LINK_IDS, ATTACH, TAG
-func WideColumns() ColumnSet {
-	return MustSelectProgramColumns(wideColumnNames)
-}
-
 // LinkColumnRegistry returns all available columns for links.
-// This is the authoritative source - DefaultLinkColumns/WideLinkColumns derive from it.
+// This is the authoritative source - DefaultLinkColumns derives from it.
 func LinkColumnRegistry() []ColumnInfo {
 	return []ColumnInfo{
 		{Name: "LINK_ID", Description: "Link ID",
@@ -287,7 +278,7 @@ func linkColumnIndex() map[string]ColumnInfo {
 }
 
 // MustSelectLinkColumns selects columns by name, panicking if any are unknown.
-// Use this for compile-time-known column sets (default, wide).
+// Use this for compile-time-known column sets (the default).
 func MustSelectLinkColumns(names []string) ColumnSet {
 	cs, err := selectLinkColumns(names)
 	if err != nil {
@@ -313,20 +304,12 @@ func selectLinkColumns(names []string) (ColumnSet, error) {
 	return ColumnSet{Columns: columns}, nil
 }
 
-// Link column name constants for default and wide output.
-var (
-	defaultLinkColumnNames = []string{"LINK_ID", "KERNEL_LINK_ID", "KIND", "PROGRAM_ID", "PIN_PATH"}
-	wideLinkColumnNames    = []string{"LINK_ID", "KERNEL_LINK_ID", "KIND", "PROGRAM_ID", "ATTACH", "PIN_PATH", "CREATED_AT"}
-)
+// Link column names for the default output.
+var defaultLinkColumnNames = []string{"LINK_ID", "KERNEL_LINK_ID", "KIND", "PROGRAM_ID", "PIN_PATH"}
 
 // DefaultLinkColumns returns the standard table columns for links.
 func DefaultLinkColumns() ColumnSet {
 	return MustSelectLinkColumns(defaultLinkColumnNames)
-}
-
-// WideLinkColumns returns the wide table columns for links.
-func WideLinkColumns() ColumnSet {
-	return MustSelectLinkColumns(wideLinkColumnNames)
 }
 
 // ExtractLinkValue extracts a value from a link using the column's extractor.

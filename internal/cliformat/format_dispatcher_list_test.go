@@ -74,12 +74,4 @@ func TestFormatDispatcherListTable_SingleListingCarriesNetns(t *testing.T) {
 			t.Errorf("table missing %q:\n%s", want, table)
 		}
 	}
-
-	wide, err := FormatDispatcherList(sampleDispatcherSummaries(), &OutputFlags{Output: OutputValue{Value: "wide"}})
-	if err != nil {
-		t.Fatalf("FormatDispatcherList(wide) error = %v", err)
-	}
-	if wide != table {
-		t.Error("wide must alias the single table listing")
-	}
 }

@@ -106,8 +106,6 @@ func FormatProgram(prog bpfman.Program, flags *OutputFlags) (string, error) {
 		return formatProgramTable(prog), nil
 	case OutputFormatJSONPath:
 		return formatProgramJSONPath(prog, flags.JSONPathExpr())
-	case OutputFormatWide:
-		return "", fmt.Errorf("output format %q is only supported for list commands", flags.Output.Value)
 	default:
 		return formatProgramTable(prog), nil
 	}
@@ -420,8 +418,6 @@ func FormatLinkList(links []bpfman.LinkRecord, flags *OutputFlags) (string, erro
 		return formatLinkListJSON(links)
 	case OutputFormatTable:
 		return formatLinkListTable(links), nil
-	case OutputFormatWide:
-		return formatLinkListWide(links), nil
 	case OutputFormatJSONPath:
 		return formatLinkListJSONPath(links, flags.JSONPathExpr())
 	default:
@@ -453,10 +449,6 @@ func formatLinkListTable(links []bpfman.LinkRecord) string {
 	return DefaultLinkColumns().FormatLinkTable(links)
 }
 
-func formatLinkListWide(links []bpfman.LinkRecord) string {
-	return WideLinkColumns().FormatLinkTable(links)
-}
-
 // FormatLinkResult formats a link result (from attach command) according to
 // the specified output flags.
 func FormatLinkResult(link bpfman.Link, flags *OutputFlags) (string, error) {
@@ -475,8 +467,6 @@ func FormatLinkResult(link bpfman.Link, flags *OutputFlags) (string, error) {
 		return formatLinkResultTable(link), nil
 	case OutputFormatJSONPath:
 		return executeJSONPath(link, flags.JSONPathExpr())
-	case OutputFormatWide:
-		return "", fmt.Errorf("output format %q is only supported for list commands", flags.Output.Value)
 	default:
 		return formatLinkResultTable(link), nil
 	}
@@ -897,8 +887,6 @@ func FormatProgramsComposite(result bpfman.ProgramListResult, flags *OutputFlags
 		return executeJSONPath(result, flags.JSONPathExpr())
 	case OutputFormatTable:
 		return formatProgramsCompositeTable(result), nil
-	case OutputFormatWide:
-		return formatProgramsCompositeWide(result), nil
 	default:
 		return formatProgramsCompositeTable(result), nil
 	}
@@ -925,11 +913,6 @@ func formatProgramsCompositeTable(result bpfman.ProgramListResult) string {
 	return b.String()
 }
 
-// formatProgramsCompositeWide formats the program list with wide columns.
-func formatProgramsCompositeWide(result bpfman.ProgramListResult) string {
-	return WideColumns().FormatTable(result.Programs)
-}
-
 // FormatDispatcherList formats a list of dispatcher summaries.
 func FormatDispatcherList(summaries []platform.DispatcherSummary, flags *OutputFlags) (string, error) {
 	format, err := flags.Format()
@@ -953,11 +936,7 @@ func FormatDispatcherList(summaries []platform.DispatcherSummary, flags *OutputF
 		}
 		result := platform.DispatcherListResult{Dispatchers: summaries}
 		return executeJSONPath(result, flags.JSONPathExpr())
-	case OutputFormatTable, OutputFormatWide:
-		// dispatcher list is a developer diagnostic with one
-		// listing: the table carries every summary column,
-		// NETNS included, so wide is an alias rather than a
-		// second view to maintain.
+	case OutputFormatTable:
 		return formatDispatcherListTable(summaries), nil
 	default:
 		return formatDispatcherListTable(summaries), nil

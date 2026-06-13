@@ -67,7 +67,7 @@ bpftool link list | grep -q "^${kernel_link_id}:" || fail "kernel link $kernel_l
 
 echo "kernel link id for link $link: $kernel_link_id"
 echo "pin path for link $link: $pin_path"
-bpfman link list -o wide
+bpfman link list
 
 bpfman link detach "$link"
 bpfman program unload "$prog"

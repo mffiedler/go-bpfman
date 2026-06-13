@@ -28,7 +28,7 @@ while the fd is alive. It does not prove persistence across command
 boundaries.
 
 A test or example that runs one `bpfman link attach --container-pid` command
-and then checks `bpfman link list -o wide` from a second command would not prove
+and then checks `bpfman link list` from a second command would not prove
 that the managed link works if it only observes `KERNEL_LINK_ID=<none>`. It
 would be characterising the broken state: the store row still renders after the
 process that held the attachment fd has exited. That is useful evidence for the
