@@ -214,9 +214,9 @@ func TestListPrograms_ReturnsAllFields(t *testing.T) {
 	// List programs
 	result, err := fix.Manager.ListPrograms(ctx)
 	require.NoError(t, err, "List failed")
-	require.Len(t, result.Programs, 1, "expected 1 managed program")
+	require.Len(t, result, 1, "expected 1 managed program")
 
-	prog := result.Programs[0]
+	prog := result[0]
 	assert.Equal(t, "list_prog", prog.Record.Meta.Name, "Spec.Meta.Name")
 	assert.Equal(t, "list-test-program", prog.Record.Meta.Metadata["bpfman.io/ProgramName"])
 	assert.Equal(t, "platform", prog.Record.Meta.Metadata["team"])
@@ -251,7 +251,7 @@ func TestLoadProgram_WithDuplicateName_BothSucceed(t *testing.T) {
 	// Both should be in the list
 	result, err := fix.Manager.ListPrograms(ctx)
 	require.NoError(t, err)
-	assert.Len(t, result.Programs, 2, "expected 2 programs")
+	assert.Len(t, result, 2, "expected 2 programs")
 }
 
 // TestLoadProgram_WithDifferentNames_BothSucceed verifies that:
@@ -278,7 +278,7 @@ func TestLoadProgram_WithDifferentNames_BothSucceed(t *testing.T) {
 
 	result, err := fix.Manager.ListPrograms(ctx)
 	require.NoError(t, err, "List failed")
-	assert.Len(t, result.Programs, 2, "expected 2 programs")
+	assert.Len(t, result, 2, "expected 2 programs")
 }
 
 // TestUnloadProgram_WhenProgramExists_RemovesIt verifies that:
@@ -304,7 +304,7 @@ func TestUnloadProgram_WhenProgramExists_RemovesIt(t *testing.T) {
 	// Verify program is gone
 	result, err := fix.Manager.ListPrograms(ctx)
 	require.NoError(t, err)
-	assert.Empty(t, result.Programs, "expected no managed programs after unload")
+	assert.Empty(t, result, "expected no managed programs after unload")
 }
 
 // TestLoadProgram_AfterUnload_NameBecomesAvailable verifies that:
@@ -754,5 +754,5 @@ func TestListPrograms_AllProgramTypes_ReturnsCorrectTypes(t *testing.T) {
 	// List all programs
 	result, err := fix.Manager.ListPrograms(ctx)
 	require.NoError(t, err, "List failed")
-	require.Len(t, result.Programs, len(programTypes), "expected %d programs", len(programTypes))
+	require.Len(t, result, len(programTypes), "expected %d programs", len(programTypes))
 }

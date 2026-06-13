@@ -36,7 +36,7 @@ func (s *Server) List(ctx context.Context, req *pb.ListRequest) (*pb.ListRespons
 	}
 
 	var results []*pb.ListResponse_ListResult
-	for _, prog := range result.Programs {
+	for _, prog := range result {
 		// Only include programs that are also in kernel
 		if prog.Status.Kernel == nil {
 			continue

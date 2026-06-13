@@ -264,8 +264,8 @@ func (m *Manager) ListLinksScopedToPrograms(ctx context.Context, programOpts []b
 	if err != nil {
 		return nil, err
 	}
-	allowed := make(map[kernel.ProgramID]struct{}, len(progs.Programs))
-	for _, p := range progs.Programs {
+	allowed := make(map[kernel.ProgramID]struct{}, len(progs))
+	for _, p := range progs {
 		allowed[p.Record.ProgramID] = struct{}{}
 	}
 
@@ -397,18 +397,18 @@ func (m *Manager) FindLoadedProgramByMetadata(ctx context.Context, key, value st
 	}
 }
 
-// ListPrograms returns all managed programs with full spec and status.
-// This returns the canonical bpfman.ProgramListResult type with both Spec (from store)
-// and Status (from kernel enumeration + filesystem checks).
-// Optional ListOption arguments filter the results.
-// Results are ordered deterministically by kernel ID, then by type+name for ties.
-func (m *Manager) ListPrograms(ctx context.Context, opts ...bpfman.ListOption) (bpfman.ProgramListResult, error) {
+// ListPrograms returns all managed programs with full spec and status,
+// ordered deterministically by kernel ID (then type+name for ties).
+// Optional ListOption arguments filter the results. This is the
+// internal primitive used by delete, the link-scope filter and the
+// gRPC server; the user-facing `program list` uses ListProgramEntries.
+func (m *Manager) ListPrograms(ctx context.Context, opts ...bpfman.ListOption) ([]bpfman.Program, error) {
 	filter := bpfman.ApplyListOptions(opts...)
 
 	scanner := m.rt.BPFFS().Scanner()
 	obs, err := inspect.Snapshot(ctx, m.store, m.kernel, scanner)
 	if err != nil {
-		return bpfman.ProgramListResult{}, fmt.Errorf("snapshot: %w", err)
+		return nil, fmt.Errorf("snapshot: %w", err)
 	}
 
 	// Initialise non-nil so an empty result is len()==0 rather than
@@ -451,11 +451,7 @@ func (m *Manager) ListPrograms(ctx context.Context, opts ...bpfman.ListOption) (
 		return cmp.Compare(a.Record.Meta.Name, b.Record.Meta.Name)
 	})
 
-	return bpfman.ProgramListResult{
-		ObservedAt: obs.Meta.ObservedAt,
-		Host:       GetHostInfo(),
-		Programs:   programs,
-	}, nil
+	return programs, nil
 }
 
 // ListProgramEntries lists programs as summary entries for the user-

@@ -1277,7 +1277,7 @@ print $r.prog.record.program_idd`
 	assert.Contains(t, issues[0].Msg, `"program_id"`)
 }
 
-func TestCheck_BPFManProgramListResultShape_TopLevelFieldTypoRejected(t *testing.T) {
+func TestCheck_BPFManProgramListShape_TopLevelFieldTypoRejected(t *testing.T) {
 	t.Parallel()
 
 	src := `guard listed <- bpfman program list -o json
@@ -1289,7 +1289,7 @@ print $listed.progams[0].record.program_id`
 	assert.Contains(t, issues[0].Msg, `"programs"`)
 }
 
-func TestCheck_BPFManProgramListResultShape_ValidProgramFieldIsClean(t *testing.T) {
+func TestCheck_BPFManProgramListShape_ValidProgramFieldIsClean(t *testing.T) {
 	t.Parallel()
 
 	src := `guard listed <- bpfman program list -o json
@@ -1298,7 +1298,7 @@ print $listed.programs[0].record.program_id`
 	assert.Empty(t, issues)
 }
 
-func TestCheck_BPFManProgramListResultShape_WrapperFieldsAreClean(t *testing.T) {
+func TestCheck_BPFManProgramListShape_WrapperFieldsAreClean(t *testing.T) {
 	t.Parallel()
 
 	// The sealed wrapper exposes observed_at and host alongside
@@ -1313,7 +1313,7 @@ print $listed.programs[0].record.program_id`
 	assert.Empty(t, issues)
 }
 
-func TestCheck_BPFManProgramListResultShape_WrapperFieldTypoRejected(t *testing.T) {
+func TestCheck_BPFManProgramListShape_WrapperFieldTypoRejected(t *testing.T) {
 	t.Parallel()
 
 	// A typo on a non-programs wrapper field is rejected too, so the
@@ -1327,7 +1327,7 @@ print $listed.observed_att`
 	assert.Contains(t, issues[0].Msg, `"observed_at"`)
 }
 
-func TestCheck_BPFManProgramListResultShape_ProgramFieldsAreChecked(t *testing.T) {
+func TestCheck_BPFManProgramListShape_ProgramFieldsAreChecked(t *testing.T) {
 	t.Parallel()
 
 	src := `guard listed <- bpfman program list -o json

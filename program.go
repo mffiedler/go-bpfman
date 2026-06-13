@@ -310,13 +310,6 @@ type HostInfo struct {
 	Machine  string `json:"machine"`
 }
 
-// ProgramListResult contains programs with observation metadata.
-type ProgramListResult struct {
-	ObservedAt time.Time `json:"observed_at"`
-	Host       HostInfo  `json:"host"`
-	Programs   []Program `json:"programs"`
-}
-
 // ProgramListEntry is one row of `program list`. It summarises a
 // program rather than carrying the full managed Program: the common
 // columns are top-level fields, so a kernel-only program -- one loaded
@@ -340,9 +333,9 @@ type ProgramListEntry struct {
 }
 
 // ProgramEntryListResult is the result of `program list`: a set of
-// summary entries with observation metadata. It is distinct from
-// ProgramListResult (the internal []Program primitive) so the listing
-// can carry kernel-only rows without a synthetic Program.
+// summary entries with observation metadata. It is distinct from the
+// internal []Program list returned by ListPrograms so the listing can
+// carry kernel-only rows without a synthetic Program.
 type ProgramEntryListResult struct {
 	ObservedAt time.Time          `json:"observed_at"`
 	Host       HostInfo           `json:"host"`
@@ -351,7 +344,7 @@ type ProgramEntryListResult struct {
 
 // LoadResult wraps the programs returned by Manager.Load. The
 // wrapper exists so CLI JSON output exposes a stable top-level
-// `programs` key matching ProgramListResult and LinkListResult.
+// `programs` key matching ProgramEntryListResult and LinkListResult.
 //
 // Programs are returned in the same order as the input ProgramSpec
 // slice. Tests rely on this ordering contract; do not break it.

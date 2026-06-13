@@ -43,8 +43,8 @@ func (m *Manager) ResolveDeleteProgramIDs(ctx context.Context, all bool, explici
 	if err != nil {
 		return nil, fmt.Errorf("list programs: %w", err)
 	}
-	ids := make([]kernel.ProgramID, len(result.Programs))
-	for i, prog := range result.Programs {
+	ids := make([]kernel.ProgramID, len(result))
+	for i, prog := range result {
 		ids[i] = prog.Record.ProgramID
 	}
 	return ids, nil
@@ -209,7 +209,7 @@ func (m *Manager) programDependentsByOwner(ctx context.Context, recursive bool) 
 	}
 
 	dependentsByOwner := make(map[kernel.ProgramID][]kernel.ProgramID)
-	for _, prog := range result.Programs {
+	for _, prog := range result {
 		if prog.Record.Handles.MapOwnerID != nil {
 			ownerID := *prog.Record.Handles.MapOwnerID
 			dependentsByOwner[ownerID] = append(dependentsByOwner[ownerID], prog.Record.ProgramID)

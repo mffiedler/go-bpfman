@@ -10,20 +10,20 @@ import (
 	"github.com/frobware/go-bpfman"
 )
 
-// TestProgramListResult_EmptyMarshalsAsEmptyArray pins the wire
+// TestProgramEntryListResult_EmptyMarshalsAsEmptyArray pins the wire
 // contract that an empty program list serialises as
 // `"programs": []`, never `"programs": null`. The shell binds
 // list results through ValueFromStruct -> json.Marshal, and a
 // `null` payload would break consumer jq expressions such as
-// `.programs[]`. The producer (manager.ListPrograms) is
-// responsible for returning Programs as a non-nil slice on the
+// `.programs[]`. The producer (manager.ListProgramEntries) is
+// responsible for returning the entries as a non-nil slice on the
 // empty case; this test pins the resulting wire shape so an
 // accidental regression in the producer is caught at the
 // shell-facing boundary rather than in distant e2e scripts.
-func TestProgramListResult_EmptyMarshalsAsEmptyArray(t *testing.T) {
+func TestProgramEntryListResult_EmptyMarshalsAsEmptyArray(t *testing.T) {
 	t.Parallel()
 
-	data, err := json.Marshal(bpfman.ProgramListResult{Programs: []bpfman.Program{}})
+	data, err := json.Marshal(bpfman.ProgramEntryListResult{Programs: []bpfman.ProgramListEntry{}})
 	require.NoError(t, err)
 	assert.Contains(t, string(data), `"programs":[]`)
 	assert.NotContains(t, string(data), `"programs":null`)

@@ -1151,8 +1151,8 @@ func TestListPrograms_EmptyReturnsNonNilSlice(t *testing.T) {
 
 	result, err := fix.Manager.ListPrograms(ctx)
 	require.NoError(t, err)
-	require.NotNil(t, result.Programs, "ListPrograms must return Programs as an empty slice, not nil, when no programs exist")
-	assert.Empty(t, result.Programs)
+	require.NotNil(t, result, "ListPrograms must return Programs as an empty slice, not nil, when no programs exist")
+	assert.Empty(t, result)
 }
 
 // =============================================================================
@@ -1253,7 +1253,7 @@ func TestLoadProgram_PartialFailure_ThirdOfThreeFails(t *testing.T) {
 	// First two should still exist
 	listResult, err := fix.Manager.ListPrograms(ctx)
 	require.NoError(t, err)
-	assert.Len(t, listResult.Programs, 2, "should have 2 programs from first two loads")
+	assert.Len(t, listResult, 2, "should have 2 programs from first two loads")
 }
 
 // =============================================================================
@@ -2772,11 +2772,11 @@ func TestListPrograms_WithMetadataFilter_ReturnsOnlyMatching(t *testing.T) {
 	// List all programs
 	result, err := fix.Manager.ListPrograms(ctx)
 	require.NoError(t, err)
-	assert.Len(t, result.Programs, 4, "should have 4 programs total")
+	assert.Len(t, result, 4, "should have 4 programs total")
 
 	// Count programs with "app=test-app" metadata
 	count := 0
-	for _, p := range result.Programs {
+	for _, p := range result {
 		if p.Record.Meta.Metadata["app"] == "test-app" {
 			count++
 		}
