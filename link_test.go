@@ -170,6 +170,37 @@ func TestParseTCDirection(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+
+	got, err := bpfman.ParseTCDirection("sideways")
+	assert.Error(t, err, "unknown direction should be rejected")
+	assert.Equal(t, bpfman.TCDirection(""), got, "rejected parse returns zero value")
+}
+
+// TestTCDirection_Valid pins strict membership: the zero value and an
+// unrecognised value are invalid; ingress and egress are valid.
+func TestTCDirection_Valid(t *testing.T) {
+	t.Parallel()
+
+	assert.False(t, bpfman.TCDirection("").Valid(), "zero value is not valid")
+	assert.False(t, bpfman.TCDirection("sideways").Valid(), "unknown value is not valid")
+	assert.True(t, bpfman.TCDirectionIngress.Valid())
+	assert.True(t, bpfman.TCDirectionEgress.Valid())
+}
+
+// TestTCDirection_JSONRoundTrip pins the wire form: a plain string enum
+// with no custom (Un)MarshalText round-trips through native encoding.
+func TestTCDirection_JSONRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	for _, d := range []bpfman.TCDirection{bpfman.TCDirectionIngress, bpfman.TCDirectionEgress} {
+		data, err := json.Marshal(d)
+		require.NoErrorf(t, err, "marshal %s", d)
+		assert.Equalf(t, `"`+d.String()+`"`, string(data), "wire form of %s", d)
+
+		var got bpfman.TCDirection
+		require.NoErrorf(t, json.Unmarshal(data, &got), "unmarshal %s", d)
+		assert.Equalf(t, d, got, "round-trip %s", d)
+	}
 }
 
 // TestLinkAttachKindDetailsType_CoversEveryAttachKind asserts

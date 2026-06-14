@@ -56,8 +56,8 @@ func (s TCDispatcherAttachSpec) Validate() error {
 	if s.ProgPinPath == "" {
 		return errors.New("ProgPinPath is required")
 	}
-	if s.Direction == (bpfman.TCDirection{}) {
-		return errors.New("direction is required")
+	if !s.Direction.Valid() {
+		return errors.New("direction must be ingress or egress")
 	}
 	if s.NumProgs < 1 || s.NumProgs > MaxPrograms {
 		return fmt.Errorf("NumProgs %d out of range [1, %d]", s.NumProgs, MaxPrograms)

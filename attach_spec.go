@@ -282,8 +282,8 @@ func NewTCAttachSpec(programID kernel.ProgramID, ifname string, direction TCDire
 	if ifname == "" {
 		return TCAttachSpec{}, errors.New("ifname is required")
 	}
-	if direction == (TCDirection{}) {
-		return TCAttachSpec{}, errors.New("direction is required")
+	if !direction.Valid() {
+		return TCAttachSpec{}, errors.New("direction must be ingress or egress")
 	}
 	prio, err := validatePriority(priority)
 	if err != nil {
@@ -355,8 +355,8 @@ func NewTCXAttachSpec(programID kernel.ProgramID, ifname string, direction TCDir
 	if ifname == "" {
 		return TCXAttachSpec{}, errors.New("ifname is required")
 	}
-	if direction == (TCDirection{}) {
-		return TCXAttachSpec{}, errors.New("direction is required")
+	if !direction.Valid() {
+		return TCXAttachSpec{}, errors.New("direction must be ingress or egress")
 	}
 	if priority < 0 {
 		return TCXAttachSpec{}, invalidAttachSpec("priority must be non-negative, got %d", priority)

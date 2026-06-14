@@ -194,14 +194,29 @@ func (XDPDetails) linkDetails()   {}
 func (XDPDetails) Kind() LinkKind { return LinkKindXDP }
 
 // TCDirection represents the direction of TC traffic (ingress or egress).
-// The unexported field prevents construction of invalid values; use the
-// package-level variables or ParseTCDirection.
-type TCDirection struct{ v string }
+//
+// It is a plain string enum: a value carries no proof of validity, so
+// validity is enforced at the boundaries. ParseTCDirection is the strict
+// parser for external input (case-insensitive), and Valid reports
+// membership of the known set. JSON decoding is permissive, trusting
+// bpfman's own stored records.
+type TCDirection string
 
-var (
-	TCDirectionIngress = TCDirection{"ingress"}
-	TCDirectionEgress  = TCDirection{"egress"}
+const (
+	TCDirectionIngress TCDirection = "ingress"
+	TCDirectionEgress  TCDirection = "egress"
 )
+
+// Valid reports whether d is one of the known directions. Strict
+// membership: the zero value and unrecognised values are not valid.
+func (d TCDirection) Valid() bool {
+	switch d {
+	case TCDirectionIngress, TCDirectionEgress:
+		return true
+	default:
+		return false
+	}
+}
 
 // ParseTCDirection parses a string into a TCDirection.
 // Returns an error if the string is not "ingress" or "egress".
@@ -213,21 +228,11 @@ func ParseTCDirection(s string) (TCDirection, error) {
 	case "egress":
 		return TCDirectionEgress, nil
 	default:
-		return TCDirection{}, fmt.Errorf("invalid TC direction %q: must be 'ingress' or 'egress'", s)
+		return "", fmt.Errorf("invalid TC direction %q: must be 'ingress' or 'egress'", s)
 	}
 }
 
-func (d TCDirection) String() string               { return d.v }
-func (d TCDirection) MarshalText() ([]byte, error) { return []byte(d.v), nil }
-
-func (d *TCDirection) UnmarshalText(b []byte) error {
-	parsed, err := ParseTCDirection(string(b))
-	if err != nil {
-		return err
-	}
-	*d = parsed
-	return nil
-}
+func (d TCDirection) String() string { return string(d) }
 
 // TCDetails contains fields specific to TC attachments.
 // Netns empty means the root network namespace.
