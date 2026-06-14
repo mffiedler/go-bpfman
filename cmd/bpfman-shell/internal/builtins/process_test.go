@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	goruntime "runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -116,8 +117,14 @@ func TestProcessChildren_AggregatesAcrossThreads(t *testing.T) {
 	cmd := startFromNonLeaderThread(t)
 	t.Cleanup(func() { cmd.Process.Kill(); cmd.Wait() })
 
-	_, pids := childrenOf(t, os.Getpid())
-	assert.Contains(t, pids, cmd.Process.Pid,
+	// The child appears in the aggregated children only once the kernel
+	// has updated the forking (non-leader) task's children file, which
+	// lags cmd.Start(); poll rather than read once, mirroring
+	// TestProcessChildren_ReturnsTheForkedWorkerPid.
+	require.Eventually(t, func() bool {
+		_, pids := childrenOf(t, os.Getpid())
+		return slices.Contains(pids, cmd.Process.Pid)
+	}, 5*time.Second, 10*time.Millisecond,
 		"a child forked from a non-leader thread must be observed")
 }
 
