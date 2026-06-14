@@ -210,8 +210,8 @@ func snapshotBaseline(ctx context.Context, mgr *manager.Manager) (map[kernel.Pro
 	if err != nil {
 		return nil, nil, fmt.Errorf("list programs: %w", err)
 	}
-	progIDs := make(map[kernel.ProgramID]struct{}, len(progs.Programs))
-	for _, p := range progs.Programs {
+	progIDs := make(map[kernel.ProgramID]struct{}, len(progs))
+	for _, p := range progs {
 		progIDs[p.Record.ProgramID] = struct{}{}
 	}
 
@@ -290,7 +290,7 @@ func assertSuiteCleanState(rt *suiteRuntime) bool {
 		fmt.Fprintf(os.Stderr, "e2e suite teardown: list programs: %v\n", err)
 	} else {
 		var newProgs []bpfman.Program
-		for _, p := range progResult.Programs {
+		for _, p := range progResult {
 			if _, inherited := rt.baselinePrograms[p.Record.ProgramID]; inherited {
 				continue
 			}

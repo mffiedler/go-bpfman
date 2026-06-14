@@ -364,10 +364,10 @@ func (e *TestEnv) List(ctx context.Context) ([]bpfman.Program, error) {
 		return nil, err
 	}
 	if !e.shared {
-		return result.Programs, nil
+		return result, nil
 	}
 	mine := make([]bpfman.Program, 0, e.scopeProgramCount())
-	for _, p := range result.Programs {
+	for _, p := range result {
 		if p.Status.Kernel == nil {
 			continue
 		}
