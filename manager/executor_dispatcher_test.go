@@ -15,36 +15,35 @@ func TestEffectivePriority(t *testing.T) {
 	assert.Equal(t, 99, effectivePriority(99))
 }
 
-func TestSortRebuildSlots_ZeroPrioritySortsAsDefault(t *testing.T) {
+func TestSortRebuildSlots_LegacyZeroPrioritySortsAsDefault(t *testing.T) {
 	t.Parallel()
 
 	slots := []rebuildSlot{
 		{ProgramName: "low", Priority: 10},
-		{ProgramName: "unset", Priority: 0}, // effective 50
+		{ProgramName: "legacy", Priority: 0},
 		{ProgramName: "high", Priority: 100},
 	}
 	sortRebuildSlots(slots)
 	assert.Equal(t, "low", slots[0].ProgramName)
 	assert.Equal(t, 10, slots[0].Priority)
-	assert.Equal(t, "unset", slots[1].ProgramName)
-	assert.Equal(t, 0, slots[1].Priority, "raw value preserved")
+	assert.Equal(t, "legacy", slots[1].ProgramName)
 	assert.Equal(t, "high", slots[2].ProgramName)
 }
 
-func TestSortRebuildSlots_ZeroPriorityTiebreaksWithExplicit50(t *testing.T) {
+func TestSortRebuildSlots_LegacyZeroPriorityTiebreaksWithExplicit50(t *testing.T) {
 	t.Parallel()
 
 	slots := []rebuildSlot{
 		{ProgramName: "explicit", Priority: 50},
-		{ProgramName: "unset", Priority: 0},
+		{ProgramName: "legacy", Priority: 0},
 	}
 	sortRebuildSlots(slots)
-	// Both have effective priority 50; name tiebreak: "explicit" < "unset".
+	// Both have effective priority 50; name tiebreak: "explicit" < "legacy".
 	assert.Equal(t, "explicit", slots[0].ProgramName)
-	assert.Equal(t, "unset", slots[1].ProgramName)
+	assert.Equal(t, "legacy", slots[1].ProgramName)
 }
 
-func TestSortRebuildSlots_AllZeroPriority(t *testing.T) {
+func TestSortRebuildSlots_AllLegacyZeroPriority(t *testing.T) {
 	t.Parallel()
 
 	slots := []rebuildSlot{

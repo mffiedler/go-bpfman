@@ -49,7 +49,7 @@ func TestUnload_MapsPinsFailure_IsNonFatalAndStillCleansEmptyDispatcher(t *testi
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
 
-	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo", 0)
 	require.NoError(t, err)
 	_, err = fix.Attach(ctx, attachSpec)
 	require.NoError(t, err, "Attach should succeed")
@@ -101,7 +101,7 @@ func TestUnload_DeleteProgramFailure_RetryToleratesRemovedDispatcher(t *testing.
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo", 0)
 	require.NoError(t, err)
 	_, err = fix.Attach(ctx, attachSpec)
 	require.NoError(t, err)
@@ -148,7 +148,7 @@ func TestUnload_BytecodeDirFailure_IsNonFatalAndStillCleansEmptyDispatcher(t *te
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo", 0)
 	require.NoError(t, err)
 	_, err = fix.Attach(ctx, attachSpec)
 	require.NoError(t, err)
@@ -199,7 +199,7 @@ func TestUnload_PreDetachFailure_LeavesDispatcherInPlace(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
 
-	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo", 0)
 	require.NoError(t, err)
 	link, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err)
@@ -247,7 +247,7 @@ func TestDetach_DispatcherRevisionDirFailure_IsNonFatal(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo", 0)
 	require.NoError(t, err)
 	link, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err)

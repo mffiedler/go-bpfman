@@ -7,18 +7,14 @@
 # covers XDP.
 #
 # Three programs attached at priorities 25, 0, and 75 in that
-# order. The stored priority is exactly what was requested (0
-# means 0, not "default" rewritten to 50). The effective
-# ordering, on the other hand, treats priority 0 as 50, so the
-# positions come out:
+# order. Priority 0 is normalised to the default priority 50
+# before the link is stored, so the positions come out:
 #
 #   priority 25 -> position 0  (smallest effective)
-#   priority  0 -> position 1  (effective 50; lands between 25 and 75)
+#   priority 50 -> position 1  (requested as 0; lands between 25 and 75)
 #   priority 75 -> position 2  (largest effective)
 #
-# Together these prove the two priority axes are decoupled:
-# the user-visible value is preserved verbatim, the
-# ordering-only adjustment lives behind it.
+# Together these prove the stored and effective priority agree.
 #
 # Run from e2e/:
 #
@@ -46,14 +42,13 @@ guard g_25 <- bpfman link get $l_25
 guard g_0 <- bpfman link get $l_0
 guard g_75 <- bpfman link get $l_75
 
-# Stored priority is verbatim: 0 is preserved, not rewritten to
-# the effective-ordering value 50.
+# Stored priority is normalised: requested 0 is rewritten to 50.
 assert $g_25.record.details.priority == 25
-assert $g_0.record.details.priority == 0
+assert $g_0.record.details.priority == 50
 assert $g_75.record.details.priority == 75
 
-# Effective ordering treats 0 as 50, so the zero-priority link
-# lands between 25 and 75 rather than ahead of either.
+# The default-priority link lands between 25 and 75 rather than
+# ahead of either.
 assert $g_25.record.details.position == 0
 assert $g_0.record.details.position == 1
 assert $g_75.record.details.position == 2

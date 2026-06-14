@@ -106,12 +106,10 @@ func (s *Server) attachTracepoint(ctx context.Context, writeLock lock.WriterScop
 func (s *Server) attachXDP(ctx context.Context, writeLock lock.WriterScope, programID kernel.ProgramID, info *pb.XDPAttachInfo) (*pb.AttachResponse, error) {
 	// Build the spec from the request; the manager resolves the
 	// interface name inside the target netns.
-	spec, err := bpfman.NewXDPAttachSpec(programID, info.Iface)
+	spec, err := bpfman.NewXDPAttachSpec(programID, info.Iface, int(info.Priority))
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid XDP attach spec: %v", err)
 	}
-
-	spec = spec.WithPriority(int(info.Priority))
 
 	// Use provided proceed-on or default
 	if len(info.ProceedOn) > 0 {
@@ -145,12 +143,10 @@ func (s *Server) attachXDP(ctx context.Context, writeLock lock.WriterScope, prog
 func (s *Server) attachTC(ctx context.Context, writeLock lock.WriterScope, programID kernel.ProgramID, info *pb.TCAttachInfo) (*pb.AttachResponse, error) {
 	// Build the spec from the request; the manager resolves the
 	// interface name inside the target netns.
-	spec, err := bpfman.NewTCAttachSpecFromString(programID, info.Iface, info.Direction)
+	spec, err := bpfman.NewTCAttachSpecFromString(programID, info.Iface, info.Direction, int(info.Priority))
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid TC attach spec: %v", err)
 	}
-
-	spec = spec.WithPriority(int(info.Priority))
 
 	// Use provided proceed-on if any; otherwise the manager default
 	// (Pipe|DispatcherReturn) applies, matching Rust bpfman.
@@ -200,6 +196,9 @@ func (s *Server) attachTCX(ctx context.Context, writeLock lock.WriterScope, prog
 	// Call manager
 	link, err := s.mgr.Attach(ctx, writeLock, spec)
 	if err != nil {
+		if errors.Is(err, bpfman.ErrInvalidAttachSpec) {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid TCX attach spec: %v", err)
+		}
 		var notFound bpfman.ErrProgramNotFound
 		if errors.As(err, &notFound) {
 			return nil, status.Errorf(codes.NotFound, "program with ID %d not found", programID)

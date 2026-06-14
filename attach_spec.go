@@ -2,9 +2,18 @@ package bpfman
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/frobware/go-bpfman/kernel"
 )
+
+const (
+	// DefaultAttachPriority is the run priority used when a dispatcher
+	// attach request omits priority or explicitly asks for priority 0.
+	DefaultAttachPriority = 50
+)
+
+var ErrInvalidAttachSpec = errors.New("invalid attach spec")
 
 // AttachSpec is a sealed interface satisfied by all concrete attach
 // spec types.  The unexported marker method prevents external packages
@@ -14,6 +23,102 @@ type AttachSpec interface {
 	ProgramID() kernel.ProgramID
 	// Metadata returns user-supplied key/value link labels, nil when none.
 	Metadata() map[string]string
+}
+
+// ValidateAttachSpec validates the spec kinds whose validation has not
+// yet moved into their constructors: uprobe pid bounds and TCX
+// priority. XDP, TC, and the simple probe specs are fully refined at
+// construction and pass through unchanged. It is invoked by the
+// manager as the last gate before acting on a spec.
+func ValidateAttachSpec(spec AttachSpec) (AttachSpec, error) {
+	switch s := spec.(type) {
+	case TracepointAttachSpec:
+		if s.programID == 0 {
+			return nil, invalidAttachSpec("programID is required")
+		}
+		if s.group == "" || s.name == "" {
+			return nil, invalidAttachSpec("tracepoint is required")
+		}
+		return s, nil
+	case KprobeAttachSpec:
+		if s.programID == 0 {
+			return nil, invalidAttachSpec("programID is required")
+		}
+		if s.fnName == "" {
+			return nil, invalidAttachSpec("fnName is required")
+		}
+		return s, nil
+	case UprobeAttachSpec:
+		if s.programID == 0 {
+			return nil, invalidAttachSpec("programID is required")
+		}
+		if s.target == "" {
+			return nil, invalidAttachSpec("target is required")
+		}
+		if s.pid < 0 {
+			return nil, invalidAttachSpec("pid must be non-negative, got %d", s.pid)
+		}
+		if s.containerPid < 0 {
+			return nil, invalidAttachSpec("container pid must be non-negative, got %d", s.containerPid)
+		}
+		return s, nil
+	case FentryAttachSpec:
+		if s.programID == 0 {
+			return nil, invalidAttachSpec("programID is required")
+		}
+		return s, nil
+	case FexitAttachSpec:
+		if s.programID == 0 {
+			return nil, invalidAttachSpec("programID is required")
+		}
+		return s, nil
+	case XDPAttachSpec, TCAttachSpec:
+		// XDP and TC are fully parsed by their constructors
+		// (NewXDPAttachSpec/NewTCAttachSpec): required fields are
+		// checked and priority is normalised and validated there.
+		// By the time such a spec reaches the library it is already
+		// refined, so there is nothing to do here.
+		return spec, nil
+	case TCXAttachSpec:
+		if s.programID == 0 {
+			return nil, invalidAttachSpec("programID is required")
+		}
+		if s.ifname == "" {
+			return nil, invalidAttachSpec("ifname is required")
+		}
+		if s.direction == (TCDirection{}) {
+			return nil, invalidAttachSpec("direction is required")
+		}
+		priority, err := validatePriority(s.priority)
+		if err != nil {
+			return nil, err
+		}
+		s.priority = priority
+		return s, nil
+	default:
+		return nil, invalidAttachSpec("unsupported attach spec type %T", spec)
+	}
+}
+
+func invalidAttachSpec(format string, args ...any) error {
+	return fmt.Errorf("%w: %s", ErrInvalidAttachSpec, fmt.Sprintf(format, args...))
+}
+
+func validatePriority(p int) (int, error) {
+	if p < 0 {
+		return 0, invalidAttachSpec("priority must be non-negative, got %d", p)
+	}
+	if p == 0 {
+		return DefaultAttachPriority, nil
+	}
+	return p, nil
+}
+
+func normalisePriority(p int) int {
+	if p == 0 {
+		return DefaultAttachPriority
+	}
+	return p
 }
 
 // attachMetadata carries user-supplied link labels shared by every attach
@@ -203,14 +308,21 @@ type XDPAttachSpec struct {
 // NewXDPAttachSpec creates an XDPAttachSpec with validated fields.
 // The interface is named, not pre-resolved: the manager resolves the
 // name to an ifindex inside the target namespace at attach time.
-func NewXDPAttachSpec(programID kernel.ProgramID, ifname string) (XDPAttachSpec, error) {
+// Priority is parsed here -- the single boundary: 0 normalises to
+// DefaultAttachPriority and a negative value is rejected, so the
+// stored value is the effective value and the library never re-checks.
+func NewXDPAttachSpec(programID kernel.ProgramID, ifname string, priority int) (XDPAttachSpec, error) {
 	if programID == 0 {
 		return XDPAttachSpec{}, errors.New("programID is required")
 	}
 	if ifname == "" {
 		return XDPAttachSpec{}, errors.New("ifname is required")
 	}
-	return XDPAttachSpec{programID: programID, ifname: ifname}, nil
+	prio, err := validatePriority(priority)
+	if err != nil {
+		return XDPAttachSpec{}, err
+	}
+	return XDPAttachSpec{programID: programID, ifname: ifname, priority: prio}, nil
 }
 
 func (XDPAttachSpec) attachSpec()                   {}
@@ -219,12 +331,6 @@ func (s XDPAttachSpec) Ifname() string              { return s.ifname }
 func (s XDPAttachSpec) Priority() int               { return s.priority }
 func (s XDPAttachSpec) ProceedOn() []int32          { return s.proceedOn }
 func (s XDPAttachSpec) Netns() string               { return s.netns }
-
-// WithPriority returns a new XDPAttachSpec with the priority set.
-func (s XDPAttachSpec) WithPriority(p int) XDPAttachSpec {
-	s.priority = p
-	return s
-}
 
 // WithProceedOn returns a new XDPAttachSpec with the proceed-on actions set.
 func (s XDPAttachSpec) WithProceedOn(po []int32) XDPAttachSpec {
@@ -257,7 +363,10 @@ type TCAttachSpec struct {
 }
 
 // NewTCAttachSpec creates a TCAttachSpec with validated fields.
-func NewTCAttachSpec(programID kernel.ProgramID, ifname string, direction TCDirection) (TCAttachSpec, error) {
+// Priority is parsed here -- the single boundary: 0 normalises to
+// DefaultAttachPriority and a negative value is rejected, so the
+// stored value is the effective value and the library never re-checks.
+func NewTCAttachSpec(programID kernel.ProgramID, ifname string, direction TCDirection, priority int) (TCAttachSpec, error) {
 	if programID == 0 {
 		return TCAttachSpec{}, errors.New("programID is required")
 	}
@@ -267,16 +376,20 @@ func NewTCAttachSpec(programID kernel.ProgramID, ifname string, direction TCDire
 	if direction == (TCDirection{}) {
 		return TCAttachSpec{}, errors.New("direction is required")
 	}
-	return TCAttachSpec{programID: programID, ifname: ifname, direction: direction}, nil
+	prio, err := validatePriority(priority)
+	if err != nil {
+		return TCAttachSpec{}, err
+	}
+	return TCAttachSpec{programID: programID, ifname: ifname, direction: direction, priority: prio}, nil
 }
 
 // NewTCAttachSpecFromString parses a TC direction and creates a TCAttachSpec.
-func NewTCAttachSpecFromString(programID kernel.ProgramID, ifname, direction string) (TCAttachSpec, error) {
+func NewTCAttachSpecFromString(programID kernel.ProgramID, ifname, direction string, priority int) (TCAttachSpec, error) {
 	dir, err := ParseTCDirection(direction)
 	if err != nil {
 		return TCAttachSpec{}, err
 	}
-	return NewTCAttachSpec(programID, ifname, dir)
+	return NewTCAttachSpec(programID, ifname, dir, priority)
 }
 
 func (TCAttachSpec) attachSpec()                   {}
@@ -286,12 +399,6 @@ func (s TCAttachSpec) Direction() TCDirection      { return s.direction }
 func (s TCAttachSpec) Priority() int               { return s.priority }
 func (s TCAttachSpec) ProceedOn() []int32          { return s.proceedOn }
 func (s TCAttachSpec) Netns() string               { return s.netns }
-
-// WithPriority returns a new TCAttachSpec with the priority set.
-func (s TCAttachSpec) WithPriority(p int) TCAttachSpec {
-	s.priority = p
-	return s
-}
 
 // WithProceedOn returns a new TCAttachSpec with the proceed-on actions set.
 func (s TCAttachSpec) WithProceedOn(po []int32) TCAttachSpec {
@@ -333,7 +440,7 @@ func NewTCXAttachSpec(programID kernel.ProgramID, ifname string, direction TCDir
 	if direction == (TCDirection{}) {
 		return TCXAttachSpec{}, errors.New("direction is required")
 	}
-	return TCXAttachSpec{programID: programID, ifname: ifname, direction: direction}, nil
+	return TCXAttachSpec{programID: programID, ifname: ifname, direction: direction, priority: DefaultAttachPriority}, nil
 }
 
 // NewTCXAttachSpecFromString parses a TC direction and creates a TCXAttachSpec.
@@ -354,7 +461,7 @@ func (s TCXAttachSpec) Netns() string               { return s.netns }
 
 // WithPriority returns a new TCXAttachSpec with the priority set.
 func (s TCXAttachSpec) WithPriority(p int) TCXAttachSpec {
-	s.priority = p
+	s.priority = normalisePriority(p)
 	return s
 }
 

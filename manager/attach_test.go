@@ -286,7 +286,7 @@ func TestAttachXDP_PersistsLinkMetadata(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
 
-	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo", 0)
 	require.NoError(t, err)
 	attachSpec = attachSpec.WithMetadata(map[string]string{"owner": "acme", "env": "test"})
 
@@ -314,7 +314,7 @@ func TestAttachTC_PersistsLinkMetadata(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
 
-	attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 0)
 	require.NoError(t, err)
 	attachSpec = attachSpec.WithMetadata(map[string]string{"owner": "acme", "env": "test"})
 
@@ -347,17 +347,17 @@ func TestAttachXDP_RebuildPreservesExistingMemberMetadata(t *testing.T) {
 	require.NoError(t, err)
 
 	// First member, metadata A.
-	specA, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
+	specA, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo", 10)
 	require.NoError(t, err)
-	specA = specA.WithPriority(10).WithMetadata(map[string]string{"owner": "a"})
+	specA = specA.WithMetadata(map[string]string{"owner": "a"})
 	linkA, err := fix.Attach(ctx, specA)
 	require.NoError(t, err, "first attach should succeed")
 
 	// Second member, metadata B -- triggers a full dispatcher rebuild that
 	// re-inserts link A's row.
-	specB, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
+	specB, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo", 20)
 	require.NoError(t, err)
-	specB = specB.WithPriority(20).WithMetadata(map[string]string{"owner": "b"})
+	specB = specB.WithMetadata(map[string]string{"owner": "b"})
 	linkB, err := fix.Attach(ctx, specB)
 	require.NoError(t, err, "second attach should succeed")
 
@@ -429,17 +429,17 @@ func TestAttachTC_RebuildPreservesExistingMemberMetadata(t *testing.T) {
 	require.NoError(t, err)
 
 	// First member, metadata A.
-	specA, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	specA, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 10)
 	require.NoError(t, err)
-	specA = specA.WithPriority(10).WithMetadata(map[string]string{"owner": "a"})
+	specA = specA.WithMetadata(map[string]string{"owner": "a"})
 	linkA, err := fix.Attach(ctx, specA)
 	require.NoError(t, err, "first attach should succeed")
 
 	// Second member, metadata B -- triggers a full TC dispatcher rebuild
 	// that re-inserts link A's row.
-	specB, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	specB, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 20)
 	require.NoError(t, err)
-	specB = specB.WithPriority(20).WithMetadata(map[string]string{"owner": "b"})
+	specB = specB.WithMetadata(map[string]string{"owner": "b"})
 	linkB, err := fix.Attach(ctx, specB)
 	require.NoError(t, err, "second attach should succeed")
 
@@ -728,7 +728,7 @@ func TestXDP_FirstAttachCreatesLink(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Attach to interface (programID, ifname, ifindex)
-	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo", 0)
 	require.NoError(t, err, "failed to create attach spec")
 	link, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err, "AttachXDP should succeed")
@@ -758,7 +758,7 @@ func TestXDP_MultipleAttachesCreateMultipleLinks(t *testing.T) {
 	// Attach multiple times
 	var linkIDs []bpfman.LinkID
 	for i := range 3 {
-		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
+		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo", 0)
 		require.NoError(t, err)
 		link, err := fix.Attach(ctx, attachSpec)
 		require.NoError(t, err, "AttachXDP %d should succeed", i+1)
@@ -787,7 +787,7 @@ func TestXDP_FullLifecycle(t *testing.T) {
 	numAttachments := 3
 	var linkIDs []bpfman.LinkID
 	for i := range numAttachments {
-		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
+		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo", 0)
 		require.NoError(t, err)
 		link, err := fix.Attach(ctx, attachSpec)
 		require.NoError(t, err, "Attach %d should succeed", i+1)
@@ -833,9 +833,8 @@ func TestTC_FirstAttachCreatesLink(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Attach to interface with ingress direction (programID, ifname, ifindex, direction)
-	attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 50)
 	require.NoError(t, err, "failed to create attach spec")
-	attachSpec = attachSpec.WithPriority(50)
 	link, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err, "AttachTC should succeed")
 	require.NotZero(t, link.Record.ID, "link ID should be non-zero")
@@ -862,16 +861,14 @@ func TestTC_IngressAndEgressDirections(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Attach ingress
-	ingressSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	ingressSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 50)
 	require.NoError(t, err)
-	ingressSpec = ingressSpec.WithPriority(50)
 	ingressLink, err := fix.Attach(ctx, ingressSpec)
 	require.NoError(t, err, "Ingress attach should succeed")
 
 	// Attach egress
-	egressSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionEgress)
+	egressSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionEgress, 50)
 	require.NoError(t, err)
-	egressSpec = egressSpec.WithPriority(50)
 	egressLink, err := fix.Attach(ctx, egressSpec)
 	require.NoError(t, err, "Egress attach should succeed")
 
@@ -906,9 +903,8 @@ func TestTC_FullLifecycle(t *testing.T) {
 
 	for _, iface := range interfaces {
 		for _, dir := range directions {
-			attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, iface.name, dir)
+			attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, iface.name, dir, 50)
 			require.NoError(t, err)
-			attachSpec = attachSpec.WithPriority(50)
 			link, err := fix.Attach(ctx, attachSpec)
 			require.NoError(t, err, "Attach %s/%s should succeed", iface.name, dir)
 			linkIDs = append(linkIDs, link.Record.ID)
@@ -1367,7 +1363,7 @@ func TestPinBasedExtension_XDPAttach_UsesProgPinPath(t *testing.T) {
 	require.NotEmpty(t, expectedProgPinPath, "PinPath should be set")
 
 	// Attach the program
-	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "eth0")
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "eth0", 0)
 	require.NoError(t, err)
 	_, err = fix.Attach(ctx, attachSpec)
 	require.NoError(t, err, "Attach should succeed")
@@ -1402,9 +1398,8 @@ func TestPinBasedExtension_TCAttach_UsesProgPinPath(t *testing.T) {
 	require.NotEmpty(t, expectedProgPinPath, "PinPath should be set")
 
 	// Attach the program
-	attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 50)
 	require.NoError(t, err)
-	attachSpec = attachSpec.WithPriority(50)
 	_, err = fix.Attach(ctx, attachSpec)
 	require.NoError(t, err, "Attach should succeed")
 
@@ -1447,7 +1442,7 @@ func TestPinBasedExtension_MultiProgram_XDPAttach_UsesOwnPinPath(t *testing.T) {
 		"XDP program should have same MapPinPath as owner")
 
 	// Attach the XDP program
-	attachSpec, err := bpfman.NewXDPAttachSpec(prog2.Record.ProgramID, "eth0")
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog2.Record.ProgramID, "eth0", 0)
 	require.NoError(t, err)
 	_, err = fix.Attach(ctx, attachSpec)
 	require.NoError(t, err, "Attach should succeed")
@@ -1490,9 +1485,8 @@ func TestPinBasedExtension_MultiProgram_TCAttach_UsesOwnPinPath(t *testing.T) {
 		"TC program should have same MapPinPath as owner")
 
 	// Attach the TC program
-	attachSpec, err := bpfman.NewTCAttachSpec(prog2.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	attachSpec, err := bpfman.NewTCAttachSpec(prog2.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 50)
 	require.NoError(t, err)
-	attachSpec = attachSpec.WithPriority(50)
 	_, err = fix.Attach(ctx, attachSpec)
 	require.NoError(t, err, "Attach should succeed")
 
@@ -1523,7 +1517,7 @@ func TestXDP_DispatcherStateInStore(t *testing.T) {
 	// Attach two extensions
 	var linkIDs []bpfman.LinkID
 	for range 2 {
-		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
+		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo", 0)
 		require.NoError(t, err)
 		link, err := fix.Attach(ctx, attachSpec)
 		require.NoError(t, err)
@@ -1571,9 +1565,8 @@ func TestTC_DispatcherStateInStore(t *testing.T) {
 	require.NoError(t, err)
 
 	// Attach one extension
-	attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 50)
 	require.NoError(t, err)
-	attachSpec = attachSpec.WithPriority(50)
 	link, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err)
 
@@ -1616,7 +1609,7 @@ func TestXDP_DispatcherRebuildRollbackRestoresOuterLink(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo", 0)
 	require.NoError(t, err)
 	_, err = fix.Attach(ctx, attachSpec)
 	require.NoError(t, err)
@@ -1668,9 +1661,8 @@ func TestTC_DispatcherRebuildRollbackRestoresOldFilter(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 50)
 	require.NoError(t, err)
-	attachSpec = attachSpec.WithPriority(50)
 	_, err = fix.Attach(ctx, attachSpec)
 	require.NoError(t, err)
 
@@ -1726,7 +1718,7 @@ func TestXDP_DetachRebuildRollbackAllowsRetry(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo", 0)
 	require.NoError(t, err)
 	first, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err)
@@ -1765,9 +1757,8 @@ func TestTC_DetachRebuildRollbackAllowsRetry(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 50)
 	require.NoError(t, err)
-	attachSpec = attachSpec.WithPriority(50)
 	first, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err)
 	_, err = fix.Attach(ctx, attachSpec)
@@ -1801,11 +1792,11 @@ func TestXDP_UnloadDispatcherMemberRebuildsRemainingMembers(t *testing.T) {
 	secondProg, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	firstAttach, err := bpfman.NewXDPAttachSpec(firstProg.Record.ProgramID, "lo")
+	firstAttach, err := bpfman.NewXDPAttachSpec(firstProg.Record.ProgramID, "lo", 0)
 	require.NoError(t, err)
 	_, err = fix.Attach(ctx, firstAttach)
 	require.NoError(t, err)
-	secondAttach, err := bpfman.NewXDPAttachSpec(secondProg.Record.ProgramID, "lo")
+	secondAttach, err := bpfman.NewXDPAttachSpec(secondProg.Record.ProgramID, "lo", 0)
 	require.NoError(t, err)
 	_, err = fix.Attach(ctx, secondAttach)
 	require.NoError(t, err)
@@ -1841,14 +1832,12 @@ func TestTC_UnloadDispatcherMemberRebuildsRemainingMembers(t *testing.T) {
 	secondProg, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	firstAttach, err := bpfman.NewTCAttachSpec(firstProg.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	firstAttach, err := bpfman.NewTCAttachSpec(firstProg.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 50)
 	require.NoError(t, err)
-	firstAttach = firstAttach.WithPriority(50)
 	_, err = fix.Attach(ctx, firstAttach)
 	require.NoError(t, err)
-	secondAttach, err := bpfman.NewTCAttachSpec(secondProg.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	secondAttach, err := bpfman.NewTCAttachSpec(secondProg.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 50)
 	require.NoError(t, err)
-	secondAttach = secondAttach.WithPriority(50)
 	_, err = fix.Attach(ctx, secondAttach)
 	require.NoError(t, err)
 
@@ -1882,7 +1871,7 @@ func TestXDP_UnloadProgramWithTwoDispatcherLinksRemovesDispatcher(t *testing.T) 
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo", 0)
 	require.NoError(t, err)
 	_, err = fix.Attach(ctx, attachSpec)
 	require.NoError(t, err)
@@ -1924,7 +1913,7 @@ func TestXDP_ExtensionPositionsAreSequential(t *testing.T) {
 
 	var linkIDs []bpfman.LinkID
 	for i := range 3 {
-		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
+		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo", 0)
 		require.NoError(t, err)
 		link, err := fix.Attach(ctx, attachSpec)
 		require.NoError(t, err, "attach %d should succeed", i)
@@ -1973,9 +1962,8 @@ func TestTC_ExtensionPositionsAreSequential(t *testing.T) {
 	// Attach three times to the same interface/direction
 	var linkIDs []bpfman.LinkID
 	for i := range 3 {
-		attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+		attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 50)
 		require.NoError(t, err)
-		attachSpec = attachSpec.WithPriority(50)
 		link, err := fix.Attach(ctx, attachSpec)
 		require.NoError(t, err, "attach %d should succeed", i)
 		linkIDs = append(linkIDs, link.Record.ID)
@@ -2021,7 +2009,7 @@ func TestXDP_PinPathConventions(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo", 0)
 	require.NoError(t, err)
 	link, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err)
@@ -2053,9 +2041,8 @@ func TestTC_PinPathConventions(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 50)
 	require.NoError(t, err)
-	attachSpec = attachSpec.WithPriority(50)
 	link, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err)
 
@@ -2091,9 +2078,8 @@ func TestTC_FilterHandleRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 
 	// Attach a single ingress extension
-	attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 50)
 	require.NoError(t, err)
-	attachSpec = attachSpec.WithPriority(50)
 	link, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err)
 
@@ -2123,9 +2109,8 @@ func TestTC_DispatcherRebuildDetachesOldFilterHandle(t *testing.T) {
 	prog1, err := fix.Load(ctx, spec1, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attach1, err := bpfman.NewTCAttachSpec(prog1.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	attach1, err := bpfman.NewTCAttachSpec(prog1.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 50)
 	require.NoError(t, err)
-	attach1 = attach1.WithPriority(50)
 	_, err = fix.Attach(ctx, attach1)
 	require.NoError(t, err)
 
@@ -2138,9 +2123,8 @@ func TestTC_DispatcherRebuildDetachesOldFilterHandle(t *testing.T) {
 	prog2, err := fix.Load(ctx, spec2, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attach2, err := bpfman.NewTCAttachSpec(prog2.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	attach2, err := bpfman.NewTCAttachSpec(prog2.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 60)
 	require.NoError(t, err)
-	attach2 = attach2.WithPriority(60)
 	_, err = fix.Attach(ctx, attach2)
 	require.NoError(t, err)
 
@@ -2165,9 +2149,9 @@ func TestTC_DispatcherRebuildDetachesOldFilterInNetns(t *testing.T) {
 	prog1, err := fix.Load(ctx, spec1, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attach1, err := bpfman.NewTCAttachSpec(prog1.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	attach1, err := bpfman.NewTCAttachSpec(prog1.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 50)
 	require.NoError(t, err)
-	attach1 = attach1.WithNetns(netnsPath).WithPriority(50)
+	attach1 = attach1.WithNetns(netnsPath)
 	_, err = fix.Attach(ctx, attach1)
 	require.NoError(t, err)
 
@@ -2180,9 +2164,9 @@ func TestTC_DispatcherRebuildDetachesOldFilterInNetns(t *testing.T) {
 	prog2, err := fix.Load(ctx, spec2, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attach2, err := bpfman.NewTCAttachSpec(prog2.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	attach2, err := bpfman.NewTCAttachSpec(prog2.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 60)
 	require.NoError(t, err)
-	attach2 = attach2.WithNetns(netnsPath).WithPriority(60)
+	attach2 = attach2.WithNetns(netnsPath)
 	_, err = fix.Attach(ctx, attach2)
 	require.NoError(t, err)
 
@@ -2207,7 +2191,7 @@ func TestXDP_DetachDeletedNetnsDispatcherRemovesDispatcher(t *testing.T) {
 	prog1, err := fix.Load(ctx, spec1, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attach1, err := bpfman.NewXDPAttachSpec(prog1.Record.ProgramID, "eth0")
+	attach1, err := bpfman.NewXDPAttachSpec(prog1.Record.ProgramID, "eth0", 0)
 	require.NoError(t, err)
 	attach1 = attach1.WithNetns(netnsPath)
 	link1, err := fix.Attach(ctx, attach1)
@@ -2218,7 +2202,7 @@ func TestXDP_DetachDeletedNetnsDispatcherRemovesDispatcher(t *testing.T) {
 	prog2, err := fix.Load(ctx, spec2, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attach2, err := bpfman.NewXDPAttachSpec(prog2.Record.ProgramID, "eth0")
+	attach2, err := bpfman.NewXDPAttachSpec(prog2.Record.ProgramID, "eth0", 0)
 	require.NoError(t, err)
 	attach2 = attach2.WithNetns(netnsPath)
 	_, err = fix.Attach(ctx, attach2)
@@ -2247,9 +2231,9 @@ func TestTC_DetachDeletedNetnsDispatcherRemovesDispatcher(t *testing.T) {
 	prog1, err := fix.Load(ctx, spec1, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attach1, err := bpfman.NewTCAttachSpec(prog1.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	attach1, err := bpfman.NewTCAttachSpec(prog1.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 50)
 	require.NoError(t, err)
-	attach1 = attach1.WithNetns(netnsPath).WithPriority(50)
+	attach1 = attach1.WithNetns(netnsPath)
 	link1, err := fix.Attach(ctx, attach1)
 	require.NoError(t, err)
 
@@ -2258,9 +2242,9 @@ func TestTC_DetachDeletedNetnsDispatcherRemovesDispatcher(t *testing.T) {
 	prog2, err := fix.Load(ctx, spec2, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attach2, err := bpfman.NewTCAttachSpec(prog2.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	attach2, err := bpfman.NewTCAttachSpec(prog2.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 60)
 	require.NoError(t, err)
-	attach2 = attach2.WithNetns(netnsPath).WithPriority(60)
+	attach2 = attach2.WithNetns(netnsPath)
 	_, err = fix.Attach(ctx, attach2)
 	require.NoError(t, err)
 
@@ -2297,7 +2281,7 @@ func TestTC_InvalidDirection(t *testing.T) {
 	require.NoError(t, err)
 
 	// Attempt to create attach spec with invalid direction
-	_, err = bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirection{})
+	_, err = bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirection{}, 0)
 	require.Error(t, err, "creating attach spec with invalid direction should fail")
 
 	// No links should exist
@@ -2446,7 +2430,7 @@ func TestXDPDispatcher_FirstAttachCreatesDispatcher(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo", 0)
 	require.NoError(t, err)
 	link, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err)
@@ -2476,7 +2460,7 @@ func TestXDPDispatcher_MultipleAttachesCreateMultipleLinks(t *testing.T) {
 
 	var linkIDs []bpfman.LinkID
 	for i := range 3 {
-		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
+		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo", 0)
 		require.NoError(t, err)
 		link, err := fix.Attach(ctx, attachSpec)
 		require.NoError(t, err, "AttachXDP %d should succeed", i+1)
@@ -2504,7 +2488,7 @@ func TestXDPDispatcher_DetachDecrementsLinkCount(t *testing.T) {
 	require.NoError(t, err)
 
 	// Attach twice
-	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo", 0)
 	require.NoError(t, err)
 	link1, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err)
@@ -2541,7 +2525,7 @@ func TestXDPDispatcher_FullLifecycle(t *testing.T) {
 	numAttachments := 5
 	var linkIDs []bpfman.LinkID
 	for i := range numAttachments {
-		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo")
+		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo", 0)
 		require.NoError(t, err)
 		link, err := fix.Attach(ctx, attachSpec)
 		require.NoError(t, err, "Attach %d should succeed", i+1)
@@ -2594,7 +2578,7 @@ func TestXDP_AttachToNonExistentInterface(t *testing.T) {
 	fix.Kernel.FailOnIfname("nonexistent0", fmt.Errorf("interface not found: %w", platform.ErrInterfaceNotFound))
 
 	// Attempt to attach to non-existent interface
-	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "nonexistent0")
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "nonexistent0", 0)
 	require.NoError(t, err, "spec creation should succeed")
 	_, err = fix.Attach(ctx, attachSpec)
 	require.Error(t, err, "AttachXDP to non-existent interface should fail")
@@ -2622,9 +2606,8 @@ func TestTC_AttachToNonExistentInterface(t *testing.T) {
 	fix.Kernel.FailOnIfname("nonexistent0", fmt.Errorf("interface not found: %w", platform.ErrInterfaceNotFound))
 
 	// Attempt to attach to non-existent interface
-	attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "nonexistent0", bpfman.TCDirectionIngress)
+	attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "nonexistent0", bpfman.TCDirectionIngress, 50)
 	require.NoError(t, err, "spec creation should succeed")
-	attachSpec = attachSpec.WithPriority(50)
 	_, err = fix.Attach(ctx, attachSpec)
 	require.Error(t, err, "AttachTC to non-existent interface should fail")
 	assert.ErrorIs(t, err, platform.ErrInterfaceNotFound, "error should identify an unresolved interface")

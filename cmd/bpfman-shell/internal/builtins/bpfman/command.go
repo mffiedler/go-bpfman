@@ -740,9 +740,6 @@ func parseLinkAttachXDP(args []runtime.Arg) (*LinkAttachCommand, error) {
 	}
 	progArg = pos[0]
 	iface = driver.ArgText(pos[1])
-	if priority < 0 {
-		return nil, fmt.Errorf("link attach xdp: --priority must be non-negative, got %d", priority)
-	}
 
 	progID, err := parseProgramIDArg(progArg)
 	if err != nil {
@@ -757,11 +754,11 @@ func parseLinkAttachXDP(args []runtime.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach xdp: invalid proceed-on value: %w", err)
 	}
 
-	spec, err := bpfman.NewXDPAttachSpec(progID, iface)
+	spec, err := bpfman.NewXDPAttachSpec(progID, iface, priority)
 	if err != nil {
 		return nil, fmt.Errorf("link attach xdp: %w", err)
 	}
-	spec = spec.WithPriority(priority).WithProceedOnActions(actions)
+	spec = spec.WithProceedOnActions(actions)
 	if netns != "" {
 		spec = spec.WithNetns(netns)
 	}
@@ -846,9 +843,6 @@ func parseLinkAttachTC(args []runtime.Arg) (*LinkAttachCommand, error) {
 	progArg = pos[0]
 	iface = driver.ArgText(pos[1])
 	direction = driver.ArgText(pos[2])
-	if priority < 0 {
-		return nil, fmt.Errorf("link attach tc: --priority must be non-negative, got %d", priority)
-	}
 
 	progID, err := parseProgramIDArg(progArg)
 	if err != nil {
@@ -863,11 +857,11 @@ func parseLinkAttachTC(args []runtime.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach tc: invalid proceed-on value: %w", err)
 	}
 
-	spec, err := bpfman.NewTCAttachSpecFromString(progID, iface, direction)
+	spec, err := bpfman.NewTCAttachSpecFromString(progID, iface, direction, priority)
 	if err != nil {
 		return nil, fmt.Errorf("link attach tc: %w", err)
 	}
-	spec = spec.WithPriority(priority).WithProceedOnActions(actions)
+	spec = spec.WithProceedOnActions(actions)
 	if netns != "" {
 		spec = spec.WithNetns(netns)
 	}

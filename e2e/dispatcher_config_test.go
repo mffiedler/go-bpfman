@@ -148,9 +148,10 @@ func newTCIngressHarness(t *testing.T) dispatcherTestHarness {
 			tcSpec, err := bpfman.NewTCAttachSpec(
 				progID, iface.Name,
 				bpfman.TCDirectionIngress,
+				priority,
 			)
 			require.NoError(t, err)
-			return tcSpec.WithPriority(priority)
+			return tcSpec
 		},
 
 		verifyAttachPresent: func(t *testing.T) {
@@ -197,9 +198,9 @@ func newXDPHarness(t *testing.T) dispatcherTestHarness {
 
 		makeAttachSpec: func(t *testing.T, progID kernel.ProgramID, iface testnet.TestInterface, priority int) bpfman.AttachSpec {
 			t.Helper()
-			xdpSpec, err := bpfman.NewXDPAttachSpec(progID, iface.Name)
+			xdpSpec, err := bpfman.NewXDPAttachSpec(progID, iface.Name, priority)
 			require.NoError(t, err)
-			return xdpSpec.WithPriority(priority)
+			return xdpSpec
 		},
 
 		verifyAttachPresent: func(t *testing.T) {
@@ -414,9 +415,8 @@ func TestTCX_PriorityOrdering(t *testing.T) {
 }
 
 // TestDispatcher_ZeroPriorityDefaultOrdering verifies that attaching
-// a program with priority=0 stores 0 in the link details (not the
-// default value 50) and that the dispatcher correctly orders the
-// program as if its effective priority were 50.
+// a program with priority=0 stores and orders it as the default
+// priority 50.
 func TestDispatcher_ZeroPriorityDefaultOrdering(t *testing.T) {
 	t.Parallel()
 	for _, h := range eachDispatcherType(t) {
@@ -431,8 +431,7 @@ func testZeroPriorityDefaultOrdering(t *testing.T, h dispatcherTestHarness) {
 	progID := h.loadProg(t)
 
 	// Attach three programs: priority 25 (runs first), priority 0
-	// (should behave as effective priority 50), and priority 75
-	// (runs last).
+	// (normalised to default priority 50), and priority 75 (runs last).
 	link25 := h.attach(t, progID, 25)
 	link0 := h.attach(t, progID, 0)
 	link75 := h.attach(t, progID, 75)
@@ -443,22 +442,22 @@ func testZeroPriorityDefaultOrdering(t *testing.T, h dispatcherTestHarness) {
 		h.env.Detach(context.Background(), link75.ID)
 	})
 
-	// The stored priority should be exactly what was requested.
+	// The stored priority should be the normalised priority.
 	assert.Equal(t, int32(25), h.linkPriority(t, link25.ID),
 		"priority=25 should be stored as 25")
-	assert.Equal(t, int32(0), h.linkPriority(t, link0.ID),
-		"priority=0 should be stored as 0, not defaulted to 50")
+	assert.Equal(t, int32(50), h.linkPriority(t, link0.ID),
+		"priority=0 should be stored as default priority 50")
 	assert.Equal(t, int32(75), h.linkPriority(t, link75.ID),
 		"priority=75 should be stored as 75")
 
-	// The effective ordering should treat priority=0 as 50:
+	// The ordering should use the stored default priority:
 	// position 0: priority 25
-	// position 1: priority 0 (effective 50)
+	// position 1: priority 50
 	// position 2: priority 75
 	assert.Equal(t, int32(0), h.linkPosition(t, link25.ID),
 		"priority=25 should be at position 0")
 	assert.Equal(t, int32(1), h.linkPosition(t, link0.ID),
-		"priority=0 (effective 50) should be at position 1")
+		"priority=0/default 50 should be at position 1")
 	assert.Equal(t, int32(2), h.linkPosition(t, link75.ID),
 		"priority=75 should be at position 2")
 }

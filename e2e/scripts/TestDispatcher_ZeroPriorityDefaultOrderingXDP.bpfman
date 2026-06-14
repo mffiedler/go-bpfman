@@ -6,13 +6,11 @@
 # TestDispatcher_ZeroPriorityDefaultOrderingTC covers TC ingress.
 #
 # Three programs attached at priorities 25, 0, and 75 in that
-# order. The stored priority is exactly what was requested (0
-# means 0, not "default" rewritten to 50). The effective
-# ordering, on the other hand, treats priority 0 as 50, so the
-# positions come out:
+# order. Priority 0 is normalised to the default priority 50
+# before the link is stored, so the positions come out:
 #
 #   priority 25 -> position 0
-#   priority  0 -> position 1  (effective 50)
+#   priority 50 -> position 1  (requested as 0)
 #   priority 75 -> position 2
 #
 # Run from e2e/:
@@ -42,7 +40,7 @@ guard g_0 <- bpfman link get $l_0
 guard g_75 <- bpfman link get $l_75
 
 assert $g_25.record.details.priority == 25
-assert $g_0.record.details.priority == 0
+assert $g_0.record.details.priority == 50
 assert $g_75.record.details.priority == 75
 
 assert $g_25.record.details.position == 0

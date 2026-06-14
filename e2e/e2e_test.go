@@ -1996,9 +1996,8 @@ func TestMultiProgTC_ChainStopsAtOK_DefaultProceedOn(t *testing.T) {
 
 	links := make([]bpfman.LinkRecord, len(plans))
 	for i, prog := range programs {
-		spec, err := bpfman.NewTCAttachSpec(prog.Status.Kernel.ID, veth.A.Name, bpfman.TCDirectionIngress)
+		spec, err := bpfman.NewTCAttachSpec(prog.Status.Kernel.ID, veth.A.Name, bpfman.TCDirectionIngress, plans[i].priority)
 		require.NoError(t, err)
-		spec = spec.WithPriority(plans[i].priority)
 		link, err := env.Attach(ctx, spec)
 		require.NoError(t, err, "attach %s", plans[i].name)
 		links[i] = link
@@ -2087,9 +2086,9 @@ func TestMultiProgTC_AllProceed_CustomProceedOn(t *testing.T) {
 	}
 
 	for i, prog := range programs {
-		spec, err := bpfman.NewTCAttachSpec(prog.Status.Kernel.ID, veth.A.Name, bpfman.TCDirectionIngress)
+		spec, err := bpfman.NewTCAttachSpec(prog.Status.Kernel.ID, veth.A.Name, bpfman.TCDirectionIngress, plans[i].priority)
 		require.NoError(t, err)
-		spec = spec.WithPriority(plans[i].priority).WithProceedOn(customProceedOn)
+		spec = spec.WithProceedOn(customProceedOn)
 		link, err := env.Attach(ctx, spec)
 		require.NoError(t, err, "attach %s", plans[i].suffix)
 		t.Cleanup(func() { env.Detach(context.Background(), link.ID) })
@@ -2167,9 +2166,9 @@ func TestMultiProgTC_ChainStopsAtPipe_CustomProceedOn(t *testing.T) {
 	}
 
 	for i, prog := range programs {
-		spec, err := bpfman.NewTCAttachSpec(prog.Status.Kernel.ID, veth.A.Name, bpfman.TCDirectionIngress)
+		spec, err := bpfman.NewTCAttachSpec(prog.Status.Kernel.ID, veth.A.Name, bpfman.TCDirectionIngress, plans[i].priority)
 		require.NoError(t, err)
-		spec = spec.WithPriority(plans[i].priority).WithProceedOn(customProceedOn)
+		spec = spec.WithProceedOn(customProceedOn)
 		link, err := env.Attach(ctx, spec)
 		require.NoError(t, err, "attach %s", plans[i].suffix)
 		t.Cleanup(func() { env.Detach(context.Background(), link.ID) })
@@ -2248,9 +2247,8 @@ func TestMultiProgTC_AllProceed_DefaultProceedOn(t *testing.T) {
 
 	links := make([]bpfman.LinkRecord, len(plans))
 	for i, prog := range programs {
-		spec, err := bpfman.NewTCAttachSpec(prog.Status.Kernel.ID, veth.A.Name, bpfman.TCDirectionIngress)
+		spec, err := bpfman.NewTCAttachSpec(prog.Status.Kernel.ID, veth.A.Name, bpfman.TCDirectionIngress, plans[i].priority)
 		require.NoError(t, err)
-		spec = spec.WithPriority(plans[i].priority)
 		link, err := env.Attach(ctx, spec)
 		require.NoError(t, err, "attach mtc_%s", plans[i].suffix)
 		require.Equal(t, bpfman.LinkKindTC, link.Kind)
@@ -2352,9 +2350,8 @@ func TestTC_LoadAttachDetachUnload(t *testing.T) {
 
 	// When: attach via client to test interface
 	// TC uses dispatchers and supports both ingress and egress
-	tcSpec, err := bpfman.NewTCAttachSpec(prog.Status.Kernel.ID, veth.A.Name, bpfman.TCDirectionIngress)
+	tcSpec, err := bpfman.NewTCAttachSpec(prog.Status.Kernel.ID, veth.A.Name, bpfman.TCDirectionIngress, 50)
 	require.NoError(t, err)
-	tcSpec = tcSpec.WithPriority(50)
 	link, err := env.Attach(ctx, tcSpec)
 	require.NoError(t, err)
 
@@ -2816,9 +2813,8 @@ func TestMultiProgXDP_ChainStopsAtDrop_DefaultProceedOn(t *testing.T) {
 
 	links := make([]bpfman.LinkRecord, len(plans))
 	for i, prog := range programs {
-		spec, err := bpfman.NewXDPAttachSpec(prog.Status.Kernel.ID, veth.A.Name)
+		spec, err := bpfman.NewXDPAttachSpec(prog.Status.Kernel.ID, veth.A.Name, plans[i].priority)
 		require.NoError(t, err)
-		spec = spec.WithPriority(plans[i].priority)
 		link, err := env.Attach(ctx, spec)
 		require.NoError(t, err, "attach %s", plans[i].name)
 		links[i] = link
@@ -2906,9 +2902,9 @@ func TestMultiProgXDP_AllProceed_CustomProceedOn(t *testing.T) {
 	}
 
 	for i, prog := range programs {
-		spec, err := bpfman.NewXDPAttachSpec(prog.Status.Kernel.ID, veth.A.Name)
+		spec, err := bpfman.NewXDPAttachSpec(prog.Status.Kernel.ID, veth.A.Name, plans[i].priority)
 		require.NoError(t, err)
-		spec = spec.WithPriority(plans[i].priority).WithProceedOn(customProceedOn)
+		spec = spec.WithProceedOn(customProceedOn)
 		link, err := env.Attach(ctx, spec)
 		require.NoError(t, err, "attach %s", plans[i].suffix)
 		t.Cleanup(func() { env.Detach(context.Background(), link.ID) })
@@ -2983,9 +2979,9 @@ func TestMultiProgXDP_ChainStopsAtPass_CustomProceedOn(t *testing.T) {
 	}
 
 	for i, prog := range programs {
-		spec, err := bpfman.NewXDPAttachSpec(prog.Status.Kernel.ID, veth.A.Name)
+		spec, err := bpfman.NewXDPAttachSpec(prog.Status.Kernel.ID, veth.A.Name, plans[i].priority)
 		require.NoError(t, err)
-		spec = spec.WithPriority(plans[i].priority).WithProceedOn(customProceedOn)
+		spec = spec.WithProceedOn(customProceedOn)
 		link, err := env.Attach(ctx, spec)
 		require.NoError(t, err, "attach %s", plans[i].suffix)
 		t.Cleanup(func() { env.Detach(context.Background(), link.ID) })
@@ -3064,9 +3060,8 @@ func TestMultiProgXDP_AllProceed_DefaultProceedOn(t *testing.T) {
 
 	links := make([]bpfman.LinkRecord, len(plans))
 	for i, prog := range programs {
-		spec, err := bpfman.NewXDPAttachSpec(prog.Status.Kernel.ID, veth.A.Name)
+		spec, err := bpfman.NewXDPAttachSpec(prog.Status.Kernel.ID, veth.A.Name, plans[i].priority)
 		require.NoError(t, err)
-		spec = spec.WithPriority(plans[i].priority)
 		link, err := env.Attach(ctx, spec)
 		require.NoError(t, err, "attach mxdp_%s", plans[i].suffix)
 		require.Equal(t, bpfman.LinkKindXDP, link.Kind)
@@ -3166,7 +3161,7 @@ func TestXDP_LoadAttachDetachUnload(t *testing.T) {
 	require.NotEmpty(t, listedProgs[0].Record.Handles.PinPath)
 
 	// When: attach via client to test interface
-	xdpSpec, err := bpfman.NewXDPAttachSpec(prog.Status.Kernel.ID, veth.A.Name)
+	xdpSpec, err := bpfman.NewXDPAttachSpec(prog.Status.Kernel.ID, veth.A.Name, 0)
 	require.NoError(t, err)
 	link, err := env.Attach(ctx, xdpSpec)
 	require.NoError(t, err)
