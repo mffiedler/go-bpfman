@@ -29,7 +29,7 @@ defer bpfman program unload $pid
 # A program bpfman does not manage: bpftool loads and pins it so it
 # stays live after bpftool exits. The pin name is keyed by our managed
 # program ID so parallel instances do not collide on the path.
-let strayPin = "/sys/fs/bpf/e2e_unmanaged_${pid}"
+let strayPin = "/sys/fs/bpf/bpfman_e2e_unmanaged_${pid}"
 guard _ <- exec bpftool prog load testdata/bpf/xdp_pass.bpf.o $strayPin type xdp
 defer exec rm -f $strayPin
 
