@@ -998,7 +998,7 @@ func TestMultiProgUprobe_LoadAttachDetachUnload(t *testing.T) {
 
 	links := make([]bpfman.LinkRecord, len(plans))
 	for i, prog := range programs {
-		spec, err := bpfman.NewUprobeAttachSpec(prog.Status.Kernel.ID, target)
+		spec, err := bpfman.NewUprobeAttachSpec(prog.Status.Kernel.ID, target, 0, 0)
 		require.NoError(t, err)
 		spec = spec.WithFnName(fnName)
 		link, err := env.Attach(ctx, spec)
@@ -1125,7 +1125,7 @@ func TestUprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.NotEmpty(t, listedProgs[0].Record.Handles.PinPath)
 
 	// When: attach via client to e2e_uprobe_call_malloc in the e2e.test binary itself
-	upSpec, err := bpfman.NewUprobeAttachSpec(prog.Status.Kernel.ID, target)
+	upSpec, err := bpfman.NewUprobeAttachSpec(prog.Status.Kernel.ID, target, 0, 0)
 	require.NoError(t, err)
 	upSpec = upSpec.WithFnName(fnName)
 	link, err := env.Attach(ctx, upSpec)
@@ -1259,7 +1259,7 @@ func TestMultiProgUretprobe_LoadAttachDetachUnload(t *testing.T) {
 
 	links := make([]bpfman.LinkRecord, len(plans))
 	for i, prog := range programs {
-		spec, err := bpfman.NewUprobeAttachSpec(prog.Status.Kernel.ID, target)
+		spec, err := bpfman.NewUprobeAttachSpec(prog.Status.Kernel.ID, target, 0, 0)
 		require.NoError(t, err)
 		spec = spec.WithFnName(fnName)
 		link, err := env.Attach(ctx, spec)
@@ -1385,7 +1385,7 @@ func TestUretprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.NotEmpty(t, listedProgs[0].Record.Handles.PinPath)
 
 	// When: attach via client to e2e_uprobe_call_malloc in the e2e.test binary (uretprobe uses AttachUprobe API)
-	upSpec, err := bpfman.NewUprobeAttachSpec(prog.Status.Kernel.ID, target)
+	upSpec, err := bpfman.NewUprobeAttachSpec(prog.Status.Kernel.ID, target, 0, 0)
 	require.NoError(t, err)
 	upSpec = upSpec.WithFnName(fnName)
 	link, err := env.Attach(ctx, upSpec)
@@ -2500,9 +2500,8 @@ func TestMultiProgTCX_ChainStopsAtOK_DefaultProceedOn(t *testing.T) {
 
 	links := make([]bpfman.LinkRecord, len(plans))
 	for i, prog := range programs {
-		spec, err := bpfman.NewTCXAttachSpec(prog.Status.Kernel.ID, veth.A.Name, bpfman.TCDirectionIngress)
+		spec, err := bpfman.NewTCXAttachSpec(prog.Status.Kernel.ID, veth.A.Name, bpfman.TCDirectionIngress, plans[i].priority)
 		require.NoError(t, err)
-		spec = spec.WithPriority(plans[i].priority)
 		link, err := env.Attach(ctx, spec)
 		require.NoError(t, err, "attach %s", plans[i].name)
 		links[i] = link
@@ -2591,9 +2590,8 @@ func TestMultiProgTCX_AllProceed_DefaultProceedOn(t *testing.T) {
 
 	links := make([]bpfman.LinkRecord, len(plans))
 	for i, prog := range programs {
-		spec, err := bpfman.NewTCXAttachSpec(prog.Status.Kernel.ID, veth.A.Name, bpfman.TCDirectionIngress)
+		spec, err := bpfman.NewTCXAttachSpec(prog.Status.Kernel.ID, veth.A.Name, bpfman.TCDirectionIngress, plans[i].priority)
 		require.NoError(t, err)
-		spec = spec.WithPriority(plans[i].priority)
 		link, err := env.Attach(ctx, spec)
 		require.NoError(t, err, "attach mtcx_%s", plans[i].suffix)
 		require.Equal(t, bpfman.LinkKindTCX, link.Kind)
@@ -2692,9 +2690,8 @@ func TestTCX_LoadAttachDetachUnload(t *testing.T) {
 	require.NotEmpty(t, listedProgs[0].Record.Handles.PinPath)
 
 	// When: attach via client to test interface
-	tcxSpec, err := bpfman.NewTCXAttachSpec(prog.Status.Kernel.ID, veth.A.Name, bpfman.TCDirectionIngress)
+	tcxSpec, err := bpfman.NewTCXAttachSpec(prog.Status.Kernel.ID, veth.A.Name, bpfman.TCDirectionIngress, 50)
 	require.NoError(t, err)
-	tcxSpec = tcxSpec.WithPriority(50)
 	link, err := env.Attach(ctx, tcxSpec)
 	require.NoError(t, err)
 

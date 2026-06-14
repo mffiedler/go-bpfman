@@ -331,9 +331,8 @@ func TestTCX_PriorityOrdering(t *testing.T) {
 		require.Len(t, programs, 1)
 		progID := programs[0].Status.Kernel.ID
 
-		tcxSpec, err := bpfman.NewTCXAttachSpec(progID, iface.Name, bpfman.TCDirectionIngress)
+		tcxSpec, err := bpfman.NewTCXAttachSpec(progID, iface.Name, bpfman.TCDirectionIngress, prio)
 		require.NoError(t, err)
-		tcxSpec = tcxSpec.WithPriority(prio)
 		link, err := env.Attach(ctx, tcxSpec)
 		require.NoError(t, err)
 

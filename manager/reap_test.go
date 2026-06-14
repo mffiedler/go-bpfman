@@ -70,7 +70,7 @@ func TestReapDeadProgramRecords(t *testing.T) {
 	f.Kernel.InjectInterface("eth2", 4)
 	attach := func(progID kernel.ProgramID, ifname string) {
 		t.Helper()
-		spec, err := bpfman.NewTCXAttachSpec(progID, ifname, bpfman.TCDirectionIngress)
+		spec, err := bpfman.NewTCXAttachSpec(progID, ifname, bpfman.TCDirectionIngress, 50)
 		require.NoError(t, err)
 		_, err = f.Attach(ctx, spec)
 		require.NoError(t, err)

@@ -6,6 +6,8 @@ import (
 	"fmt"
 
 	"github.com/cilium/ebpf"
+
+	"github.com/frobware/go-bpfman"
 )
 
 // MaxPrograms is the maximum number of programs that can be chained.
@@ -48,7 +50,9 @@ const (
 	xdpDispatcherVersion = 2
 
 	// DefaultPriority is the default run priority for dispatcher slots.
-	DefaultPriority = 50
+	// It aliases bpfman.DefaultAttachPriority so the dispatcher default
+	// and the attach-spec default stay a single source of truth.
+	DefaultPriority = bpfman.DefaultAttachPriority
 )
 
 // XDPAction represents XDP return codes for proceed-on configuration.

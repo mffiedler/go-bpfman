@@ -468,7 +468,7 @@ func TestAttachTCX_PersistsLinkMetadata(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
 
-	attachSpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	attachSpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 50)
 	require.NoError(t, err)
 	attachSpec = attachSpec.WithMetadata(map[string]string{"owner": "acme", "env": "test"})
 
@@ -595,7 +595,7 @@ func TestUprobe_AttachSucceeds(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Attach uprobe with target using real lock
-	attachSpec, err := bpfman.NewUprobeAttachSpec(prog.Record.ProgramID, "/usr/lib/libc.so.6")
+	attachSpec, err := bpfman.NewUprobeAttachSpec(prog.Record.ProgramID, "/usr/lib/libc.so.6", 0, 0)
 	require.NoError(t, err, "failed to create attach spec")
 	attachSpec = attachSpec.WithFnName("malloc")
 
@@ -618,9 +618,9 @@ func TestUprobe_ContainerAttachStoresKernelIDAndPin(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
 
-	attachSpec, err := bpfman.NewUprobeAttachSpec(prog.Record.ProgramID, "/usr/lib/libc.so.6")
+	attachSpec, err := bpfman.NewUprobeAttachSpec(prog.Record.ProgramID, "/usr/lib/libc.so.6", 0, 1234)
 	require.NoError(t, err, "failed to create attach spec")
-	attachSpec = attachSpec.WithFnName("malloc").WithContainerPid(1234)
+	attachSpec = attachSpec.WithFnName("malloc")
 
 	link, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err, "AttachUprobe container should succeed")
@@ -661,7 +661,7 @@ func TestUprobe_AttachWithoutTarget_Fails(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Attempt to attach without target - should fail at spec creation
-	_, err = bpfman.NewUprobeAttachSpec(0, "")
+	_, err = bpfman.NewUprobeAttachSpec(0, "", 0, 0)
 	require.Error(t, err, "creating attach spec without target should fail")
 
 	// No links should exist
@@ -682,7 +682,7 @@ func TestUprobe_FullLifecycle(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Step 2: Attach with lock
-	attachSpec, err := bpfman.NewUprobeAttachSpec(prog.Record.ProgramID, "/usr/lib/libc.so.6")
+	attachSpec, err := bpfman.NewUprobeAttachSpec(prog.Record.ProgramID, "/usr/lib/libc.so.6", 0, 0)
 	require.NoError(t, err)
 	attachSpec = attachSpec.WithFnName("malloc")
 
@@ -951,9 +951,8 @@ func TestTCX_FirstAttachCreatesLink(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Attach to interface with ingress direction (programID, ifname, ifindex, direction)
-	attachSpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	attachSpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 50)
 	require.NoError(t, err, "failed to create attach spec")
-	attachSpec = attachSpec.WithPriority(50)
 	link, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err, "AttachTCX should succeed")
 	require.NotZero(t, link.Record.ID, "link ID should be non-zero")
@@ -980,16 +979,14 @@ func TestTCX_IngressAndEgressDirections(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Attach ingress
-	ingressSpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	ingressSpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 50)
 	require.NoError(t, err)
-	ingressSpec = ingressSpec.WithPriority(50)
 	ingressLink, err := fix.Attach(ctx, ingressSpec)
 	require.NoError(t, err, "Ingress attach should succeed")
 
 	// Attach egress
-	egressSpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionEgress)
+	egressSpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionEgress, 50)
 	require.NoError(t, err)
-	egressSpec = egressSpec.WithPriority(50)
 	egressLink, err := fix.Attach(ctx, egressSpec)
 	require.NoError(t, err, "Egress attach should succeed")
 
@@ -1024,9 +1021,8 @@ func TestTCX_FullLifecycle(t *testing.T) {
 
 	for _, iface := range interfaces {
 		for _, dir := range directions {
-			attachSpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, iface.name, dir)
+			attachSpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, iface.name, dir, 50)
 			require.NoError(t, err)
-			attachSpec = attachSpec.WithPriority(50)
 			link, err := fix.Attach(ctx, attachSpec)
 			require.NoError(t, err, "Attach %s/%s should succeed", iface.name, dir)
 			linkIDs = append(linkIDs, link.Record.ID)
@@ -2305,7 +2301,7 @@ func TestTCX_InvalidDirection(t *testing.T) {
 	require.NoError(t, err)
 
 	// Attempt to create attach spec with invalid direction
-	_, err = bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirection{})
+	_, err = bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirection{}, 50)
 	require.Error(t, err, "creating attach spec with invalid direction should fail")
 
 	// No links should exist
@@ -2336,9 +2332,8 @@ func TestTCX_AttachUsesProgramPinPath(t *testing.T) {
 	expectedPinPath := fix.Layout.BPFFS().ProgPinPath(prog.Record.ProgramID).String()
 
 	// Attach the program
-	attachSpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	attachSpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 50)
 	require.NoError(t, err)
-	attachSpec = attachSpec.WithPriority(50)
 	_, err = fix.Attach(ctx, attachSpec)
 	require.NoError(t, err, "Attach should succeed")
 
@@ -2634,9 +2629,8 @@ func TestTCX_AttachToNonExistentInterface(t *testing.T) {
 	fix.Kernel.FailOnIfname("nonexistent0", fmt.Errorf("interface not found: %w", platform.ErrInterfaceNotFound))
 
 	// Attempt to attach to non-existent interface
-	attachSpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "nonexistent0", bpfman.TCDirectionIngress)
+	attachSpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "nonexistent0", bpfman.TCDirectionIngress, 50)
 	require.NoError(t, err, "spec creation should succeed")
-	attachSpec = attachSpec.WithPriority(50)
 	_, err = fix.Attach(ctx, attachSpec)
 	require.Error(t, err, "AttachTCX to non-existent interface should fail")
 	assert.ErrorIs(t, err, platform.ErrInterfaceNotFound, "error should identify an unresolved interface")
@@ -2868,16 +2862,14 @@ func TestTCX_DuplicateAttachRejected(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attachSpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	attachSpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 50)
 	require.NoError(t, err)
-	attachSpec = attachSpec.WithPriority(50)
 	first, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err)
 	require.Equal(t, 1, fix.Kernel.LinkCount())
 
-	secondSpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	secondSpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 60)
 	require.NoError(t, err)
-	secondSpec = secondSpec.WithPriority(60)
 	_, err = fix.Attach(ctx, secondSpec)
 	require.Error(t, err, "duplicate attach must be rejected")
 	assert.Contains(t, err.Error(), "already attached")
@@ -2909,18 +2901,16 @@ func TestTCX_OrphanedPinStillCleaned(t *testing.T) {
 
 	// Simulate crash residue: attach, then delete only the store
 	// record so the kernel link and pin survive recordless.
-	attachSpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	attachSpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 50)
 	require.NoError(t, err)
-	attachSpec = attachSpec.WithPriority(50)
 	first, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err)
 	require.NoError(t, fix.Store.DeleteLink(ctx, first.Record.ID))
 
 	// A fresh attach of the same program to the same hook sees an
 	// orphaned pin, not a live managed attachment, and succeeds.
-	retrySpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+	retrySpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 50)
 	require.NoError(t, err)
-	retrySpec = retrySpec.WithPriority(50)
 	_, err = fix.Attach(ctx, retrySpec)
 	require.NoError(t, err, "orphaned pin must be cleaned, not treated as a duplicate")
 	assert.Equal(t, 1, fix.Kernel.LinkCount())
@@ -2944,9 +2934,8 @@ func TestTCX_EqualPriorityOrderIsInsertionOrder(t *testing.T) {
 		require.NoError(t, err)
 		prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 		require.NoError(t, err)
-		attachSpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress)
+		attachSpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 50)
 		require.NoError(t, err)
-		attachSpec = attachSpec.WithPriority(50)
 		link, err := fix.Attach(ctx, attachSpec)
 		require.NoError(t, err)
 		if firstLink.Record.ID == 0 {
@@ -2981,9 +2970,9 @@ func TestUprobe_PidFilterFlowsToKernelAndDetails(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attachSpec, err := bpfman.NewUprobeAttachSpec(prog.Record.ProgramID, "/usr/lib/libc.so.6")
+	attachSpec, err := bpfman.NewUprobeAttachSpec(prog.Record.ProgramID, "/usr/lib/libc.so.6", 4242, 0)
 	require.NoError(t, err)
-	attachSpec = attachSpec.WithFnName("malloc").WithPid(4242)
+	attachSpec = attachSpec.WithFnName("malloc")
 
 	link, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err)
@@ -3019,7 +3008,7 @@ func TestUprobe_NoPidFilterDefaultsToZero(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attachSpec, err := bpfman.NewUprobeAttachSpec(prog.Record.ProgramID, "/usr/lib/libc.so.6")
+	attachSpec, err := bpfman.NewUprobeAttachSpec(prog.Record.ProgramID, "/usr/lib/libc.so.6", 0, 0)
 	require.NoError(t, err)
 	attachSpec = attachSpec.WithFnName("malloc")
 
@@ -3048,7 +3037,7 @@ func TestUprobe_OffsetOnlyAttachSucceeds(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attachSpec, err := bpfman.NewUprobeAttachSpec(prog.Record.ProgramID, "/usr/lib/libc.so.6")
+	attachSpec, err := bpfman.NewUprobeAttachSpec(prog.Record.ProgramID, "/usr/lib/libc.so.6", 0, 0)
 	require.NoError(t, err)
 	attachSpec = attachSpec.WithOffset(0x1234)
 
@@ -3077,7 +3066,7 @@ func TestUprobe_NeitherFnNameNorOffset_Fails(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attachSpec, err := bpfman.NewUprobeAttachSpec(prog.Record.ProgramID, "/usr/lib/libc.so.6")
+	attachSpec, err := bpfman.NewUprobeAttachSpec(prog.Record.ProgramID, "/usr/lib/libc.so.6", 0, 0)
 	require.NoError(t, err)
 
 	_, err = fix.Attach(ctx, attachSpec)

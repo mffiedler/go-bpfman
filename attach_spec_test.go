@@ -58,38 +58,48 @@ func TestXDPAttachSpecRejectsMissingFields(t *testing.T) {
 	assert.Contains(t, err.Error(), "ifname is required")
 }
 
-// ValidateAttachSpec leaves XDP and TC untouched: they are fully
-// refined by their constructors, so the library has nothing to do.
-func TestValidateAttachSpecPassesRefinedXDPTCThrough(t *testing.T) {
+// TCX priority is stored verbatim, matching Rust: TCX has no
+// dispatcher default, so an omitted (0) priority stays 0, a positive
+// value is kept as given, and only a negative value is rejected.
+func TestTCXAttachSpecPriorityParsing(t *testing.T) {
 	t.Parallel()
 
-	xdp, err := NewXDPAttachSpec(1, "eth0", 0)
+	omitted, err := NewTCXAttachSpec(1, "eth0", TCDirectionIngress, 0)
 	require.NoError(t, err)
-	gotXDP, err := ValidateAttachSpec(xdp)
-	require.NoError(t, err)
-	assert.Equal(t, xdp, gotXDP)
+	assert.Equal(t, 0, omitted.Priority())
 
-	tc, err := NewTCAttachSpec(1, "eth0", TCDirectionIngress, 25)
+	explicit, err := NewTCXAttachSpec(1, "eth0", TCDirectionIngress, 25)
 	require.NoError(t, err)
-	gotTC, err := ValidateAttachSpec(tc)
-	require.NoError(t, err)
-	assert.Equal(t, tc, gotTC)
-}
+	assert.Equal(t, 25, explicit.Priority())
 
-// TCX priority handling has not yet moved to the constructor (parked
-// pending the Rust-parity decision, since Rust's TCX has no default
-// priority). It still defaults to 50, normalises 0 via WithPriority,
-// and is negative-checked by ValidateAttachSpec.
-func TestTCXAttachSpecPriorityParkedBehaviour(t *testing.T) {
-	t.Parallel()
-
-	tcx, err := NewTCXAttachSpec(1, "eth0", TCDirectionIngress)
-	require.NoError(t, err)
-	assert.Equal(t, DefaultAttachPriority, tcx.Priority())
-	assert.Equal(t, DefaultAttachPriority, tcx.WithPriority(0).Priority())
-
-	_, err = ValidateAttachSpec(tcx.WithPriority(-1))
+	_, err = NewTCXAttachSpec(1, "eth0", TCDirectionIngress, -1)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrInvalidAttachSpec)
 	assert.Contains(t, err.Error(), "priority must be non-negative")
+}
+
+// uprobe pid and containerPid are parsed at construction: 0 means
+// unset, a positive value is kept, and a negative value is rejected.
+func TestUprobeAttachSpecPidParsing(t *testing.T) {
+	t.Parallel()
+
+	unset, err := NewUprobeAttachSpec(1, "/bin/example", 0, 0)
+	require.NoError(t, err)
+	assert.EqualValues(t, 0, unset.Pid())
+	assert.EqualValues(t, 0, unset.ContainerPid())
+
+	set, err := NewUprobeAttachSpec(1, "/bin/example", 42, 7)
+	require.NoError(t, err)
+	assert.EqualValues(t, 42, set.Pid())
+	assert.EqualValues(t, 7, set.ContainerPid())
+
+	_, err = NewUprobeAttachSpec(1, "/bin/example", -1, 0)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrInvalidAttachSpec)
+	assert.Contains(t, err.Error(), "pid must be non-negative")
+
+	_, err = NewUprobeAttachSpec(1, "/bin/example", 0, -1)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrInvalidAttachSpec)
+	assert.Contains(t, err.Error(), "container pid must be non-negative")
 }

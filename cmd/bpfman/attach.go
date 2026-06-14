@@ -125,21 +125,16 @@ type AttachTCXCmd struct {
 	ProgramID bpfmancli.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
 	Iface     string              `arg:"" name:"iface" help:"Network interface."`
 	Direction bpfman.TCDirection  `arg:"" name:"direction" help:"Direction (ingress or egress)."`
-	Priority  int                 `short:"p" name:"priority" help:"Priority in chain (lower runs first; non-negative; 0 or omitted = default 50). Slot exhaustion (more than 10 attachments) is reported by the dispatcher, not by this flag."`
+	Priority  int                 `short:"p" name:"priority" help:"Priority in chain (lower runs first; non-negative; omitted means 0). TCX uses native kernel ordering, not a dispatcher."`
 	Netns     string              `short:"n" name:"netns" help:"Network namespace path."`
 }
 
 func (c *AttachTCXCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
-		if c.Priority < 0 {
-			return attachResult{}, fmt.Errorf("--priority must be non-negative, got %d", c.Priority)
-		}
-
-		spec, err := bpfman.NewTCXAttachSpec(c.ProgramID.Value, c.Iface, c.Direction)
+		spec, err := bpfman.NewTCXAttachSpec(c.ProgramID.Value, c.Iface, c.Direction, c.Priority)
 		if err != nil {
 			return attachResult{}, fmt.Errorf("invalid TCX spec: %w", err)
 		}
-		spec = spec.WithPriority(c.Priority)
 		if c.Netns != "" {
 			spec = spec.WithNetns(c.Netns)
 		}
@@ -225,7 +220,7 @@ type AttachUprobeCmd struct {
 
 func (c *AttachUprobeCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
-		spec, err := bpfman.NewUprobeAttachSpec(c.ProgramID.Value, c.Target)
+		spec, err := bpfman.NewUprobeAttachSpec(c.ProgramID.Value, c.Target, c.Pid, c.ContainerPid)
 		if err != nil {
 			return attachResult{}, fmt.Errorf("invalid uprobe spec: %w", err)
 		}
@@ -234,12 +229,6 @@ func (c *AttachUprobeCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 		}
 		if c.Offset != 0 {
 			spec = spec.WithOffset(c.Offset)
-		}
-		if c.Pid > 0 {
-			spec = spec.WithPid(c.Pid)
-		}
-		if c.ContainerPid > 0 {
-			spec = spec.WithContainerPid(c.ContainerPid)
 		}
 
 		spec = spec.WithMetadata(bpfmancli.MetadataMap(c.Metadata))

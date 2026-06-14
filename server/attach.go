@@ -181,12 +181,10 @@ func (s *Server) attachTC(ctx context.Context, writeLock lock.WriterScope, progr
 func (s *Server) attachTCX(ctx context.Context, writeLock lock.WriterScope, programID kernel.ProgramID, info *pb.TCXAttachInfo) (*pb.AttachResponse, error) {
 	// Build the spec from the request; the manager resolves the
 	// interface name inside the target netns.
-	spec, err := bpfman.NewTCXAttachSpecFromString(programID, info.Iface, info.Direction)
+	spec, err := bpfman.NewTCXAttachSpecFromString(programID, info.Iface, info.Direction, int(info.Priority))
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid TCX attach spec: %v", err)
 	}
-
-	spec = spec.WithPriority(int(info.Priority))
 
 	// Apply network namespace if specified
 	if info.GetNetns() != "" {
@@ -196,9 +194,6 @@ func (s *Server) attachTCX(ctx context.Context, writeLock lock.WriterScope, prog
 	// Call manager
 	link, err := s.mgr.Attach(ctx, writeLock, spec)
 	if err != nil {
-		if errors.Is(err, bpfman.ErrInvalidAttachSpec) {
-			return nil, status.Errorf(codes.InvalidArgument, "invalid TCX attach spec: %v", err)
-		}
 		var notFound bpfman.ErrProgramNotFound
 		if errors.As(err, &notFound) {
 			return nil, status.Errorf(codes.NotFound, "program with ID %d not found", programID)
@@ -260,7 +255,7 @@ func (s *Server) attachUprobe(ctx context.Context, writeLock lock.WriterScope, p
 	}
 
 	// Construct UprobeAttachSpec with validated input
-	spec, err := bpfman.NewUprobeAttachSpec(programID, info.Target)
+	spec, err := bpfman.NewUprobeAttachSpec(programID, info.Target, info.GetPid(), info.GetContainerPid())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid uprobe attach spec: %v", err)
 	}
@@ -269,13 +264,6 @@ func (s *Server) attachUprobe(ctx context.Context, writeLock lock.WriterScope, p
 	}
 	if info.Offset != 0 {
 		spec = spec.WithOffset(info.Offset)
-	}
-	if info.GetPid() > 0 {
-		spec = spec.WithPid(info.GetPid())
-	}
-	if info.ContainerPid != nil && *info.ContainerPid > 0 {
-		s.logger.DebugContext(ctx, "setting container_pid on spec", "container_pid", *info.ContainerPid)
-		spec = spec.WithContainerPid(*info.ContainerPid)
 	}
 
 	// Call manager

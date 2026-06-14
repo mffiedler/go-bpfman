@@ -937,20 +937,16 @@ func parseLinkAttachTCX(args []runtime.Arg) (*LinkAttachCommand, error) {
 	progArg = pos[0]
 	iface = driver.ArgText(pos[1])
 	direction = driver.ArgText(pos[2])
-	if priority < 0 {
-		return nil, fmt.Errorf("link attach tcx: --priority must be non-negative, got %d", priority)
-	}
 
 	progID, err := parseProgramIDArg(progArg)
 	if err != nil {
 		return nil, fmt.Errorf("link attach tcx: %w", err)
 	}
 
-	spec, err := bpfman.NewTCXAttachSpecFromString(progID, iface, direction)
+	spec, err := bpfman.NewTCXAttachSpecFromString(progID, iface, direction, priority)
 	if err != nil {
 		return nil, fmt.Errorf("link attach tcx: %w", err)
 	}
-	spec = spec.WithPriority(priority)
 	if netns != "" {
 		spec = spec.WithNetns(netns)
 	}
@@ -1192,7 +1188,7 @@ func parseLinkAttachUprobe(args []runtime.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach uprobe: %w", err)
 	}
 
-	spec, err := bpfman.NewUprobeAttachSpec(progID, target)
+	spec, err := bpfman.NewUprobeAttachSpec(progID, target, pid, containerPid)
 	if err != nil {
 		return nil, fmt.Errorf("link attach uprobe: %w", err)
 	}
@@ -1201,12 +1197,6 @@ func parseLinkAttachUprobe(args []runtime.Arg) (*LinkAttachCommand, error) {
 	}
 	if offset != 0 {
 		spec = spec.WithOffset(offset)
-	}
-	if pid > 0 {
-		spec = spec.WithPid(pid)
-	}
-	if containerPid > 0 {
-		spec = spec.WithContainerPid(containerPid)
 	}
 
 	return &LinkAttachCommand{Spec: spec.WithMetadata(bpfmancli.MetadataMap(metadata)), Output: output}, nil

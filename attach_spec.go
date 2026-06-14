@@ -25,81 +25,6 @@ type AttachSpec interface {
 	Metadata() map[string]string
 }
 
-// ValidateAttachSpec validates the spec kinds whose validation has not
-// yet moved into their constructors: uprobe pid bounds and TCX
-// priority. XDP, TC, and the simple probe specs are fully refined at
-// construction and pass through unchanged. It is invoked by the
-// manager as the last gate before acting on a spec.
-func ValidateAttachSpec(spec AttachSpec) (AttachSpec, error) {
-	switch s := spec.(type) {
-	case TracepointAttachSpec:
-		if s.programID == 0 {
-			return nil, invalidAttachSpec("programID is required")
-		}
-		if s.group == "" || s.name == "" {
-			return nil, invalidAttachSpec("tracepoint is required")
-		}
-		return s, nil
-	case KprobeAttachSpec:
-		if s.programID == 0 {
-			return nil, invalidAttachSpec("programID is required")
-		}
-		if s.fnName == "" {
-			return nil, invalidAttachSpec("fnName is required")
-		}
-		return s, nil
-	case UprobeAttachSpec:
-		if s.programID == 0 {
-			return nil, invalidAttachSpec("programID is required")
-		}
-		if s.target == "" {
-			return nil, invalidAttachSpec("target is required")
-		}
-		if s.pid < 0 {
-			return nil, invalidAttachSpec("pid must be non-negative, got %d", s.pid)
-		}
-		if s.containerPid < 0 {
-			return nil, invalidAttachSpec("container pid must be non-negative, got %d", s.containerPid)
-		}
-		return s, nil
-	case FentryAttachSpec:
-		if s.programID == 0 {
-			return nil, invalidAttachSpec("programID is required")
-		}
-		return s, nil
-	case FexitAttachSpec:
-		if s.programID == 0 {
-			return nil, invalidAttachSpec("programID is required")
-		}
-		return s, nil
-	case XDPAttachSpec, TCAttachSpec:
-		// XDP and TC are fully parsed by their constructors
-		// (NewXDPAttachSpec/NewTCAttachSpec): required fields are
-		// checked and priority is normalised and validated there.
-		// By the time such a spec reaches the library it is already
-		// refined, so there is nothing to do here.
-		return spec, nil
-	case TCXAttachSpec:
-		if s.programID == 0 {
-			return nil, invalidAttachSpec("programID is required")
-		}
-		if s.ifname == "" {
-			return nil, invalidAttachSpec("ifname is required")
-		}
-		if s.direction == (TCDirection{}) {
-			return nil, invalidAttachSpec("direction is required")
-		}
-		priority, err := validatePriority(s.priority)
-		if err != nil {
-			return nil, err
-		}
-		s.priority = priority
-		return s, nil
-	default:
-		return nil, invalidAttachSpec("unsupported attach spec type %T", spec)
-	}
-}
-
 func invalidAttachSpec(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrInvalidAttachSpec, fmt.Sprintf(format, args...))
 }
@@ -112,13 +37,6 @@ func validatePriority(p int) (int, error) {
 		return DefaultAttachPriority, nil
 	}
 	return p, nil
-}
-
-func normalisePriority(p int) int {
-	if p == 0 {
-		return DefaultAttachPriority
-	}
-	return p
 }
 
 // attachMetadata carries user-supplied link labels shared by every attach
@@ -211,14 +129,23 @@ type UprobeAttachSpec struct {
 }
 
 // NewUprobeAttachSpec creates a UprobeAttachSpec with validated fields.
-func NewUprobeAttachSpec(programID kernel.ProgramID, target string) (UprobeAttachSpec, error) {
+// pid and containerPid are parsed here: each must be non-negative, and
+// 0 means unset. fnName and offset remain optional builder fields as
+// they need no validation.
+func NewUprobeAttachSpec(programID kernel.ProgramID, target string, pid, containerPid int32) (UprobeAttachSpec, error) {
 	if programID == 0 {
 		return UprobeAttachSpec{}, errors.New("programID is required")
 	}
 	if target == "" {
 		return UprobeAttachSpec{}, errors.New("target is required")
 	}
-	return UprobeAttachSpec{programID: programID, target: target}, nil
+	if pid < 0 {
+		return UprobeAttachSpec{}, invalidAttachSpec("pid must be non-negative, got %d", pid)
+	}
+	if containerPid < 0 {
+		return UprobeAttachSpec{}, invalidAttachSpec("container pid must be non-negative, got %d", containerPid)
+	}
+	return UprobeAttachSpec{programID: programID, target: target, pid: pid, containerPid: containerPid}, nil
 }
 
 func (UprobeAttachSpec) attachSpec()                   {}
@@ -238,24 +165,6 @@ func (s UprobeAttachSpec) WithFnName(fnName string) UprobeAttachSpec {
 // WithOffset returns a new UprobeAttachSpec with the offset set.
 func (s UprobeAttachSpec) WithOffset(offset uint64) UprobeAttachSpec {
 	s.offset = offset
-	return s
-}
-
-// WithPid returns a new UprobeAttachSpec with the pid filter set.
-// If pid > 0, the probe fires only for that process; 0 traces all
-// processes. Distinct from the container pid, which selects the
-// mount namespace the target path resolves in, not which process
-// triggers the probe.
-func (s UprobeAttachSpec) WithPid(pid int32) UprobeAttachSpec {
-	s.pid = pid
-	return s
-}
-
-// WithContainerPid returns a new UprobeAttachSpec with the container PID set.
-// If pid > 0, the uprobe will be attached in that container's mount namespace,
-// allowing the target path to resolve within the container's filesystem.
-func (s UprobeAttachSpec) WithContainerPid(pid int32) UprobeAttachSpec {
-	s.containerPid = pid
 	return s
 }
 
@@ -430,7 +339,16 @@ type TCXAttachSpec struct {
 }
 
 // NewTCXAttachSpec creates a TCXAttachSpec with validated fields.
-func NewTCXAttachSpec(programID kernel.ProgramID, ifname string, direction TCDirection) (TCXAttachSpec, error) {
+// Priority is a userspace ordering key, stored verbatim: lower values
+// run earlier and a negative value is rejected. Zero is a real
+// priority that runs first and is deliberately NOT remapped to
+// DefaultAttachPriority -- that 50 default is an XDP/TC dispatcher
+// concept TCX has no equivalent of. An omitted Go CLI flag and an
+// omitted proto3 int32 field both arrive as 0, which matches Rust's
+// gRPC/runtime behaviour, so 0 is the correct unspecified value; do
+// not "fix" it to 50 or 1000 (the proto's "default 1000" comment is
+// stale even upstream).
+func NewTCXAttachSpec(programID kernel.ProgramID, ifname string, direction TCDirection, priority int) (TCXAttachSpec, error) {
 	if programID == 0 {
 		return TCXAttachSpec{}, errors.New("programID is required")
 	}
@@ -440,16 +358,19 @@ func NewTCXAttachSpec(programID kernel.ProgramID, ifname string, direction TCDir
 	if direction == (TCDirection{}) {
 		return TCXAttachSpec{}, errors.New("direction is required")
 	}
-	return TCXAttachSpec{programID: programID, ifname: ifname, direction: direction, priority: DefaultAttachPriority}, nil
+	if priority < 0 {
+		return TCXAttachSpec{}, invalidAttachSpec("priority must be non-negative, got %d", priority)
+	}
+	return TCXAttachSpec{programID: programID, ifname: ifname, direction: direction, priority: priority}, nil
 }
 
 // NewTCXAttachSpecFromString parses a TC direction and creates a TCXAttachSpec.
-func NewTCXAttachSpecFromString(programID kernel.ProgramID, ifname, direction string) (TCXAttachSpec, error) {
+func NewTCXAttachSpecFromString(programID kernel.ProgramID, ifname, direction string, priority int) (TCXAttachSpec, error) {
 	dir, err := ParseTCDirection(direction)
 	if err != nil {
 		return TCXAttachSpec{}, err
 	}
-	return NewTCXAttachSpec(programID, ifname, dir)
+	return NewTCXAttachSpec(programID, ifname, dir, priority)
 }
 
 func (TCXAttachSpec) attachSpec()                   {}
@@ -458,12 +379,6 @@ func (s TCXAttachSpec) Ifname() string              { return s.ifname }
 func (s TCXAttachSpec) Direction() TCDirection      { return s.direction }
 func (s TCXAttachSpec) Priority() int               { return s.priority }
 func (s TCXAttachSpec) Netns() string               { return s.netns }
-
-// WithPriority returns a new TCXAttachSpec with the priority set.
-func (s TCXAttachSpec) WithPriority(p int) TCXAttachSpec {
-	s.priority = normalisePriority(p)
-	return s
-}
 
 // WithNetns returns a new TCXAttachSpec with the network namespace path set.
 // If non-empty, attachment is performed in that network namespace.

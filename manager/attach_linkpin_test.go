@@ -38,7 +38,7 @@ func attachUprobe(t *testing.T, fix *testFixture, progName, fnName string) bpfma
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
 
-	attachSpec, err := bpfman.NewUprobeAttachSpec(prog.Record.ProgramID, "/usr/lib/libc.so.6")
+	attachSpec, err := bpfman.NewUprobeAttachSpec(prog.Record.ProgramID, "/usr/lib/libc.so.6", 0, 0)
 	require.NoError(t, err, "failed to create attach spec")
 	attachSpec = attachSpec.WithFnName(fnName)
 
@@ -130,7 +130,7 @@ func TestAttach_DistinctLinksGetDistinctNumericPins(t *testing.T) {
 
 	var links []bpfman.Link
 	for _, fn := range []string{"malloc", "free"} {
-		attachSpec, err := bpfman.NewUprobeAttachSpec(prog.Record.ProgramID, "/usr/lib/libc.so.6")
+		attachSpec, err := bpfman.NewUprobeAttachSpec(prog.Record.ProgramID, "/usr/lib/libc.so.6", 0, 0)
 		require.NoError(t, err)
 		link, err := fix.Attach(ctx, attachSpec.WithFnName(fn))
 		require.NoError(t, err, "Attach %s should succeed", fn)
@@ -204,7 +204,7 @@ func TestAttach_FinaliseFailureRollsBackAttachAndRow(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
 
-	attachSpec, err := bpfman.NewUprobeAttachSpec(prog.Record.ProgramID, "/usr/lib/libc.so.6")
+	attachSpec, err := bpfman.NewUprobeAttachSpec(prog.Record.ProgramID, "/usr/lib/libc.so.6", 0, 0)
 	require.NoError(t, err)
 	_, err = fix.Attach(ctx, attachSpec.WithFnName("malloc"))
 	require.Error(t, err, "Attach should fail when finalise fails")
