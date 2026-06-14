@@ -126,7 +126,7 @@ func (e *executor) rebuildXDPDispatcher(
 	}
 	for i, slot := range allSlots {
 		cfg.ChainCallActions[i] = slot.ProceedOn | (1 << xdpDispatcherRetval)
-		cfg.RunPrios[i] = uint32(effectivePriority(slot.Priority))
+		cfg.RunPrios[i] = uint32(slot.Priority)
 	}
 
 	// Compute new revision.
@@ -439,7 +439,7 @@ func (e *executor) rebuildTCDispatcher(
 	}
 	for i, slot := range allSlots {
 		cfg.ChainCallActions[i] = slot.ProceedOn << dispType.ChainCallShift()
-		cfg.RunPrios[i] = uint32(effectivePriority(slot.Priority))
+		cfg.RunPrios[i] = uint32(slot.Priority)
 	}
 
 	// Compute new revision.
@@ -804,7 +804,7 @@ func (e *executor) rebuildXDPForDetach(
 	}
 	for i, slot := range slots {
 		cfg.ChainCallActions[i] = slot.ProceedOn | (1 << xdpDispatcherRetval)
-		cfg.RunPrios[i] = uint32(effectivePriority(slot.Priority))
+		cfg.RunPrios[i] = uint32(slot.Priority)
 	}
 
 	dispatcherID, err := e.kernel.LoadAndPinXDPDispatcher(ctx, cfg, progPinPath)
@@ -952,7 +952,7 @@ func (e *executor) rebuildTCForDetach(
 	}
 	for i, slot := range slots {
 		cfg.ChainCallActions[i] = slot.ProceedOn << dispType.ChainCallShift()
-		cfg.RunPrios[i] = uint32(effectivePriority(slot.Priority))
+		cfg.RunPrios[i] = uint32(slot.Priority)
 	}
 
 	dispatcherID, err := e.kernel.LoadAndPinTCDispatcher(ctx, cfg, progPinPath)
@@ -1323,18 +1323,10 @@ func isNotFound(err error) bool {
 	return errors.Is(err, platform.ErrRecordNotFound)
 }
 
-// effectivePriority returns the priority used for dispatcher slot
-// ordering and .rodata configuration. Zero (unspecified) defaults
-// to DefaultPriority (50).
-func effectivePriority(p int) int {
-	if p == 0 {
-		return int(dispatcher.DefaultPriority)
-	}
-	return p
-}
-
 // sortRebuildSlots sorts rebuild slots by
-// (effectivePriority ASC, attached ASC, programName ASC).
+// (priority ASC, attached ASC, programName ASC). Priorities are
+// already normalised at spec construction (0 -> DefaultAttachPriority,
+// negatives rejected), so they are used here as stored.
 //
 // The attached tie-breaker matches Rust bpfman: new (unattached)
 // programs sort before existing (attached) ones at the same priority.
@@ -1343,8 +1335,8 @@ func effectivePriority(p int) int {
 func sortRebuildSlots(slots []rebuildSlot) {
 	for i := 1; i < len(slots); i++ {
 		for j := i; j > 0; j-- {
-			pi := effectivePriority(slots[j].Priority)
-			pj := effectivePriority(slots[j-1].Priority)
+			pi := slots[j].Priority
+			pj := slots[j-1].Priority
 			ai := slots[j].ExistingLinkID != nil   // attached = true
 			aj := slots[j-1].ExistingLinkID != nil // attached = true
 			if pi < pj ||

@@ -6,53 +6,36 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestEffectivePriority(t *testing.T) {
-	t.Parallel()
+// sortRebuildSlots orders dispatcher members by priority ascending,
+// then program name at equal priority. Priorities reaching it are
+// already normalised at spec construction (0 -> DefaultAttachPriority,
+// negatives rejected), so these exercise the ordering with the
+// concrete values it actually sees.
 
-	assert.Equal(t, 50, effectivePriority(0), "zero maps to DefaultPriority")
-	assert.Equal(t, 1, effectivePriority(1))
-	assert.Equal(t, 50, effectivePriority(50))
-	assert.Equal(t, 99, effectivePriority(99))
-}
-
-func TestSortRebuildSlots_LegacyZeroPrioritySortsAsDefault(t *testing.T) {
+func TestSortRebuildSlots_ByPriority(t *testing.T) {
 	t.Parallel()
 
 	slots := []rebuildSlot{
-		{ProgramName: "low", Priority: 10},
-		{ProgramName: "legacy", Priority: 0},
 		{ProgramName: "high", Priority: 100},
+		{ProgramName: "low", Priority: 10},
+		{ProgramName: "mid", Priority: 50},
 	}
 	sortRebuildSlots(slots)
-	assert.Equal(t, "low", slots[0].ProgramName)
-	assert.Equal(t, 10, slots[0].Priority)
-	assert.Equal(t, "legacy", slots[1].ProgramName)
-	assert.Equal(t, "high", slots[2].ProgramName)
+	assert.Equal(t,
+		[]string{"low", "mid", "high"},
+		[]string{slots[0].ProgramName, slots[1].ProgramName, slots[2].ProgramName})
 }
 
-func TestSortRebuildSlots_LegacyZeroPriorityTiebreaksWithExplicit50(t *testing.T) {
+func TestSortRebuildSlots_NameTiebreakAtEqualPriority(t *testing.T) {
 	t.Parallel()
 
 	slots := []rebuildSlot{
-		{ProgramName: "explicit", Priority: 50},
-		{ProgramName: "legacy", Priority: 0},
+		{ProgramName: "charlie", Priority: 50},
+		{ProgramName: "alpha", Priority: 50},
+		{ProgramName: "bravo", Priority: 50},
 	}
 	sortRebuildSlots(slots)
-	// Both have effective priority 50; name tiebreak: "explicit" < "legacy".
-	assert.Equal(t, "explicit", slots[0].ProgramName)
-	assert.Equal(t, "legacy", slots[1].ProgramName)
-}
-
-func TestSortRebuildSlots_AllLegacyZeroPriority(t *testing.T) {
-	t.Parallel()
-
-	slots := []rebuildSlot{
-		{ProgramName: "charlie", Priority: 0},
-		{ProgramName: "alpha", Priority: 0},
-		{ProgramName: "bravo", Priority: 0},
-	}
-	sortRebuildSlots(slots)
-	assert.Equal(t, "alpha", slots[0].ProgramName)
-	assert.Equal(t, "bravo", slots[1].ProgramName)
-	assert.Equal(t, "charlie", slots[2].ProgramName)
+	assert.Equal(t,
+		[]string{"alpha", "bravo", "charlie"},
+		[]string{slots[0].ProgramName, slots[1].ProgramName, slots[2].ProgramName})
 }
