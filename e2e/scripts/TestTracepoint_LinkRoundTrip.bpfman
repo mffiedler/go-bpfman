@@ -75,9 +75,9 @@ assert fail bpfman link get $linkID
 guard listedAfter <- bpfman link list -o json
 assert_link_absent $listedAfter $linkID
 
-# Let any async detach teardown settle before establishing
-# the detached baseline.
-sleep 0.1
+poll timeout 2s every 50ms {
+    await_kfunc_detach_quiescent $fn $mapID $events $counterFilter
+}
 
 guard dumpDetached <- bpftool map dump id $mapID -j
 let detached = $dumpDetached.stdout |> jq $counterFilter

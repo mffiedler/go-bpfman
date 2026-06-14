@@ -127,6 +127,33 @@ def assert_link_absent(listed linkID) {
     assert $count == 0
 }
 
+# Wait until a just-detached kfunc-backed program stops observing its
+# target. Perf-link teardown is asynchronous, so a fixed sleep after
+# `bpfman link detach` can still race the kernel-side detach path on a
+# busy runner. Each poll attempt establishes the current counter value,
+# fires the exact kfunc workload once, then retries while the detached
+# program's own counter still moves.
+def await_kfunc_detach_quiescent(fn mapID events counterFilter) {
+    guard beforeDump <- bpftool map dump id $mapID -j
+    let before = $beforeDump.stdout |> jq $counterFilter
+    guard _ <- kfunc fire $fn $events
+    guard afterDump <- bpftool map dump id $mapID -j
+    let after = $afterDump.stdout |> jq $counterFilter
+    retry "waiting for kfunc detach quiescence" unless $after == $before
+}
+
+# Wait until a just-detached uprobe-backed program stops observing its
+# target. This mirrors await_kfunc_detach_quiescent, but fires the
+# current shell's uprobe fixture instead of a leased kfunc slot.
+def await_uprobe_detach_quiescent(mapID events counterFilter) {
+    guard beforeDump <- bpftool map dump id $mapID -j
+    let before = $beforeDump.stdout |> jq $counterFilter
+    guard _ <- uprobe fire $events
+    guard afterDump <- bpftool map dump id $mapID -j
+    let after = $afterDump.stdout |> jq $counterFilter
+    retry "waiting for uprobe detach quiescence" unless $after == $before
+}
+
 # Asserts the store records exactly `want` dispatchers on the given
 # (nsid, ifindex), across all dispatcher types. List-derived
 # assertions must scope to keys the script owns: scripts run in
