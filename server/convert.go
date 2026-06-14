@@ -68,7 +68,7 @@ func protoToPullPolicy(policy int32) (bpfman.ImagePullPolicy, error) {
 	case 2:
 		return bpfman.PullNever, nil
 	default:
-		return bpfman.ImagePullPolicy{}, fmt.Errorf("unknown pull policy: %d", policy)
+		return "", fmt.Errorf("unknown pull policy: %d", policy)
 	}
 }
 
