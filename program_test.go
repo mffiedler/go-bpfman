@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/kernel"
 )
 
 // TestProgramListResult_EmptyMarshalsAsEmptyArray pins the wire
@@ -99,4 +100,59 @@ func TestProgramType_Valid(t *testing.T) {
 	for _, pt := range bpfman.AllProgramTypes() {
 		assert.Truef(t, pt.Valid(), "%s should be valid", pt)
 	}
+}
+
+// TestProgramType_KernelType pins the projection from bpfman's
+// attach-oriented taxonomy onto the coarser kernel taxonomy. The
+// mapping is deliberately many-to-one: tc/tcx -> sched_cls, the probe
+// family -> kprobe, fentry/fexit -> tracing.
+func TestProgramType_KernelType(t *testing.T) {
+	t.Parallel()
+
+	cases := map[bpfman.ProgramType]string{
+		bpfman.ProgramTypeXDP:        "xdp",
+		bpfman.ProgramTypeTC:         "schedcls",
+		bpfman.ProgramTypeTCX:        "schedcls",
+		bpfman.ProgramTypeTracepoint: "tracepoint",
+		bpfman.ProgramTypeKprobe:     "kprobe",
+		bpfman.ProgramTypeKretprobe:  "kprobe",
+		bpfman.ProgramTypeUprobe:     "kprobe",
+		bpfman.ProgramTypeUretprobe:  "kprobe",
+		bpfman.ProgramTypeFentry:     "tracing",
+		bpfman.ProgramTypeFexit:      "tracing",
+	}
+	for pt, want := range cases {
+		assert.Equalf(t, want, pt.KernelType().String(), "KernelType of %s", pt)
+	}
+}
+
+// TestMatchesKernelOnly_CoarseProjection pins the lossy filter for
+// kernel-only programs: a --type filter is projected onto the kernel
+// taxonomy before comparison, so tc and tcx both match a sched_cls row
+// and every probe variant matches a kprobe row. A mismatching kernel
+// type is excluded, and an empty type filter matches everything.
+func TestMatchesKernelOnly_CoarseProjection(t *testing.T) {
+	t.Parallel()
+
+	schedcls := kernel.NewProgramType("schedcls")
+	kprobe := kernel.NewProgramType("kprobe")
+
+	// tc and tcx are indistinguishable at the kernel level: both match.
+	assert.True(t, bpfman.ApplyListOptions(bpfman.WithTypes(bpfman.ProgramTypeTC)).MatchesKernelOnly(schedcls))
+	assert.True(t, bpfman.ApplyListOptions(bpfman.WithTypes(bpfman.ProgramTypeTCX)).MatchesKernelOnly(schedcls))
+
+	// every probe variant matches a kernel-only kprobe.
+	for _, pt := range []bpfman.ProgramType{
+		bpfman.ProgramTypeKprobe, bpfman.ProgramTypeKretprobe,
+		bpfman.ProgramTypeUprobe, bpfman.ProgramTypeUretprobe,
+	} {
+		assert.Truef(t, bpfman.ApplyListOptions(bpfman.WithTypes(pt)).MatchesKernelOnly(kprobe),
+			"%s should match a kernel-only kprobe", pt)
+	}
+
+	// a mismatching kernel type is excluded.
+	assert.False(t, bpfman.ApplyListOptions(bpfman.WithTypes(bpfman.ProgramTypeXDP)).MatchesKernelOnly(schedcls))
+
+	// no type filter matches any kernel-only program.
+	assert.True(t, bpfman.ApplyListOptions().MatchesKernelOnly(schedcls))
 }

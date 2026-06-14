@@ -72,6 +72,31 @@ func ProgramTypeNames() []string {
 // String returns the string representation of the program type.
 func (t ProgramType) String() string { return string(t) }
 
+// KernelType projects bpfman's attach-oriented program type onto the
+// coarser kernel taxonomy (cilium/ebpf's lowercased type names). The
+// mapping is many-to-one and lossy: tc and tcx both load as the
+// kernel's sched_cls, the kprobe family as kprobe, and fentry/fexit as
+// tracing. It exists to filter kernel-only (unmanaged) programs, which
+// carry only the kernel-reported type and none of bpfman's finer
+// metadata; managed programs are filtered on their bpfman type
+// directly, so they keep the finer distinction.
+func (t ProgramType) KernelType() kernel.ProgramType {
+	switch t {
+	case ProgramTypeTC, ProgramTypeTCX:
+		return kernel.NewProgramType("schedcls")
+	case ProgramTypeKprobe, ProgramTypeKretprobe, ProgramTypeUprobe, ProgramTypeUretprobe:
+		return kernel.NewProgramType("kprobe")
+	case ProgramTypeFentry, ProgramTypeFexit:
+		return kernel.NewProgramType("tracing")
+	case ProgramTypeXDP:
+		return kernel.NewProgramType("xdp")
+	case ProgramTypeTracepoint:
+		return kernel.NewProgramType("tracepoint")
+	default:
+		return ""
+	}
+}
+
 // ParseProgramType parses a string into a ProgramType.
 // Returns the ProgramType and a nil error if valid, or the zero value
 // and an error if not recognised.
@@ -468,9 +493,16 @@ func (o *listOptions) IncludeUnmanaged() bool {
 // kernel program type passes the filter. Kernel-only programs carry no
 // bpfman link or metadata state, so an attachment filter
 // (--attached/--unattached) or any label/metadata selector excludes
-// them; only the program-type filter applies, compared against the
-// kernel program type.
-func (o *listOptions) MatchesKernelOnly(kernelType string) bool {
+// them; only the program-type filter applies.
+//
+// The filter holds bpfman types but a kernel-only program reports only
+// its kernel type, so each filter type is projected onto the kernel
+// taxonomy (see ProgramType.KernelType) before comparison. The match is
+// therefore necessarily coarse: --type=tc and --type=tcx both match a
+// kernel-only sched_cls program, the probe variants all match a
+// kernel-only kprobe, and fentry/fexit both match a kernel-only
+// tracing, because the kernel does not record bpfman's finer intent.
+func (o *listOptions) MatchesKernelOnly(kernelType kernel.ProgramType) bool {
 	if o.attached != nil {
 		return false
 	}
@@ -481,7 +513,7 @@ func (o *listOptions) MatchesKernelOnly(kernelType string) bool {
 		return true
 	}
 	for t := range o.types {
-		if t.String() == kernelType {
+		if t.KernelType() == kernelType {
 			return true
 		}
 	}

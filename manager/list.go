@@ -472,7 +472,7 @@ func (m *Manager) ListProgramEntries(ctx context.Context, opts ...bpfman.ListOpt
 			if row.Kernel == nil {
 				continue
 			}
-			if filter.MatchesKernelOnly(row.Kernel.ProgramType.String()) {
+			if filter.MatchesKernelOnly(row.Kernel.ProgramType) {
 				entries = append(entries, kernelOnlyProgramEntry(*row.Kernel))
 			}
 		}
