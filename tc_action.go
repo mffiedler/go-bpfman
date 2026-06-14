@@ -5,51 +5,33 @@ import (
 	"strings"
 )
 
-// TCAction represents a TC action return code.
-// These correspond to TC_ACT_* values from the kernel.
-// It is an opaque value; the only valid instances are the
-// package-level variables or ParseTCAction.
-type TCAction struct{ v string }
-
-var (
-	TCActionUnspec           = TCAction{"unspec"}
-	TCActionOK               = TCAction{"ok"}
-	TCActionReclassify       = TCAction{"reclassify"}
-	TCActionShot             = TCAction{"shot"}
-	TCActionPipe             = TCAction{"pipe"}
-	TCActionStolen           = TCAction{"stolen"}
-	TCActionQueued           = TCAction{"queued"}
-	TCActionRepeat           = TCAction{"repeat"}
-	TCActionRedirect         = TCAction{"redirect"}
-	TCActionTrap             = TCAction{"trap"}
-	TCActionDispatcherReturn = TCAction{"dispatcher_return"}
-)
-
-// tcActionToInt32 maps TCAction values to their kernel int32 codes.
-var tcActionToInt32 = map[TCAction]int32{
-	TCActionUnspec:           -1,
-	TCActionOK:               0,
-	TCActionReclassify:       1,
-	TCActionShot:             2,
-	TCActionPipe:             3,
-	TCActionStolen:           4,
-	TCActionQueued:           5,
-	TCActionRepeat:           6,
-	TCActionRedirect:         7,
-	TCActionTrap:             8,
-	TCActionDispatcherReturn: 30,
+// TCAction represents a TC action return code: a named kernel TC_ACT_*
+// value. The name and its kernel code are a single domain value, not a
+// label with an incidental lookup, so TCAction is a value object with
+// unexported fields. Construct it via the package-level constants or
+// ParseTCAction; a TCAction so obtained always carries a valid code, so
+// Int32 is total and there is no forged-value-maps-to-zero case.
+type TCAction struct {
+	name string
+	code int32
 }
 
-// int32ToTCAction maps kernel int32 codes to TCAction values.
-var int32ToTCAction = func() map[int32]TCAction {
-	m := make(map[int32]TCAction, len(tcActionToInt32))
-	for action, code := range tcActionToInt32 {
-		m[code] = action
-	}
-	return m
-}()
+var (
+	TCActionUnspec           = TCAction{"unspec", -1}
+	TCActionOK               = TCAction{"ok", 0}
+	TCActionReclassify       = TCAction{"reclassify", 1}
+	TCActionShot             = TCAction{"shot", 2}
+	TCActionPipe             = TCAction{"pipe", 3}
+	TCActionStolen           = TCAction{"stolen", 4}
+	TCActionQueued           = TCAction{"queued", 5}
+	TCActionRepeat           = TCAction{"repeat", 6}
+	TCActionRedirect         = TCAction{"redirect", 7}
+	TCActionTrap             = TCAction{"trap", 8}
+	TCActionDispatcherReturn = TCAction{"dispatcher_return", 30}
+)
 
-// allTCActions is the canonical list of valid TC actions.
+// allTCActions is the canonical list of valid TC actions; the name and
+// code lookups derive from it.
 var allTCActions = []TCAction{
 	TCActionUnspec,
 	TCActionOK,
@@ -64,8 +46,27 @@ var allTCActions = []TCAction{
 	TCActionDispatcherReturn,
 }
 
-func (a TCAction) String() string               { return a.v }
-func (a TCAction) MarshalText() ([]byte, error) { return []byte(a.v), nil }
+// tcActionByName maps action names to their domain values (for parsing).
+var tcActionByName = func() map[string]TCAction {
+	m := make(map[string]TCAction, len(allTCActions))
+	for _, a := range allTCActions {
+		m[a.name] = a
+	}
+	return m
+}()
+
+// tcActionByCode maps kernel int32 codes to their domain values.
+var tcActionByCode = func() map[int32]TCAction {
+	m := make(map[int32]TCAction, len(allTCActions))
+	for _, a := range allTCActions {
+		m[a.code] = a
+	}
+	return m
+}()
+
+func (a TCAction) String() string               { return a.name }
+func (a TCAction) Int32() int32                 { return a.code }
+func (a TCAction) MarshalText() ([]byte, error) { return []byte(a.name), nil }
 
 func (a *TCAction) UnmarshalText(b []byte) error {
 	parsed, err := ParseTCAction(string(b))
@@ -76,51 +77,25 @@ func (a *TCAction) UnmarshalText(b []byte) error {
 	return nil
 }
 
-// Int32 returns the kernel int32 code for this TC action.
-func (a TCAction) Int32() int32 {
-	return tcActionToInt32[a]
-}
-
 // ParseTCAction parses a string into a TCAction (case-insensitive).
 func ParseTCAction(s string) (TCAction, error) {
-	switch strings.TrimSpace(strings.ToLower(s)) {
-	case "unspec":
-		return TCActionUnspec, nil
-	case "ok":
-		return TCActionOK, nil
-	case "reclassify":
-		return TCActionReclassify, nil
-	case "shot":
-		return TCActionShot, nil
-	case "pipe":
-		return TCActionPipe, nil
-	case "stolen":
-		return TCActionStolen, nil
-	case "queued":
-		return TCActionQueued, nil
-	case "repeat":
-		return TCActionRepeat, nil
-	case "redirect":
-		return TCActionRedirect, nil
-	case "trap":
-		return TCActionTrap, nil
-	case "dispatcher_return":
-		return TCActionDispatcherReturn, nil
-	default:
+	action, ok := tcActionByName[strings.TrimSpace(strings.ToLower(s))]
+	if !ok {
 		return TCAction{}, fmt.Errorf("unknown TC action %q", s)
 	}
+	return action, nil
 }
 
 // TCActionNames returns all valid TC action names as strings.
 func TCActionNames() []string {
 	names := make([]string, len(allTCActions))
 	for i, a := range allTCActions {
-		names[i] = a.v
+		names[i] = a.name
 	}
 	return names
 }
 
-// ParseTCActions parses a slice of TC action strings into int32 codes.
+// ParseTCActions parses a slice of TC action strings into domain values.
 func ParseTCActions(actions []string) ([]TCAction, error) {
 	result := make([]TCAction, 0, len(actions))
 	for _, s := range actions {
@@ -145,7 +120,7 @@ func TCActionCodes(actions []TCAction) []int32 {
 // TCActionFromInt32 converts a kernel int32 code to a TCAction.
 // Returns the zero value and an error if the code is not recognised.
 func TCActionFromInt32(code int32) (TCAction, error) {
-	if a, ok := int32ToTCAction[code]; ok {
+	if a, ok := tcActionByCode[code]; ok {
 		return a, nil
 	}
 	return TCAction{}, fmt.Errorf("unknown TC action code %d", code)
@@ -153,8 +128,8 @@ func TCActionFromInt32(code int32) (TCAction, error) {
 
 // TCActionToString converts a TC action int32 value to its string name.
 func TCActionToString(action int32) string {
-	if a, ok := int32ToTCAction[action]; ok {
-		return a.v
+	if a, ok := tcActionByCode[action]; ok {
+		return a.name
 	}
 	return fmt.Sprintf("unknown(%d)", action)
 }
