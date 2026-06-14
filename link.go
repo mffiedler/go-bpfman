@@ -277,23 +277,26 @@ type TCXLinkInfo struct {
 	Priority        int32            `json:"priority"`
 }
 
-// LinkKind is bpfman's discriminator for link types.
-// Distinct from kernel.Link.LinkType which is kernel-reported.
-// The unexported field prevents construction of invalid values; use the
-// package-level variables or ParseLinkKind.
-type LinkKind struct{ v string }
+// LinkKind is bpfman's discriminator for link types. It is distinct
+// from kernel.Link.LinkType, which is kernel-reported.
+//
+// It is a plain string enum: a value carries no proof of validity, so
+// validity is enforced at the boundaries. ParseLinkKind is the strict
+// parser for external input; JSON decoding is permissive, trusting
+// bpfman's own stored records.
+type LinkKind string
 
-var (
-	LinkKindTracepoint = LinkKind{"tracepoint"}
-	LinkKindKprobe     = LinkKind{"kprobe"}
-	LinkKindKretprobe  = LinkKind{"kretprobe"}
-	LinkKindUprobe     = LinkKind{"uprobe"}
-	LinkKindUretprobe  = LinkKind{"uretprobe"}
-	LinkKindFentry     = LinkKind{"fentry"}
-	LinkKindFexit      = LinkKind{"fexit"}
-	LinkKindXDP        = LinkKind{"xdp"}
-	LinkKindTC         = LinkKind{"tc"}
-	LinkKindTCX        = LinkKind{"tcx"}
+const (
+	LinkKindTracepoint LinkKind = "tracepoint"
+	LinkKindKprobe     LinkKind = "kprobe"
+	LinkKindKretprobe  LinkKind = "kretprobe"
+	LinkKindUprobe     LinkKind = "uprobe"
+	LinkKindUretprobe  LinkKind = "uretprobe"
+	LinkKindFentry     LinkKind = "fentry"
+	LinkKindFexit      LinkKind = "fexit"
+	LinkKindXDP        LinkKind = "xdp"
+	LinkKindTC         LinkKind = "tc"
+	LinkKindTCX        LinkKind = "tcx"
 )
 
 // allLinkKinds is the canonical list of valid link kinds.
@@ -319,21 +322,19 @@ func AllLinkKinds() []LinkKind {
 func LinkKindNames() []string {
 	names := make([]string, len(allLinkKinds))
 	for i, k := range allLinkKinds {
-		names[i] = k.v
+		names[i] = k.String()
 	}
 	return names
 }
 
-func (k LinkKind) String() string               { return k.v }
-func (k LinkKind) MarshalText() ([]byte, error) { return []byte(k.v), nil }
+func (k LinkKind) String() string { return string(k) }
 
-func (k *LinkKind) UnmarshalText(b []byte) error {
-	parsed, err := ParseLinkKind(string(b))
-	if err != nil {
-		return err
-	}
-	*k = parsed
-	return nil
+// Valid reports whether k is one of the known link kinds. Strict
+// membership backed by ParseLinkKind: the zero value and unrecognised
+// values are not valid.
+func (k LinkKind) Valid() bool {
+	_, err := ParseLinkKind(string(k))
+	return err == nil
 }
 
 // ParseLinkKind parses a string into a LinkKind.
@@ -362,7 +363,7 @@ func ParseLinkKind(s string) (LinkKind, error) {
 	case "tcx":
 		return LinkKindTCX, nil
 	default:
-		return LinkKind{}, fmt.Errorf("unknown link kind %q", s)
+		return "", fmt.Errorf("unknown link kind %q", s)
 	}
 }
 

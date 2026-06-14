@@ -203,6 +203,50 @@ func TestTCDirection_JSONRoundTrip(t *testing.T) {
 	}
 }
 
+// TestLinkKind_Valid pins strict membership: the zero value and an
+// unrecognised value are invalid; every known kind is valid.
+func TestLinkKind_Valid(t *testing.T) {
+	t.Parallel()
+
+	assert.False(t, bpfman.LinkKind("").Valid(), "zero value is not valid")
+	assert.False(t, bpfman.LinkKind("garbage").Valid(), "unknown value is not valid")
+	for _, k := range bpfman.AllLinkKinds() {
+		assert.Truef(t, k.Valid(), "%s should be valid", k)
+	}
+}
+
+// TestParseLinkKind pins the boundary parser: it accepts every known
+// kind name and rejects an unrecognised one with the zero value.
+func TestParseLinkKind(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range bpfman.LinkKindNames() {
+		k, err := bpfman.ParseLinkKind(name)
+		require.NoErrorf(t, err, "ParseLinkKind(%q)", name)
+		assert.Equalf(t, name, k.String(), "round-trip name %q", name)
+	}
+
+	k, err := bpfman.ParseLinkKind("garbage")
+	assert.Error(t, err, "unknown kind should be rejected")
+	assert.Equal(t, bpfman.LinkKind(""), k, "rejected parse returns zero value")
+}
+
+// TestLinkKind_JSONRoundTrip pins the wire form: a plain string enum
+// with no custom (Un)MarshalText round-trips through native encoding.
+func TestLinkKind_JSONRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	for _, k := range bpfman.AllLinkKinds() {
+		data, err := json.Marshal(k)
+		require.NoErrorf(t, err, "marshal %s", k)
+		assert.Equalf(t, `"`+k.String()+`"`, string(data), "wire form of %s", k)
+
+		var got bpfman.LinkKind
+		require.NoErrorf(t, json.Unmarshal(data, &got), "unmarshal %s", k)
+		assert.Equalf(t, k, got, "round-trip %s", k)
+	}
+}
+
 // TestLinkAttachKindDetailsType_CoversEveryAttachKind asserts
 // that every attach subcommand keyword in LinkAttachKinds()
 // resolves to a concrete reflect.Type and that an unknown

@@ -199,7 +199,7 @@ func (r LinkRow) Kind() bpfman.LinkKind {
 	if r.Managed != nil {
 		return r.Managed.Kind
 	}
-	return bpfman.LinkKind{}
+	return ""
 }
 
 // PinPath returns the pin path (from store if available).
