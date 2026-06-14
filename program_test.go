@@ -104,7 +104,7 @@ func TestProgramType_Valid(t *testing.T) {
 
 // TestProgramType_KernelType pins the projection from bpfman's
 // attach-oriented taxonomy onto the coarser kernel taxonomy. The
-// mapping is deliberately many-to-one: tc/tcx -> sched_cls, the probe
+// mapping is deliberately many-to-one: tc/tcx -> schedcls, the probe
 // family -> kprobe, fentry/fexit -> tracing.
 func TestProgramType_KernelType(t *testing.T) {
 	t.Parallel()
@@ -128,7 +128,7 @@ func TestProgramType_KernelType(t *testing.T) {
 
 // TestMatchesKernelOnly_CoarseProjection pins the lossy filter for
 // kernel-only programs: a --type filter is projected onto the kernel
-// taxonomy before comparison, so tc and tcx both match a sched_cls row
+// taxonomy before comparison, so tc and tcx both match a schedcls row
 // and every probe variant matches a kprobe row. A mismatching kernel
 // type is excluded, and an empty type filter matches everything.
 func TestMatchesKernelOnly_CoarseProjection(t *testing.T) {

@@ -13,7 +13,7 @@ import (
 
 // ProgramType is bpfman's discriminator for BPF program types. It is
 // distinct from kernel.ProgramType: the latter carries the coarser
-// kernel taxonomy (tc and tcx both map to the kernel's sched_cls, the
+// kernel taxonomy (tc and tcx both map to the kernel's schedcls, the
 // kprobe family to kprobe, fentry/fexit to tracing), so the two cannot
 // be unified without losing the attach distinction.
 //
@@ -75,7 +75,7 @@ func (t ProgramType) String() string { return string(t) }
 // KernelType projects bpfman's attach-oriented program type onto the
 // coarser kernel taxonomy (cilium/ebpf's lowercased type names). The
 // mapping is many-to-one and lossy: tc and tcx both load as the
-// kernel's sched_cls, the kprobe family as kprobe, and fentry/fexit as
+// kernel's schedcls, the kprobe family as kprobe, and fentry/fexit as
 // tracing. It exists to filter kernel-only (unmanaged) programs, which
 // carry only the kernel-reported type and none of bpfman's finer
 // metadata; managed programs are filtered on their bpfman type
@@ -499,7 +499,7 @@ func (o *listOptions) IncludeUnmanaged() bool {
 // its kernel type, so each filter type is projected onto the kernel
 // taxonomy (see ProgramType.KernelType) before comparison. The match is
 // therefore necessarily coarse: --type=tc and --type=tcx both match a
-// kernel-only sched_cls program, the probe variants all match a
+// kernel-only schedcls program, the probe variants all match a
 // kernel-only kprobe, and fentry/fexit both match a kernel-only
 // tracing, because the kernel does not record bpfman's finer intent.
 func (o *listOptions) MatchesKernelOnly(kernelType kernel.ProgramType) bool {
