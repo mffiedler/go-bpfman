@@ -49,6 +49,18 @@ func ScanE2EResidue(bpffsRoot, netnsDir string) (Plan, error) {
 		plan = append(plan, RemovePin{Path: pin})
 	}
 
+	// Programs the e2e scripts load out-of-band via bpftool are pinned
+	// on the system bpffs under E2EUnmanagedPinPrefix; the link-pin scan
+	// above skips them (they are program pins, not links). Reclaim any
+	// left behind by a script that aborted before its rm defer ran.
+	progPins, err := findE2EUnmanagedProgramPins(bpffsRoot)
+	if err != nil {
+		return plan, fmt.Errorf("scan e2e unmanaged program pins: %w", err)
+	}
+	for _, pin := range progPins {
+		plan = append(plan, RemovePin{Path: pin})
+	}
+
 	links, err := netlink.LinkList()
 	if err != nil {
 		return plan, fmt.Errorf("list interfaces: %w", err)
