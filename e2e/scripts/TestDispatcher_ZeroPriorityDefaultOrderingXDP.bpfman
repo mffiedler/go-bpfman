@@ -39,6 +39,9 @@ guard g_25 <- bpfman link get $l_25
 guard g_0 <- bpfman link get $l_0
 guard g_75 <- bpfman link get $l_75
 
+guard snap <- bpfman dispatcher get xdp $pair.host_nsid $pair.host_ifindex
+assert ($snap |> jq ".members | length") == 3
+
 assert $g_25.record.details.priority == 25
 assert $g_0.record.details.priority == 50
 assert $g_75.record.details.priority == 75
@@ -46,3 +49,23 @@ assert $g_75.record.details.priority == 75
 assert $g_25.record.details.position == 0
 assert $g_0.record.details.position == 1
 assert $g_75.record.details.position == 2
+
+let id_25 = $l_25.record.id
+let id_0 = $l_0.record.id
+let id_75 = $l_75.record.id
+
+let snap_25_priority = $snap |> jq ".members[] | select(.link_id == ${id_25}) | .priority"
+let snap_0_priority = $snap |> jq ".members[] | select(.link_id == ${id_0}) | .priority"
+let snap_75_priority = $snap |> jq ".members[] | select(.link_id == ${id_75}) | .priority"
+
+let snap_25_position = $snap |> jq ".members[] | select(.link_id == ${id_25}) | .position"
+let snap_0_position = $snap |> jq ".members[] | select(.link_id == ${id_0}) | .position"
+let snap_75_position = $snap |> jq ".members[] | select(.link_id == ${id_75}) | .position"
+
+assert $snap_25_priority == 25
+assert $snap_0_priority == 50
+assert $snap_75_priority == 75
+
+assert $snap_25_position == 0
+assert $snap_0_position == 1
+assert $snap_75_position == 2
