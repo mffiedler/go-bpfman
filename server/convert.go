@@ -29,7 +29,7 @@ func protoToBpfmanType(pt pb.BpfmanProgramType) (bpfman.ProgramType, error) {
 	case pb.BpfmanProgramType_TCX:
 		return bpfman.ProgramTypeTCX, nil
 	default:
-		return bpfman.ProgramType{}, fmt.Errorf("unknown program type: %d", pt)
+		return "", fmt.Errorf("unknown program type: %d", pt)
 	}
 }
 

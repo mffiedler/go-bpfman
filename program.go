@@ -11,22 +11,33 @@ import (
 	"github.com/frobware/go-bpfman/kernel"
 )
 
-// ProgramType is bpfman's discriminator for BPF program types.
-// It is an opaque value; the only valid instances are the
-// package-level variables or ParseProgramType.
-type ProgramType struct{ v string }
+// ProgramType is bpfman's discriminator for BPF program types. It is
+// distinct from kernel.ProgramType: the latter carries the coarser
+// kernel taxonomy (tc and tcx both map to the kernel's sched_cls, the
+// kprobe family to kprobe, fentry/fexit to tracing), so the two cannot
+// be unified without losing the attach distinction.
+//
+// It is a plain string enum, so a ProgramType value carries no proof of
+// validity -- ProgramType("bogus") is representable. Validity is
+// therefore enforced at the points that matter, not by the type:
+// ParseProgramType is the strict boundary parser (CLI and gRPC route
+// through it), the NewLoadSpec / NewAttachLoadSpec constructors reject
+// unknown values, and Valid reports membership of the known set. JSON
+// decoding is deliberately permissive, trusting bpfman's own stored
+// records rather than revalidating them.
+type ProgramType string
 
-var (
-	ProgramTypeXDP        = ProgramType{"xdp"}
-	ProgramTypeTC         = ProgramType{"tc"}
-	ProgramTypeTCX        = ProgramType{"tcx"}
-	ProgramTypeTracepoint = ProgramType{"tracepoint"}
-	ProgramTypeKprobe     = ProgramType{"kprobe"}
-	ProgramTypeKretprobe  = ProgramType{"kretprobe"}
-	ProgramTypeUprobe     = ProgramType{"uprobe"}
-	ProgramTypeUretprobe  = ProgramType{"uretprobe"}
-	ProgramTypeFentry     = ProgramType{"fentry"}
-	ProgramTypeFexit      = ProgramType{"fexit"}
+const (
+	ProgramTypeXDP        ProgramType = "xdp"
+	ProgramTypeTC         ProgramType = "tc"
+	ProgramTypeTCX        ProgramType = "tcx"
+	ProgramTypeTracepoint ProgramType = "tracepoint"
+	ProgramTypeKprobe     ProgramType = "kprobe"
+	ProgramTypeKretprobe  ProgramType = "kretprobe"
+	ProgramTypeUprobe     ProgramType = "uprobe"
+	ProgramTypeUretprobe  ProgramType = "uretprobe"
+	ProgramTypeFentry     ProgramType = "fentry"
+	ProgramTypeFexit      ProgramType = "fexit"
 )
 
 // allProgramTypes is the canonical list of valid program types.
@@ -59,17 +70,7 @@ func ProgramTypeNames() []string {
 }
 
 // String returns the string representation of the program type.
-func (t ProgramType) String() string               { return t.v }
-func (t ProgramType) MarshalText() ([]byte, error) { return []byte(t.v), nil }
-
-func (t *ProgramType) UnmarshalText(b []byte) error {
-	parsed, err := ParseProgramType(string(b))
-	if err != nil {
-		return err
-	}
-	*t = parsed
-	return nil
-}
+func (t ProgramType) String() string { return string(t) }
 
 // ParseProgramType parses a string into a ProgramType.
 // Returns the ProgramType and a nil error if valid, or the zero value
@@ -97,7 +98,7 @@ func ParseProgramType(s string) (ProgramType, error) {
 	case "fexit":
 		return ProgramTypeFexit, nil
 	default:
-		return ProgramType{}, fmt.Errorf("unknown program type %q", s)
+		return "", fmt.Errorf("unknown program type %q", s)
 	}
 }
 

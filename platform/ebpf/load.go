@@ -95,7 +95,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 	// because a kprobe program CAN be attached as either entry or return probe.
 	programType := spec.ProgramType()
 	secInferredType := inferProgramType(progSpec.SectionName)
-	if programType == (bpfman.ProgramType{}) {
+	if !programType.Valid() {
 		// Fall back to inferring from ELF section name
 		programType = secInferredType
 	}
@@ -113,7 +113,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 	// interchangeable here because the entry/return distinction
 	// is set at perf_event_open time, not at load.
 	if programType.RequiresAttachFunc() &&
-		secInferredType != (bpfman.ProgramType{}) &&
+		secInferredType.Valid() &&
 		secInferredType.RequiresAttachFunc() &&
 		programType != secInferredType {
 		return bpfman.LoadOutput{}, fmt.Errorf(

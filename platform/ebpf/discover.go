@@ -65,7 +65,7 @@ func DiscoverProgramsFromReader(rd io.ReaderAt) ([]platform.DiscoveredProgram, e
 		progType := InferProgramType(progSpec.SectionName)
 
 		// Skip programs with unspecified type
-		if progType == (bpfman.ProgramType{}) {
+		if !progType.Valid() {
 			continue
 		}
 

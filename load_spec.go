@@ -36,9 +36,13 @@ func (t ProgramType) RequiresAttachFunc() bool {
 	return t == ProgramTypeFentry || t == ProgramTypeFexit
 }
 
-// Valid returns true if this is a known, specified program type.
+// Valid reports whether t is one of the known program types. It is the
+// strict membership predicate the constructors gate on: an empty or
+// otherwise unrecognised value is not valid. ParseProgramType is the
+// single source of truth for the known set.
 func (t ProgramType) Valid() bool {
-	return t != (ProgramType{})
+	_, err := ParseProgramType(string(t))
+	return err == nil
 }
 
 // NewLoadSpec creates a LoadSpec for program types that do not require

@@ -52,7 +52,7 @@ func TestDiscoverPrograms(t *testing.T) {
 		if prog.SectionName == "" {
 			t.Error("program has empty section name")
 		}
-		if prog.Type == (bpfman.ProgramType{}) {
+		if !prog.Type.Valid() {
 			t.Errorf("program %q has unspecified type", prog.Name)
 		}
 		// fentry/fexit should be filtered out
@@ -178,7 +178,7 @@ func TestInferProgramType(t *testing.T) {
 		{"fentry/vfs_read", bpfman.ProgramTypeFentry},
 		{"fexit/vfs_read", bpfman.ProgramTypeFexit},
 		{"?kprobe/sys_open", bpfman.ProgramTypeKprobe}, // optional prefix
-		{"unknown_section", bpfman.ProgramType{}},
+		{"unknown_section", ""},
 	}
 
 	for _, tc := range tests {

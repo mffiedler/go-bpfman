@@ -1179,8 +1179,8 @@ func TestLoadProgram_WithInvalidProgramType_IsRejected(t *testing.T) {
 
 	fix := newTestFixture(t)
 
-	// Try to create a spec with zero-value type (invalid)
-	_, err := bpfman.NewLoadSpec("/path/to/prog.o", "bad_prog", bpfman.ProgramType{})
+	// Try to create a spec with a non-empty but unrecognised type.
+	_, err := bpfman.NewLoadSpec("/path/to/prog.o", "bad_prog", bpfman.ProgramType("garbage"))
 	require.Error(t, err, "creating spec with invalid program type should fail")
 
 	// Verify clean state
@@ -2398,7 +2398,7 @@ func TestLoadProgram_WithUnspecifiedProgramType_IsRejected(t *testing.T) {
 	fix := newTestFixture(t)
 
 	// Try to create a spec with zero-value type (unspecified)
-	_, err := bpfman.NewLoadSpec("/path/to/prog.o", "prog", bpfman.ProgramType{})
+	_, err := bpfman.NewLoadSpec("/path/to/prog.o", "prog", bpfman.ProgramType(""))
 	require.Error(t, err, "creating spec with unspecified program type should fail")
 
 	// Verify clean state
