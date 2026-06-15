@@ -3074,3 +3074,31 @@ func TestUprobe_NeitherFnNameNorOffset_Fails(t *testing.T) {
 	assert.Contains(t, err.Error(), "requires a function name or a non-zero offset")
 	assert.Equal(t, 0, fix.Kernel.LinkCount(), "rejection must happen before any kernel attach")
 }
+
+// TestUprobe_ContainerLibraryNameRejected pins the deferred scope
+// boundary: library-name resolution happens in bpfman's own
+// namespace, but a container uprobe's target is opened inside the
+// container's mount namespace, where no resolution is implemented.
+// A bare name with --container-pid must be a designed error before
+// any helper spawns, not a literal-path open failure inside the
+// child.
+func TestUprobe_ContainerLibraryNameRejected(t *testing.T) {
+	t.Parallel()
+
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("uprobe.o"), "uprobe_prog", bpfman.ProgramTypeUprobe)
+	require.NoError(t, err)
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	attachSpec, err := bpfman.NewUprobeAttachSpec(prog.Record.ProgramID, "libc", 0, 4242)
+	require.NoError(t, err)
+	attachSpec = attachSpec.WithFnName("malloc")
+
+	_, err = fix.Attach(ctx, attachSpec)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "container uprobe target must be an absolute path")
+	assert.Equal(t, 0, fix.Kernel.LinkCount())
+}

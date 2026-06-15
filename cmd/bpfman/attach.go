@@ -211,7 +211,7 @@ type AttachUprobeCmd struct {
 	AttachMetadataFlags
 	Example      ExampleFlag         `name:"example" help:"Show working examples and exit."`
 	ProgramID    bpfmancli.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
-	Target       string              `arg:"" name:"target" help:"Path to target binary or library."`
+	Target       string              `arg:"" name:"target" help:"Absolute path to the target binary or library, or a bare library name (e.g. libc) resolved like the dynamic linker."`
 	FnName       string              `short:"f" name:"fn-name" help:"Function name to attach to."`
 	Offset       uint64              `name:"offset" help:"Offset within the function." default:"0"`
 	Pid          int32               `name:"pid" help:"Only trace this process ID (0 traces all processes)."`

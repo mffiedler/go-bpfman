@@ -113,9 +113,20 @@ func (k *kernelAdapter) doAttachUprobeLocal(progPinPath, target, fnName string, 
 	}
 	defer prog.Close()
 
-	ex, err := link.OpenExecutable(target)
+	resolved, err := defaultTargetResolver.resolve(target, pid)
 	if err != nil {
-		return 0, nil, fmt.Errorf("open executable %s: %w", target, err)
+		return 0, nil, err
+	}
+	if resolved.Source != sourceAbsolutePath {
+		k.logger.Debug("resolved uprobe target",
+			"target", target,
+			"path", resolved.Path,
+			"source", resolved.Source.String())
+	}
+
+	ex, err := link.OpenExecutable(resolved.Path)
+	if err != nil {
+		return 0, nil, fmt.Errorf("open executable %s: %w", resolved.Path, err)
 	}
 
 	symbol, opts := uprobeOptions(fnName, offset, pid)
