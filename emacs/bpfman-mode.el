@@ -1,6 +1,6 @@
 ;;; bpfman-mode.el --- Major mode for bpfman-shell scripts -*- lexical-binding: t; -*-
 
-;; Version: 0.7.0
+;; Version: 0.8.0
 ;; Keywords: languages, bpf
 ;; Package-Requires: ((emacs "25.1"))
 
@@ -52,6 +52,10 @@
 ;; pattern.
 
 ;; ---- Word sets ----
+
+(defconst bpfman--def-param-types '("number" "string" "bool")
+  "Accepted type annotations on def parameters.
+Mirrors DefParamTypes in cmd/bpfman-shell/shell/syntax/ast_stmt.go.")
 
 (defconst bpfman--commands
   (let ((ht (make-hash-table :test 'equal)))
@@ -639,7 +643,7 @@ string tokens are one literal segment."
     (?\)
      (bpfman--classification-result
       (cond
-       ((eq state 'def-params-list) 'start)
+       ((memq state '(def-params-list def-param-type)) 'start)
        ((eq state 'tuple-targets-let) 'let-eq)
        ((eq state 'tuple-targets-foreach) 'args)
        (t state))))
@@ -659,7 +663,26 @@ string tokens are one literal segment."
      (bpfman--classification-result 'args (bpfman--ident-role text beg end)))
     ('def-name
      (bpfman--classification-result 'def-params (bpfman--ident-role text beg end)))
-    ((or 'def-params-list 'tuple-targets-let 'tuple-targets-foreach)
+    ('def-params-list
+     ;; A def parameter may carry a type annotation: `name: type'.
+     ;; The colon glues to the name in tokenisation, so a token
+     ;; ending in `:' is an annotated parameter whose type word
+     ;; follows. The name keeps its variable role; the next token
+     ;; is classified in `def-param-type'.
+     (bpfman--classification-result
+      (if (string-suffix-p ":" text) 'def-param-type 'def-params-list)
+      (bpfman--identifier-prefix-role beg end)))
+    ('def-param-type
+     ;; Type position after `name:'. Highlight the accepted
+     ;; annotation types as a type; anything else is a malformed
+     ;; annotation the parser rejects, left as an ordinary
+     ;; identifier. Either way the list continues.
+     (bpfman--classification-result
+      'def-params-list
+      (if (member text bpfman--def-param-types)
+          (list 'type beg end)
+        (bpfman--identifier-prefix-role beg end))))
+    ((or 'tuple-targets-let 'tuple-targets-foreach)
      (bpfman--classification-result state (bpfman--identifier-prefix-role beg end)))
     ('let-eq
      (bpfman--classification-result 'args))
@@ -746,6 +769,7 @@ mid-edit lines."
     ('variable 'font-lock-variable-name-face)
     ('constant 'font-lock-constant-face)
     ('builtin 'font-lock-builtin-face)
+    ('type 'font-lock-type-face)
     (_ nil)))
 
 (defun bpfman--apply-role-face (role)

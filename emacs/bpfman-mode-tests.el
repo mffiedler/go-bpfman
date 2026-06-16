@@ -323,6 +323,43 @@ not exercise."
                    (builtin "not")
                    (builtin "ok")))))
 
+(ert-deftest bpfman-classify-def-param-type-annotations ()
+  "Classify typed def parameters: `name: type'.
+
+The parser accepts optional type annotations on def parameters
+(`def f(x: number)', types number/string/bool). The colon glues
+to the parameter name in tokenisation, so the name keeps its
+variable role and the following type word takes a distinct type
+role rather than being mistaken for another parameter name."
+  (should (equal (bpfman-test--classified-roles
+                  "def f(x: number y: string flag: bool plain) {")
+                 '((keyword "def")
+                   (variable "f")
+                   (variable "x")
+                   (type "number")
+                   (variable "y")
+                   (type "string")
+                   (variable "flag")
+                   (type "bool")
+                   (variable "plain"))))
+  ;; A tuple-target list (let/foreach) is not a def parameter
+  ;; list, so its tokens never take the type follow-on role.
+  (should (equal (bpfman-test--classified-roles
+                  "let out <- foreach (id name) in $items {")
+                 '((keyword "let")
+                   (variable "out")
+                   (keyword "<-")
+                   (keyword "foreach")
+                   (variable "id")
+                   (variable "name")
+                   (builtin "in")
+                   (variable "$items")))))
+
+(ert-deftest bpfman-role-face-maps-type-role-to-type-face ()
+  "The def-parameter type role maps to the Emacs type face."
+  (should (eq (bpfman--role-face 'type)
+              'font-lock-type-face)))
+
 (ert-deftest bpfman-role-face-maps-semantic-roles-to-emacs-faces ()
   "Interpret structural roles as font-lock faces at the boundary."
   (should (eq (bpfman--role-face 'keyword)

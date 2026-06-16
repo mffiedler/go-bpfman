@@ -561,6 +561,16 @@ def banner() {
     print "running lifecycle checks"
 }
 
+# Parameters may carry an optional type annotation `name: type'
+# (types number, string, bool). The colon binds to the parameter
+# name; the type word carries the type face, distinct from the
+# variable-name face on the parameter itself. A space after the
+# colon is required (`x: number', not `x:number'). Annotated and
+# bare parameters mix freely.
+def assert_dispatcher_count(nsid: number ifindex: number want: number label) {
+    print "${label}: expecting ${want} members at ${nsid}/${ifindex}"
+}
+
 def publish_id(prog) {
     return $prog.record.program_id
 }
