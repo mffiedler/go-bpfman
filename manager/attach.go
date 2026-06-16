@@ -20,6 +20,21 @@ func (m *Manager) Attach(ctx context.Context, writeLock lock.WriterScope, spec b
 	// Specs are fully refined by their constructors (required fields
 	// checked, priority and pid bounds parsed), so the manager acts
 	// on them directly without a separate validation gate.
+	//
+	// One cross-spec invariant cannot be expressed by a constructor:
+	// the attach verb must match the loaded program's type (a uprobe
+	// program cannot be attached as a kprobe, and so on). Resolve the
+	// program once and reject a mismatch here, before any handler does
+	// kernel or store work, so the failure is clean and front-ends
+	// (CLI, gRPC, the shell, the operator) all inherit the same guard.
+	prog, err := m.getProgram(ctx, spec.ProgramID())
+	if err != nil {
+		return bpfman.Link{}, err
+	}
+	if err := bpfman.ValidateAttachProgramType(spec, prog.Load.ProgramType()); err != nil {
+		return bpfman.Link{}, err
+	}
+
 	switch s := spec.(type) {
 	case bpfman.TracepointAttachSpec:
 		return m.attachTracepoint(ctx, s)

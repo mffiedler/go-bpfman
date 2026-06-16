@@ -124,12 +124,11 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 		return bpfman.Link{}, err
 	}
 
+	// Manager.Attach has already verified the program is a tcx program
+	// (before any side effect); here we only need its pin path.
 	prog, err := m.getProgram(ctx, programID)
 	if err != nil {
 		return bpfman.Link{}, err
-	}
-	if prog.Load.ProgramType() != bpfman.ProgramTypeTCX {
-		return bpfman.Link{}, fmt.Errorf("program %d is type %s, not tcx", programID, prog.Load.ProgramType())
 	}
 	nsid, err := netns.NSID(netnsPath)
 	if err != nil {

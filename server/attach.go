@@ -76,6 +76,26 @@ func (s *Server) Attach(ctx context.Context, req *pb.AttachRequest) (*pb.AttachR
 	})
 }
 
+// attachManagerError translates an error returned by Manager.Attach
+// into a gRPC status. It centralises the mappings every attach handler
+// shares: a missing program is NotFound, and a program whose loaded
+// type the attach verb cannot drive (ErrAttachKindMismatch) is a client
+// precondition failure (FailedPrecondition), not an internal fault.
+// Anything else is Internal. Handlers with extra type-specific cases
+// (an unresolved interface, a near-miss tracepoint) check those first
+// and delegate the rest here.
+func attachManagerError(programID kernel.ProgramID, kind string, err error) error {
+	var notFound bpfman.ErrProgramNotFound
+	if errors.As(err, &notFound) || errors.Is(err, platform.ErrRecordNotFound) {
+		return status.Errorf(codes.NotFound, "program with ID %d not found", programID)
+	}
+	var mismatch bpfman.ErrAttachKindMismatch
+	if errors.As(err, &mismatch) {
+		return status.Errorf(codes.FailedPrecondition, "%v", err)
+	}
+	return status.Errorf(codes.Internal, "attach %s: %v", kind, err)
+}
+
 // attachTracepoint handles tracepoint attachment via the manager.
 func (s *Server) attachTracepoint(ctx context.Context, writeLock lock.WriterScope, programID kernel.ProgramID, info *pb.TracepointAttachInfo) (*pb.AttachResponse, error) {
 	spec, err := bpfman.NewTracepointAttachSpecFromString(programID, info.Tracepoint)
@@ -86,15 +106,11 @@ func (s *Server) attachTracepoint(ctx context.Context, writeLock lock.WriterScop
 	// Call manager
 	link, err := s.mgr.Attach(ctx, writeLock, spec)
 	if err != nil {
-		var notFound bpfman.ErrProgramNotFound
-		if errors.As(err, &notFound) || errors.Is(err, platform.ErrRecordNotFound) {
-			return nil, status.Errorf(codes.NotFound, "program with ID %d not found", programID)
-		}
 		var tpNotFound bpfman.ErrTracepointNotFound
 		if errors.As(err, &tpNotFound) {
 			return nil, status.Errorf(codes.NotFound, "%v", err)
 		}
-		return nil, status.Errorf(codes.Internal, "attach tracepoint: %v", err)
+		return nil, attachManagerError(programID, "tracepoint", err)
 	}
 
 	return &pb.AttachResponse{
@@ -124,14 +140,10 @@ func (s *Server) attachXDP(ctx context.Context, writeLock lock.WriterScope, prog
 	// Call manager
 	link, err := s.mgr.Attach(ctx, writeLock, spec)
 	if err != nil {
-		var notFound bpfman.ErrProgramNotFound
-		if errors.As(err, &notFound) {
-			return nil, status.Errorf(codes.NotFound, "program with ID %d not found", programID)
-		}
 		if errors.Is(err, platform.ErrInterfaceNotFound) {
 			return nil, status.Errorf(codes.InvalidArgument, "attach XDP: %v", err)
 		}
-		return nil, status.Errorf(codes.Internal, "attach XDP: %v", err)
+		return nil, attachManagerError(programID, "XDP", err)
 	}
 
 	return &pb.AttachResponse{
@@ -162,14 +174,10 @@ func (s *Server) attachTC(ctx context.Context, writeLock lock.WriterScope, progr
 	// Call manager
 	link, err := s.mgr.Attach(ctx, writeLock, spec)
 	if err != nil {
-		var notFound bpfman.ErrProgramNotFound
-		if errors.As(err, &notFound) {
-			return nil, status.Errorf(codes.NotFound, "program with ID %d not found", programID)
-		}
 		if errors.Is(err, platform.ErrInterfaceNotFound) {
 			return nil, status.Errorf(codes.InvalidArgument, "attach TC: %v", err)
 		}
-		return nil, status.Errorf(codes.Internal, "attach TC: %v", err)
+		return nil, attachManagerError(programID, "TC", err)
 	}
 
 	return &pb.AttachResponse{
@@ -194,14 +202,10 @@ func (s *Server) attachTCX(ctx context.Context, writeLock lock.WriterScope, prog
 	// Call manager
 	link, err := s.mgr.Attach(ctx, writeLock, spec)
 	if err != nil {
-		var notFound bpfman.ErrProgramNotFound
-		if errors.As(err, &notFound) {
-			return nil, status.Errorf(codes.NotFound, "program with ID %d not found", programID)
-		}
 		if errors.Is(err, platform.ErrInterfaceNotFound) {
 			return nil, status.Errorf(codes.InvalidArgument, "attach TCX: %v", err)
 		}
-		return nil, status.Errorf(codes.Internal, "attach TCX: %v", err)
+		return nil, attachManagerError(programID, "TCX", err)
 	}
 
 	return &pb.AttachResponse{
@@ -227,11 +231,7 @@ func (s *Server) attachKprobe(ctx context.Context, writeLock lock.WriterScope, p
 	// Call manager - it will determine retprobe from program type
 	link, err := s.mgr.Attach(ctx, writeLock, spec)
 	if err != nil {
-		var notFound bpfman.ErrProgramNotFound
-		if errors.As(err, &notFound) {
-			return nil, status.Errorf(codes.NotFound, "program with ID %d not found", programID)
-		}
-		return nil, status.Errorf(codes.Internal, "attach kprobe: %v", err)
+		return nil, attachManagerError(programID, "kprobe", err)
 	}
 
 	return &pb.AttachResponse{
@@ -269,11 +269,7 @@ func (s *Server) attachUprobe(ctx context.Context, writeLock lock.WriterScope, p
 	// Call manager
 	link, err := s.mgr.Attach(ctx, writeLock, spec)
 	if err != nil {
-		var notFound bpfman.ErrProgramNotFound
-		if errors.As(err, &notFound) {
-			return nil, status.Errorf(codes.NotFound, "program with ID %d not found", programID)
-		}
-		return nil, status.Errorf(codes.Internal, "attach uprobe: %v", err)
+		return nil, attachManagerError(programID, "uprobe", err)
 	}
 
 	return &pb.AttachResponse{
@@ -293,11 +289,7 @@ func (s *Server) attachFentry(ctx context.Context, writeLock lock.WriterScope, p
 	// Call manager
 	link, err := s.mgr.Attach(ctx, writeLock, spec)
 	if err != nil {
-		var notFound bpfman.ErrProgramNotFound
-		if errors.As(err, &notFound) {
-			return nil, status.Errorf(codes.NotFound, "program with ID %d not found", programID)
-		}
-		return nil, status.Errorf(codes.Internal, "attach fentry: %v", err)
+		return nil, attachManagerError(programID, "fentry", err)
 	}
 
 	return &pb.AttachResponse{
@@ -317,11 +309,7 @@ func (s *Server) attachFexit(ctx context.Context, writeLock lock.WriterScope, pr
 	// Call manager
 	link, err := s.mgr.Attach(ctx, writeLock, spec)
 	if err != nil {
-		var notFound bpfman.ErrProgramNotFound
-		if errors.As(err, &notFound) {
-			return nil, status.Errorf(codes.NotFound, "program with ID %d not found", programID)
-		}
-		return nil, status.Errorf(codes.Internal, "attach fexit: %v", err)
+		return nil, attachManagerError(programID, "fexit", err)
 	}
 
 	return &pb.AttachResponse{

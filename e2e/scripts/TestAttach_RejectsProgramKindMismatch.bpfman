@@ -1,0 +1,59 @@
+# -*- mode: bpfman -*-
+# Attaching a loaded program via a verb its type cannot drive must be
+# rejected (RUST-PARITY finding 9). The manager resolves the program
+# once and checks its loaded type against the attach verb before any
+# kernel or store work, so every mismatch below fails cleanly with no
+# link created. The probe verbs legitimately serve both the entry and
+# return variant; those are covered by the *_LinkRoundTrip scripts.
+#
+# Invoke from e2e/:
+#
+#   cd e2e
+#   sudo go test ./scriptrunner -run \
+#     'TestBPFManScripts/scripts/TestAttach_RejectsProgramKindMismatch\.bpfman$'
+
+guard up <- bpfman program load file testdata/bpf/uprobe_counter.bpf.o --programs uprobe:uprobe_counter
+let uprobe = $up.programs[0]
+defer bpfman program unload $uprobe
+
+guard kp <- bpfman program load file testdata/bpf/kprobe_counter.bpf.o --programs kprobe:kprobe_counter
+let kprobe = $kp.programs[0]
+defer bpfman program unload $kprobe
+
+guard tp <- bpfman program load file testdata/bpf/tracepoint_counter.bpf.o --programs tracepoint:tracepoint_kill_recorder
+let tracepoint = $tp.programs[0]
+defer bpfman program unload $tracepoint
+
+guard fx <- bpfman program load file testdata/bpf/fexit_exact.bpf.o --programs fexit:test_fexit:do_unlinkat
+let fexit = $fx.programs[0]
+defer bpfman program unload $fexit
+
+guard xd <- bpfman program load file testdata/bpf/xdp_pass.bpf.o --programs xdp:pass
+let xdp = $xd.programs[0]
+defer bpfman program unload $xdp
+
+guard tc <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+let tcprog = $tc.programs[0]
+defer bpfman program unload $tcprog
+
+# Probe-family cross-attaches: uprobe and kprobe share a kernel type,
+# so before the guard this attached silently with the wrong family.
+assert fail bpfman link attach kprobe $uprobe do_unlinkat
+assert fail bpfman link attach uprobe $kprobe /bin/bash
+
+# kprobe program via tracepoint verb, and the reverse.
+assert fail bpfman link attach tracepoint $kprobe syscalls/sys_enter_kill
+assert fail bpfman link attach kprobe $tracepoint do_unlinkat
+
+# fexit program via fentry verb (attach type is bound at load).
+assert fail bpfman link attach fentry $fexit
+
+# Network kinds: xdp via tc and tcx verbs, and tc via xdp.
+assert fail bpfman link attach tc $xdp lo ingress --priority 50
+assert fail bpfman link attach tcx $xdp lo ingress --priority 50
+assert fail bpfman link attach xdp $tcprog lo
+
+# Lock the rejection message shape.
+let r <- bpfman link attach kprobe $uprobe do_unlinkat
+assert not $r.ok
+assert contains $r.stderr "is a uprobe program"
