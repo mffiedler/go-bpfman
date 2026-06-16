@@ -213,11 +213,84 @@ func TestParse_RecordLiteralErrors(t *testing.T) {
 			src:     `let r = record { prog: $p, link: $l }`,
 			wantErr: "record fields are whitespace-separated",
 		},
+		{
+			name:    "glued_comma_string_value",
+			src:     `let r = record { prog: foo, }`,
+			wantErr: "unquoted comma in expression literal",
+		},
+		{
+			name:    "glued_comma_numeric_value",
+			src:     `let r = record { count: 1, }`,
+			wantErr: "unquoted comma in expression literal",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			_, err := parseSource(t, tt.src)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+}
+
+func TestParse_ExpressionLiteralErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string
+	}{
+		{
+			name:    "digit_leading_string_text_must_be_quoted",
+			src:     `let s = 5s`,
+			wantErr: `invalid numeric literal "5s"`,
+		},
+		{
+			name:    "digit_leading_word_must_be_number",
+			src:     `let port = 8080x`,
+			wantErr: `invalid numeric literal "8080x"`,
+		},
+		{
+			name:    "sign_leading_word_must_be_number",
+			src:     `let delta = -3s`,
+			wantErr: `invalid numeric literal "-3s"`,
+		},
+		{
+			name:    "negative_number_remains_valid",
+			src:     `let delta = -3`,
+			wantErr: "",
+		},
+		{
+			name:    "overflowing_json_number_has_range_error",
+			src:     `let huge = 1e309`,
+			wantErr: `numeric literal "1e309" exceeds the representable range`,
+		},
+		{
+			name:    "glued_division_is_one_bad_numeric_word",
+			src:     `let ratio = 1/2`,
+			wantErr: `invalid numeric literal "1/2"`,
+		},
+		{
+			name:    "command_position_stays_argv_shaped",
+			src:     `exec echo 5s 1/2 foo,`,
+			wantErr: "",
+		},
+		{
+			name:    "duration_position_accepts_bare_duration",
+			src:     `poll timeout 5s every 100ms { print ok }`,
+			wantErr: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := parseSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.wantErr)
 		})

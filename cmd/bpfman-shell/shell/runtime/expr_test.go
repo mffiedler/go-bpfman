@@ -1431,18 +1431,6 @@ func TestEvalExpr_NotEmpty_OffSpecCarrierIsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "not-empty")
 }
 
-func TestRuntime_HexLiteralArithmeticRejected(t *testing.T) {
-	t.Parallel()
-
-	// Pins the runtime side of the static / runtime numeric
-	// acceptance contract. Numeric-looking literals must either
-	// become finite JSON numbers or fail; they no longer fall back
-	// to strings before arithmetic sees them.
-	err := runScriptError(t, "let r = 0x1a + 1", nil)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "numeric literal")
-}
-
 func TestExecSource_CommandArg_ParenExprArithmetic(t *testing.T) {
 	t.Parallel()
 

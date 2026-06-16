@@ -1,6 +1,7 @@
 package syntax
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -2078,8 +2079,40 @@ func (p *exprParser) parseTerm() (Expr, error) {
 			return p.parsePureCall(pb)
 		}
 	}
+	if err := validateExpressionWordLiteral(t); err != nil {
+		return nil, err
+	}
 	p.advance()
 	return parsePrimary(t)
+}
+
+func validateExpressionWordLiteral(t Token) error {
+	if t.Kind != TokenWord {
+		return nil
+	}
+	if strings.ContainsRune(t.Text, ',') {
+		return spanErrorf(t.Span, "unquoted comma in expression literal %q; quote it for string text or remove the comma", t.Text)
+	}
+	if startsNumericLiteral(t.Text) && !IsJSONNumber(t.Text) {
+		if json.Valid([]byte(t.Text)) {
+			return spanErrorf(t.Span, "numeric literal %q exceeds the representable range", t.Text)
+		}
+		return spanErrorf(t.Span, "invalid numeric literal %q; quote it as %q for string text", t.Text, t.Text)
+	}
+	return nil
+}
+
+func startsNumericLiteral(text string) bool {
+	if text == "" {
+		return false
+	}
+	if text[0] >= '0' && text[0] <= '9' {
+		return true
+	}
+	if (text[0] == '-' || text[0] == '+') && len(text) > 1 {
+		return text[1] >= '0' && text[1] <= '9'
+	}
+	return false
 }
 
 func canStartPureCallArgToken(t Token) bool {
@@ -2285,6 +2318,9 @@ func (p *exprParser) parsePureCallArg(name string) (Expr, error) {
 		}
 		if isKeywordWord(t, "and") || isKeywordWord(t, "or") || isKeywordWord(t, "not") {
 			return nil, spanErrorf(t.Span, "%s: unexpected %q in argument position", name, t.Text)
+		}
+		if err := validateExpressionWordLiteral(t); err != nil {
+			return nil, err
 		}
 	case TokenQuoted, TokenVarRef, TokenAdapterRef, TokenInterpString:
 		// Recognised primary tokens; fall through to consume.

@@ -751,20 +751,19 @@ func TestCheck_ArithmeticInsideInterpolationFlagged(t *testing.T) {
 	assert.Contains(t, issues[0].Msg, `operand "Z"`)
 }
 
-func TestCheck_ArithmeticHexLiteralFlagged(t *testing.T) {
+func TestCheck_ArithmeticHexLiteralRejectedBeforeCheck(t *testing.T) {
 	t.Parallel()
 
-	// The runtime arithmetic evaluator parses operands with
-	// strconv.ParseFloat, which accepts decimal integers,
-	// floats, and scientific notation, but not the 0x-prefixed
-	// hex form. The static check must match that acceptance
-	// so a hex literal in arithmetic position surfaces at
-	// preflight rather than at runtime under a less helpful
-	// "operand is not numeric" framing.
+	// Digit-leading words in expression position must be valid
+	// JSON numbers before the arithmetic checker gets involved.
+	// This keeps source-text-decidable literal errors in
+	// preflight rather than deferring them to runtime.
 	src := "let r = 0x1a + 1"
-	issues := checkSource(t, src)
-	require.Len(t, issues, 1)
-	assert.Contains(t, issues[0].Msg, `arithmetic +: operand "0x1a" is not numeric`)
+	tokens, err := syntax.Tokenise(src)
+	require.NoError(t, err)
+	_, err = syntax.Parse(tokens)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `invalid numeric literal "0x1a"`)
 }
 
 func TestCheck_BreakInsideForeachIsClean(t *testing.T) {

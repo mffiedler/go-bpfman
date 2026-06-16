@@ -285,12 +285,9 @@ list elements should be parenthesised, for example `[($x + 1) $y]`.
 Record fields use `name:` followed by one primary value. Fields are
 whitespace-separated and field names must be unique identifiers. A
 whitespace-separated comma (`a: 1 , b: 2`) is rejected outright. A comma
-glued to a value instead becomes part of that value's token -- one of
-the lexer accidents below -- so a numeric value then fails at evaluation
-as an invalid literal (`a: 1,` makes the token `1,`, not a number) while
-a string value silently carries the trailing comma (`a: foo,` yields
-the value `foo,`). Either way, write fields whitespace-separated with no
-commas.
+glued to a value also rejects in record value position (`a: 1,` and
+`a: foo,` are both errors), because records are structured syntax rather
+than command argv. Write fields whitespace-separated with no commas.
 
 ## Matches Blocks
 

@@ -140,13 +140,15 @@ is an error rather than a value.
 
 Numeric literals must either be valid JSON numbers or fail; they must
 not silently become strings merely
-because they are malformed or out of range. A digit-leading token is
-read as a numeric literal, and if it is not a valid JSON number, such
-as `5s`, evaluating it is an error (`numeric literal "5s" is not a
-valid JSON number`) -- even in binding position, and even though the
-static `--check` pass, which does not evaluate literals, accepts it.
-Quote it (`"5s"`) when string text is intended. A token that does not
-lead with a digit, such as `abc`, is an ordinary string.
+because they are malformed or out of range. A digit-leading token, or a
+sign followed by a digit, is read as a numeric literal in expression and
+structured-value positions; if it is not a valid JSON number, such as
+`5s` or `-3s`, parsing/checking must reject it before evaluation. Quote
+it (`"5s"`) when string text is intended. A token that does not start
+with a digit or a sign followed by a digit, such as `abc`, is an
+ordinary string.
+Duration positions are separate from expression values: forms such as
+`poll timeout 5s every 100ms` use bare duration literals by design.
 
 Comparisons are strict by kind:
 

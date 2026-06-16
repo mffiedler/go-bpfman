@@ -51,8 +51,11 @@ let cmt_d = 'the $ here is literal (single quotes keep $ literal)'
 
 let bare_word  = eth0
 let int_lit    = 42
-let hex_lit    = 0x1a
 let float_lit  = 3.14
+# Hex is not a JSON number, so 0x1a is not a numeric literal in
+# expression position; a digit-leading word that is not a valid
+# number must be quoted as string text.
+let hex_str    = "0x1a"
 let dq_string  = "hello world"
 let sq_string  = 'single quoted'
 let empty_str  = ""
