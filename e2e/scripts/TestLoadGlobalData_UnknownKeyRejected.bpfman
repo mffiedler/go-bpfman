@@ -1,0 +1,33 @@
+# -*- mode: bpfman -*-
+# A global-data key that names no variable in the object must fail
+# the load.
+#
+# Rust bpfman sets every global through aya with must_exist=true,
+# so an absent symbol raises ParseError::SymbolNotFound and the
+# load fails. Go previously skipped an unknown key silently, so a
+# typo'd --global-data name loaded with the compile-time default
+# and the program ran misconfigured with no error. This is the
+# regression test: a bogus key is rejected, and -- to prove the
+# rejection is about the unknown key and not the flag itself -- the
+# same object loads cleanly with the real keys.
+#
+# Invoke from e2e/:
+#
+#   cd e2e
+#   sudo bpfman-shell scripts/TestLoadGlobalData_UnknownKeyRejected.bpfman
+#
+# Requires root. Does not require bpftool.
+
+# A real variable name must still load: this is the control that
+# proves the failure below is the unknown key, not -g itself.
+guard ok <- bpfman program load file testdata/bpf/xdp_pass.bpf.o \
+    --programs xdp:pass \
+    -g config_u32=0xdeadbeef
+defer bpfman program unload $ok.programs[0].record.program_id
+assert $ok.programs[0].record.load.global_data.config_u32 == "3q2+7w=="
+
+# A key that names no variable in the object is rejected, not
+# silently dropped.
+assert fail bpfman program load file testdata/bpf/xdp_pass.bpf.o \
+    --programs xdp:pass \
+    -g definitely_not_a_real_global=0x42

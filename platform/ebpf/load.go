@@ -33,6 +33,28 @@ import (
 // must exist and contain the required pinned maps. This is used when loading
 // multiple programs from the same image (e.g., via the bpfman-operator) where
 // all programs should share the same map instances.
+// applyGlobalData sets the user-supplied global variables on the
+// collection spec before load. A key that names no variable in the
+// object fails, matching Rust bpfman, which calls aya's set_global
+// with must_exist=true so an absent symbol raises
+// ParseError::SymbolNotFound rather than loading silently with the
+// compile-time default -- a typo'd --global-data name is an error,
+// not a no-op. The size check (a value whose length differs from
+// the variable's) is enforced by VariableSpec.Set, mirroring aya's
+// ParseError::InvalidGlobalData.
+func applyGlobalData(collSpec *ebpf.CollectionSpec, globalData map[string][]byte) error {
+	for name, data := range globalData {
+		v, ok := collSpec.Variables[name]
+		if !ok {
+			return fmt.Errorf("global variable %q not found in program; available: %v", name, slices.Sorted(maps.Keys(collSpec.Variables)))
+		}
+		if err := v.Set(data); err != nil {
+			return fmt.Errorf("set variable %q: %w", name, err)
+		}
+	}
+	return nil
+}
+
 // HasPinByName reports whether the bytecode at spec.ObjectPath()
 // declares any LIBBPF_PIN_BY_NAME maps. The manager uses this to
 // decide whether the load needs the cross-process writer lock.
@@ -66,13 +88,9 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 		}
 	}
 
-	// Set global data if provided
-	for name, data := range spec.GlobalData() {
-		if v, ok := collSpec.Variables[name]; ok {
-			if err := v.Set(data); err != nil {
-				return bpfman.LoadOutput{}, fmt.Errorf("set variable %q: %w", name, err)
-			}
-		}
+	// Set global data if provided.
+	if err := applyGlobalData(collSpec, spec.GlobalData()); err != nil {
+		return bpfman.LoadOutput{}, err
 	}
 
 	// Clear map pinning flags - we'll pin manually after getting the kernel ID.
