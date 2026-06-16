@@ -31,6 +31,14 @@ var xdpActionNameToAction = map[string]XDPAction{
 	"dispatcher_return": XDPActionDispatcherReturn,
 }
 
+var xdpActionByCode = func() map[int32]XDPAction {
+	m := make(map[int32]XDPAction, len(xdpActionNameToAction))
+	for _, a := range xdpActionNameToAction {
+		m[a.code] = a
+	}
+	return m
+}()
+
 func (a XDPAction) String() string               { return a.name }
 func (a XDPAction) Int32() int32                 { return a.code }
 func (a XDPAction) MarshalText() ([]byte, error) { return []byte(a.name), nil }
@@ -73,4 +81,13 @@ func XDPActionCodes(actions []XDPAction) []int32 {
 		result[i] = action.Int32()
 	}
 	return result
+}
+
+// XDPActionFromInt32 converts a kernel int32 code to an XDPAction.
+// Returns the zero value and an error if the code is not recognised.
+func XDPActionFromInt32(code int32) (XDPAction, error) {
+	if a, ok := xdpActionByCode[code]; ok {
+		return a, nil
+	}
+	return XDPAction{}, fmt.Errorf("unknown XDP action code %d", code)
 }

@@ -1,0 +1,22 @@
+# -*- mode: bpfman -*-
+# Explicit XDP proceed-on `pass` must write exactly bit 2. The
+# dispatcher_return sentinel is not forced into explicit masks.
+
+import ../lib.bpfman
+
+guard pair <- net veth-pair
+defer net release $pair
+
+guard loaded <- bpfman program load file testdata/bpf/xdp_pass.bpf.o --programs xdp:pass
+let prog = $loaded.programs[0]
+defer bpfman program unload $prog
+
+guard link <- bpfman link attach xdp $prog $pair.host_link -p 50 --proceed-on pass
+defer bpfman link detach $link
+
+guard got <- bpfman link get $link
+assert $got |> jq ".record.details.proceed_on == [2]"
+
+guard snap <- bpfman dispatcher get xdp $pair.host_nsid $pair.host_ifindex -o json
+assert ($snap |> jq ".members | length") == 1
+assert ($snap |> jq ".members[0].proceed_on") == 4

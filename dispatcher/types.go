@@ -42,20 +42,6 @@ func TCParentHandle(dispType DispatcherType) uint32 {
 	}
 }
 
-// ChainCallShift returns the bit shift to apply to proceed-on
-// bitmasks before writing them to the BPF dispatcher's
-// chain_call_actions array. TC dispatchers check (1 << (ret + 1))
-// instead of (1 << ret) to accommodate TC_ACT_UNSPEC = -1, so TC
-// bitmasks must be shifted left by 1. XDP uses (1 << ret) directly.
-func (d DispatcherType) ChainCallShift() uint {
-	switch d {
-	case DispatcherTypeTCIngress, DispatcherTypeTCEgress:
-		return 1
-	default:
-		return 0
-	}
-}
-
 // ParseDispatcherType parses a string into a DispatcherType.
 func ParseDispatcherType(s string) (DispatcherType, error) {
 	switch s {

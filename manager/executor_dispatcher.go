@@ -119,13 +119,12 @@ func (e *executor) rebuildXDPDispatcher(
 	sortRebuildSlots(allSlots)
 
 	// Compute .rodata config.
-	const xdpDispatcherRetval = 31
 	cfg, err := dispatcher.NewXDPConfig(len(allSlots))
 	if err != nil {
 		return extensionResult{}, fmt.Errorf("create XDP dispatcher config: %w", err)
 	}
 	for i, slot := range allSlots {
-		cfg.ChainCallActions[i] = slot.ProceedOn | (1 << xdpDispatcherRetval)
+		cfg.ChainCallActions[i] = slot.ProceedOn
 		cfg.RunPrios[i] = uint32(slot.Priority)
 	}
 
@@ -330,6 +329,11 @@ func (e *executor) rebuildXDPDispatcher(
 		"num_extensions", len(allSlots),
 		"new_position", newSlotPosition)
 
+	proceedOnActions, err := dispatcher.ProceedOnActions(dispType, newSlot.ProceedOn)
+	if err != nil {
+		return extensionResult{}, fmt.Errorf("decode XDP proceed-on: %w", err)
+	}
+
 	// Construct the bpfman.Link for the new extension.
 	newExtLinkRecord := completed.Members[newSlotPosition]
 	newExtRecord := bpfman.LinkRecord{
@@ -344,7 +348,7 @@ func (e *executor) rebuildXDPDispatcher(
 			Ifindex:      ops.ifindex,
 			Priority:     int32(newSlot.Priority),
 			Position:     int32(newSlotPosition),
-			ProceedOn:    bitmaskToActions(newSlot.ProceedOn),
+			ProceedOn:    proceedOnActions,
 			Nsid:         nsid,
 			DispatcherID: dispatcherID,
 			Revision:     revision,
@@ -438,7 +442,7 @@ func (e *executor) rebuildTCDispatcher(
 		return extensionResult{}, fmt.Errorf("create TC dispatcher config: %w", err)
 	}
 	for i, slot := range allSlots {
-		cfg.ChainCallActions[i] = slot.ProceedOn << dispType.ChainCallShift()
+		cfg.ChainCallActions[i] = slot.ProceedOn
 		cfg.RunPrios[i] = uint32(slot.Priority)
 	}
 
@@ -668,6 +672,11 @@ func (e *executor) rebuildTCDispatcher(
 		"num_extensions", len(allSlots),
 		"new_position", newSlotPosition)
 
+	proceedOnActions, err := dispatcher.ProceedOnActions(dispType, newSlot.ProceedOn)
+	if err != nil {
+		return extensionResult{}, fmt.Errorf("decode TC proceed-on: %w", err)
+	}
+
 	// Construct the bpfman.Link for the new extension.
 	newExtLinkRecord := completed.Members[newSlotPosition]
 	newExtRecord := bpfman.LinkRecord{
@@ -683,7 +692,7 @@ func (e *executor) rebuildTCDispatcher(
 			Direction:    ops.direction,
 			Priority:     int32(newSlot.Priority),
 			Position:     int32(newSlotPosition),
-			ProceedOn:    bitmaskToActions(newSlot.ProceedOn),
+			ProceedOn:    proceedOnActions,
 			Nsid:         nsid,
 			DispatcherID: dispatcherID,
 			Revision:     revision,
@@ -797,13 +806,12 @@ func (e *executor) rebuildXDPForDetach(
 ) error {
 	key := snap.Key
 
-	const xdpDispatcherRetval = 31
 	cfg, err := dispatcher.NewXDPConfig(len(slots))
 	if err != nil {
 		return fmt.Errorf("create XDP dispatcher config for detach rebuild: %w", err)
 	}
 	for i, slot := range slots {
-		cfg.ChainCallActions[i] = slot.ProceedOn | (1 << xdpDispatcherRetval)
+		cfg.ChainCallActions[i] = slot.ProceedOn
 		cfg.RunPrios[i] = uint32(slot.Priority)
 	}
 
@@ -951,7 +959,7 @@ func (e *executor) rebuildTCForDetach(
 		return fmt.Errorf("create TC dispatcher config for detach rebuild: %w", err)
 	}
 	for i, slot := range slots {
-		cfg.ChainCallActions[i] = slot.ProceedOn << dispType.ChainCallShift()
+		cfg.ChainCallActions[i] = slot.ProceedOn
 		cfg.RunPrios[i] = uint32(slot.Priority)
 	}
 
@@ -1348,17 +1356,4 @@ func sortRebuildSlots(slots []rebuildSlot) {
 			}
 		}
 	}
-}
-
-// bitmaskToActions converts a proceed-on bitmask back to a slice of
-// action codes. This is the inverse of the bitmask computation in
-// attach_tc.go and attach_xdp.go.
-func bitmaskToActions(mask uint32) []int32 {
-	var actions []int32
-	for i := range 32 {
-		if mask&(1<<uint(i)) != 0 {
-			actions = append(actions, int32(i))
-		}
-	}
-	return actions
 }

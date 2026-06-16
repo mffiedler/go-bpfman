@@ -2,11 +2,11 @@
 # Translation experiment: e2e/TestMultiProgXDP_AllProceed_CustomProceedOn.
 #
 # Three XDP programs at distinct dispatcher priorities; all
-# return XDP_DROP. The default proceed-on `[XDP_PASS]` excludes
-# DROP, which would normally stop the chain at the first
-# program. Custom proceed-on `[drop, dispatcher_return]`
-# includes DROP, so the chain proceeds and every program counts
-# every packet. The chain's last verdict is DROP, so the kernel
+# return XDP_DROP. The default proceed-on `[XDP_PASS,
+# dispatcher_return]` excludes DROP, which would normally stop the
+# chain at the first program. Custom proceed-on `[drop,
+# dispatcher_return]` includes DROP, so the chain proceeds and every
+# program counts every packet. The chain's last verdict is DROP, so the kernel
 # drops the packet and ping reports 100% loss.
 #
 # Counters end at:

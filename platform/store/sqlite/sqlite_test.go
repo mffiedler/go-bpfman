@@ -1378,7 +1378,7 @@ func TestListLinks_ReturnsDetails(t *testing.T) {
 				LinkPinPath:  "/sys/fs/bpf/tc_link",
 				Position:     1,
 				Priority:     100,
-				ProceedOn:    uint32(1<<0 | 1<<3),
+				ProceedOn:    uint32(1<<1 | 1<<4),
 				Ifname:       "eth1",
 			},
 		},

@@ -217,6 +217,8 @@ type fakeKernel struct {
 	removePins       []string         // paths passed to RemovePin
 	tcDetaches       []tcFilterDetach // TC filters detached
 	uprobeAttachPids []int32          // pid filters received by uprobe attaches
+	xdpConfigs       []dispatcher.XDPConfig
+	tcConfigs        []dispatcher.TCConfig
 	mu               sync.Mutex
 
 	// Error injection - set these to control behaviour
@@ -1278,6 +1280,18 @@ func (f *fakeKernel) TCFilterCount() int {
 	return count
 }
 
+func (f *fakeKernel) XDPDispatcherConfigs() []dispatcher.XDPConfig {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]dispatcher.XDPConfig(nil), f.xdpConfigs...)
+}
+
+func (f *fakeKernel) TCDispatcherConfigs() []dispatcher.TCConfig {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]dispatcher.TCConfig(nil), f.tcConfigs...)
+}
+
 func (f *fakeKernel) RepinMap(_ context.Context, srcPath, dstPath string) error {
 	return nil // Fake implementation - no-op
 }
@@ -1298,6 +1312,10 @@ func (f *fakeKernel) XDPDispatcherTarget(linkPinPath bpfman.LinkPath) (bpfman.Pr
 }
 
 func (f *fakeKernel) LoadAndPinXDPDispatcher(_ context.Context, cfg dispatcher.XDPConfig, progPinPath bpfman.ProgPinPath) (kernel.ProgramID, error) {
+	f.mu.Lock()
+	f.xdpConfigs = append(f.xdpConfigs, cfg)
+	f.mu.Unlock()
+
 	dispatcherID := kernel.ProgramID(f.nextID.Add(1))
 	if err := createPinFileExclusive(progPinPath); err != nil {
 		f.recordOp("load-pin-xdp-dispatcher", progPinPath.String(), 0, err)
@@ -1314,6 +1332,10 @@ func (f *fakeKernel) LoadAndPinXDPDispatcher(_ context.Context, cfg dispatcher.X
 }
 
 func (f *fakeKernel) LoadAndPinTCDispatcher(_ context.Context, cfg dispatcher.TCConfig, progPinPath bpfman.ProgPinPath) (kernel.ProgramID, error) {
+	f.mu.Lock()
+	f.tcConfigs = append(f.tcConfigs, cfg)
+	f.mu.Unlock()
+
 	dispatcherID := kernel.ProgramID(f.nextID.Add(1))
 	if err := createPinFileExclusive(progPinPath); err != nil {
 		f.recordOp("load-pin-tc-dispatcher", progPinPath.String(), 0, err)

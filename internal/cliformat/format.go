@@ -1063,37 +1063,19 @@ func formatDispatcherSnapshotTable(snap platform.DispatcherSnapshot) string {
 	return b.String()
 }
 
-// formatProceedOnMask decodes a proceed-on bitmask into named actions.
-// For XDP, bit N maps directly to XDP action N. For TC, bit N maps to
-// TC action with int32 code N. The chain-call shift is only applied at
-// BPF map write time, so stored bitmasks use unshifted bit positions.
+// formatProceedOnMask decodes a dispatcher ABI proceed-on bitmask into
+// named actions.
 func formatProceedOnMask(mask uint32, dispType dispatcher.DispatcherType) string {
 	if mask == 0 {
 		return "none"
 	}
 
-	xdpNames := map[uint]string{
-		0: "aborted", 1: "drop", 2: "pass", 3: "tx", 4: "redirect",
-		31: "dispatcher_return",
+	actions, err := dispatcher.ProceedOnActions(dispType, mask)
+	if err != nil {
+		return fmt.Sprintf("invalid(%v)", err)
 	}
-
-	isXDP := dispType == dispatcher.DispatcherTypeXDP
-
-	var names []string
-	for bit := range uint(32) {
-		if mask&(1<<bit) == 0 {
-			continue
-		}
-		if isXDP {
-			if name, ok := xdpNames[bit]; ok {
-				names = append(names, name)
-			} else {
-				names = append(names, fmt.Sprintf("unknown(%d)", bit))
-			}
-		} else {
-			names = append(names, bpfman.TCActionToString(int32(bit)))
-		}
+	if dispType == dispatcher.DispatcherTypeXDP {
+		return formatXDPProceedOn(actions)
 	}
-
-	return strings.Join(names, ", ")
+	return bpfman.TCActionsToString(actions)
 }

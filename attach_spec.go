@@ -241,16 +241,25 @@ func (s XDPAttachSpec) Priority() int               { return s.priority }
 func (s XDPAttachSpec) ProceedOn() []int32          { return s.proceedOn }
 func (s XDPAttachSpec) Netns() string               { return s.netns }
 
-// WithProceedOn returns a new XDPAttachSpec with the proceed-on actions set.
-func (s XDPAttachSpec) WithProceedOn(po []int32) XDPAttachSpec {
-	s.proceedOn = po
-	return s
-}
-
 // WithProceedOnActions returns a new XDPAttachSpec with the proceed-on
 // actions set from parsed domain values.
 func (s XDPAttachSpec) WithProceedOnActions(actions []XDPAction) XDPAttachSpec {
-	return s.WithProceedOn(XDPActionCodes(actions))
+	s.proceedOn = XDPActionCodes(actions)
+	return s
+}
+
+// WithProceedOnCodes returns a new XDPAttachSpec with proceed-on
+// actions set from raw kernel action codes after validation.
+func (s XDPAttachSpec) WithProceedOnCodes(codes []int32) (XDPAttachSpec, error) {
+	actions := make([]XDPAction, 0, len(codes))
+	for _, code := range codes {
+		action, err := XDPActionFromInt32(code)
+		if err != nil {
+			return XDPAttachSpec{}, err
+		}
+		actions = append(actions, action)
+	}
+	return s.WithProceedOnActions(actions), nil
 }
 
 // WithNetns returns a new XDPAttachSpec with the network namespace path set.
@@ -309,16 +318,25 @@ func (s TCAttachSpec) Priority() int               { return s.priority }
 func (s TCAttachSpec) ProceedOn() []int32          { return s.proceedOn }
 func (s TCAttachSpec) Netns() string               { return s.netns }
 
-// WithProceedOn returns a new TCAttachSpec with the proceed-on actions set.
-func (s TCAttachSpec) WithProceedOn(po []int32) TCAttachSpec {
-	s.proceedOn = po
-	return s
-}
-
 // WithProceedOnActions returns a new TCAttachSpec with the proceed-on
 // actions set from parsed domain values.
 func (s TCAttachSpec) WithProceedOnActions(actions []TCAction) TCAttachSpec {
-	return s.WithProceedOn(TCActionCodes(actions))
+	s.proceedOn = TCActionCodes(actions)
+	return s
+}
+
+// WithProceedOnCodes returns a new TCAttachSpec with proceed-on
+// actions set from raw kernel action codes after validation.
+func (s TCAttachSpec) WithProceedOnCodes(codes []int32) (TCAttachSpec, error) {
+	actions := make([]TCAction, 0, len(codes))
+	for _, code := range codes {
+		action, err := TCActionFromInt32(code)
+		if err != nil {
+			return TCAttachSpec{}, err
+		}
+		actions = append(actions, action)
+	}
+	return s.WithProceedOnActions(actions), nil
 }
 
 // WithNetns returns a new TCAttachSpec with the network namespace path set.

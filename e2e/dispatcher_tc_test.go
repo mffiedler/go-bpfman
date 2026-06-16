@@ -255,7 +255,8 @@ func TestTC_DispatcherFillDrainRefill(t *testing.T) {
 			priority,
 		)
 		require.NoError(t, err)
-		tcSpec = tcSpec.WithProceedOn(proceedOn)
+		tcSpec, err = tcSpec.WithProceedOnCodes(proceedOn)
+		require.NoError(t, err)
 		link, err := env.Attach(ctx, tcSpec)
 		require.NoError(t, err, "attach at priority %d", priority)
 		return link
@@ -484,7 +485,8 @@ func TestTC_DispatcherChainExecution(t *testing.T) {
 			prio,
 		)
 		require.NoError(t, err)
-		tcSpec = tcSpec.WithProceedOn(proceedOn)
+		tcSpec, err = tcSpec.WithProceedOnCodes(proceedOn)
+		require.NoError(t, err)
 		link, err := env.Attach(ctx, tcSpec)
 		require.NoError(t, err, "attach %d at priority %d", i, prio)
 		linkIDs = append(linkIDs, link)
@@ -591,7 +593,8 @@ func TestTC_DispatcherChainProceedOn(t *testing.T) {
 					po = proceedOnStop
 				}
 
-				tcSpec = tcSpec.WithProceedOn(po)
+				tcSpec, err = tcSpec.WithProceedOnCodes(po)
+				require.NoError(t, err)
 				link, err := env.Attach(ctx, tcSpec)
 				require.NoError(t, err, "attach %d at priority %d", i, (i+1)*100)
 				linkIDs = append(linkIDs, link)
@@ -677,7 +680,8 @@ func TestTC_EgressTrafficCounting(t *testing.T) {
 			prio,
 		)
 		require.NoError(t, err)
-		tcSpec = tcSpec.WithProceedOn(proceedOn)
+		tcSpec, err = tcSpec.WithProceedOnCodes(proceedOn)
+		require.NoError(t, err)
 		link, err := env.Attach(ctx, tcSpec)
 		require.NoError(t, err, "attach %d at priority %d", i, prio)
 		linkIDs = append(linkIDs, link)
@@ -746,7 +750,8 @@ func TestTC_DefaultProceedOnRebuild(t *testing.T) {
 	attach := func(p prog, priority int) {
 		spec, err := bpfman.NewTCAttachSpec(p.id, veth.A.Name, bpfman.TCDirectionIngress, priority)
 		require.NoError(t, err)
-		spec = spec.WithProceedOn(defaultProceedOn)
+		spec, err = spec.WithProceedOnCodes(defaultProceedOn)
+		require.NoError(t, err)
 		link, err := env.Attach(ctx, spec)
 		require.NoError(t, err)
 		t.Cleanup(func() { env.Detach(context.Background(), link.ID) })
@@ -913,7 +918,8 @@ func TestTC_MultiPriorityChainWithOKProceedOn(t *testing.T) {
 	attach := func(p prog, priority int) {
 		spec, err := bpfman.NewTCAttachSpec(p.id, veth.A.Name, bpfman.TCDirectionIngress, priority)
 		require.NoError(t, err)
-		spec = spec.WithProceedOn(proceedOn)
+		spec, err = spec.WithProceedOnCodes(proceedOn)
+		require.NoError(t, err)
 		link, err := env.Attach(ctx, spec)
 		require.NoError(t, err)
 		t.Cleanup(func() { env.Detach(context.Background(), link.ID) })
@@ -1033,7 +1039,8 @@ func TestTC_PinByNameMapSharing(t *testing.T) {
 			(i+1)*100,
 		)
 		require.NoError(t, err)
-		tcSpec = tcSpec.WithProceedOn(proceedOn)
+		tcSpec, err = tcSpec.WithProceedOnCodes(proceedOn)
+		require.NoError(t, err)
 		link, err := env.Attach(ctx, tcSpec)
 		require.NoError(t, err, "attach program %d", i)
 		linkIDs = append(linkIDs, link.ID)

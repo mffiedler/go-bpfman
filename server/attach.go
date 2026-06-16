@@ -129,7 +129,10 @@ func (s *Server) attachXDP(ctx context.Context, writeLock lock.WriterScope, prog
 
 	// Use provided proceed-on or default
 	if len(info.ProceedOn) > 0 {
-		spec = spec.WithProceedOn(info.ProceedOn)
+		spec, err = spec.WithProceedOnCodes(info.ProceedOn)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid XDP proceed_on: %v", err)
+		}
 	}
 
 	// Apply network namespace if specified
@@ -163,7 +166,10 @@ func (s *Server) attachTC(ctx context.Context, writeLock lock.WriterScope, progr
 	// Use provided proceed-on if any; otherwise the manager default
 	// (Pipe|DispatcherReturn) applies, matching Rust bpfman.
 	if len(info.ProceedOn) > 0 {
-		spec = spec.WithProceedOn(info.ProceedOn)
+		spec, err = spec.WithProceedOnCodes(info.ProceedOn)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid TC proceed_on: %v", err)
+		}
 	}
 
 	// Apply network namespace if specified

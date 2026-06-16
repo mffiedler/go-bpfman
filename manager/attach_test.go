@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/platform"
@@ -811,6 +812,29 @@ func TestXDP_FullLifecycle(t *testing.T) {
 	fix.AssertCleanState()
 }
 
+func TestXDPExplicitProceedOnPassWritesExactDispatcherMask(t *testing.T) {
+	t.Parallel()
+
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("xdp.o"), "xdp_pass", bpfman.ProgramTypeXDP)
+	require.NoError(t, err)
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo", 0)
+	require.NoError(t, err)
+	attachSpec = attachSpec.WithProceedOnActions([]bpfman.XDPAction{bpfman.XDPActionPass})
+
+	_, err = fix.Attach(ctx, attachSpec)
+	require.NoError(t, err)
+
+	configs := fix.Kernel.XDPDispatcherConfigs()
+	require.NotEmpty(t, configs)
+	assert.Equal(t, uint32(1<<2), configs[len(configs)-1].ChainCallActions[0])
+}
+
 // =============================================================================
 // TC Lifecycle Tests
 // =============================================================================
@@ -927,6 +951,40 @@ func TestTC_FullLifecycle(t *testing.T) {
 
 	// Step 5: Verify clean state
 	fix.AssertCleanState()
+}
+
+func TestTCProceedOnUnspecWritesDispatcherBitZero(t *testing.T) {
+	t.Parallel()
+
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tc.o"), "tc_pass", bpfman.ProgramTypeTC)
+	require.NoError(t, err)
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 50)
+	require.NoError(t, err)
+	attachSpec = attachSpec.WithProceedOnActions([]bpfman.TCAction{bpfman.TCActionUnspec})
+
+	link, err := fix.Attach(ctx, attachSpec)
+	require.NoError(t, err)
+
+	configs := fix.Kernel.TCDispatcherConfigs()
+	require.NotEmpty(t, configs)
+	assert.Equal(t, uint32(1<<0), configs[len(configs)-1].ChainCallActions[0])
+
+	details, ok := link.Record.Details.(bpfman.TCDetails)
+	require.True(t, ok)
+	snap, err := fix.Store.GetDispatcherSnapshot(ctx, dispatcher.Key{
+		Type:    dispatcher.DispatcherTypeTCIngress,
+		Nsid:    details.Nsid,
+		Ifindex: details.Ifindex,
+	})
+	require.NoError(t, err)
+	require.Len(t, snap.Members, 1)
+	assert.Equal(t, uint32(1<<0), snap.Members[0].ProceedOn)
 }
 
 // =============================================================================

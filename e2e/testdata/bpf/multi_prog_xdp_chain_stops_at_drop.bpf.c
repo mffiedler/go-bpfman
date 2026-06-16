@@ -3,14 +3,14 @@
 
 // Multi-program XDP counter object where the middle program in the
 // chain returns XDP_DROP. The XDP dispatcher's default proceed-on
-// is `[XDP_PASS]`, so XDP_DROP is *not* in the proceed-on bitmask
-// and terminates the chain at that point. Side effect: the packet
-// is dropped at A's ingress, so the kernel ICMP responder never
-// gets it and the userspace ping reports loss. Tests use the
-// PingExpectDrop helper, which sends N requests but tolerates
-// 100% reply loss; the BPF counter still advances for every
-// program that runs, regardless of whether the packet completes
-// its traversal.
+// includes XDP_PASS and dispatcher_return, so XDP_DROP is *not* in
+// the proceed-on bitmask and terminates the chain at that point.
+// Side effect: the packet is dropped at A's ingress, so the kernel
+// ICMP responder never gets it and the userspace ping reports loss.
+// Tests use the PingExpectDrop helper, which sends N requests but
+// tolerates 100% reply loss; the BPF counter still advances for
+// every program that runs, regardless of whether the packet
+// completes its traversal.
 //
 // Companion to multi_prog_xdp_counter.bpf.c (the
 // all-proceed case where every program returns XDP_PASS and the

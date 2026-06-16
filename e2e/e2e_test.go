@@ -2088,7 +2088,8 @@ func TestMultiProgTC_AllProceed_CustomProceedOn(t *testing.T) {
 	for i, prog := range programs {
 		spec, err := bpfman.NewTCAttachSpec(prog.Status.Kernel.ID, veth.A.Name, bpfman.TCDirectionIngress, plans[i].priority)
 		require.NoError(t, err)
-		spec = spec.WithProceedOn(customProceedOn)
+		spec, err = spec.WithProceedOnCodes(customProceedOn)
+		require.NoError(t, err)
 		link, err := env.Attach(ctx, spec)
 		require.NoError(t, err, "attach %s", plans[i].suffix)
 		t.Cleanup(func() { env.Detach(context.Background(), link.ID) })
@@ -2168,7 +2169,8 @@ func TestMultiProgTC_ChainStopsAtPipe_CustomProceedOn(t *testing.T) {
 	for i, prog := range programs {
 		spec, err := bpfman.NewTCAttachSpec(prog.Status.Kernel.ID, veth.A.Name, bpfman.TCDirectionIngress, plans[i].priority)
 		require.NoError(t, err)
-		spec = spec.WithProceedOn(customProceedOn)
+		spec, err = spec.WithProceedOnCodes(customProceedOn)
+		require.NoError(t, err)
 		link, err := env.Attach(ctx, spec)
 		require.NoError(t, err, "attach %s", plans[i].suffix)
 		t.Cleanup(func() { env.Detach(context.Background(), link.ID) })
@@ -2758,10 +2760,10 @@ func TestTCX_LoadAttachDetachUnload(t *testing.T) {
 
 // TestMultiProgXDP_ChainStopsAtDrop_DefaultProceedOn proves the
 // negative half of the XDP dispatcher's default proceed-on
-// contract: with proceed-on `[XDP_PASS]`, a program returning
-// XDP_DROP is not in the proceed-on set, so the chain terminates
-// at that program. The DROP also drops the packet at A's ingress,
-// so PingExpectDrop tolerates 100% reply loss. Companion to
+// contract: with proceed-on `[XDP_PASS, dispatcher_return]`, a
+// program returning XDP_DROP is not in the proceed-on set, so the
+// chain terminates at that program. The DROP also drops the packet at
+// A's ingress, so PingExpectDrop tolerates 100% reply loss. Companion to
 // AllProceed_DefaultProceedOn (positive half: PASS chains).
 func TestMultiProgXDP_ChainStopsAtDrop_DefaultProceedOn(t *testing.T) {
 	t.Parallel()
@@ -2842,9 +2844,9 @@ func TestMultiProgXDP_ChainStopsAtDrop_DefaultProceedOn(t *testing.T) {
 // TestMultiProgXDP_AllProceed_CustomProceedOn proves that a custom
 // proceed-on bitmask plumbed via WithProceedOn actually changes
 // XDP dispatcher behaviour. Every program returns XDP_DROP -- a
-// verdict the default proceed-on `[XDP_PASS]` excludes, which
-// would normally stop the chain at the first program. Each
-// program is attached with WithProceedOn=[XDP_DROP], explicitly
+// verdict the default proceed-on `[XDP_PASS, dispatcher_return]`
+// excludes, which would normally stop the chain at the first program.
+// Each program is attached with WithProceedOn=[XDP_DROP], explicitly
 // including DROP; every counter advances.
 //
 // Side effect: the dispatcher returns whatever the chain's last
@@ -2901,7 +2903,8 @@ func TestMultiProgXDP_AllProceed_CustomProceedOn(t *testing.T) {
 	for i, prog := range programs {
 		spec, err := bpfman.NewXDPAttachSpec(prog.Status.Kernel.ID, veth.A.Name, plans[i].priority)
 		require.NoError(t, err)
-		spec = spec.WithProceedOn(customProceedOn)
+		spec, err = spec.WithProceedOnCodes(customProceedOn)
+		require.NoError(t, err)
 		link, err := env.Attach(ctx, spec)
 		require.NoError(t, err, "attach %s", plans[i].suffix)
 		t.Cleanup(func() { env.Detach(context.Background(), link.ID) })
@@ -2978,7 +2981,8 @@ func TestMultiProgXDP_ChainStopsAtPass_CustomProceedOn(t *testing.T) {
 	for i, prog := range programs {
 		spec, err := bpfman.NewXDPAttachSpec(prog.Status.Kernel.ID, veth.A.Name, plans[i].priority)
 		require.NoError(t, err)
-		spec = spec.WithProceedOn(customProceedOn)
+		spec, err = spec.WithProceedOnCodes(customProceedOn)
+		require.NoError(t, err)
 		link, err := env.Attach(ctx, spec)
 		require.NoError(t, err, "attach %s", plans[i].suffix)
 		t.Cleanup(func() { env.Detach(context.Background(), link.ID) })
@@ -2998,10 +3002,10 @@ func TestMultiProgXDP_ChainStopsAtPass_CustomProceedOn(t *testing.T) {
 }
 
 // TestMultiProgXDP_AllProceed_DefaultProceedOn proves that under
-// the XDP dispatcher's default proceed-on bitmask `[XDP_PASS]`,
-// every program returning the chain-continuation verdict
-// (XDP_PASS) sees every packet, and that detaching one link from
-// the dispatcher chain stops only that program. Companion to
+// the XDP dispatcher's default proceed-on bitmask
+// `[XDP_PASS, dispatcher_return]`, every program returning the
+// chain-continuation verdict (XDP_PASS) sees every packet, and that
+// detaching one link from the dispatcher chain stops only that program. Companion to
 // ChainStopsAtDrop_DefaultProceedOn (negative half: middle returns
 // DROP, dispatcher stops).
 func TestMultiProgXDP_AllProceed_DefaultProceedOn(t *testing.T) {

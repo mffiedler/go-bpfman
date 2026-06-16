@@ -14,36 +14,21 @@ import (
 	"github.com/frobware/go-bpfman/ns/netns"
 )
 
-// TC proceed-on action bits (matches TC_ACT_* return codes).
-const (
-	tcProceedOnOK               = 1 << 0  // TC_ACT_OK
-	tcProceedOnPipe             = 1 << 3  // TC_ACT_PIPE
-	tcProceedOnDispatcherReturn = 1 << 30 // bpfman-specific sentinel
-)
-
 // DefaultTCProceedOn is the default bitmask for TC proceed-on actions.
 // This matches the Rust bpfman default: Pipe and DispatcherReturn.
 // TC_ACT_OK is deliberately excluded because it means "accept and
 // stop" in standard TC semantics; programs that want chain
 // continuation should return TC_ACT_PIPE.
-var DefaultTCProceedOn = tcProceedOnPipe | tcProceedOnDispatcherReturn
+var DefaultTCProceedOn = mustProceedOnMask(
+	dispatcher.DispatcherTypeTCIngress,
+	bpfman.TCActionPipe.Int32(),
+	bpfman.TCActionDispatcherReturn.Int32(),
+)
 
-// tcProceedOnBitmask converts a list of TC action codes to a bitmask.
-// Each action code a produces bit (1 << a). If the list is empty, the
-// default bitmask (Pipe|DispatcherReturn) is returned.
-//
-// This must match the reconstruction in GetDispatcherSnapshot so that
-// the BPF map written at initial attach is identical to the one
-// produced when recomputing after detach.
-func tcProceedOnBitmask(actions []int32) uint32 {
-	if len(actions) == 0 {
-		return uint32(DefaultTCProceedOn)
-	}
-	var mask uint32
-	for _, a := range actions {
-		if a >= 0 && a < 32 {
-			mask |= 1 << uint(a)
-		}
+func mustProceedOnMask(dt dispatcher.DispatcherType, codes ...int32) uint32 {
+	mask, err := dispatcher.ProceedOnMask(dt, codes...)
+	if err != nil {
+		panic(err)
 	}
 	return mask
 }
@@ -76,6 +61,17 @@ func (m *Manager) attachTC(ctx context.Context, spec bpfman.TCAttachSpec) (bpfma
 		dispType = dispatcher.DispatcherTypeTCEgress
 	}
 
+	if len(proceedOn) == 0 {
+		proceedOn = []int32{
+			bpfman.TCActionPipe.Int32(),
+			bpfman.TCActionDispatcherReturn.Int32(),
+		}
+	}
+	proceedOnMask, err := dispatcher.ProceedOnMask(dispType, proceedOn...)
+	if err != nil {
+		return bpfman.Link{}, fmt.Errorf("encode TC proceed-on: %w", err)
+	}
+
 	return m.dispatcherAttach(ctx, dispatcherAttachParams{
 		programID: spec.ProgramID(),
 		ifindex:   ifindex,
@@ -94,7 +90,7 @@ func (m *Manager) attachTC(ctx context.Context, spec bpfman.TCAttachSpec) (bpfma
 				ProgPinPath: prog.Handles.PinPath,
 				ProgramName: prog.Meta.Name,
 				Priority:    priority,
-				ProceedOn:   tcProceedOnBitmask(proceedOn),
+				ProceedOn:   proceedOnMask,
 				Metadata:    spec.Metadata(),
 			}
 		},

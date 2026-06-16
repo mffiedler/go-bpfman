@@ -8,9 +8,9 @@
 //
 //   AllProceed_CustomProceedOn: all three globals = XDP_DROP,
 //     attach with WithProceedOn including DROP -- chain proceeds
-//     on a verdict the *default* bitmask `[XDP_PASS]` would have
-//     stopped on. Side effect: packets are dropped (last program
-//     determines kernel verdict), so the test uses PingExpectDrop.
+//     on a verdict the default bitmask would have stopped on. Side
+//     effect: packets are dropped (last program determines kernel
+//     verdict), so the test uses PingExpectDrop.
 //
 //   ChainStopsAtPass_CustomProceedOn: outer verdicts = XDP_DROP,
 //     middle = XDP_PASS, attach with WithProceedOn including DROP

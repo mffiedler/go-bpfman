@@ -348,7 +348,7 @@ func TestSnapshotStore_ListSummaries(t *testing.T) {
 				LinkPinPath:  "/sys/fs/bpf/dispatch/xdp/link0",
 				Position:     0,
 				Priority:     50,
-				ProceedOn:    0x04,
+				ProceedOn:    1 << 4,
 				Ifname:       "eth0",
 			},
 			{
@@ -359,7 +359,7 @@ func TestSnapshotStore_ListSummaries(t *testing.T) {
 				LinkPinPath:  "/sys/fs/bpf/dispatch/xdp/link1",
 				Position:     1,
 				Priority:     100,
-				ProceedOn:    0x04,
+				ProceedOn:    1 << 4,
 				Ifname:       "eth0",
 			},
 		},
@@ -386,7 +386,7 @@ func TestSnapshotStore_ListSummaries(t *testing.T) {
 				LinkPinPath:  "/sys/fs/bpf/dispatch/tc/link0",
 				Position:     0,
 				Priority:     50,
-				ProceedOn:    0x04,
+				ProceedOn:    1 << 4,
 				Ifname:       "eth0",
 			},
 		},
@@ -467,6 +467,109 @@ func TestSnapshotStore_TC_NullKernelLinkID(t *testing.T) {
 	assert.Equal(t, uint16(50), *got.Runtime.FilterPriority)
 	require.Len(t, got.Members, 1)
 
+}
+
+func TestSnapshotStore_ProceedOnEncodingRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	store, err := sqlite.NewInMemory(context.Background(), testLogger())
+	require.NoError(t, err)
+	defer store.Close()
+
+	ctx := context.Background()
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(1001), testXDPProgram("xdp_default")))
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(1002), testXDPProgram("xdp_pass")))
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(2001), testTCProgram("tc_unspec")))
+
+	xdpKernelLinkID := kernel.LinkID(501)
+	xdpMemberKernelLinkID := kernel.LinkID(601)
+	xdpDefault, err := store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshotSpec{
+		Key:      xdpKey(),
+		Revision: 1,
+		Runtime:  platform.DispatcherRuntime{ProgramID: kernel.ProgramID(500), KernelLinkID: &xdpKernelLinkID},
+		Members: []platform.DispatcherMemberSpec{
+			{
+				ProgramID:    kernel.ProgramID(1001),
+				ProgramName:  "xdp_default",
+				ProgPinPath:  "/sys/fs/bpf/xdp_default",
+				KernelLinkID: &xdpMemberKernelLinkID,
+				LinkPinPath:  "/sys/fs/bpf/xdp_default_link",
+				Position:     0,
+				Priority:     50,
+				ProceedOn:    uint32(1<<2 | 1<<31),
+				Ifname:       "eth0",
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	xdpLink, err := store.GetLink(ctx, xdpDefault.Members[0].LinkID)
+	require.NoError(t, err)
+	xdpDetails, ok := xdpLink.Details.(bpfman.XDPDetails)
+	require.True(t, ok)
+	assert.Equal(t, []int32{2, 31}, xdpDetails.ProceedOn)
+
+	xdpExplicit, err := store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshotSpec{
+		Key:      xdpKey(),
+		Revision: 2,
+		Runtime:  platform.DispatcherRuntime{ProgramID: kernel.ProgramID(501), KernelLinkID: &xdpKernelLinkID},
+		Members: []platform.DispatcherMemberSpec{
+			{
+				ProgramID:    kernel.ProgramID(1002),
+				ProgramName:  "xdp_pass",
+				ProgPinPath:  "/sys/fs/bpf/xdp_pass",
+				KernelLinkID: &xdpMemberKernelLinkID,
+				LinkPinPath:  "/sys/fs/bpf/xdp_pass_link",
+				Position:     0,
+				Priority:     50,
+				ProceedOn:    1 << 2,
+				Ifname:       "eth0",
+			},
+		},
+	})
+	require.NoError(t, err)
+	gotXDP, err := store.GetDispatcherSnapshot(ctx, xdpKey())
+	require.NoError(t, err)
+	require.Len(t, gotXDP.Members, 1)
+	assert.Equal(t, uint32(1<<2), gotXDP.Members[0].ProceedOn)
+
+	xdpExplicitLink, err := store.GetLink(ctx, xdpExplicit.Members[0].LinkID)
+	require.NoError(t, err)
+	xdpExplicitDetails, ok := xdpExplicitLink.Details.(bpfman.XDPDetails)
+	require.True(t, ok)
+	assert.Equal(t, []int32{2}, xdpExplicitDetails.ProceedOn)
+
+	tcPriority := uint16(50)
+	tcMemberKernelLinkID := kernel.LinkID(701)
+	tcCompleted, err := store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshotSpec{
+		Key:      tcIngressKey(),
+		Revision: 1,
+		Runtime:  platform.DispatcherRuntime{ProgramID: kernel.ProgramID(700), FilterPriority: &tcPriority},
+		Members: []platform.DispatcherMemberSpec{
+			{
+				ProgramID:    kernel.ProgramID(2001),
+				ProgramName:  "tc_unspec",
+				ProgPinPath:  "/sys/fs/bpf/tc_unspec",
+				KernelLinkID: &tcMemberKernelLinkID,
+				LinkPinPath:  "/sys/fs/bpf/tc_unspec_link",
+				Position:     0,
+				Priority:     50,
+				ProceedOn:    1 << 0,
+				Ifname:       "eth0",
+			},
+		},
+	})
+	require.NoError(t, err)
+	gotTC, err := store.GetDispatcherSnapshot(ctx, tcIngressKey())
+	require.NoError(t, err)
+	require.Len(t, gotTC.Members, 1)
+	assert.Equal(t, uint32(1<<0), gotTC.Members[0].ProceedOn)
+
+	tcLink, err := store.GetLink(ctx, tcCompleted.Members[0].LinkID)
+	require.NoError(t, err)
+	tcDetails, ok := tcLink.Details.(bpfman.TCDetails)
+	require.True(t, ok)
+	assert.Equal(t, []int32{-1}, tcDetails.ProceedOn)
 }
 
 func TestSnapshotStore_EmptyMembers(t *testing.T) {

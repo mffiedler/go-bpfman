@@ -254,11 +254,9 @@ func (s *sqliteStore) GetDispatcherSnapshot(ctx context.Context, key dispatcher.
 		if err := json.Unmarshal([]byte(proceedOnJSON), &actions); err != nil {
 			return platform.DispatcherSnapshot{}, fmt.Errorf("unmarshal proceed_on: %w", err)
 		}
-		var bitmask uint32
-		for _, v := range actions {
-			if v >= 0 && v < 32 {
-				bitmask |= 1 << uint(v)
-			}
+		bitmask, err := dispatcher.ProceedOnMask(key.Type, actions...)
+		if err != nil {
+			return platform.DispatcherSnapshot{}, fmt.Errorf("decode proceed_on for dispatcher member: %w", err)
 		}
 		m.ProceedOn = bitmask
 
@@ -419,7 +417,7 @@ func (s *sqliteStore) replaceDispatcherSnapshot(ctx context.Context, snap platfo
 		}
 
 		// Insert detail row.
-		proceedOnJSON, err := proceedOnToJSON(m.ProceedOn)
+		proceedOnJSON, err := proceedOnToJSON(snap.Key.Type, m.ProceedOn)
 		if err != nil {
 			return platform.DispatcherSnapshot{}, fmt.Errorf("marshal proceed_on for link %d: %w", m.LinkID, err)
 		}
@@ -495,16 +493,14 @@ func (s *sqliteStore) deleteDispatcherSnapshot(ctx context.Context, key dispatch
 	return nil
 }
 
-// proceedOnToJSON converts a proceed-on bitmask to a JSON array of
-// set bit positions, matching the storage format used by the schema.
-func proceedOnToJSON(bitmask uint32) (string, error) {
-	var actions []int32
-	for i := range 32 {
-		if bitmask&(1<<uint(i)) != 0 {
-			actions = append(actions, int32(i))
-		}
+// proceedOnToJSON converts a dispatcher ABI proceed-on bitmask to a JSON
+// array of action codes, matching the storage format used by the schema.
+func proceedOnToJSON(dispType dispatcher.DispatcherType, bitmask uint32) (string, error) {
+	actions, err := dispatcher.ProceedOnActions(dispType, bitmask)
+	if err != nil {
+		return "", err
 	}
-	if actions == nil {
+	if len(actions) == 0 {
 		return "[]", nil
 	}
 	b, err := json.Marshal(actions)

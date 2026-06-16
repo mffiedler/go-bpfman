@@ -8,14 +8,13 @@
 // XDP chaining verdict:
 // XDP uses a bpfman dispatcher (BPF_PROG_TYPE_EXT targeting a
 // generated XDP dispatcher) just like TC. The XDP dispatcher's
-// default proceed-on is `[XDP_PASS]`, so a program returning
-// XDP_PASS continues the chain to the next program -- this is
-// different from the TC dispatcher case (where TC_ACT_OK
+// default proceed-on includes XDP_PASS and dispatcher_return, so a
+// program returning XDP_PASS continues the chain to the next program
+// -- this is different from the TC dispatcher case (where TC_ACT_OK
 // terminates and TC_ACT_PIPE continues). XDP_PASS is the natural
 // return for an observer program that wants the kernel to deliver
-// the packet up the stack, so no special "chain" verdict is
-// needed: the multi-program chain composes from ordinary observer
-// programs.
+// the packet up the stack, so no special "chain" verdict is needed:
+// the multi-program chain composes from ordinary observer programs.
 
 #include "multi_prog_net_common.bpf.h"
 

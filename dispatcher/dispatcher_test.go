@@ -1,12 +1,12 @@
 package dispatcher_test
 
 import (
+	"fmt"
 	"os"
 	"testing"
 
 	"github.com/vishvananda/netlink"
 
-	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
 )
 
@@ -180,26 +180,100 @@ func TestProceedOnMask(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		actions []dispatcher.XDPAction
-		want    uint32
+		name  string
+		dt    dispatcher.DispatcherType
+		codes []int32
+		want  uint32
 	}{
-		{"empty", nil, 0},
-		{"pass only", []dispatcher.XDPAction{dispatcher.XDPPass}, 1 << 2},
-		{"drop only", []dispatcher.XDPAction{dispatcher.XDPDrop}, 1 << 1},
-		{"pass and drop", []dispatcher.XDPAction{dispatcher.XDPPass, dispatcher.XDPDrop}, (1 << 2) | (1 << 1)},
-		{"all actions", []dispatcher.XDPAction{
-			dispatcher.XDPAborted, dispatcher.XDPDrop, dispatcher.XDPPass,
-			dispatcher.XDPTX, dispatcher.XDPRedirect,
-		}, (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4)},
-		{"duplicate", []dispatcher.XDPAction{dispatcher.XDPPass, dispatcher.XDPPass}, 1 << 2},
+		{"tc unspec", dispatcher.DispatcherTypeTCIngress, []int32{-1}, 1 << 0},
+		{"tc ok", dispatcher.DispatcherTypeTCIngress, []int32{0}, 1 << 1},
+		{"tc pipe", dispatcher.DispatcherTypeTCIngress, []int32{3}, 1 << 4},
+		{"tc dispatcher return", dispatcher.DispatcherTypeTCIngress, []int32{30}, 1 << 31},
+		{"tc default", dispatcher.DispatcherTypeTCIngress, []int32{3, 30}, (1 << 4) | (1 << 31)},
+		{"xdp pass", dispatcher.DispatcherTypeXDP, []int32{2}, 1 << 2},
+		{"xdp dispatcher return", dispatcher.DispatcherTypeXDP, []int32{31}, 1 << 31},
+		{"xdp default", dispatcher.DispatcherTypeXDP, []int32{2, 31}, (1 << 2) | (1 << 31)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := dispatcher.ProceedOnMask(tt.actions...)
+			got, err := dispatcher.ProceedOnMask(tt.dt, tt.codes...)
+			if err != nil {
+				t.Fatalf("ProceedOnMask(%s, %v): %v", tt.dt, tt.codes, err)
+			}
 			if got != tt.want {
-				t.Errorf("ProceedOnMask(%v) = 0x%x, want 0x%x", tt.actions, got, tt.want)
+				t.Errorf("ProceedOnMask(%s, %v) = 0x%x, want 0x%x", tt.dt, tt.codes, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestProceedOnMaskRejectsInvalidActions(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		dt   dispatcher.DispatcherType
+		code int32
+	}{
+		{"tc unknown in range", dispatcher.DispatcherTypeTCIngress, 9},
+		{"tc out of range", dispatcher.DispatcherTypeTCIngress, 99},
+		{"xdp unknown in range", dispatcher.DispatcherTypeXDP, 5},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := dispatcher.ProceedOnMask(tt.dt, tt.code); err == nil {
+				t.Fatalf("ProceedOnMask(%s, %d): expected error", tt.dt, tt.code)
+			}
+		})
+	}
+}
+
+func TestProceedOnActions(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		dt   dispatcher.DispatcherType
+		mask uint32
+		want []int32
+	}{
+		{"tc unspec", dispatcher.DispatcherTypeTCIngress, 1 << 0, []int32{-1}},
+		{"tc default", dispatcher.DispatcherTypeTCIngress, (1 << 4) | (1 << 31), []int32{3, 30}},
+		{"xdp default", dispatcher.DispatcherTypeXDP, (1 << 2) | (1 << 31), []int32{2, 31}},
+		{"xdp explicit pass", dispatcher.DispatcherTypeXDP, 1 << 2, []int32{2}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := dispatcher.ProceedOnActions(tt.dt, tt.mask)
+			if err != nil {
+				t.Fatalf("ProceedOnActions(%s, 0x%x): %v", tt.dt, tt.mask, err)
+			}
+			if fmt.Sprint(got) != fmt.Sprint(tt.want) {
+				t.Fatalf("ProceedOnActions(%s, 0x%x) = %v, want %v", tt.dt, tt.mask, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestProceedOnActionsRejectsInvalidBits(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		dt   dispatcher.DispatcherType
+		mask uint32
+	}{
+		{"tc bit ten", dispatcher.DispatcherTypeTCIngress, 1 << 10},
+		{"xdp bit five", dispatcher.DispatcherTypeXDP, 1 << 5},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := dispatcher.ProceedOnActions(tt.dt, tt.mask); err == nil {
+				t.Fatalf("ProceedOnActions(%s, 0x%x): expected error", tt.dt, tt.mask)
 			}
 		})
 	}
@@ -258,27 +332,6 @@ func TestUnmarshalText(t *testing.T) {
 	})
 }
 
-func TestChainCallShift(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		dt   dispatcher.DispatcherType
-		want uint
-	}{
-		{dispatcher.DispatcherTypeXDP, 0},
-		{dispatcher.DispatcherTypeTCIngress, 1},
-		{dispatcher.DispatcherTypeTCEgress, 1},
-	}
-	for _, tt := range tests {
-		t.Run(tt.dt.String(), func(t *testing.T) {
-			t.Parallel()
-			if got := tt.dt.ChainCallShift(); got != tt.want {
-				t.Errorf("%s.ChainCallShift() = %d, want %d", tt.dt, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestTCParentHandle(t *testing.T) {
 	t.Parallel()
 
@@ -298,106 +351,6 @@ func TestTCParentHandle(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestXDPDispatcherAttachSpecValidate(t *testing.T) {
-	t.Parallel()
-
-	valid := dispatcher.XDPDispatcherAttachSpec{
-		Target:      bpfman.AttachTarget{IfIndex: 1},
-		ProgPinPath: "/some/path",
-		LinkPinPath: "/some/link",
-		NumProgs:    1,
-	}
-
-	t.Run("valid", func(t *testing.T) {
-		t.Parallel()
-		if err := valid.Validate(); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-	})
-
-	t.Run("max progs", func(t *testing.T) {
-		t.Parallel()
-		s := valid
-		s.NumProgs = dispatcher.MaxPrograms
-		if err := s.Validate(); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-	})
-
-	t.Run("zero progs", func(t *testing.T) {
-		t.Parallel()
-		s := valid
-		s.NumProgs = 0
-		if err := s.Validate(); err == nil {
-			t.Error("expected error for NumProgs=0")
-		}
-	})
-
-	t.Run("exceeds max progs", func(t *testing.T) {
-		t.Parallel()
-		s := valid
-		s.NumProgs = dispatcher.MaxPrograms + 1
-		if err := s.Validate(); err == nil {
-			t.Error("expected error for NumProgs > MaxPrograms")
-		}
-	})
-
-	t.Run("negative progs", func(t *testing.T) {
-		t.Parallel()
-		s := valid
-		s.NumProgs = -1
-		if err := s.Validate(); err == nil {
-			t.Error("expected error for NumProgs=-1")
-		}
-	})
-}
-
-func TestTCDispatcherAttachSpecValidate(t *testing.T) {
-	t.Parallel()
-
-	valid := dispatcher.TCDispatcherAttachSpec{
-		Target:      bpfman.AttachTarget{IfIndex: 1},
-		IfName:      "lo",
-		ProgPinPath: "/some/path",
-		Direction:   bpfman.TCDirectionIngress,
-		NumProgs:    1,
-	}
-
-	t.Run("valid", func(t *testing.T) {
-		t.Parallel()
-		if err := valid.Validate(); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-	})
-
-	t.Run("max progs", func(t *testing.T) {
-		t.Parallel()
-		s := valid
-		s.NumProgs = dispatcher.MaxPrograms
-		if err := s.Validate(); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-	})
-
-	t.Run("zero progs", func(t *testing.T) {
-		t.Parallel()
-		s := valid
-		s.NumProgs = 0
-		if err := s.Validate(); err == nil {
-			t.Error("expected error for NumProgs=0")
-		}
-	})
-
-	t.Run("exceeds max progs", func(t *testing.T) {
-		t.Parallel()
-		s := valid
-		s.NumProgs = dispatcher.MaxPrograms + 1
-		if err := s.Validate(); err == nil {
-			t.Error("expected error for NumProgs > MaxPrograms")
-		}
-	})
 }
 
 func TestXDPExtensionAttachSpecValidate(t *testing.T) {

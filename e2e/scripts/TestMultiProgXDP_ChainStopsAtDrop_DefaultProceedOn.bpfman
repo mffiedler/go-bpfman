@@ -7,8 +7,8 @@
 #   mxdp_chain_b (prio 60)  XDP_DROP  -- runs, chain STOPS here
 #   mxdp_chain_c (prio 70)  (XDP_PASS -- never reached)
 #
-# Default XDP proceed-on is [XDP_PASS], so XDP_DROP terminates
-# the chain. With one wave of N pings:
+# Default XDP proceed-on is [XDP_PASS, dispatcher_return], so
+# XDP_DROP terminates the chain. With one wave of N pings:
 #
 #   a counter = N * weight_a   (saw all N, returned PASS)
 #   b counter = N * weight_b   (saw all N, returned DROP)

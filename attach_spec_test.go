@@ -58,6 +58,36 @@ func TestXDPAttachSpecRejectsMissingFields(t *testing.T) {
 	assert.Contains(t, err.Error(), "ifname is required")
 }
 
+func TestXDPAttachSpecProceedOnCodesValidateActions(t *testing.T) {
+	t.Parallel()
+
+	spec, err := NewXDPAttachSpec(1, "eth0", 0)
+	require.NoError(t, err)
+
+	got, err := spec.WithProceedOnCodes([]int32{2, 31})
+	require.NoError(t, err)
+	assert.Equal(t, []int32{2, 31}, got.ProceedOn())
+
+	_, err = spec.WithProceedOnCodes([]int32{5})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown XDP action code 5")
+}
+
+func TestTCAttachSpecProceedOnCodesValidateActions(t *testing.T) {
+	t.Parallel()
+
+	spec, err := NewTCAttachSpec(1, "eth0", TCDirectionIngress, 0)
+	require.NoError(t, err)
+
+	got, err := spec.WithProceedOnCodes([]int32{-1, 30})
+	require.NoError(t, err)
+	assert.Equal(t, []int32{-1, 30}, got.ProceedOn())
+
+	_, err = spec.WithProceedOnCodes([]int32{9})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown TC action code 9")
+}
+
 // TCX priority is stored verbatim, matching Rust: TCX has no
 // dispatcher default, so an omitted (0) priority stays 0, a positive
 // value is kept as given, and only a negative value is rejected.

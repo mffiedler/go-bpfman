@@ -55,26 +55,70 @@ const (
 	DefaultPriority = bpfman.DefaultAttachPriority
 )
 
-// XDPAction represents XDP return codes for proceed-on configuration.
-type XDPAction uint32
-
-const (
-	XDPAborted  XDPAction = 0
-	XDPDrop     XDPAction = 1
-	XDPPass     XDPAction = 2
-	XDPTX       XDPAction = 3
-	XDPRedirect XDPAction = 4
-)
-
-// ProceedOnMask returns a bitmask for the given XDP actions.
-// If a program returns one of these actions, the dispatcher continues
-// to the next program in the chain.
-func ProceedOnMask(actions ...XDPAction) uint32 {
-	var mask uint32
-	for _, a := range actions {
-		mask |= 1 << uint32(a)
+func proceedOnOffset(dt DispatcherType) (int32, error) {
+	switch dt {
+	case DispatcherTypeXDP:
+		return 0, nil
+	case DispatcherTypeTCIngress, DispatcherTypeTCEgress:
+		return 1, nil
+	default:
+		return 0, fmt.Errorf("unknown dispatcher type %q", dt)
 	}
-	return mask
+}
+
+func validateProceedOnCode(dt DispatcherType, code int32) error {
+	switch dt {
+	case DispatcherTypeXDP:
+		_, err := bpfman.XDPActionFromInt32(code)
+		return err
+	case DispatcherTypeTCIngress, DispatcherTypeTCEgress:
+		_, err := bpfman.TCActionFromInt32(code)
+		return err
+	default:
+		return fmt.Errorf("unknown dispatcher type %q", dt)
+	}
+}
+
+// ProceedOnMask returns the final dispatcher ABI bitmask for the given
+// action codes. If a program returns one of these actions, the
+// dispatcher continues to the next program in the chain.
+func ProceedOnMask(dt DispatcherType, codes ...int32) (uint32, error) {
+	offset, err := proceedOnOffset(dt)
+	if err != nil {
+		return 0, err
+	}
+	var mask uint32
+	for _, code := range codes {
+		if err := validateProceedOnCode(dt, code); err != nil {
+			return 0, err
+		}
+		bit := code + offset
+		if bit < 0 || bit >= 32 {
+			return 0, fmt.Errorf("proceed-on action code %d maps to invalid bit %d", code, bit)
+		}
+		mask |= 1 << uint(bit)
+	}
+	return mask, nil
+}
+
+// ProceedOnActions decodes a dispatcher ABI bitmask into action codes.
+func ProceedOnActions(dt DispatcherType, mask uint32) ([]int32, error) {
+	offset, err := proceedOnOffset(dt)
+	if err != nil {
+		return nil, err
+	}
+	var actions []int32
+	for bit := range 32 {
+		if mask&(1<<uint(bit)) == 0 {
+			continue
+		}
+		code := int32(bit) - offset
+		if err := validateProceedOnCode(dt, code); err != nil {
+			return nil, err
+		}
+		actions = append(actions, code)
+	}
+	return actions, nil
 }
 
 // NewXDPConfig creates a default XDP dispatcher config. numProgs

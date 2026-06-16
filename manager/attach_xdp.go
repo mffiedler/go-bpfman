@@ -30,14 +30,16 @@ func (m *Manager) attachXDP(ctx context.Context, spec bpfman.XDPAttachSpec) (bpf
 	priority := spec.Priority()
 	proceedOn := spec.ProceedOn()
 	if len(proceedOn) == 0 {
-		proceedOn = []int32{int32(dispatcher.XDPPass)}
+		proceedOn = []int32{
+			bpfman.XDPActionPass.Int32(),
+			bpfman.XDPActionDispatcherReturn.Int32(),
+		}
 	}
 
-	var proceedOnActions []dispatcher.XDPAction
-	for _, v := range proceedOn {
-		proceedOnActions = append(proceedOnActions, dispatcher.XDPAction(v))
+	proceedOnMask, err := dispatcher.ProceedOnMask(dispatcher.DispatcherTypeXDP, proceedOn...)
+	if err != nil {
+		return bpfman.Link{}, err
 	}
-	proceedOnMask := dispatcher.ProceedOnMask(proceedOnActions...)
 
 	return m.dispatcherAttach(ctx, dispatcherAttachParams{
 		programID: spec.ProgramID(),
