@@ -303,20 +303,9 @@ type ExtensionLinkInfo struct {
 
 // DispatcherAttacher attaches dispatcher programs for multi-program chaining.
 type DispatcherAttacher interface {
-	// AttachXDPDispatcher loads and attaches an XDP dispatcher to an interface.
-	// The dispatcher allows multiple XDP programs to be chained together.
-	// Uses .rodata-based config baked in at load time.
-	AttachXDPDispatcher(ctx context.Context, spec dispatcher.XDPDispatcherAttachSpec) (*XDPDispatcherResult, error)
-
 	// AttachXDPExtension attaches a pinned Extension program to a
 	// dispatcher slot via freplace link.
 	AttachXDPExtension(ctx context.Context, spec dispatcher.XDPExtensionAttachSpec) (bpfman.AttachOutput, error)
-
-	// AttachTCDispatcher loads and attaches a TC dispatcher to an interface
-	// using legacy netlink TC (clsact qdisc + BPF tc filter). This matches
-	// the upstream Rust bpfman approach and is visible to tc(8) tooling.
-	// Uses .rodata-based config baked in at load time.
-	AttachTCDispatcher(ctx context.Context, spec dispatcher.TCDispatcherAttachSpec) (*TCDispatcherResult, error)
 
 	// AttachTCExtension attaches a pinned Extension program to a TC
 	// dispatcher slot via freplace link.
@@ -389,7 +378,7 @@ type PinRemover interface {
 type TCFilterDetacher interface {
 	// DetachTCFilter removes a tc filter identified by ifindex, parent,
 	// priority, handle, and network namespace. This is the counterpart
-	// to the netlink-based attachment performed by AttachTCDispatcher.
+	// to the netlink-based attachment performed by CreateTCFilter.
 	DetachTCFilter(ctx context.Context, ifindex int, ifname string, parent uint32, priority uint16, handle uint32, netnsPath string) error
 
 	// FindTCFilterHandle looks up the kernel-assigned handle for a TC

@@ -1003,32 +1003,6 @@ func (f *fakeKernel) DetachLink(_ context.Context, linkPinPath bpfman.LinkPath) 
 	return nil
 }
 
-func (f *fakeKernel) AttachXDPDispatcher(_ context.Context, spec dispatcher.XDPDispatcherAttachSpec) (*platform.XDPDispatcherResult, error) {
-	// Check for interface-specific failure injection
-	f.mu.Lock()
-	if err, ok := f.failOnIfindex[spec.Target.IfIndex]; ok {
-		f.mu.Unlock()
-		return nil, err
-	}
-	f.mu.Unlock()
-
-	dispatcherID := kernel.ProgramID(f.nextID.Add(1))
-	dispLinkID := kernel.LinkID(f.nextID.Add(1))
-	// Add dispatcher program to programs map so GC sees it as valid
-	f.programs[dispatcherID] = fakeProgram{
-		id:          dispatcherID,
-		name:        "xdp_dispatcher",
-		programType: bpfman.ProgramTypeXDP,
-		pinPath:     spec.ProgPinPath.String(),
-	}
-	return &platform.XDPDispatcherResult{
-		DispatcherID:  dispatcherID,
-		KernelLinkID:  dispLinkID,
-		DispatcherPin: spec.ProgPinPath,
-		LinkPin:       spec.LinkPinPath,
-	}, nil
-}
-
 func (f *fakeKernel) AttachXDPExtension(_ context.Context, spec dispatcher.XDPExtensionAttachSpec) (bpfman.AttachOutput, error) {
 	linkID := kernel.LinkID(f.nextID.Add(1))
 	createPinFile(spec.LinkPinPath)
@@ -1056,48 +1030,6 @@ func (f *fakeKernel) AttachXDPExtension(_ context.Context, spec dispatcher.XDPEx
 		KernelLinkID: &linkID,
 		KernelLink:   &kl,
 		PinPath:      spec.LinkPinPath,
-	}, nil
-}
-
-func (f *fakeKernel) AttachTCDispatcher(_ context.Context, spec dispatcher.TCDispatcherAttachSpec) (*platform.TCDispatcherResult, error) {
-	// Check for interface-specific failure injection
-	f.mu.Lock()
-	if err, ok := f.failOnIfname[spec.IfName]; ok {
-		f.mu.Unlock()
-		return nil, err
-	}
-	f.mu.Unlock()
-
-	dispatcherID := kernel.ProgramID(f.nextID.Add(1))
-	handle := f.nextID.Add(1)
-	// Add dispatcher program to programs map so GC sees it as valid
-	f.programs[dispatcherID] = fakeProgram{
-		id:          dispatcherID,
-		name:        "tc_dispatcher",
-		programType: bpfman.ProgramTypeTC,
-		pinPath:     spec.ProgPinPath.String(),
-	}
-
-	// Determine parent handle from direction
-	var parent uint32
-	switch spec.Direction {
-	case bpfman.TCDirectionIngress:
-		parent = 0xFFFFFFF2 // netlink.HANDLE_MIN_INGRESS
-	case bpfman.TCDirectionEgress:
-		parent = 0xFFFFFFF3 // netlink.HANDLE_MIN_EGRESS
-	}
-
-	// Store TC filter so FindTCFilterHandle can look it up.
-	f.mu.Lock()
-	key := tcFilterKey{ifindex: spec.Target.IfIndex, parent: parent, priority: 50}
-	f.tcFilters[key] = append(f.tcFilters[key], handle)
-	f.mu.Unlock()
-
-	return &platform.TCDispatcherResult{
-		DispatcherID:  dispatcherID,
-		DispatcherPin: spec.ProgPinPath,
-		Handle:        handle,
-		Priority:      50,
 	}, nil
 }
 

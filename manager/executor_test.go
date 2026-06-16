@@ -233,17 +233,8 @@ func (k *stubKernel) ListTracepoints(ctx context.Context) ([]string, error) {
 	panic("stubKernel.ListTracepoints not implemented")
 }
 
-// DispatcherAttacher
-func (k *stubKernel) AttachXDPDispatcher(ctx context.Context, spec dispatcher.XDPDispatcherAttachSpec) (*platform.XDPDispatcherResult, error) {
-	panic("stubKernel.AttachXDPDispatcher not implemented")
-}
-
 func (k *stubKernel) AttachXDPExtension(ctx context.Context, spec dispatcher.XDPExtensionAttachSpec) (bpfman.AttachOutput, error) {
 	panic("stubKernel.AttachXDPExtension not implemented")
-}
-
-func (k *stubKernel) AttachTCDispatcher(ctx context.Context, spec dispatcher.TCDispatcherAttachSpec) (*platform.TCDispatcherResult, error) {
-	panic("stubKernel.AttachTCDispatcher not implemented")
 }
 
 func (k *stubKernel) AttachTCExtension(ctx context.Context, spec dispatcher.TCExtensionAttachSpec) (bpfman.AttachOutput, error) {
