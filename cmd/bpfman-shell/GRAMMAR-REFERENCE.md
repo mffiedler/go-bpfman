@@ -2,8 +2,8 @@
 
 This is a syntax-only reference for the language accepted by
 `cmd/bpfman-shell`. It is intentionally separate from
-`shell/GRAMMAR.md`, which also records implementation rationale and
-parser guidance.
+`GRAMMAR-RATIONALE.md`, which records the design rationale, the
+tokenisation trade-offs, and the parser gotchas behind this grammar.
 
 The parser and tests remain the authority. This document describes the
 current surface grammar, including typed `def` parameters, and calls out

@@ -3,8 +3,9 @@
 This document specifies the bpfman-shell language implemented by
 `cmd/bpfman-shell`. It is normative for script authors and for
 language tooling unless it explicitly says that behaviour is
-implementation-defined, reserved, or unsettled. The parser grammar is
-documented separately in `shell/GRAMMAR.md`; this document describes the
+implementation-defined, reserved, or unsettled. The surface grammar is
+documented separately in `GRAMMAR-REFERENCE.md`, and the design rationale
+behind it in `GRAMMAR-RATIONALE.md`; this document describes the
 semantics of accepted programs.
 
 The key words "must", "must not", "shall", "should", and "may" are to

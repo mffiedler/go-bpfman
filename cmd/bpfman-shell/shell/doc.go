@@ -13,6 +13,8 @@
 //
 // The umbrella package intentionally exports no production API of its own.
 // It exists as the architectural root for the language subsystem and to
-// host package-scoped documentation. The living surface-language reference
-// is [GRAMMAR.md] in this directory.
+// host package-scoped documentation. The surface-language reference lives
+// in the parent directory: GRAMMAR-REFERENCE.md (syntax), LANGUAGE-SPEC.md
+// (semantics), and GRAMMAR-RATIONALE.md (design rationale and parser
+// gotchas).
 package shell
