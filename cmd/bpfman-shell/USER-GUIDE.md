@@ -70,7 +70,7 @@ Whitespace matters at binding and expression sites. Write:
 
 ```bpfman
 let count = 3
-guard loaded <- bpfman program load file --path prog.o --programs xdp:pass
+guard loaded <- bpfman program load file prog.o --programs xdp:pass
 assert $count > 0
 ```
 
@@ -108,7 +108,7 @@ primary value directly:
 
 ```bpfman
 guard loaded <- bpfman program load file \
-    --path e2e/testdata/bpf/xdp_pass.bpf.o \
+    e2e/testdata/bpf/xdp_pass.bpf.o \
     --programs xdp:pass
 let prog = $loaded.programs[0]
 
@@ -212,7 +212,7 @@ Defs can return a value:
 
 ```bpfman
 def load_xdp(path iface) {
-    guard loaded <- bpfman program load file --path $path --programs xdp:pass
+    guard loaded <- bpfman program load file $path --programs xdp:pass
     let prog = $loaded.programs[0]
     guard link <- bpfman link attach xdp --iface $iface $prog
     return [$prog $link]
@@ -333,7 +333,7 @@ guard pair <- net veth-pair
 defer net release $pair
 
 guard loaded <- bpfman program load file \
-    --path testdata/bpf/xdp_pass.bpf.o \
+    testdata/bpf/xdp_pass.bpf.o \
     --programs xdp:pass
 let prog = $loaded.programs[0]
 defer bpfman program unload $prog
@@ -446,7 +446,7 @@ global data arguments:
 
 ```bpfman
 guard loaded <- bpfman program load file \
-    --path testdata/bpf/multi_prog_tcx_counter.bpf.o \
+    testdata/bpf/multi_prog_tcx_counter.bpf.o \
     --programs tcx:mtcx_a,tcx:mtcx_b \
     -g "weight_a=0x${u64le $weight_a}"
 ```
@@ -472,7 +472,7 @@ scripts:
 
 ```bpfman
 bpfman program list
-guard loaded <- bpfman program load file --path prog.o --programs xdp:pass
+guard loaded <- bpfman program load file prog.o --programs xdp:pass
 guard prog <- bpfman program get $pid
 bpfman program unload $prog
 
