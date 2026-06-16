@@ -4,11 +4,12 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // TestAttachRejectsProgramKindMismatch verifies that attaching a loaded
@@ -18,6 +19,7 @@ import (
 // each serve both the entry and return variant; those legitimate cases
 // are covered as controls that must still succeed.
 func TestAttachRejectsProgramKindMismatch(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	loadProg := func(f *testFixture, file, name string, pt bpfman.ProgramType, attachFunc string) bpfman.Program {
@@ -138,6 +140,7 @@ func TestAttachRejectsProgramKindMismatch(t *testing.T) {
 
 	for _, tc := range mismatches {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			f := newTestFixture(t)
 			prog := loadProg(f, tc.loadFile, "prog", tc.loadType, tc.attachFunc)
 
@@ -185,6 +188,7 @@ func TestAttachRejectsProgramKindMismatch(t *testing.T) {
 
 	for _, tc := range controls {
 		t.Run(tc.name+" (control, must succeed)", func(t *testing.T) {
+			t.Parallel()
 			f := newTestFixture(t)
 			prog := loadProg(f, tc.loadFile, "prog", tc.loadType, "")
 			_, err := f.Attach(ctx, tc.spec(prog.Record.ProgramID))
