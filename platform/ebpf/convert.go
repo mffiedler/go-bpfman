@@ -58,6 +58,44 @@ func inferProgramType(sectionName string) bpfman.ProgramType {
 	}
 }
 
+// sectionFamily groups the bpfman program types that may legitimately
+// be loaded from the same ELF section. Members of a family share a
+// kernel program type and a section-name prefix; the remaining
+// distinction is settled after load rather than encoded in the section:
+//
+//   - kprobe/kretprobe and uprobe/uretprobe: both halves are
+//     BPF_PROG_TYPE_KPROBE; entry vs return is chosen at
+//     perf_event_open, not load. kprobe and uprobe are kept in
+//     separate families: they share a kernel type but the section
+//     encodes distinct intent (kernel function vs user-space binary),
+//     and the attach layer treats them as distinct verbs.
+//   - tc/tcx: both BPF_PROG_TYPE_SCHED_CLS. tcx objects are compiled
+//     with the classifier SEC, so the section infers tc; loading such
+//     an object as tcx is routine and must be allowed.
+//
+// Every other type forms its own singleton family, so a declared type
+// that contradicts the section (e.g. xdp from a kprobe SEC, or fentry
+// from a fexit SEC) is a genuine mismatch.
+func sectionFamily(t bpfman.ProgramType) string {
+	switch t {
+	case bpfman.ProgramTypeKprobe, bpfman.ProgramTypeKretprobe:
+		return "kprobe"
+	case bpfman.ProgramTypeUprobe, bpfman.ProgramTypeUretprobe:
+		return "uprobe"
+	case bpfman.ProgramTypeTC, bpfman.ProgramTypeTCX:
+		return "schedcls"
+	default:
+		return string(t)
+	}
+}
+
+// declaredTypeMatchesSection reports whether a program declared as
+// `declared` may be loaded from an ELF section that infers `inferred`.
+// They match when they belong to the same section family.
+func declaredTypeMatchesSection(declared, inferred bpfman.ProgramType) bool {
+	return sectionFamily(declared) == sectionFamily(inferred)
+}
+
 // bootTime returns the system boot time by reading /proc/stat.
 // Falls back to time.Now() if /proc/stat cannot be read.
 func bootTime() time.Time {

@@ -1,0 +1,46 @@
+# -*- mode: bpfman -*-
+# A declared program type that contradicts the ELF section is rejected
+# at load, before the kernel sees the program. The loader infers the
+# type from the section and accepts a declared type only within the
+# equivalence classes that share a kernel program type and section
+# prefix: {kprobe,kretprobe}, {uprobe,uretprobe}, {tc,tcx}. Anything
+# else is a genuine mismatch.
+#
+# Without this guard a trivial program could pass the wrong verifier
+# and be silently mislabelled (the attach layer then trusts that
+# recorded type), or a real clash would surface later as a cryptic
+# verifier error instead of this clean one.
+#
+# Invoke from e2e/:
+#
+#   cd e2e
+#   sudo go test ./scriptrunner -run \
+#     'TestBPFManScripts/scripts/TestLoad_RejectsSectionTypeMismatch\.bpfman$'
+
+# xdp section function declared as kprobe: trivial enough to pass the
+# KPROBE verifier, so before the guard it loaded mislabelled.
+let asKprobe <- bpfman program load file testdata/bpf/xdp_pass.bpf.o --programs kprobe:pass
+assert not $asKprobe.ok
+assert contains $asKprobe.stderr "program type mismatch"
+
+# kprobe section function declared as xdp: would otherwise reach the
+# kernel and fail with a cryptic "not a pointer to context" verifier
+# error.
+let asXdp <- bpfman program load file testdata/bpf/kprobe_counter.bpf.o --programs xdp:kprobe_counter
+assert not $asXdp.ok
+assert contains $asXdp.stderr "program type mismatch"
+
+# uprobe section function declared as kprobe: same kernel type, but the
+# section encodes distinct intent, so this is a cross-family mismatch.
+let asProbe <- bpfman program load file testdata/bpf/uprobe_counter.bpf.o --programs kprobe:uprobe_counter
+assert not $asProbe.ok
+assert contains $asProbe.stderr "program type mismatch"
+
+# Controls: legitimate interchanges within a family must still load.
+# tcx objects are compiled with the classifier SEC (infers tc).
+guard tcx <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
+defer bpfman program unload $tcx.programs[0]
+
+# kprobe section loaded as kretprobe: entry vs return is set at attach.
+guard kret <- bpfman program load file testdata/bpf/kprobe_counter.bpf.o --programs kretprobe:kprobe_counter
+defer bpfman program unload $kret.programs[0]

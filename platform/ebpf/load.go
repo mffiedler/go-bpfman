@@ -118,22 +118,18 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 		programType = secInferredType
 	}
 
-	// fentry/fexit/lsm tracing programs are bound to their target
-	// kernel function and to BPF_TRACE_{FENTRY,FEXIT} at LOAD
-	// time via expected_attach_type. If the caller asks for one
-	// type but the .bpf.o was compiled with the SEC of the other,
-	// the kernel will load the program according to SEC and
-	// silently ignore the caller's intent. Surface that as a
-	// hard error: any subsequent metadata bpfman records about
-	// the program would be a lie, and the program would attach
-	// at the wrong site (fentry vs fexit affects retval access
-	// and verifier rules). Kprobe/kretprobe deliberately remain
-	// interchangeable here because the entry/return distinction
-	// is set at perf_event_open time, not at load.
-	if programType.RequiresAttachFunc() &&
-		secInferredType.Valid() &&
-		secInferredType.RequiresAttachFunc() &&
-		programType != secInferredType {
+	// The ELF section encodes the program's kind. Honour an explicit
+	// declared type only when it agrees with the section, up to the
+	// equivalence classes where one kernel program type backs several
+	// bpfman types and the finer distinction is settled after load
+	// (see sectionFamily). A genuine mismatch -- xdp from a kprobe SEC,
+	// fentry from a fexit SEC, kprobe from an xdp SEC -- is rejected
+	// here, before the kernel load. Otherwise a trivial program may
+	// pass the wrong verifier and be silently mislabelled (any metadata
+	// bpfman records would then be a lie, and the attach layer trusts
+	// that recorded type), or a real type clash surfaces later as a
+	// cryptic verifier error instead of this clean one.
+	if secInferredType.Valid() && !declaredTypeMatchesSection(programType, secInferredType) {
 		return bpfman.LoadOutput{}, fmt.Errorf(
 			"program type mismatch: caller specified %s but ELF section %q implies %s; "+
 				"recompile the .bpf.o with the matching SEC or pass the matching ProgramType",

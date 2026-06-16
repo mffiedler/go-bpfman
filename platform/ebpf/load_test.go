@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/cilium/ebpf"
+
+	"github.com/frobware/go-bpfman"
 )
 
 // xdpPassGlobalsObject embeds the same xdp_pass object the external
@@ -28,6 +30,49 @@ func xdpPassSpec(t *testing.T) *ebpf.CollectionSpec {
 		t.Fatalf("load collection spec: %v", err)
 	}
 	return spec
+}
+
+// TestDeclaredTypeMatchesSection pins the load-time policy that a
+// declared program type must agree with the ELF section, up to the
+// equivalence classes that share a kernel program type. It is the unit
+// for the section-vs-declared-type guard in loadProgram.
+func TestDeclaredTypeMatchesSection(t *testing.T) {
+	t.Parallel()
+
+	match := []struct{ declared, inferred bpfman.ProgramType }{
+		// Exact agreement.
+		{bpfman.ProgramTypeXDP, bpfman.ProgramTypeXDP},
+		{bpfman.ProgramTypeTracepoint, bpfman.ProgramTypeTracepoint},
+		{bpfman.ProgramTypeFentry, bpfman.ProgramTypeFentry},
+		{bpfman.ProgramTypeFexit, bpfman.ProgramTypeFexit},
+		// Probe entry/return interchange within a family.
+		{bpfman.ProgramTypeKretprobe, bpfman.ProgramTypeKprobe},
+		{bpfman.ProgramTypeKprobe, bpfman.ProgramTypeKretprobe},
+		{bpfman.ProgramTypeUretprobe, bpfman.ProgramTypeUprobe},
+		// tcx objects compile with the classifier SEC (infers tc).
+		{bpfman.ProgramTypeTCX, bpfman.ProgramTypeTC},
+		{bpfman.ProgramTypeTC, bpfman.ProgramTypeTCX},
+	}
+	for _, tc := range match {
+		if !declaredTypeMatchesSection(tc.declared, tc.inferred) {
+			t.Errorf("declared %s from %s section should be allowed", tc.declared, tc.inferred)
+		}
+	}
+
+	mismatch := []struct{ declared, inferred bpfman.ProgramType }{
+		{bpfman.ProgramTypeKprobe, bpfman.ProgramTypeXDP},    // case B
+		{bpfman.ProgramTypeXDP, bpfman.ProgramTypeKprobe},    // case A
+		{bpfman.ProgramTypeKprobe, bpfman.ProgramTypeUprobe}, // cross probe family
+		{bpfman.ProgramTypeUprobe, bpfman.ProgramTypeKprobe}, // cross probe family
+		{bpfman.ProgramTypeKprobe, bpfman.ProgramTypeTracepoint},
+		{bpfman.ProgramTypeFentry, bpfman.ProgramTypeFexit},
+		{bpfman.ProgramTypeXDP, bpfman.ProgramTypeTC},
+	}
+	for _, tc := range mismatch {
+		if declaredTypeMatchesSection(tc.declared, tc.inferred) {
+			t.Errorf("declared %s from %s section should be rejected", tc.declared, tc.inferred)
+		}
+	}
 }
 
 // TestApplyGlobalData_UnknownKeyRejected pins finding 6: a
