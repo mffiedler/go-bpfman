@@ -1,6 +1,6 @@
 ;;; bpfman-mode.el --- Major mode for bpfman-shell scripts -*- lexical-binding: t; -*-
 
-;; Version: 0.8.0
+;; Version: 0.9.0
 ;; Keywords: languages, bpf
 ;; Package-Requires: ((emacs "25.1"))
 
@@ -123,6 +123,10 @@ Mirrors DefParamTypes in cmd/bpfman-shell/shell/syntax/ast_stmt.go.")
                  ;; matches expression operator and its optional
                  ;; 'exhaustive' modifier
                  "matches" "exhaustive"
+                 ;; record literal constructor (`record { name:
+                 ;; value ... }'); fontified like matches when it
+                 ;; appears in argument position
+                 "record"
                  ;; comparison operators (semantics chosen by
                  ;; operand type: number-vs-number numeric,
                  ;; string-vs-string textual, bool-vs-bool only
@@ -618,6 +622,14 @@ string tokens are one literal segment."
     (bpfman--classification-result 'foreach-name (bpfman--keyword-role beg end)))
    ((string= text "def")
     (bpfman--classification-result 'def-name (bpfman--keyword-role beg end)))
+   ((string= text "record")
+    ;; A record literal in binding-RHS position (`let r = record
+    ;; { ... }'). Fontify the keyword as a builtin, matching the
+    ;; sibling `matches' brace-block constructor; the `{' that
+    ;; follows resets to start state so the block body classifies
+    ;; normally. In argument position (after a verb) the args-state
+    ;; branch catches `record' via bpfman--subcommands instead.
+    (bpfman--classification-result 'args (bpfman--builtin-role beg end)))
    ((bpfman--parser-keyword-p text)
     (bpfman--classification-result
      (if (string= text "defer") 'start 'args)

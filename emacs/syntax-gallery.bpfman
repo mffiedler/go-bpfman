@@ -117,6 +117,23 @@ let refs       = [$a $b ($count + 1)]
 let (left right) = $pair
 let (_ kept)      = $pair
 
+# ---- 3c. Record literals ----
+
+# 'record { name: value ... }' builds a structured value. The
+# 'record' keyword fontifies as a builtin, like the sibling
+# 'matches' brace-block constructor; the field names inside are
+# plain (as matches keys are), and only value tokens such as a
+# $varref carry their own role. Fields are whitespace-separated --
+# a comma is not a separator, and one glued to a value either rides
+# silently into a string field or fails a numeric field as an
+# invalid literal. Single-line and multi-line forms both parse.
+let rec_one  = record { id: 1 name: demo }
+let rec_many = record {
+    program: $prog
+    count:   ($count + 1)
+    label:   "ready"
+}
+
 # ---- 3b. String interpolation in double-quoted strings ----
 
 # "${EXPR}" splices a scalar value into a double-quoted string.

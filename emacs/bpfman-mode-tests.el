@@ -323,6 +323,27 @@ not exercise."
                    (builtin "not")
                    (builtin "ok")))))
 
+(ert-deftest bpfman-classify-record-literal ()
+  "Classify a record literal: the `record' keyword fontifies as a
+builtin, the same as the sibling `matches' brace-block constructor.
+The field names inside the block are left plain, matching how
+`matches' block keys are treated; only embedded value tokens such
+as `$x' carry their own role.  `record' is recognised in both the
+binding-RHS (start) position and the argument (after a verb)
+position."
+  (should (equal (bpfman-test--classified-roles
+                  "let r = record { a: 1 b: $x }")
+                 '((keyword "let")
+                   (variable "r")
+                   (keyword "=")
+                   (builtin "record")
+                   (variable "$x"))))
+  (should (equal (bpfman-test--classified-roles
+                  "return record { k: $v }")
+                 '((keyword "return")
+                   (builtin "record")
+                   (variable "$v")))))
+
 (ert-deftest bpfman-classify-def-param-type-annotations ()
   "Classify typed def parameters: `name: type'.
 
