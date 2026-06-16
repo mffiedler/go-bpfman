@@ -122,41 +122,99 @@ codes are all non-negative (`aborted=0 .. redirect=4`,
 `ChainCallShift()` is 0 for XDP and `slot.ProceedOn` is written as-is
 (with the dispatcher_return bit forced on). The gap is specific to TC.
 
-## What a fix would have to change
+## The fix
 
-The clean, parity-matching fix is to move the offset into the
-representation, as Rust does, and stop relying on the edge shift:
+Move the offset into the representation, as Rust does, and stop applying
+it at the edge. `slot.ProceedOn` (and the dispatcher member's
+`ProceedOn`) becomes the `chain_call_actions[]` ABI layout itself, for
+both TC and XDP. The bit for an action code `c` is:
 
-- `tcProceedOnBitmask`: set bit `a + 1` for each action, including
-  `unspec(-1)` -> bit 0; drop the `a >= 0` filter (keep an upper bound).
-- `tcProceedOnOK/Pipe/DispatcherReturn` and `DefaultTCProceedOn`: move to
-  the `a + 1` layout (ok -> 1<<1, pipe -> 1<<4, dispatcher_return ->
-  1<<31).
-- `DispatcherType.ChainCallShift()` for TC: becomes 0 (the offset is now
-  in the mask, not the shift).
-- The reverse mapping `bitmaskToActions` (`manager/executor_dispatcher.go`)
-  is shared with XDP and assumes bit `a`. TC would need a TC-specific
-  reverse that subtracts 1, or the helper must be parameterised by
-  dispatcher type. This is the main entanglement to design around.
+    bit(c) = c + offset(dispType)      offset(TC) = 1, offset(XDP) = 0
 
-Two consequences to weigh:
+This mirrors the dispatcher's check exactly (TC tests `1 << (ret + 1)`,
+XDP tests `1 << ret`) and is byte-identical to Rust's `mask()`.
 
-- **Persisted encoding changes.** `slot.ProceedOn` is stored in sqlite;
-  under the fix its meaning shifts by one. Pre-release this is a clean
-  break, but any on-disk record written before the change would read
-  back wrong.
-- **Validation.** The change should be proven against the actual
-  dispatcher `.rodata`: load a TC chain with `--proceed-on unspec`, dump
-  `chain_call_actions`, and confirm bit 0 is set (and that every other
-  action still lands where Rust puts it).
+Exact bits:
 
-Alternatives considered: keep the `<< 1` scheme and special-case
-`unspec` by reserving a marker bit and OR-ing bit 0 in after the shift
-(works, but reintroduces the per-action special case the uniform
-representation was meant to avoid); or reject `--proceed-on unspec` at
-the boundary with a clear error instead of supporting it (honest, small,
-but a deliberate divergence from Rust, which supports it).
+| action                  | code | TC bit (offset 1) | XDP bit (offset 0) |
+|-------------------------|------|-------------------|--------------------|
+| `unspec`                |  -1  | `1<<0`            | n/a                |
+| `ok` / `aborted`        |   0  | `1<<1`            | `1<<0`             |
+| `pass` (XDP)            |   2  | --                | `1<<2`             |
+| `pipe` (TC)             |   3  | `1<<4`            | --                 |
+| `dispatcher_return` TC  |  30  | `1<<31`           | --                 |
+| `dispatcher_return` XDP |  31  | --                | `1<<31`            |
 
-This is deliberately out of scope for the attach-kind / load-type
-integrity work: it changes the dispatcher encoding and the persisted
-mask, an axis unrelated to which verb may attach which program.
+TC default `[pipe, dispatcher_return]` is `(1<<4) | (1<<31)`; XDP default
+`[pass]` is `1<<2`. Both match Rust.
+
+### One offset source, two unified helpers
+
+The per-type offset has a single home. `DispatcherType.ChainCallShift()`
+(today TC=1/XDP=0, applied at the write) is repurposed into the
+action-bit offset, now applied at encode/decode rather than at the write.
+Two helpers in the `dispatcher` package own all code/bitmask conversion:
+
+- `ProceedOnMask(dt, codes ...int32) uint32` -- `bit := c + offset(dt)`,
+  guarded to `0 <= bit < 32`, `mask |= 1 << bit`. Replaces
+  `manager.tcProceedOnBitmask` and the old `XDPAction`-typed
+  `ProceedOnMask`.
+- `ProceedOnActions(dt, mask uint32) []int32` -- for each set bit `b`,
+  `append(b - offset(dt))`. Replaces `manager.bitmaskToActions`.
+
+### Sites that change
+
+1. **TC encode** (`manager/attach_tc.go`): `tcProceedOnBitmask` ->
+   `dispatcher.ProceedOnMask(dt, codes...)`. Delete the hand-coded
+   `tcProceedOnOK/Pipe/DispatcherReturn` bit constants; derive
+   `DefaultTCProceedOn` from the `[pipe, dispatcher_return]` codes via the
+   encoder.
+2. **XDP encode** (`manager/attach_xdp.go`): switch to the code-based
+   `ProceedOnMask(DispatcherTypeXDP, codes...)` (offset 0, byte-identical
+   to today).
+3. **Write** (`manager/executor_dispatcher.go`): TC becomes
+   `cfg.ChainCallActions[i] = slot.ProceedOn` (no shift); XDP keeps
+   `| (1 << 31)` to force `dispatcher_return`.
+4. **Decode for link details** (`executor_dispatcher.go`, XDP and TC
+   rebuild paths): `bitmaskToActions(...)` ->
+   `dispatcher.ProceedOnActions(dt, ...)`.
+5. **Persist** (`platform/store/sqlite/dispatchers.go`): `proceedOnToJSON`
+   and the read-path rebuild loop take the dispatcher type (available as
+   `key.Type`) and use `ProceedOnActions` / `ProceedOnMask`.
+6. Delete `DispatcherType.ChainCallShift()` once the offset moves to
+   encode/decode, and update its test.
+
+### No migration
+
+The store persists proceed-on as an action-code array (`[]int32`), never
+the bitmask: link details carry codes directly, and the dispatcher member
+is walked to codes by `proceedOnToJSON` before storage and rebuilt from
+codes on read. Codes are encoding-agnostic, so changing the bit layout
+needs no migration and no version marker -- only the four conversion
+sites (1, 2, 4, 5) have to apply the offset consistently.
+
+### Validation
+
+`ProceedOnMask` guards `0 <= c + offset < 32`. TC codes are `-1..8` and
+`30` (bits `0..9, 31`); XDP codes are `0..4` and `31`. Everything fits,
+and the old `a >= 0` filter that silently ate `unspec` is gone.
+
+### Tests, to the bit
+
+- dispatcher unit: `ProceedOnMask(TC, -1) == 1<<0`, `(TC, 0) == 1<<1`,
+  `(TC, 3) == 1<<4`, `(TC, 30) == 1<<31`, default `== (1<<4)|(1<<31)`;
+  `(XDP, 2) == 1<<2` (regression); round-trip
+  `ProceedOnActions(dt, ProceedOnMask(dt, codes)) == codes`, including
+  `-1`. These expected masks equal Rust's `mask()`.
+- executor: build a TC config with `--proceed-on unspec` and assert the
+  generated `cfg.ChainCallActions[i]` has bit 0 set and equals the
+  expected mask -- the assertion is on the array the kernel reads, not on
+  parsed actions.
+- persistence round-trip: attach TC with `unspec`, reload the snapshot,
+  assert both the rebuilt mask (bit 0) and the persisted `[]int32`
+  contain `-1`.
+- e2e: `--proceed-on unspec` on a TC chain; dump the dispatcher `.rodata`
+  and assert bit 0; assert `link get` reports `unspec`.
+
+The XDP path runs at offset 0 throughout, so its bytes are unchanged; the
+unit regressions pin that.
