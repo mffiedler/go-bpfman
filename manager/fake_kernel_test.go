@@ -202,9 +202,10 @@ type fakeKernel struct {
 	programs map[kernel.ProgramID]fakeProgram
 	links    map[kernel.LinkID]*bpfman.Link
 
-	// TC filter handle tracking for FindTCFilterHandle. A real
-	// attach point can briefly contain both the old and new filter
-	// during a dispatcher swap, so keep the handles separately.
+	// TC filter handle tracking. A real attach point can briefly
+	// contain both the old and new filter during a dispatcher swap,
+	// so keep the handles separately; DetachTCFilter removes by exact
+	// handle.
 	tcFilters map[tcFilterKey][]uint32
 
 	// XDP dispatcher link tracking for UpdateXDPDispatcherLink. The
@@ -1053,17 +1054,6 @@ func (f *fakeKernel) DetachTCFilter(_ context.Context, ifindex int, ifname strin
 	return nil
 }
 
-func (f *fakeKernel) FindTCFilterHandle(_ context.Context, ifindex int, parent uint32, priority uint16, netnsPath string) (uint32, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	key := tcFilterKey{netns: netnsPath, ifindex: ifindex, parent: parent, priority: priority}
-	handles := f.tcFilters[key]
-	if len(handles) == 0 {
-		return 0, fmt.Errorf("no TC filter for ifindex=%d parent=%x priority=%d", ifindex, parent, priority)
-	}
-	return handles[0], nil
-}
-
 func (f *fakeKernel) ExtensionLinkInfo(_ context.Context, _ bpfman.LinkPath) (platform.ExtensionLinkInfo, error) {
 	return platform.ExtensionLinkInfo{}, nil
 }
@@ -1307,7 +1297,7 @@ func (f *fakeKernel) CreateXDPLink(_ context.Context, progPinPath bpfman.ProgPin
 	}, nil
 }
 
-func (f *fakeKernel) CreateTCFilter(_ context.Context, progPinPath bpfman.ProgPinPath, ifindex int, ifname string, direction bpfman.TCDirection, netnsPath string) (*platform.TCDispatcherResult, error) {
+func (f *fakeKernel) CreateTCFilter(_ context.Context, progPinPath bpfman.ProgPinPath, ifindex int, ifname string, direction bpfman.TCDirection, netnsPath string, desiredHandle uint32) (*platform.TCDispatcherResult, error) {
 	// Check for interface-specific failure injection
 	f.mu.Lock()
 	if err, ok := f.failOnIfname[ifname]; ok {
@@ -1317,7 +1307,13 @@ func (f *fakeKernel) CreateTCFilter(_ context.Context, progPinPath bpfman.ProgPi
 	f.mu.Unlock()
 
 	dispatcherID := kernel.ProgramID(0)
-	handle := f.nextID.Add(1)
+	// A non-zero desiredHandle requests that exact handle (the rollback
+	// path restoring a filter under its recorded handle); otherwise the
+	// kernel would assign one, modelled here by a fresh id.
+	handle := desiredHandle
+	if handle == 0 {
+		handle = f.nextID.Add(1)
+	}
 
 	var parent uint32
 	switch direction {

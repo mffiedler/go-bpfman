@@ -22,7 +22,7 @@ import (
 func (s *sqliteStore) prepareDispatcherStatements(ctx context.Context) error {
 	var err error
 
-	const getDispatcherSQL = `SELECT revision, program_id, kernel_link_id, priority, netns
+	const getDispatcherSQL = `SELECT revision, program_id, kernel_link_id, priority, filter_handle, netns
 		FROM dispatchers WHERE type = ? AND nsid = ? AND ifindex = ?`
 
 	s.stmtGetDispatcher, err = s.db.PrepareContext(ctx, getDispatcherSQL)
@@ -60,7 +60,7 @@ func (s *sqliteStore) prepareDispatcherStatements(ctx context.Context) error {
 
 	const listDispatcherSummariesSQL = `
 		SELECT d.type, d.nsid, d.ifindex, d.revision, d.program_id, d.kernel_link_id,
-		       d.priority, d.netns,
+		       d.priority, d.filter_handle, d.netns,
 		    (SELECT COUNT(*) FROM link_xdp_details x
 		     WHERE x.nsid = d.nsid AND x.ifindex = d.ifindex
 		       AND d.type = 'xdp') +
@@ -93,13 +93,14 @@ func (s *sqliteStore) prepareDispatcherStatements(ctx context.Context) error {
 		return fmt.Errorf("prepare DeleteTCExtLinks: %w", err)
 	}
 
-	const upsertDispatcherSQL = `INSERT INTO dispatchers (type, nsid, ifindex, revision, program_id, kernel_link_id, priority, netns, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	const upsertDispatcherSQL = `INSERT INTO dispatchers (type, nsid, ifindex, revision, program_id, kernel_link_id, priority, filter_handle, netns, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(type, nsid, ifindex) DO UPDATE SET
 		  revision = excluded.revision,
 		  program_id = excluded.program_id,
 		  kernel_link_id = excluded.kernel_link_id,
 		  priority = excluded.priority,
+		  filter_handle = excluded.filter_handle,
 		  netns = excluded.netns,
 		  updated_at = excluded.updated_at`
 
@@ -168,9 +169,9 @@ func dispatcherDirection(dt dispatcher.DispatcherType) string {
 }
 
 // scanDispatcherRuntime scans the dispatcher row fields (program_id,
-// link_id, priority) into a DispatcherRuntime, handling nullable
-// link_id and priority.
-func scanDispatcherRuntime(programID kernel.ProgramID, nullLinkID sql.NullInt64, priority sql.NullInt64, netns string) platform.DispatcherRuntime {
+// link_id, priority, filter_handle) into a DispatcherRuntime, handling
+// the nullable link_id, priority, and filter_handle.
+func scanDispatcherRuntime(programID kernel.ProgramID, nullLinkID sql.NullInt64, priority sql.NullInt64, handle sql.NullInt64, netns string) platform.DispatcherRuntime {
 	rt := platform.DispatcherRuntime{ProgramID: programID, NetnsPath: netns}
 	if nullLinkID.Valid {
 		lid := kernel.LinkID(nullLinkID.Int64)
@@ -179,6 +180,10 @@ func scanDispatcherRuntime(programID kernel.ProgramID, nullLinkID sql.NullInt64,
 	if priority.Valid {
 		p := uint16(priority.Int64)
 		rt.FilterPriority = &p
+	}
+	if handle.Valid {
+		h := uint32(handle.Int64)
+		rt.FilterHandle = &h
 	}
 	return rt
 }
@@ -193,11 +198,12 @@ func (s *sqliteStore) GetDispatcherSnapshot(ctx context.Context, key dispatcher.
 	var programID kernel.ProgramID
 	var nullLinkID sql.NullInt64
 	var priority sql.NullInt64
+	var filterHandle sql.NullInt64
 	var netnsPath string
 
 	err := s.stmtGetDispatcher.QueryRowContext(ctx,
 		key.Type.String(), key.Nsid, key.Ifindex,
-	).Scan(&revision, &programID, &nullLinkID, &priority, &netnsPath)
+	).Scan(&revision, &programID, &nullLinkID, &priority, &filterHandle, &netnsPath)
 	if err == sql.ErrNoRows {
 		s.logger.Debug("sql", "stmt", "GetDispatcherSnapshot", "args", []any{key}, "duration_ms", msec(time.Since(start)), "rows", 0)
 		return platform.DispatcherSnapshot{}, fmt.Errorf("dispatcher (%s, %d, %d): %w", key.Type, key.Nsid, key.Ifindex, platform.ErrRecordNotFound)
@@ -210,7 +216,7 @@ func (s *sqliteStore) GetDispatcherSnapshot(ctx context.Context, key dispatcher.
 	snap := platform.DispatcherSnapshot{
 		Key:      key,
 		Revision: revision,
-		Runtime:  scanDispatcherRuntime(programID, nullLinkID, priority, netnsPath),
+		Runtime:  scanDispatcherRuntime(programID, nullLinkID, priority, filterHandle, netnsPath),
 	}
 
 	// Fetch members from the appropriate detail table.
@@ -290,9 +296,10 @@ func (s *sqliteStore) ListDispatcherSummaries(ctx context.Context) ([]platform.D
 		var programID kernel.ProgramID
 		var nullLinkID sql.NullInt64
 		var priority sql.NullInt64
+		var filterHandle sql.NullInt64
 		var netnsPath string
 		if err := rows.Scan(&dispTypeStr, &summary.Key.Nsid, &summary.Key.Ifindex,
-			&summary.Revision, &programID, &nullLinkID, &priority, &netnsPath, &summary.MemberCount); err != nil {
+			&summary.Revision, &programID, &nullLinkID, &priority, &filterHandle, &netnsPath, &summary.MemberCount); err != nil {
 			s.logger.Debug("sql", "stmt", "ListDispatcherSummaries", "duration_ms", msec(time.Since(start)), "error", err)
 			return nil, fmt.Errorf("scan dispatcher summary: %w", err)
 		}
@@ -301,7 +308,7 @@ func (s *sqliteStore) ListDispatcherSummaries(ctx context.Context) ([]platform.D
 			return nil, fmt.Errorf("invalid dispatcher type in DB: %w", err)
 		}
 		summary.Key.Type = parsed
-		summary.Runtime = scanDispatcherRuntime(programID, nullLinkID, priority, netnsPath)
+		summary.Runtime = scanDispatcherRuntime(programID, nullLinkID, priority, filterHandle, netnsPath)
 		result = append(result, summary)
 	}
 	if err := rows.Err(); err != nil {
@@ -365,10 +372,14 @@ func (s *sqliteStore) replaceDispatcherSnapshot(ctx context.Context, snap platfo
 	if snap.Runtime.FilterPriority != nil {
 		priority = sql.NullInt64{Int64: int64(*snap.Runtime.FilterPriority), Valid: true}
 	}
+	var filterHandle sql.NullInt64
+	if snap.Runtime.FilterHandle != nil {
+		filterHandle = sql.NullInt64{Int64: int64(*snap.Runtime.FilterHandle), Valid: true}
+	}
 	if _, err := s.stmtUpsertDispatcher.ExecContext(ctx,
 		snap.Key.Type.String(), snap.Key.Nsid, snap.Key.Ifindex,
 		snap.Revision, snap.Runtime.ProgramID, linkID,
-		priority, snap.Runtime.NetnsPath, now, now); err != nil {
+		priority, filterHandle, snap.Runtime.NetnsPath, now, now); err != nil {
 		return platform.DispatcherSnapshot{}, fmt.Errorf("upsert dispatcher: %w", err)
 	}
 

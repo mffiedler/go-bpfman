@@ -308,18 +308,21 @@ CREATE TABLE IF NOT EXISTS dispatchers (
     program_id INTEGER NOT NULL UNIQUE,
     kernel_link_id INTEGER,
     priority INTEGER CHECK (priority >= 0),
+    filter_handle INTEGER CHECK (filter_handle >= 0),
     netns TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
 
     PRIMARY KEY (type, nsid, ifindex),
 
-    -- XDP dispatchers have a kernel link but no filter priority.
-    -- TC dispatchers have a filter priority but no kernel link (uses netlink filters).
+    -- XDP dispatchers have a kernel link but no filter priority or handle.
+    -- TC dispatchers have a filter priority and the exact kernel-assigned
+    -- filter handle (recorded at create), but no kernel link (they use
+    -- netlink filters).
     CHECK (
-        (type = 'xdp' AND kernel_link_id IS NOT NULL AND priority IS NULL)
+        (type = 'xdp' AND kernel_link_id IS NOT NULL AND priority IS NULL AND filter_handle IS NULL)
         OR
-        (type IN ('tc-ingress', 'tc-egress') AND kernel_link_id IS NULL AND priority IS NOT NULL)
+        (type IN ('tc-ingress', 'tc-egress') AND kernel_link_id IS NULL AND priority IS NOT NULL AND filter_handle IS NOT NULL)
     )
 ) STRICT;
 

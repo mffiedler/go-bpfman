@@ -376,6 +376,7 @@ func TestSnapshotStore_ListSummaries(t *testing.T) {
 		Runtime: platform.DispatcherRuntime{
 			ProgramID:      kernel.ProgramID(700),
 			FilterPriority: &tcPriority,
+			FilterHandle:   ptr(uint32(1)),
 		},
 		Members: []platform.DispatcherMemberSpec{
 			{
@@ -440,6 +441,7 @@ func TestSnapshotStore_TC_NullKernelLinkID(t *testing.T) {
 		Runtime: platform.DispatcherRuntime{
 			ProgramID:      kernel.ProgramID(700),
 			FilterPriority: &tcPriority,
+			FilterHandle:   ptr(uint32(1)),
 		},
 		Members: []platform.DispatcherMemberSpec{
 			{
@@ -544,7 +546,7 @@ func TestSnapshotStore_ProceedOnEncodingRoundTrip(t *testing.T) {
 	tcCompleted, err := store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshotSpec{
 		Key:      tcIngressKey(),
 		Revision: 1,
-		Runtime:  platform.DispatcherRuntime{ProgramID: kernel.ProgramID(700), FilterPriority: &tcPriority},
+		Runtime:  platform.DispatcherRuntime{ProgramID: kernel.ProgramID(700), FilterPriority: &tcPriority, FilterHandle: ptr(uint32(1))},
 		Members: []platform.DispatcherMemberSpec{
 			{
 				ProgramID:    kernel.ProgramID(2001),

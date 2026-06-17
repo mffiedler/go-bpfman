@@ -340,7 +340,11 @@ type DispatcherAttacher interface {
 	// CreateTCFilter creates a TC filter from a pinned dispatcher
 	// program on a network interface, optionally in a specific
 	// network namespace. Creates the clsact qdisc if needed.
-	CreateTCFilter(ctx context.Context, progPinPath bpfman.ProgPinPath, ifindex int, ifname string, direction bpfman.TCDirection, netnsPath string) (*TCDispatcherResult, error)
+	// desiredHandle of 0 lets the kernel assign the handle (the normal
+	// path); a non-zero value requests that exact handle, used by
+	// rollback to restore a filter under the handle the snapshot still
+	// records. The result carries the handle actually installed.
+	CreateTCFilter(ctx context.Context, progPinPath bpfman.ProgPinPath, ifindex int, ifname string, direction bpfman.TCDirection, netnsPath string, desiredHandle uint32) (*TCDispatcherResult, error)
 
 	// AttachTCX attaches a loaded program directly to an interface using TCX link.
 	// Unlike TC which uses dispatchers, TCX uses native kernel multi-program support.
@@ -378,13 +382,11 @@ type PinRemover interface {
 type TCFilterDetacher interface {
 	// DetachTCFilter removes a tc filter identified by ifindex, parent,
 	// priority, handle, and network namespace. This is the counterpart
-	// to the netlink-based attachment performed by CreateTCFilter.
+	// to the netlink-based attachment performed by CreateTCFilter. The
+	// handle is the exact kernel-assigned value CreateTCFilter echoed
+	// back and the snapshot persisted, so the delete targets bpfman's
+	// own filter rather than any other filter sharing the priority.
 	DetachTCFilter(ctx context.Context, ifindex int, ifname string, parent uint32, priority uint16, handle uint32, netnsPath string) error
-
-	// FindTCFilterHandle looks up the kernel-assigned handle for a TC
-	// BPF filter by listing filters on the given parent and matching
-	// the specified priority.
-	FindTCFilterHandle(ctx context.Context, ifindex int, parent uint32, priority uint16, netnsPath string) (uint32, error)
 }
 
 // MapRepinner re-pins maps to new locations.

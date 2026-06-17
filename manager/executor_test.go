@@ -269,10 +269,6 @@ func (k *stubKernel) DetachTCFilter(ctx context.Context, ifindex int, ifname str
 	panic("stubKernel.DetachTCFilter not implemented")
 }
 
-func (k *stubKernel) FindTCFilterHandle(ctx context.Context, ifindex int, parent uint32, priority uint16, netnsPath string) (uint32, error) {
-	panic("stubKernel.FindTCFilterHandle not implemented")
-}
-
 func (k *stubKernel) UpdateXDPDispatcherLink(ctx context.Context, linkPinPath bpfman.LinkPath, newProgPinPath bpfman.ProgPinPath) error {
 	panic("stubKernel.UpdateXDPDispatcherLink not implemented")
 }
@@ -289,7 +285,7 @@ func (k *stubKernel) CreateXDPLink(ctx context.Context, progPinPath bpfman.ProgP
 	panic("stubKernel.CreateXDPLink not implemented")
 }
 
-func (k *stubKernel) CreateTCFilter(ctx context.Context, progPinPath bpfman.ProgPinPath, ifindex int, ifname string, direction bpfman.TCDirection, netnsPath string) (*platform.TCDispatcherResult, error) {
+func (k *stubKernel) CreateTCFilter(ctx context.Context, progPinPath bpfman.ProgPinPath, ifindex int, ifname string, direction bpfman.TCDirection, netnsPath string, desiredHandle uint32) (*platform.TCDispatcherResult, error) {
 	panic("stubKernel.CreateTCFilter not implemented")
 }
 

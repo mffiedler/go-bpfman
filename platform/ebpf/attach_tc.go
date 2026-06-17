@@ -9,6 +9,7 @@ import (
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/vishvananda/netlink"
+	"github.com/vishvananda/netlink/nl"
 	"golang.org/x/sys/unix"
 
 	"github.com/frobware/go-bpfman"
@@ -22,42 +23,53 @@ import (
 // filter, matching the upstream Rust bpfman value.
 const tcDispatcherPriority = 50
 
-// FindTCFilterHandle looks up the kernel-assigned handle for a TC BPF
-// filter by listing filters on the given parent and matching priority.
-func (k *kernelAdapter) FindTCFilterHandle(ctx context.Context, ifindex int, parent uint32, priority uint16, netnsPath string) (uint32, error) {
-	var handle uint32
-	err := netns.Run(netnsPath, func() error {
-		var err error
-		handle, err = readBackTCFilterHandle(ifindex, parent, priority)
-		return err
+// addTCBpfFilterWithEcho creates a cls_bpf filter on the given
+// parent/priority and returns the kernel-assigned handle.
+//
+// vishvananda/netlink's FilterAdd does not surface the handle the
+// kernel allocates, so we issue the RTM_NEWTFILTER request directly
+// with NLM_F_ECHO and read the handle out of the echoed reply -- the
+// mechanism aya (and thus Rust bpfman) uses. Recording the exact
+// handle lets later detach delete by it, rather than rediscovering a
+// filter by priority alone, which can match an unrelated filter that
+// happens to share the dispatcher priority on the same parent.
+//
+// The request mirrors the cls_bpf serialisation vishvananda builds for
+// a BpfFilter: TCA_KIND "bpf", then TCA_OPTIONS carrying the program
+// fd, the filter name, and the direct-action flag. A desiredHandle of
+// 0 lets the kernel assign one; a non-zero value requests that exact
+// handle, used by rollback to restore a filter under the handle the
+// snapshot still records. The caller is responsible for running in the
+// target network namespace.
+func addTCBpfFilterWithEcho(ifindex int, parent uint32, priority uint16, progFD int, name string, desiredHandle uint32) (uint32, error) {
+	req := nl.NewNetlinkRequest(unix.RTM_NEWTFILTER, unix.NLM_F_CREATE|unix.NLM_F_EXCL|unix.NLM_F_ECHO|unix.NLM_F_ACK)
+	req.AddData(&nl.TcMsg{
+		Family:  nl.FAMILY_ALL,
+		Ifindex: int32(ifindex),
+		Handle:  desiredHandle,
+		Parent:  parent,
+		Info:    netlink.MakeHandle(priority, nl.Swap16(unix.ETH_P_ALL)),
 	})
+	req.AddData(nl.NewRtAttr(nl.TCA_KIND, nl.ZeroTerminated("bpf")))
+
+	options := nl.NewRtAttr(nl.TCA_OPTIONS, nil)
+	options.AddRtAttr(nl.TCA_BPF_FD, nl.Uint32Attr(uint32(progFD)))
+	if name != "" {
+		options.AddRtAttr(nl.TCA_BPF_NAME, nl.ZeroTerminated(name))
+	}
+	options.AddRtAttr(nl.TCA_BPF_FLAGS, nl.Uint32Attr(nl.TCA_BPF_FLAG_ACT_DIRECT))
+	req.AddData(options)
+
+	msgs, err := req.Execute(unix.NETLINK_ROUTE, 0)
 	if err != nil {
 		return 0, err
 	}
-	return handle, nil
-}
-
-// readBackTCFilterHandle lists tc filters on the given parent/priority
-// and returns the handle of the first BPF filter found. This is
-// needed because vishvananda/netlink FilterAdd does not echo back the
-// kernel-assigned handle the way aya does with NLM_F_ECHO.
-func readBackTCFilterHandle(ifindex int, parent uint32, priority uint16) (uint32, error) {
-	lo := &netlink.Dummy{}
-	lo.Index = ifindex
-	filters, err := netlink.FilterList(lo, parent)
-	if err != nil {
-		return 0, fmt.Errorf("list filters on ifindex %d parent %x: %w", ifindex, parent, err)
-	}
-	for _, f := range filters {
-		bpf, ok := f.(*netlink.BpfFilter)
-		if !ok {
-			continue
-		}
-		if bpf.Priority == priority {
-			return bpf.Handle, nil
+	for _, m := range msgs {
+		if handle := nl.DeserializeTcMsg(m).Handle; handle != 0 {
+			return handle, nil
 		}
 	}
-	return 0, fmt.Errorf("no BPF filter found at priority %d on ifindex %d parent %x", priority, ifindex, parent)
+	return 0, fmt.Errorf("no handle echoed back from TC filter creation on ifindex %d parent %x", ifindex, parent)
 }
 
 // DetachTCFilter removes a legacy TC BPF filter via netlink.
@@ -73,6 +85,11 @@ func (k *kernelAdapter) DetachTCFilter(ctx context.Context, ifindex int, ifname 
 			},
 		}
 		if err := netlink.FilterDel(filter); err != nil {
+			// An already-absent filter is success: teardown retries
+			// and coherency repair must be idempotent.
+			if errors.Is(err, unix.ENOENT) {
+				return nil
+			}
 			return fmt.Errorf("delete TC filter (ifindex=%d parent=%x prio=%d handle=%x): %w",
 				ifindex, parent, priority, handle, err)
 		}
@@ -133,8 +150,12 @@ func (k *kernelAdapter) LoadAndPinTCDispatcher(ctx context.Context, cfg dispatch
 
 // CreateTCFilter creates a TC filter from a pinned dispatcher program
 // on a network interface, optionally in a specific network namespace.
-// Creates the clsact qdisc if needed.
-func (k *kernelAdapter) CreateTCFilter(ctx context.Context, progPinPath bpfman.ProgPinPath, ifindex int, ifname string, direction bpfman.TCDirection, netnsPath string) (*platform.TCDispatcherResult, error) {
+// Creates the clsact qdisc if needed. desiredHandle of 0 lets the
+// kernel assign the filter handle (the normal attach path); a non-zero
+// value requests that exact handle, used by rollback to restore a
+// filter under the handle the persisted snapshot still records. The
+// returned result carries the handle that was actually installed.
+func (k *kernelAdapter) CreateTCFilter(ctx context.Context, progPinPath bpfman.ProgPinPath, ifindex int, ifname string, direction bpfman.TCDirection, netnsPath string, desiredHandle uint32) (*platform.TCDispatcherResult, error) {
 	prog, err := ebpf.LoadPinnedProgram(progPinPath.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("load pinned program %s: %w", progPinPath, err)
@@ -171,25 +192,10 @@ func (k *kernelAdapter) CreateTCFilter(ctx context.Context, progPinPath bpfman.P
 			}
 		}
 
-		filter := &netlink.BpfFilter{
-			FilterAttrs: netlink.FilterAttrs{
-				LinkIndex: ifindex,
-				Parent:    parent,
-				Priority:  tcDispatcherPriority,
-				Protocol:  unix.ETH_P_ALL,
-			},
-			Fd:           prog.FD(),
-			Name:         "tc_dispatcher",
-			DirectAction: true,
-		}
-		if err := netlink.FilterAdd(filter); err != nil {
+		handle, err := addTCBpfFilterWithEcho(ifindex, parent, tcDispatcherPriority, prog.FD(), "tc_dispatcher", desiredHandle)
+		if err != nil {
 			return fmt.Errorf("add TC BPF filter to %s (ifindex %d) %s: %w",
 				ifname, ifindex, direction, err)
-		}
-
-		handle, err := readBackTCFilterHandle(ifindex, parent, tcDispatcherPriority)
-		if err != nil {
-			return fmt.Errorf("read back TC filter handle: %w", err)
 		}
 
 		progInfo, err := prog.Info()

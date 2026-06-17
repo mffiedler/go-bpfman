@@ -953,6 +953,48 @@ func TestTC_FullLifecycle(t *testing.T) {
 	fix.AssertCleanState()
 }
 
+// TestTC_DetachUsesPersistedFilterHandle proves the manager records
+// the exact kernel-assigned TC filter handle in the dispatcher
+// snapshot at attach and deletes by that exact handle at detach,
+// rather than rediscovering a filter by priority. The exact-handle
+// path is what stops a foreign filter sharing the dispatcher priority
+// from being deleted by mistake (proven end to end in the e2e
+// TestTC_DetachDeletesOwnFilterNotForeign).
+func TestTC_DetachUsesPersistedFilterHandle(t *testing.T) {
+	t.Parallel()
+
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tc.o"), "tc_pass", bpfman.ProgramTypeTC)
+	require.NoError(t, err)
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 50)
+	require.NoError(t, err)
+	link, err := fix.Attach(ctx, attachSpec)
+	require.NoError(t, err)
+
+	details, ok := link.Record.Details.(bpfman.TCDetails)
+	require.True(t, ok)
+	snap, err := fix.Store.GetDispatcherSnapshot(ctx, dispatcher.Key{
+		Type:    dispatcher.DispatcherTypeTCIngress,
+		Nsid:    details.Nsid,
+		Ifindex: details.Ifindex,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, snap.Runtime.FilterHandle, "TC dispatcher must persist its kernel filter handle")
+	persisted := *snap.Runtime.FilterHandle
+
+	require.NoError(t, fix.Detach(ctx, link.Record.ID))
+
+	events := fix.Kernel.TCDetachEvents()
+	require.NotEmpty(t, events)
+	assert.Equal(t, persisted, events[len(events)-1].handle,
+		"detach must delete the TC filter by the exact persisted handle")
+}
+
 func TestTCProceedOnUnspecWritesDispatcherBitZero(t *testing.T) {
 	t.Parallel()
 

@@ -1059,7 +1059,7 @@ func TestStoreGC_StaleDispatcherDeletion(t *testing.T) {
 	tcPri := uint16(50)
 	_, err = store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshotSpec{
 		Key: tcKey, Revision: 1,
-		Runtime: platform.DispatcherRuntime{ProgramID: 101, FilterPriority: &tcPri},
+		Runtime: platform.DispatcherRuntime{ProgramID: 101, FilterPriority: &tcPri, FilterHandle: ptr(uint32(1))},
 	})
 	require.NoError(t, err)
 
@@ -1178,7 +1178,7 @@ func TestStoreGC_TransactionalAtomicity(t *testing.T) {
 	tcPri := uint16(50)
 	_, err = store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshotSpec{
 		Key: tcKey, Revision: 1,
-		Runtime: platform.DispatcherRuntime{ProgramID: 101, FilterPriority: &tcPri},
+		Runtime: platform.DispatcherRuntime{ProgramID: 101, FilterPriority: &tcPri, FilterHandle: ptr(uint32(1))},
 	})
 	require.NoError(t, err)
 
@@ -1259,7 +1259,7 @@ func TestStoreGC_ComprehensiveFourPhaseTransaction(t *testing.T) {
 	tcPri := uint16(50)
 	_, err = store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshotSpec{
 		Key: tcKey, Revision: 1,
-		Runtime: platform.DispatcherRuntime{ProgramID: 101, FilterPriority: &tcPri},
+		Runtime: platform.DispatcherRuntime{ProgramID: 101, FilterPriority: &tcPri, FilterHandle: ptr(uint32(1))},
 	})
 	require.NoError(t, err)
 
@@ -1368,7 +1368,7 @@ func TestListLinks_ReturnsDetails(t *testing.T) {
 	_, err = store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshotSpec{
 		Key:      dispatcher.Key{Type: dispatcher.DispatcherTypeTCIngress, Nsid: 4026531840, Ifindex: 3},
 		Revision: 1,
-		Runtime:  platform.DispatcherRuntime{ProgramID: 502, FilterPriority: &tcFilterPriority},
+		Runtime:  platform.DispatcherRuntime{ProgramID: 502, FilterPriority: &tcFilterPriority, FilterHandle: ptr(uint32(1))},
 		Members: []platform.DispatcherMemberSpec{
 			{
 				ProgramID:    kernel.ProgramID(100),

@@ -50,6 +50,11 @@ let members1 = $snap1 |> jq ".members | length"
 assert $members1 == 1
 let dispatcher_pid_1 = $snap1.runtime.program_id
 
+# The TC dispatcher records the exact kernel-assigned filter handle.
+# It is what detach deletes by, so bpfman removes its own filter and
+# never one a foreign tool placed at the same priority.
+assert $snap1 |> jq ".runtime.filter_handle > 0"
+
 # Phase 2: detach the only member; the dispatcher goes away.
 bpfman link detach $l1
 assert fail bpfman dispatcher get tc-ingress $pair.host_nsid $pair.host_ifindex

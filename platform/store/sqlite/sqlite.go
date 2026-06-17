@@ -444,7 +444,8 @@ func (s *sqliteStore) closeStatements() {
 // schemaVersion is the current schema version. Increment this when the schema changes.
 // Migrations are supported from version 2 onwards; an unmigrated mismatch causes New to
 // delete and recreate the database. Version 14 added links.metadata_json.
-const schemaVersion = 14
+// Version 15 added dispatchers.filter_handle.
+const schemaVersion = 15
 
 // debugLinkIDSequenceSeed makes store-allocated bpfman link handles
 // visually distinct from small kernel bpf_link IDs while the link identity

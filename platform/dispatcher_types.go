@@ -42,12 +42,16 @@ type DispatcherMemberSpec struct {
 
 // DispatcherRuntime holds the kernel-assigned identifiers for the
 // dispatcher program itself. KernelLinkID is nil for TC dispatchers which
-// use netlink filters rather than BPF links. FilterPriority is the
-// TC filter priority, nil for XDP.
+// use netlink filters rather than BPF links. FilterPriority and
+// FilterHandle are the TC filter's priority and exact kernel-assigned
+// handle, both nil for XDP. The handle is recorded at create (echoed
+// back by the kernel) so detach deletes bpfman's own filter rather than
+// rediscovering one by priority alone.
 type DispatcherRuntime struct {
 	ProgramID      kernel.ProgramID `json:"program_id"`
 	KernelLinkID   *kernel.LinkID   `json:"kernel_link_id,omitempty"`
 	FilterPriority *uint16          `json:"filter_priority,omitempty"`
+	FilterHandle   *uint32          `json:"filter_handle,omitempty"`
 	NetnsPath      string           `json:"netns_path"`
 }
 

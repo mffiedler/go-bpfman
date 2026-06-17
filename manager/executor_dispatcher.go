@@ -553,24 +553,19 @@ func (e *executor) rebuildTCDispatcher(
 	}
 
 	// Atomic swap: create filter (first-attach) or swap (add new, remove old).
+	// The old filter's exact handle was recorded at its create and
+	// persisted in the snapshot, so the swap removes bpfman's own
+	// filter rather than rediscovering one by priority.
 	var oldHandle uint32
 	var oldPriority uint16
 	if !firstAttach && snap.Runtime.FilterPriority != nil {
 		oldPriority = *snap.Runtime.FilterPriority
-		parent := dispatcher.TCParentHandle(dispType)
-		handle, err := e.kernel.FindTCFilterHandle(ctx, int(ops.ifindex), parent, oldPriority, ops.netnsPath)
-		if err != nil {
-			e.logger.WarnContext(ctx, "failed to find old TC filter handle",
-				"error", err)
-		} else {
-			oldHandle = handle
-			e.logger.InfoContext(ctx, "TC filter swap: found old filter",
-				"old_handle", fmt.Sprintf("%x", oldHandle),
-				"old_priority", oldPriority)
+		if snap.Runtime.FilterHandle != nil {
+			oldHandle = *snap.Runtime.FilterHandle
 		}
 	}
 
-	result, err := e.kernel.CreateTCFilter(ctx, dispProgPinPath, int(ops.ifindex), ops.ifname, ops.direction, ops.netnsPath)
+	result, err := e.kernel.CreateTCFilter(ctx, dispProgPinPath, int(ops.ifindex), ops.ifname, ops.direction, ops.netnsPath, 0)
 	if err != nil {
 		cleanupExtensions()
 		cleanupNewDispatcher()
@@ -603,6 +598,7 @@ func (e *executor) rebuildTCDispatcher(
 		Runtime: platform.DispatcherRuntime{
 			ProgramID:      dispatcherID,
 			FilterPriority: &result.Priority,
+			FilterHandle:   &result.Handle,
 			NetnsPath:      ops.netnsPath,
 		},
 	}
@@ -635,7 +631,7 @@ func (e *executor) rebuildTCDispatcher(
 		}
 		if !firstAttach && oldHandle != 0 {
 			oldDispProgPinPath := e.bpffs.DispatcherProgPath(dispType, nsid, ops.ifindex, snap.Revision)
-			if _, rbErr := e.kernel.CreateTCFilter(ctx, oldDispProgPinPath, int(ops.ifindex), ops.ifname, ops.direction, ops.netnsPath); rbErr != nil {
+			if _, rbErr := e.kernel.CreateTCFilter(ctx, oldDispProgPinPath, int(ops.ifindex), ops.ifname, ops.direction, ops.netnsPath, oldHandle); rbErr != nil {
 				e.logger.ErrorContext(ctx, "rollback: restore old TC filter failed",
 					"path", oldDispProgPinPath,
 					"old_priority", oldPriority,
@@ -1034,18 +1030,14 @@ func (e *executor) rebuildTCForDetach(
 			"matches_dispatcher", uint64(info.TargetProgID) == uint64(dispatcherID))
 	}
 
-	// Record old handle before swap.
+	// Record old handle before swap, from the exact handle persisted
+	// at its create.
 	var oldHandle uint32
 	var oldPriority uint16
 	if snap.Runtime.FilterPriority != nil {
 		oldPriority = *snap.Runtime.FilterPriority
-		parent := dispatcher.TCParentHandle(dispType)
-		handle, err := e.kernel.FindTCFilterHandle(ctx, int(key.Ifindex), parent, oldPriority, snap.Runtime.NetnsPath)
-		if err != nil {
-			e.logger.WarnContext(ctx, "failed to find old TC filter handle for detach rebuild",
-				"error", err)
-		} else {
-			oldHandle = handle
+		if snap.Runtime.FilterHandle != nil {
+			oldHandle = *snap.Runtime.FilterHandle
 		}
 	}
 
@@ -1058,7 +1050,7 @@ func (e *executor) rebuildTCForDetach(
 	}
 
 	// Create new filter.
-	result, err := e.kernel.CreateTCFilter(ctx, progPinPath, int(key.Ifindex), snapInterfaceName(snap), direction, snap.Runtime.NetnsPath)
+	result, err := e.kernel.CreateTCFilter(ctx, progPinPath, int(key.Ifindex), snapInterfaceName(snap), direction, snap.Runtime.NetnsPath, 0)
 	if err != nil {
 		cleanupExtensions()
 		cleanupNewRevision()
@@ -1081,6 +1073,7 @@ func (e *executor) rebuildTCForDetach(
 		Runtime: platform.DispatcherRuntime{
 			ProgramID:      result.DispatcherID,
 			FilterPriority: &result.Priority,
+			FilterHandle:   &result.Handle,
 			NetnsPath:      snap.Runtime.NetnsPath,
 		},
 	}
@@ -1110,7 +1103,7 @@ func (e *executor) rebuildTCForDetach(
 		}
 		if oldHandle != 0 {
 			oldProgPinPath := e.bpffs.DispatcherProgPath(key.Type, key.Nsid, key.Ifindex, snap.Revision)
-			if _, rbErr := e.kernel.CreateTCFilter(ctx, oldProgPinPath, int(key.Ifindex), snapInterfaceName(snap), direction, snap.Runtime.NetnsPath); rbErr != nil {
+			if _, rbErr := e.kernel.CreateTCFilter(ctx, oldProgPinPath, int(key.Ifindex), snapInterfaceName(snap), direction, snap.Runtime.NetnsPath, oldHandle); rbErr != nil {
 				e.logger.ErrorContext(ctx, "rollback: restore TC detach-rebuild filter failed",
 					"path", oldProgPinPath,
 					"old_priority", oldPriority,
@@ -1244,56 +1237,24 @@ func (e *executor) detachXDPOuterLink(ctx context.Context, key dispatcher.Key) e
 
 // detachTCDispatcherFilter removes the dispatcher's TC filter via
 // RTM_DELTFILTER. TC dispatchers predate BPF links and are managed
-// through legacy netlink. The filter handle is queried from the
-// kernel because it is assigned at install time and is not
-// persisted in the snapshot.
-//
-// This path is a deliberate weakening of the failure contract
-// described on removeEmptyDispatcher. For XDP, kernel detach is
-// fail-fast because BPF_LINK_DETACH has a single, well-defined
-// outcome: either the link is detached or it is not. For TC, the
-// handle lookup and filter delete go through netlink and the lookup
-// can fail for two reasons that the current API does not
-// distinguish:
-//
-//   - The filter is genuinely already gone (a previous teardown
-//     attempt got this far, or coherency cleaned it up). This is
-//     the expected case for retries and is safe to treat as
-//     success.
-//   - A transient netlink error (rtnetlink dump failure, ENOBUFS,
-//     etc.). Treating this as success is incorrect, but failing the
-//     whole teardown also blocks the bpffs and store hygiene that
-//     would let coherency notice the residue and repair it.
-//
-// We log and proceed in both cases, accepting the risk of leaving
-// a stranded TC filter on transient errors. Coherency and the
-// audit are responsible for catching residual filters. This
-// asymmetry should disappear once FindTCFilterHandle distinguishes
-// not-found from transient errors via a sentinel; the path of
-// least resistance is to do that alongside step 3 of the
-// hardening ladder, where TC dispatcher resources gain typed
-// representation.
+// through legacy netlink. The filter's exact kernel handle was echoed
+// back at create and persisted in the snapshot, so the delete targets
+// bpfman's own filter by (parent, priority, handle) -- never a foreign
+// filter that happens to share the dispatcher priority. A snapshot
+// without a recorded handle (or handle 0) means there is nothing for
+// bpfman to remove. DetachTCFilter treats an already-absent filter as
+// success, so a retried teardown is idempotent.
 func (e *executor) detachTCDispatcherFilter(ctx context.Context, snap platform.DispatcherSnapshot) error {
 	key := snap.Key
 	var priority uint16
 	if snap.Runtime.FilterPriority != nil {
 		priority = *snap.Runtime.FilterPriority
 	}
+	if snap.Runtime.FilterHandle == nil || *snap.Runtime.FilterHandle == 0 {
+		return nil
+	}
 	parent := dispatcher.TCParentHandle(key.Type)
-	handle, err := e.kernel.FindTCFilterHandle(ctx, int(key.Ifindex), parent, priority, snap.Runtime.NetnsPath)
-	if err != nil {
-		e.logger.WarnContext(ctx, "failed to find TC filter handle; assuming already gone",
-			"ifindex", key.Ifindex,
-			"netns", snap.Runtime.NetnsPath,
-			"parent", fmt.Sprintf("%x", parent),
-			"priority", priority,
-			"error", err)
-		return nil
-	}
-	if handle == 0 {
-		return nil
-	}
-	return e.kernel.DetachTCFilter(ctx, int(key.Ifindex), snapInterfaceName(snap), parent, priority, handle, snap.Runtime.NetnsPath)
+	return e.kernel.DetachTCFilter(ctx, int(key.Ifindex), snapInterfaceName(snap), parent, priority, *snap.Runtime.FilterHandle, snap.Runtime.NetnsPath)
 }
 
 // removeDispatcherProgPin unpins the dispatcher program. After the
