@@ -118,6 +118,68 @@ func (k *kernelAdapter) DetachTCFilter(ctx context.Context, ifindex int, ifname 
 	return nil
 }
 
+// RemoveTCClsactIfUnused reclaims the clsact qdisc bpfman created on an
+// interface once nothing uses it any more. It is called on the last
+// detach: bpfman creates the clsact on first attach, so leaving it
+// behind leaks a qdisc and lets stale clsacts accumulate on churned or
+// reused interfaces. It is removed only when a clsact is actually
+// present and both its ingress (ffff:fff2) and egress (ffff:fff3) filter
+// blocks are empty, so a co-resident egress dispatcher -- or a foreign
+// tool's filters on the same clsact -- is never torn out from under its
+// owner. A deleted target netns is treated as success: the qdisc went
+// with the namespace.
+func (k *kernelAdapter) RemoveTCClsactIfUnused(ctx context.Context, ifindex int, ifname, netnsPath string) error {
+	err := netns.Run(netnsPath, func() error {
+		netlinkLink, err := netlink.LinkByIndex(ifindex)
+		if err != nil {
+			return fmt.Errorf("look up interface %s (ifindex %d): %w", ifname, ifindex, err)
+		}
+		qdiscs, err := netlink.QdiscList(netlinkLink)
+		if err != nil {
+			return fmt.Errorf("list qdiscs on %s (ifindex %d): %w", ifname, ifindex, err)
+		}
+		hasClsact := false
+		for _, q := range qdiscs {
+			if q.Type() == "clsact" {
+				hasClsact = true
+				break
+			}
+		}
+		if !hasClsact {
+			return nil
+		}
+		for _, parent := range []uint32{netlink.HANDLE_MIN_INGRESS, netlink.HANDLE_MIN_EGRESS} {
+			filters, err := netlink.FilterList(netlinkLink, parent)
+			if err != nil {
+				return fmt.Errorf("list filters on %s (ifindex %d) parent %x: %w", ifname, ifindex, parent, err)
+			}
+			if len(filters) > 0 {
+				// Still in use by some direction; leave the clsact.
+				return nil
+			}
+		}
+		qdisc := &netlink.Clsact{
+			QdiscAttrs: netlink.QdiscAttrs{
+				LinkIndex: ifindex,
+				Handle:    netlink.MakeHandle(0xffff, 0),
+				Parent:    netlink.HANDLE_INGRESS,
+			},
+		}
+		if err := netlink.QdiscDel(qdisc); err != nil && !errors.Is(err, unix.ENOENT) {
+			return fmt.Errorf("delete clsact qdisc on %s (ifindex %d): %w", ifname, ifindex, err)
+		}
+		k.logger.Debug("reclaimed unused clsact qdisc", "ifindex", ifindex, "ifname", ifname, "netns", netnsPath)
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
 // LoadAndPinTCDispatcher loads a TC dispatcher program with .rodata config
 // and pins it at progPinPath without creating a TC filter. Used during
 // rebuild to prepare a new dispatcher before atomically swapping.

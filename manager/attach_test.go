@@ -995,6 +995,51 @@ func TestTC_DetachUsesPersistedFilterHandle(t *testing.T) {
 		"detach must delete the TC filter by the exact persisted handle")
 }
 
+// TestTC_ClsactReclaimedOnLastDetach proves the manager owns the clsact
+// qdisc's full lifecycle: the qdisc is reclaimed only when the last
+// member detaches, and retained while any member remains. bpfman
+// creates the clsact on first attach, so leaving it behind leaks a
+// qdisc and lets stale clsacts accumulate on churned interfaces. The
+// real "both filter blocks empty" gate is exercised end to end by the
+// .bpfman script; this pins that the manager calls the reclaim at the
+// right lifecycle point (last detach, not before).
+func TestTC_ClsactReclaimedOnLastDetach(t *testing.T) {
+	t.Parallel()
+
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	attach := func(priority int) bpfman.Link {
+		spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tc.o"), "tc_pass", bpfman.ProgramTypeTC)
+		require.NoError(t, err)
+		prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+		require.NoError(t, err)
+		attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, priority)
+		require.NoError(t, err)
+		link, err := fix.Attach(ctx, attachSpec)
+		require.NoError(t, err)
+		return link
+	}
+
+	first := attach(50)
+	second := attach(100)
+
+	details, ok := first.Record.Details.(bpfman.TCDetails)
+	require.True(t, ok)
+	require.True(t, fix.Kernel.ClsactPresent("", int(details.Ifindex)),
+		"clsact must exist while members are attached")
+
+	// Detaching one of two leaves a member, so the clsact stays.
+	require.NoError(t, fix.Detach(ctx, first.Record.ID))
+	require.True(t, fix.Kernel.ClsactPresent("", int(details.Ifindex)),
+		"clsact must be retained while a member remains")
+
+	// Detaching the last member reclaims the clsact.
+	require.NoError(t, fix.Detach(ctx, second.Record.ID))
+	require.False(t, fix.Kernel.ClsactPresent("", int(details.Ifindex)),
+		"clsact must be reclaimed once the last member detaches")
+}
+
 func TestTCProceedOnUnspecWritesDispatcherBitZero(t *testing.T) {
 	t.Parallel()
 

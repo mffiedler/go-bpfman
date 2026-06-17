@@ -1,0 +1,45 @@
+# -*- mode: bpfman -*-
+# bpfman creates the clsact qdisc on first TC attach and must own its
+# full lifecycle: reclaim it when the last member detaches, rather than
+# leaking it. Leaving stale clsacts behind lets them accumulate on
+# churned/reused interfaces. The qdisc is reclaimed only when both its
+# filter blocks are empty, so it survives while any member remains.
+#
+# Proves, against the real kernel: clsact present while members are
+# attached, retained when one of two detaches, and gone once the last
+# detaches (slot empties).
+#
+# Requires root and iproute2.
+
+import ../lib.bpfman
+
+guard pair <- net netns-veth-pair
+defer net release $pair
+
+let netns = "/var/run/netns/${pair.a.ns}"
+let clsactCount = 'fromjson | [ .[] | select(.kind == "clsact") ] | length'
+
+guard firstLoad <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+let firstProg = $firstLoad.programs[0]
+defer bpfman program unload $firstProg
+
+guard secondLoad <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
+let secondProg = $secondLoad.programs[0]
+defer bpfman program unload $secondProg
+
+guard firstLink <- bpfman link attach tc $firstProg $pair.a.link ingress -p 50 --netns $netns
+guard secondLink <- bpfman link attach tc $secondProg $pair.a.link ingress -p 100 --netns $netns
+
+# clsact present while members are attached.
+guard qAttached <- net exec $pair.a tc -j qdisc show dev $pair.a.link
+assert ($qAttached.stdout |> jq $clsactCount) == 1
+
+# Detaching one of two leaves a member: the clsact must be retained.
+bpfman link detach $firstLink
+guard qOneLeft <- net exec $pair.a tc -j qdisc show dev $pair.a.link
+assert ($qOneLeft.stdout |> jq $clsactCount) == 1
+
+# Detaching the last member reclaims the clsact: the slot empties.
+bpfman link detach $secondLink
+guard qEmpty <- net exec $pair.a tc -j qdisc show dev $pair.a.link
+assert ($qEmpty.stdout |> jq $clsactCount) == 0

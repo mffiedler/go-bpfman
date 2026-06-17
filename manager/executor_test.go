@@ -269,6 +269,10 @@ func (k *stubKernel) DetachTCFilter(ctx context.Context, ifindex int, ifname str
 	panic("stubKernel.DetachTCFilter not implemented")
 }
 
+func (k *stubKernel) RemoveTCClsactIfUnused(ctx context.Context, ifindex int, ifname string, netnsPath string) error {
+	panic("stubKernel.RemoveTCClsactIfUnused not implemented")
+}
+
 func (k *stubKernel) UpdateXDPDispatcherLink(ctx context.Context, linkPinPath bpfman.LinkPath, newProgPinPath bpfman.ProgPinPath) error {
 	panic("stubKernel.UpdateXDPDispatcherLink not implemented")
 }

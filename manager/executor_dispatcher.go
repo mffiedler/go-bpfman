@@ -1244,17 +1244,24 @@ func (e *executor) detachXDPOuterLink(ctx context.Context, key dispatcher.Key) e
 // without a recorded handle (or handle 0) means there is nothing for
 // bpfman to remove. DetachTCFilter treats an already-absent filter as
 // success, so a retried teardown is idempotent.
+//
+// This is the last-member teardown, so after the filter is gone bpfman
+// also reclaims the clsact qdisc it created -- RemoveTCClsactIfUnused
+// removes it only when both filter blocks are empty, so bpfman owns the
+// qdisc's full lifecycle rather than leaking it.
 func (e *executor) detachTCDispatcherFilter(ctx context.Context, snap platform.DispatcherSnapshot) error {
 	key := snap.Key
-	var priority uint16
-	if snap.Runtime.FilterPriority != nil {
-		priority = *snap.Runtime.FilterPriority
+	if snap.Runtime.FilterHandle != nil && *snap.Runtime.FilterHandle != 0 {
+		var priority uint16
+		if snap.Runtime.FilterPriority != nil {
+			priority = *snap.Runtime.FilterPriority
+		}
+		parent := dispatcher.TCParentHandle(key.Type)
+		if err := e.kernel.DetachTCFilter(ctx, int(key.Ifindex), snapInterfaceName(snap), parent, priority, *snap.Runtime.FilterHandle, snap.Runtime.NetnsPath); err != nil {
+			return err
+		}
 	}
-	if snap.Runtime.FilterHandle == nil || *snap.Runtime.FilterHandle == 0 {
-		return nil
-	}
-	parent := dispatcher.TCParentHandle(key.Type)
-	return e.kernel.DetachTCFilter(ctx, int(key.Ifindex), snapInterfaceName(snap), parent, priority, *snap.Runtime.FilterHandle, snap.Runtime.NetnsPath)
+	return e.kernel.RemoveTCClsactIfUnused(ctx, int(key.Ifindex), snapInterfaceName(snap), snap.Runtime.NetnsPath)
 }
 
 // removeDispatcherProgPin unpins the dispatcher program. After the

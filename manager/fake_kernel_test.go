@@ -195,6 +195,12 @@ type tcFilterDetach struct {
 	handle uint32
 }
 
+// clsactKey identifies the clsact qdisc slot on an interface.
+type clsactKey struct {
+	netns   string
+	ifindex int
+}
+
 // fakeKernel implements platform.KernelOperations for testing.
 // It simulates kernel BPF operations without actual syscalls.
 type fakeKernel struct {
@@ -207,6 +213,11 @@ type fakeKernel struct {
 	// so keep the handles separately; DetachTCFilter removes by exact
 	// handle.
 	tcFilters map[tcFilterKey][]uint32
+
+	// clsact presence per (netns, ifindex): set when CreateTCFilter
+	// installs the qdisc, cleared by RemoveTCClsactIfUnused once no
+	// filters remain. Models bpfman owning the clsact lifecycle.
+	clsacts map[clsactKey]bool
 
 	// XDP dispatcher link tracking for UpdateXDPDispatcherLink. The
 	// stable outer link survives dispatcher rebuilds and retargets a
@@ -302,6 +313,7 @@ func newFakeKernel() *fakeKernel {
 		programs:           make(map[kernel.ProgramID]fakeProgram),
 		links:              make(map[kernel.LinkID]*bpfman.Link),
 		tcFilters:          make(map[tcFilterKey][]uint32),
+		clsacts:            make(map[clsactKey]bool),
 		xdpDispatcherLinks: make(map[string]string),
 		failOnProgram:      make(map[string]error),
 		failOnAttach:       make(map[string]error),
@@ -508,6 +520,7 @@ func (f *fakeKernel) Reset() {
 	f.removePins = nil
 	f.tcDetaches = nil
 	f.tcFilters = make(map[tcFilterKey][]uint32)
+	f.clsacts = make(map[clsactKey]bool)
 	f.xdpDispatcherLinks = make(map[string]string)
 	f.failOnProgram = make(map[string]error)
 	f.failOnAttach = make(map[string]error)
@@ -1326,6 +1339,9 @@ func (f *fakeKernel) CreateTCFilter(_ context.Context, progPinPath bpfman.ProgPi
 	f.mu.Lock()
 	key := tcFilterKey{netns: netnsPath, ifindex: ifindex, parent: parent, priority: 50}
 	f.tcFilters[key] = append(f.tcFilters[key], handle)
+	// Installing a filter implies the clsact qdisc is present (bpfman
+	// creates it on first attach).
+	f.clsacts[clsactKey{netns: netnsPath, ifindex: ifindex}] = true
 	f.mu.Unlock()
 
 	f.recordOp("create-tc-filter", progPinPath.String(), handle, nil)
@@ -1335,6 +1351,29 @@ func (f *fakeKernel) CreateTCFilter(_ context.Context, progPinPath bpfman.ProgPi
 		Handle:        handle,
 		Priority:      50,
 	}, nil
+}
+
+// RemoveTCClsactIfUnused models reclaiming the clsact qdisc: it clears
+// the modelled clsact for (netns, ifindex) only when no filters remain
+// on that interface, mirroring the real "both blocks empty" gate.
+func (f *fakeKernel) RemoveTCClsactIfUnused(_ context.Context, ifindex int, ifname string, netnsPath string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for k := range f.tcFilters {
+		if k.netns == netnsPath && k.ifindex == ifindex {
+			return nil // filters remain; leave the clsact
+		}
+	}
+	delete(f.clsacts, clsactKey{netns: netnsPath, ifindex: ifindex})
+	return nil
+}
+
+// ClsactPresent reports whether the modelled clsact qdisc exists on the
+// given attach point.
+func (f *fakeKernel) ClsactPresent(netnsPath string, ifindex int) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.clsacts[clsactKey{netns: netnsPath, ifindex: ifindex}]
 }
 
 func (f *fakeKernel) ListTracepoints(_ context.Context) ([]string, error) {

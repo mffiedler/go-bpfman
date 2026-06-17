@@ -387,6 +387,14 @@ type TCFilterDetacher interface {
 	// back and the snapshot persisted, so the delete targets bpfman's
 	// own filter rather than any other filter sharing the priority.
 	DetachTCFilter(ctx context.Context, ifindex int, ifname string, parent uint32, priority uint16, handle uint32, netnsPath string) error
+
+	// RemoveTCClsactIfUnused reclaims the clsact qdisc bpfman created on
+	// an interface once both its ingress and egress filter blocks are
+	// empty. Called on the last detach so bpfman owns the qdisc's full
+	// lifecycle rather than leaking it. It leaves the qdisc in place when
+	// any filter remains (a co-resident direction or a foreign owner) or
+	// when no clsact is present, and treats a deleted netns as success.
+	RemoveTCClsactIfUnused(ctx context.Context, ifindex int, ifname string, netnsPath string) error
 }
 
 // MapRepinner re-pins maps to new locations.
