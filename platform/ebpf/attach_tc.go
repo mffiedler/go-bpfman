@@ -189,15 +189,45 @@ func (k *kernelAdapter) CreateTCFilter(ctx context.Context, progPinPath bpfman.P
 
 	var result *platform.TCDispatcherResult
 	err = netns.Run(netnsPath, func() error {
-		qdisc := &netlink.Clsact{
-			QdiscAttrs: netlink.QdiscAttrs{
-				LinkIndex: ifindex,
-				Handle:    netlink.MakeHandle(0xffff, 0),
-				Parent:    netlink.HANDLE_INGRESS,
-			},
+		// The dispatcher needs a clsact qdisc: clsact provides both the
+		// ingress (ffff:fff2) and egress (ffff:fff3) attach points, and
+		// bpfman owns its lifecycle. Inspect the ingress qdisc slot
+		// rather than blindly tolerating EEXIST from QdiscAdd. Reuse an
+		// existing clsact; refuse if a non-clsact qdisc occupies the
+		// slot. A classic `ingress` qdisc has only an ingress block, so
+		// attaching the egress dispatcher there silently mis-wires it
+		// (the filter never sees egress traffic), and bpfman must not
+		// parasitise or tear down a qdisc another owner installed.
+		netlinkLink, err := netlink.LinkByIndex(ifindex)
+		if err != nil {
+			return fmt.Errorf("look up interface %s (ifindex %d): %w", ifname, ifindex, err)
 		}
-		if err := netlink.QdiscAdd(qdisc); err != nil {
-			if !errors.Is(err, unix.EEXIST) {
+		qdiscs, err := netlink.QdiscList(netlinkLink)
+		if err != nil {
+			return fmt.Errorf("list qdiscs on %s (ifindex %d): %w", ifname, ifindex, err)
+		}
+		hasClsact := false
+		for _, q := range qdiscs {
+			if _, ok := q.(*netlink.Clsact); ok {
+				hasClsact = true
+				break
+			}
+		}
+		if !hasClsact {
+			for _, q := range qdiscs {
+				if q.Attrs().Parent == netlink.HANDLE_INGRESS {
+					return fmt.Errorf("cannot attach TC program to %s: a %q qdisc already occupies the ingress qdisc slot; bpfman requires clsact -- remove it (tc qdisc del dev %s %s) or detach the conflicting program first",
+						ifname, q.Type(), ifname, q.Type())
+				}
+			}
+			qdisc := &netlink.Clsact{
+				QdiscAttrs: netlink.QdiscAttrs{
+					LinkIndex: ifindex,
+					Handle:    netlink.MakeHandle(0xffff, 0),
+					Parent:    netlink.HANDLE_INGRESS,
+				},
+			}
+			if err := netlink.QdiscAdd(qdisc); err != nil {
 				return fmt.Errorf("add clsact qdisc to %s (ifindex %d): %w", ifname, ifindex, err)
 			}
 		}
