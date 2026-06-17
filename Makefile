@@ -1026,7 +1026,7 @@ run-e2e-scripts:
 	    BPFMAN_E2E_DIR=$(abspath e2e) \
 	    BPFMAN_LOCK_TIMEOUT=$(if $(BPFMAN_LOCK_TIMEOUT),$(BPFMAN_LOCK_TIMEOUT),5m) \
 	    $(call forward-env,$(E2E_SCRIPTS_FORWARD_VARS)) \
-	    $(E2E_SCRIPTS_TEST_BIN) -test.v -test.failfast \
+	    $(E2E_SCRIPTS_TEST_BIN) -test.v \
 	    -test.count=$(STRESS_COUNT) $(if $(filter-out 0,$(PARALLEL)),-test.parallel $(PARALLEL)) \
 	    -test.run "$(if $(TEST),$(TEST),TestBPFManScripts)"
 
@@ -1723,7 +1723,7 @@ ci-test-e2e:
 	$(RM) -r $(CI_E2E_BUNDLE)
 	$(OCI_BIN) buildx build --target=e2e-export --output type=local,dest=$(CI_E2E_BUNDLE) -f $(CI_DOCKERFILE) --build-arg RACE=$(RACE) --build-arg EXTRA_TAGS=$(EXTRA_TAGS) $(CI_BUILDX_CACHE) .
 	$(MAKE) e2e-kmod-reload
-	sudo $(call forward-env,BPFMAN_E2E_ISOLATED_RUNTIME) $(CI_E2E_BUNDLE)/bin/e2e.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(filter-out 0,$(PARALLEL)),-test.parallel $(PARALLEL))
+	sudo $(call forward-env,BPFMAN_E2E_ISOLATED_RUNTIME) $(CI_E2E_BUNDLE)/bin/e2e.test -test.v -test.count=$(STRESS_COUNT) $(if $(filter-out 0,$(PARALLEL)),-test.parallel $(PARALLEL))
 
 # Reproduce the workflow's e2e-scripts job locally. The .bpfman
 # scripts under e2e/scripts/ are driven by the Go test binary
