@@ -267,6 +267,7 @@ func (m *Manager) attachTCXPlan(
 				Ifindex:   uint32(ifindex),
 				Direction: direction,
 				Priority:  int32(priority),
+				Netns:     netnsPath,
 				Nsid:      nsid,
 			}, out
 		}),

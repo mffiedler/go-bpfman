@@ -48,6 +48,7 @@ assert $link.record.program_id == $pid
 assert $link.record.details.interface == $pair.a.link
 assert $link.record.details.direction == ingress
 assert $link.record.details.priority == 50
+assert $link.record.details.netns == $netns
 assert $link.status.kernel_seen
 
 # Get round-trip: same shape, same values.
@@ -60,6 +61,7 @@ assert $gotLink.record.program_id == $pid
 assert $gotLink.record.details.interface == $pair.a.link
 assert $gotLink.record.details.direction == ingress
 assert $gotLink.record.details.priority == 50
+assert $gotLink.record.details.netns == $netns
 
 # List round-trip: link appears in the listing with matching id/kind.
 guard listed <- bpfman link list -o json
