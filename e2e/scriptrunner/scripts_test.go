@@ -24,6 +24,7 @@ import (
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/scriptmeta"
 	"github.com/frobware/go-bpfman/internal/execcancel"
+	"github.com/frobware/go-bpfman/internal/tcpolicy"
 )
 
 // TestBPFManScripts discovers every .bpfman script under
@@ -171,6 +172,11 @@ func TestBPFManScripts(t *testing.T) {
 			skipReason := ""
 			if meta.err == nil {
 				skipReason = scriptSelectorSkipReason(selector, meta.mode.Labels)
+				if skipReason == "" &&
+					meta.mode.Labels.Get("requires-clsact-reclaim") == "true" &&
+					!tcpolicy.ReclaimClsactOnDetach {
+					skipReason = "tcpolicy.ReclaimClsactOnDetach is false; flip it to true to run this"
+				}
 			}
 			t.Run(name, func(t *testing.T) {
 				if meta.err != nil {

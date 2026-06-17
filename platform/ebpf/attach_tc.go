@@ -269,19 +269,20 @@ func (k *kernelAdapter) CreateTCFilter(ctx context.Context, progPinPath bpfman.P
 			return fmt.Errorf("list qdiscs on %s (ifindex %d): %w", ifname, ifindex, err)
 		}
 		hasClsact := false
+		conflictKind := ""
 		for _, q := range qdiscs {
-			if _, ok := q.(*netlink.Clsact); ok {
+			switch {
+			case q.Type() == "clsact":
 				hasClsact = true
-				break
+			case q.Attrs().Parent == netlink.HANDLE_INGRESS:
+				conflictKind = q.Type()
 			}
 		}
+		if !hasClsact && conflictKind != "" {
+			return fmt.Errorf("cannot attach TC program to %s: a %q qdisc already occupies the ingress qdisc slot; bpfman requires clsact -- remove it (tc qdisc del dev %s %s) or detach the conflicting program first",
+				ifname, conflictKind, ifname, conflictKind)
+		}
 		if !hasClsact {
-			for _, q := range qdiscs {
-				if q.Attrs().Parent == netlink.HANDLE_INGRESS {
-					return fmt.Errorf("cannot attach TC program to %s: a %q qdisc already occupies the ingress qdisc slot; bpfman requires clsact -- remove it (tc qdisc del dev %s %s) or detach the conflicting program first",
-						ifname, q.Type(), ifname, q.Type())
-				}
-			}
 			qdisc := &netlink.Clsact{
 				QdiscAttrs: netlink.QdiscAttrs{
 					LinkIndex: ifindex,
@@ -289,7 +290,13 @@ func (k *kernelAdapter) CreateTCFilter(ctx context.Context, progPinPath bpfman.P
 					Parent:    netlink.HANDLE_INGRESS,
 				},
 			}
-			if err := netlink.QdiscAdd(qdisc); err != nil {
+			// A clsact already present (EEXIST) is fine to reuse: the
+			// check above already refused any foreign qdisc in the slot,
+			// so an EEXIST here can only be a clsact whose dump lagged its
+			// creation. This gated tolerance is not the old blind EEXIST
+			// swallow -- that masked exactly the foreign-qdisc case this
+			// now refuses before ever calling QdiscAdd.
+			if err := netlink.QdiscAdd(qdisc); err != nil && !errors.Is(err, unix.EEXIST) {
 				return fmt.Errorf("add clsact qdisc to %s (ifindex %d): %w", ifname, ifindex, err)
 			}
 		}

@@ -13,6 +13,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/internal/tcpolicy"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/platform"
@@ -1003,8 +1004,16 @@ func TestTC_DetachUsesPersistedFilterHandle(t *testing.T) {
 // real "both filter blocks empty" gate is exercised end to end by the
 // .bpfman script; this pins that the manager calls the reclaim at the
 // right lifecycle point (last detach, not before).
+//
+// Gated on tcpolicy.ReclaimClsactOnDetach: it runs when reclaim is on
+// and skips when off (the default leaves the clsact in place and
+// tolerates it at attach), so flipping that const enables it
+// automatically.
 func TestTC_ClsactReclaimedOnLastDetach(t *testing.T) {
 	t.Parallel()
+	if !tcpolicy.ReclaimClsactOnDetach {
+		t.Skip("tcpolicy.ReclaimClsactOnDetach is false; flip it to true to run this")
+	}
 
 	fix := newTestFixture(t)
 	ctx := context.Background()

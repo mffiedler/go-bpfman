@@ -1,4 +1,10 @@
 # -*- mode: bpfman -*-
+#pragma labels={"requires-clsact-reclaim":"true"}
+# Gated on tcpolicy.ReclaimClsactOnDetach: the runner skips this when
+# reclaim is off (the default leaves the clsact in place and tolerates it
+# at attach) and runs it when the const is flipped to true. Nothing to
+# un-skip by hand.
+#
 # bpfman creates the clsact qdisc on first TC attach and must own its
 # full lifecycle: reclaim it when the last member detaches, rather than
 # leaking it. Leaving stale clsacts behind lets them accumulate on

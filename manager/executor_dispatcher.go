@@ -16,6 +16,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/internal/tcpolicy"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/ns/netns"
@@ -1245,10 +1246,8 @@ func (e *executor) detachXDPOuterLink(ctx context.Context, key dispatcher.Key) e
 // bpfman to remove. DetachTCFilter treats an already-absent filter as
 // success, so a retried teardown is idempotent.
 //
-// This is the last-member teardown, so after the filter is gone bpfman
-// also reclaims the clsact qdisc it created -- RemoveTCClsactIfUnused
-// removes it only when both filter blocks are empty, so bpfman owns the
-// qdisc's full lifecycle rather than leaking it.
+// This is the last-member teardown. Whether bpfman also reclaims the
+// clsact qdisc it created is governed by tcpolicy.ReclaimClsactOnDetach.
 func (e *executor) detachTCDispatcherFilter(ctx context.Context, snap platform.DispatcherSnapshot) error {
 	key := snap.Key
 	if snap.Runtime.FilterHandle != nil && *snap.Runtime.FilterHandle != 0 {
@@ -1261,7 +1260,10 @@ func (e *executor) detachTCDispatcherFilter(ctx context.Context, snap platform.D
 			return err
 		}
 	}
-	return e.kernel.RemoveTCClsactIfUnused(ctx, int(key.Ifindex), snapInterfaceName(snap), snap.Runtime.NetnsPath)
+	if tcpolicy.ReclaimClsactOnDetach {
+		return e.kernel.RemoveTCClsactIfUnused(ctx, int(key.Ifindex), snapInterfaceName(snap), snap.Runtime.NetnsPath)
+	}
+	return nil
 }
 
 // removeDispatcherProgPin unpins the dispatcher program. After the
