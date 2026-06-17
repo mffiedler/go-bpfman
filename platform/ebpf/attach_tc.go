@@ -96,6 +96,16 @@ func (k *kernelAdapter) DetachTCFilter(ctx context.Context, ifindex int, ifname 
 		return nil
 	})
 	if err != nil {
+		// A deleted target netns means the kernel already tore down the
+		// interface and its filters when the namespace went away, so
+		// there is nothing left to remove. Mirror Rust, which skips the
+		// detach when enter_netns fails ("the netns may have been
+		// deleted").
+		if errors.Is(err, os.ErrNotExist) {
+			k.logger.Debug("target netns gone; TC filter already removed with it",
+				"netns", netnsPath, "ifindex", ifindex, "priority", priority)
+			return nil
+		}
 		return err
 	}
 	k.logger.Debug("detached TC filter",
