@@ -977,7 +977,7 @@ func formatDispatcherListTable(summaries []platform.DispatcherSummary) string {
 	var b strings.Builder
 	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
 
-	fmt.Fprintln(w, "TYPE\tNSID\tIFINDEX\tREVISION\tPROGRAM_ID\tKERNEL_LINK_ID\tPRIORITY\tMEMBERS\tNETNS")
+	fmt.Fprintln(w, "TYPE\tNSID\tIFINDEX\tREVISION\tPROGRAM_ID\tKERNEL_LINK_ID\tPRIORITY\tHANDLE\tMEMBERS\tNETNS")
 
 	for _, s := range summaries {
 		linkID := "-"
@@ -988,14 +988,18 @@ func formatDispatcherListTable(summaries []platform.DispatcherSummary) string {
 		if s.Runtime.FilterPriority != nil {
 			priority = fmt.Sprintf("%d", *s.Runtime.FilterPriority)
 		}
+		handle := "-"
+		if s.Runtime.FilterHandle != nil {
+			handle = fmt.Sprintf("%#x", *s.Runtime.FilterHandle)
+		}
 		netns := s.Runtime.NetnsPath
 		if netns == "" {
 			netns = "-"
 		}
-		fmt.Fprintf(w, "%s\t%d\t%d\t%d\t%d\t%s\t%s\t%d\t%s\n",
+		fmt.Fprintf(w, "%s\t%d\t%d\t%d\t%d\t%s\t%s\t%s\t%d\t%s\n",
 			s.Key.Type, s.Key.Nsid, s.Key.Ifindex,
 			s.Revision, s.Runtime.ProgramID,
-			linkID, priority, s.MemberCount, netns)
+			linkID, priority, handle, s.MemberCount, netns)
 	}
 
 	w.Flush()
@@ -1036,6 +1040,9 @@ func formatDispatcherSnapshotTable(snap platform.DispatcherSnapshot) string {
 	}
 	if snap.Runtime.FilterPriority != nil {
 		fmt.Fprintf(&b, "  Priority:    %d\n", *snap.Runtime.FilterPriority)
+	}
+	if snap.Runtime.FilterHandle != nil {
+		fmt.Fprintf(&b, "  Filter Handle: %#x\n", *snap.Runtime.FilterHandle)
 	}
 
 	// Members table
