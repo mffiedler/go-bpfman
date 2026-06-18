@@ -484,6 +484,61 @@ $ sudo bpftool map show id 258054
 Error: get map by id (258054): No such file or directory
 ```
 
+## Behavioural proof: shared-map counters accumulate
+
+The map-id evidence above shows the dependent and the owner resolve to one
+kernel map object. Sharing then carries a behavioural consequence: a BPF
+map is a single backing store, so when programs that share a map both
+update it, the shared pinned map holds the sum of their updates. Anything
+that reads the shared pin -- a CSI volume, `bpftool`, observability
+tooling -- sees the combined total, not one program's slice. This property
+is the point of map sharing, and it is where Go's real replacement and
+Rust's bookkeeping-only behaviour diverge observably.
+
+The `multi_prog_kprobe_counter` programs add a per-program `weight` global
+to a one-entry array map on each kprobe hit whose caller pid matches a
+load-time `expected_pid`. Loading the same program name twice (`mkp_a`,
+then `mkp_a --map-owner-id A`) puts both programs on the map name
+`mkp_a_count`, so a real share has both writing one map. The kprobe is
+attached to `do_unlinkat` and driven by an in-process unlink loop running
+as `expected_pid`, which gives an exact event count.
+
+Isolation discriminator: attach only the dependent, so any movement of the
+owner's pinned map can only have come from the dependent. With dependent
+weight 11 and 7 events:
+
+- Go: the owner's pinned `mkp_a_count` and the dependent's live
+  `mkp_a_count` are one kernel map id; the owner's pinned count moves
+  `0 -> 77` (7 * 11), driven entirely by a dependent the owner never ran.
+- Rust: the two are different kernel map ids; the owner's pinned count
+  stays `0`, and the dependent's `77` lands in its own map, pinned nowhere
+  bpfman manages.
+
+```console
+# Go: read the owner's pin after only the dependent fired
+$ sudo bpftool map dump pinned /run/go-bpfman/fs/maps/<owner_id>/mkp_a_count -j \
+    | jq -r '.[0].formatted.value'
+77
+
+# Rust: same scenario, owner's pin never moved
+$ sudo bpftool map dump pinned /run/bpfman/fs/maps/<owner_id>/mkp_a_count -j \
+    | jq -r '.[0].formatted.value'
+0
+```
+
+Accumulation discriminator: attach both programs with distinct weights
+(owner 10, dependent 3) and fire 5 events. Go's single shared map reaches
+`65 = 5 * (10 + 3)`, both programs accumulating into one map; Rust's owner
+pin reaches only `50 = 5 * 10` while the dependent's `15 = 5 * 3` is
+stranded in its private map.
+
+Consequence: under Rust a reader of the shared map under-counts by exactly
+the dependents' contribution, because those updates never reach the shared
+object. That is a data-correctness gap, not a cosmetic metadata
+difference, and it is the behavioural justification for preserving Go's
+real map replacement for explicit ownership rather than copying Rust's
+bookkeeping.
+
 ## Target behaviour
 
 After this work, both the CLI and the gRPC server behave as follows. The

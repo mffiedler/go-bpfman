@@ -51,10 +51,9 @@ func (c *LoadImageCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 		Programs []bpfman.Program
 	}
 
-	// load is lockless by construction (docs/PLAN-load-lockless.md):
-	// the OCI pull, kernel BPF_PROG_LOAD, bytecode publish, and
-	// single sqlite commit transaction all run without acquiring
-	// the writer flock.
+	// Manager.Load decides whether post-pull work needs the writer
+	// flock: ordinary loads stay lockless, while explicit map-owner
+	// joins and PinByName loads serialise internally.
 
 	// Parse auth config from base64-encoded registry-auth.
 	auth, err := registryAuthFromFlag(c.RegistryAuth)

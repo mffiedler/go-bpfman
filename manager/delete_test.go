@@ -207,18 +207,30 @@ func newSharedMapDeleteFixture(t *testing.T, ctx context.Context) sharedMapDelet
 		{Name: "dependent", SectionName: "tracepoint", Type: bpfman.ProgramTypeTracepoint},
 	})
 
-	progs, err := f.LoadDirect(ctx,
-		manager.LoadSource{FilePath: obj}, nil,
-		manager.LoadOpts{ShareMaps: true})
+	owner, err := f.LoadDirect(ctx,
+		manager.LoadSource{FilePath: obj},
+		[]manager.ProgramSpec{{Name: "owner", Type: bpfman.ProgramTypeTracepoint}},
+		manager.LoadOpts{})
 	require.NoError(t, err)
-	require.Len(t, progs, 2)
-	require.NotNil(t, progs[1].Record.Handles.MapOwnerID)
-	require.Equal(t, progs[0].Record.ProgramID, *progs[1].Record.Handles.MapOwnerID)
+	require.Len(t, owner, 1)
+	ownerID := owner[0].Record.ProgramID
+	dependent, err := f.LoadDirect(ctx,
+		manager.LoadSource{FilePath: obj},
+		[]manager.ProgramSpec{{
+			Name:       "dependent",
+			Type:       bpfman.ProgramTypeTracepoint,
+			MapOwnerID: ownerID,
+		}},
+		manager.LoadOpts{})
+	require.NoError(t, err)
+	require.Len(t, dependent, 1)
+	require.NotNil(t, dependent[0].Record.Handles.MapOwnerID)
+	require.Equal(t, ownerID, *dependent[0].Record.Handles.MapOwnerID)
 
 	return sharedMapDeleteFixture{
 		fixture:     f,
-		ownerID:     progs[0].Record.ProgramID,
-		dependentID: progs[1].Record.ProgramID,
+		ownerID:     ownerID,
+		dependentID: dependent[0].Record.ProgramID,
 	}
 }
 

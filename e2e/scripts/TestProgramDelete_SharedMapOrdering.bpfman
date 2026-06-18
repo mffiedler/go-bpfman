@@ -2,24 +2,21 @@
 #pragma labels={"exclusive":"true","operation":"delete","shared-map":"true"}
 # Exercises `bpfman program delete --all`, which mutates global bpfman
 # state and cannot run beside other scripts.
-# End-to-end proof that program delete orders a shared-map
-# owner/dependant set dependants-first, regardless of selection order,
-# of --recursive, and of --all.
+# End-to-end proof that program delete preserves a shared map set when
+# an owner is removed before its dependants, and still expands recursive
+# and --all deletes across dependants.
 #
 # This is the real-kernel counterpart to manager/delete_test.go. Those
 # tests run against a fake kernel and a real SQLite store: they prove
 # the ordering logic. This script runs the real CLI -> daemon -> kernel
-# with a genuinely shared map, so it exercises the map_owner_id
-# RESTRICT the deletes must respect, through the same thin CLI path a
-# user drives.
+# with a genuinely shared map, through the same thin CLI path a user drives.
 #
 # Setup in each block: load a counter program (the owner), then load
 # the same program again with --map-owner-id pointing at the owner (the
 # dependant). The dependant reuses the owner's pinned maps, so
-# record.handles.map_owner_id == owner. The store's map_owner_id
-# foreign key is ON DELETE RESTRICT, so an owner cannot be unloaded
-# while a dependant survives; the delete path must therefore delete the
-# dependant first for any selection containing both.
+# record.handles.map_owner_id == owner. The owner program row may be
+# deleted while a dependant survives because dependants reference the
+# durable map set, not the owner row.
 #
 # Invoke from e2e/:
 #
@@ -30,12 +27,12 @@
 
 import ../lib.bpfman
 
-print "PROOF: shared-map program delete ordering (owner-first / dependant-first / recursive / --all)"
+print "PROOF: shared-map program delete lifetime (owner-first / dependant-first / recursive / --all)"
 
 # ----------------------------------------------------------------------
-# Block A -- the RESTRICT relationship is real; a non-recursive
-# single-target delete of an owner with a surviving dependant fails and
-# changes nothing; then an explicit owner-first batch deletes both.
+# Block A -- a non-recursive single-target delete of an owner with a
+# surviving dependant succeeds, leaves the dependant and map set alive,
+# then deleting the dependant reclaims the set.
 # ----------------------------------------------------------------------
 
 guard ownerA <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats -m role=owner
@@ -51,20 +48,18 @@ let dA = $depA.programs[0].record.program_id
 assert $depA.programs[0].record.handles.map_owner_id == $oA
 print "A: loaded owner=${oA}, dependant=${dA} sharing its maps"
 
-# Safety rail: deleting only the owner, non-recursively, must fail
-# while the dependant survives -- and must leave both in place.
-assert fail bpfman program delete $oA
-guard survivedOwnerA <- bpfman program get $oA
-guard survivedDepA <- bpfman program get $dA
-print "A: non-recursive delete of owner ${oA} alone refused; both survive"
-
-# Explicit owner-first batch, non-recursive: the set must be ordered so
-# the dependant is unloaded before the owner. Proof the delete worked:
-# a following get must fail for both.
-bpfman program delete $oA $dA
+# Safety rail: deleting only the owner, non-recursively, must leave the
+# dependant alive and still pointing at the owner's map set.
+bpfman program delete $oA
 assert fail bpfman program get $oA
+guard survivedDepA <- bpfman program get $dA
+assert $survivedDepA.record.handles.map_owner_id == $oA
+assert $survivedDepA matches { status.map_used_by: [$dA] }
+print "A: non-recursive delete of owner ${oA} left dependant ${dA} alive"
+
+bpfman program delete $dA
 assert fail bpfman program get $dA
-print "A: owner-first batch deleted ${oA} and ${dA}"
+print "A: dependant ${dA} deleted after owner; map set reclaimed"
 
 # ----------------------------------------------------------------------
 # Block B -- explicit dependant-first batch, non-recursive: same result
@@ -99,8 +94,7 @@ assert fail bpfman program get $dC
 print "C: recursive delete of ${oC} removed unnamed dependant ${dC}"
 
 # ----------------------------------------------------------------------
-# Block D -- --all (non-recursive) orders the whole set dependants-first
-# and clears the store.
+# Block D -- --all expands across the whole set and clears the store.
 # ----------------------------------------------------------------------
 
 guard ownerD <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
@@ -114,4 +108,4 @@ guard listedD <- bpfman program list -o json
 let remaining = $listedD |> jq "[.programs[]] | length"
 assert $remaining == 0
 print "D: --all cleared the store; remaining=${remaining}"
-print "PROOF complete: ordering holds for owner-first, dependant-first, recursive, and --all"
+print "PROOF complete: shared-map lifetime holds for owner-first, dependant-first, recursive, and --all"

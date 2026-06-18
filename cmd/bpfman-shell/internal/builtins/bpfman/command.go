@@ -570,10 +570,9 @@ func execLoadFile(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 		return runtime.Value{}, err
 	}
 
-	// load is lockless by construction (docs/PLAN-load-lockless.md):
-	// the kernel BPF_PROG_LOAD, bytecode publish, and single
-	// sqlite commit transaction all run without acquiring the
-	// writer flock.
+	// Manager.Load decides whether the request needs the writer flock:
+	// ordinary loads stay lockless, while explicit map-owner joins and
+	// PinByName loads serialise internally.
 	var globalData map[string][]byte
 	if len(cmd.GlobalData) > 0 {
 		globalData = bpfmancli.GlobalDataMap(cmd.GlobalData)
@@ -1534,10 +1533,9 @@ func execLoadImage(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager
 		Programs []bpfman.Program
 	}
 
-	// load is lockless by construction (docs/PLAN-load-lockless.md):
-	// the OCI pull, kernel BPF_PROG_LOAD, bytecode publish, and
-	// single sqlite commit transaction all run without acquiring
-	// the writer flock.
+	// Manager.Load decides whether post-pull work needs the writer
+	// flock: ordinary loads stay lockless, while explicit map-owner
+	// joins and PinByName loads serialise internally.
 	var globalData map[string][]byte
 	if len(cmd.GlobalData) > 0 {
 		globalData = bpfmancli.GlobalDataMap(cmd.GlobalData)

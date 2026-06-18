@@ -3,7 +3,6 @@ package manager
 import (
 	"cmp"
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,14 +16,6 @@ import (
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/platform"
 )
-
-// ErrMultipleProgramsFound is returned when multiple programs match the
-// search criteria and none is the map owner.
-var ErrMultipleProgramsFound = errors.New("multiple programs found")
-
-// ErrMultipleMapOwners is returned when multiple programs claim to be
-// the map owner (MapOwnerID == 0). This indicates a data inconsistency.
-var ErrMultipleMapOwners = errors.New("multiple map owners found")
 
 // ErrProgramRequiresReconciliation is returned when a program has a
 // store record but the corresponding kernel object is absent.
@@ -186,7 +177,7 @@ func (m *Manager) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.P
 		}
 	}
 
-	return bpfman.Program{
+	prog := bpfman.Program{
 		Record: metadata,
 		Status: bpfman.ProgramStatus{
 			Kernel:   &kp,
@@ -197,7 +188,11 @@ func (m *Manager) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.P
 			Links:    links,
 			Maps:     mapStatuses,
 		},
-	}, nil
+	}
+	if err := m.enrichMapSetUsers(ctx, &prog); err != nil {
+		return bpfman.Program{}, fmt.Errorf("list map users: %w", err)
+	}
+	return prog, nil
 }
 
 // Snapshot returns a point-in-time correlated view of every
@@ -306,15 +301,30 @@ func (m *Manager) GetLinkInfo(ctx context.Context, linkID bpfman.LinkID) (inspec
 	return info, nil
 }
 
+func (m *Manager) mapSetUsers(ctx context.Context, record bpfman.ProgramRecord) ([]kernel.ProgramID, error) {
+	mapSetID := record.ProgramID
+	if record.Handles.MapOwnerID != nil {
+		mapSetID = *record.Handles.MapOwnerID
+	}
+	return m.store.ListMapSetUsers(ctx, mapSetID)
+}
+
+func (m *Manager) enrichMapSetUsers(ctx context.Context, prog *bpfman.Program) error {
+	users, err := m.mapSetUsers(ctx, prog.Record)
+	if err != nil {
+		return err
+	}
+	prog.Status.MapUsedBy = users
+	return nil
+}
+
 // FindLoadedProgramByMetadata finds a program by metadata key/value from
 // the reconciled list of loaded programs (those in both DB and kernel).
 //
-// When multiple programs match (e.g., multi-program applications), this
-// returns the map owner (the program with MapOwnerID == 0). All maps are
-// pinned at the owner's MapPinPath, so the CSI can find them there.
-//
-// Returns an error if no programs match, or if multiple map owners exist
-// (data inconsistency).
+// When multiple programs match (e.g. multi-program applications), this
+// returns the first reconciled metadata match. The CSI publishes all
+// requested maps from that one program's MapPinPath; missing maps are a
+// clean CSI error, not a reason to infer a synthetic shared owner.
 func (m *Manager) FindLoadedProgramByMetadata(ctx context.Context, key, value string) (bpfman.ProgramRecord, kernel.ProgramID, error) {
 	scanner := m.rt.BPFFS().Scanner()
 	obs, err := inspect.Snapshot(ctx, m.store, m.kernel, scanner)
@@ -336,47 +346,15 @@ func (m *Manager) FindLoadedProgramByMetadata(ctx context.Context, key, value st
 	switch len(matches) {
 	case 0:
 		return bpfman.ProgramRecord{}, 0, fmt.Errorf("program with %s=%s: %w", key, value, platform.ErrRecordNotFound)
-	case 1:
-		return *matches[0].Managed, matches[0].ProgramID, nil
 	default:
-		// Multiple programs match - find the map owner (MapOwnerID == nil).
-		// In multi-program loads, one program owns all maps and the others
-		// reference it via MapOwnerID.
-		var owners []inspect.ProgramView
-		for _, row := range matches {
-			if row.Managed.Handles.MapOwnerID == nil {
-				owners = append(owners, row)
-			}
-		}
-
-		switch len(owners) {
-		case 0:
-			// No map owner found - all programs reference another owner
-			// that doesn't match our metadata query. This shouldn't happen.
-			ids := make([]kernel.ProgramID, len(matches))
-			for i, row := range matches {
-				ids[i] = row.ProgramID
-			}
-			return bpfman.ProgramRecord{}, 0, fmt.Errorf("%w: %d programs with %s=%s but no map owner (kernel IDs: %v)",
-				ErrMultipleProgramsFound, len(matches), key, value, ids)
-		case 1:
-			m.logger.DebugContext(ctx, "found map owner among multiple matching programs",
-				"key", key,
-				"value", value,
-				"total_matches", len(matches),
-				"owner_program_id", owners[0].ProgramID,
-				"owner_name", owners[0].Managed.Meta.Name,
-			)
-			return *owners[0].Managed, owners[0].ProgramID, nil
-		default:
-			// Multiple map owners - data inconsistency
-			ids := make([]kernel.ProgramID, len(owners))
-			for i, row := range owners {
-				ids[i] = row.ProgramID
-			}
-			return bpfman.ProgramRecord{}, 0, fmt.Errorf("%w: %d map owners with %s=%s (kernel IDs: %v)",
-				ErrMultipleMapOwners, len(owners), key, value, ids)
-		}
+		m.logger.DebugContext(ctx, "found metadata match",
+			"key", key,
+			"value", value,
+			"total_matches", len(matches),
+			"program_id", matches[0].ProgramID,
+			"program_name", matches[0].Managed.Meta.Name,
+		)
+		return *matches[0].Managed, matches[0].ProgramID, nil
 	}
 }
 
@@ -416,6 +394,9 @@ func (m *Manager) ListPrograms(ctx context.Context, opts ...bpfman.ListOption) (
 						kernelMaps = append(kernelMaps, km)
 					}
 					p.Status.Maps = bpfman.ToMapStatus(kernelMaps)
+				}
+				if err := m.enrichMapSetUsers(ctx, &p); err != nil {
+					return nil, fmt.Errorf("list map users for program %d: %w", p.Record.ProgramID, err)
 				}
 				programs = append(programs, p)
 			}

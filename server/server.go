@@ -214,12 +214,10 @@ func Run(ctx context.Context, cfg RunConfig) error {
 // file-based writer lock from the lock package; read handlers
 // (List, Get, ListLinks, PullBytecode) run lockless and rely on
 // the store and kernel adapter for safe concurrent access. The
-// Load handler also takes no server-level lock; routing Load
-// through withWriterLock would self-deadlock against the manager's
-// own conditional flock acquisition for LIBBPF_PIN_BY_NAME loads.
-// Cross-process serialisation for shared-map loads is the
-// manager's responsibility (see Manager.Load and
-// docs/PLAN-load-lockless.md).
+// Load handler also takes no server-level lock; the manager handles
+// its own conditional flock acquisition for explicit map-owner joins
+// and LIBBPF_PIN_BY_NAME loads. Cross-process serialisation for
+// shared-map loads is the manager's responsibility (see Manager.Load).
 type Server struct {
 	pb.UnimplementedBpfmanServer
 

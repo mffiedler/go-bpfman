@@ -19,7 +19,7 @@ func (s *sqliteStore) Get(ctx context.Context, programID kernel.ProgramID) (bpfm
 	start := time.Now()
 	row := s.stmtGetProgram.QueryRowContext(ctx, programID)
 
-	prog, err := s.scanProgram(row)
+	prog, err := s.scanProgram(row, programID)
 	if errors.Is(err, sql.ErrNoRows) {
 		s.logger.Debug("sql", "stmt", "GetProgram", "args", []any{programID}, "duration_ms", msec(time.Since(start)), "rows", 0)
 		return bpfman.ProgramRecord{}, platform.ErrRecordNotFound
@@ -38,11 +38,12 @@ func (s *sqliteStore) Get(ctx context.Context, programID kernel.ProgramID) (bpfm
 // Both scanProgram and scanProgramFromRows populate this struct, then
 // delegate to buildProgramRecord for the shared parsing logic.
 type scannedProgram struct {
+	programID                                        kernel.ProgramID
 	programName, programTypeStr, objectPath, pinPath string
 	attachFunc, globalDataJSON, mapPinPath           sql.NullString
 	imageSourceJSON, owner, description              sql.NullString
 	license, metadataJSON                            sql.NullString
-	mapOwnerID                                       sql.NullInt64
+	mapSetID                                         sql.NullInt64
 	gplCompatible                                    int
 	createdAtStr                                     string
 	updatedAtStr                                     sql.NullString
@@ -63,8 +64,8 @@ func buildProgramRecord(sp *scannedProgram) (bpfman.ProgramRecord, error) {
 	if sp.attachFunc.Valid {
 		attachFuncVal = sp.attachFunc.String
 	}
-	if sp.mapOwnerID.Valid {
-		v := kernel.ProgramID(sp.mapOwnerID.Int64)
+	if sp.mapSetID.Valid && kernel.ProgramID(sp.mapSetID.Int64) != sp.programID {
+		v := kernel.ProgramID(sp.mapSetID.Int64)
 		mapOwnerIDPtr = &v
 	}
 	if sp.mapPinPath.Valid {
@@ -125,6 +126,7 @@ func buildProgramRecord(sp *scannedProgram) (bpfman.ProgramRecord, error) {
 	}
 
 	prog := bpfman.ProgramRecord{
+		ProgramID: sp.programID,
 		Load: bpfman.LoadSpec{}.
 			WithObjectPath(sp.objectPath).
 			WithProgramName(sp.programName).
@@ -157,7 +159,7 @@ func buildProgramRecord(sp *scannedProgram) (bpfman.ProgramRecord, error) {
 }
 
 // scanProgram scans a single row into a ProgramRecord struct.
-func (s *sqliteStore) scanProgram(row *sql.Row) (bpfman.ProgramRecord, error) {
+func (s *sqliteStore) scanProgram(row *sql.Row, programID kernel.ProgramID) (bpfman.ProgramRecord, error) {
 	var sp scannedProgram
 	err := row.Scan(
 		&sp.programName,
@@ -166,7 +168,7 @@ func (s *sqliteStore) scanProgram(row *sql.Row) (bpfman.ProgramRecord, error) {
 		&sp.pinPath,
 		&sp.attachFunc,
 		&sp.globalDataJSON,
-		&sp.mapOwnerID,
+		&sp.mapSetID,
 		&sp.mapPinPath,
 		&sp.imageSourceJSON,
 		&sp.owner,
@@ -180,6 +182,7 @@ func (s *sqliteStore) scanProgram(row *sql.Row) (bpfman.ProgramRecord, error) {
 	if err != nil {
 		return bpfman.ProgramRecord{}, err
 	}
+	sp.programID = programID
 	return buildProgramRecord(&sp)
 }
 
@@ -232,15 +235,24 @@ func (s *sqliteStore) Save(ctx context.Context, programID kernel.ProgramID, meta
 		metadataJSON = string(data)
 	}
 
-	// Handle nullable fields
-	var mapOwnerID sql.NullInt64
+	mapSetID := programID
 	if metadata.Handles.MapOwnerID != nil {
-		mapOwnerID = sql.NullInt64{Int64: int64(*metadata.Handles.MapOwnerID), Valid: true}
+		mapSetID = *metadata.Handles.MapOwnerID
+	} else {
+		exists, err := s.programRecordExists(ctx, programID)
+		if err != nil {
+			return err
+		}
+		// Save also updates existing records. Only the first save for a
+		// self-owned program creates its map set; a reused kernel id with
+		// a surviving map set still attempts the insert and fails closed.
+		if !exists {
+			if err := s.insertSelfOwnedMapSet(ctx, programID, metadata); err != nil {
+				return err
+			}
+		}
 	}
-	var mapPinPath sql.NullString
-	if metadata.Handles.MapsDir != "" {
-		mapPinPath = sql.NullString{String: metadata.Handles.MapsDir.String(), Valid: true}
-	}
+	// Handle nullable fields
 	var attachFunc, owner, description, license sql.NullString
 	if metadata.Load.AttachFunc() != "" {
 		attachFunc = sql.NullString{String: metadata.Load.AttachFunc(), Valid: true}
@@ -281,8 +293,7 @@ func (s *sqliteStore) Save(ctx context.Context, programID kernel.ProgramID, meta
 		metadata.Handles.PinPath,
 		attachFunc,
 		globalDataJSON,
-		mapOwnerID,
-		mapPinPath,
+		mapSetID,
 		imageSourceJSON,
 		owner,
 		description,
@@ -322,18 +333,115 @@ func (s *sqliteStore) Delete(ctx context.Context, programID kernel.ProgramID) er
 	return nil
 }
 
-// CountDependentPrograms returns the number of programs that share maps with
-// the given program (i.e., programs where map_owner_id = programID).
-func (s *sqliteStore) CountDependentPrograms(ctx context.Context, programID kernel.ProgramID) (int, error) {
+func (s *sqliteStore) programRecordExists(ctx context.Context, programID kernel.ProgramID) (bool, error) {
+	start := time.Now()
+	var exists bool
+	err := s.stmtProgramExists.QueryRowContext(ctx, programID).Scan(&exists)
+	if err != nil {
+		s.logger.Debug("sql", "stmt", "ProgramRecordExists", "args", []any{programID}, "duration_ms", msec(time.Since(start)), "error", err)
+		return false, err
+	}
+	s.logger.Debug("sql", "stmt", "ProgramRecordExists", "args", []any{programID}, "duration_ms", msec(time.Since(start)), "exists", exists)
+	return exists, nil
+}
+
+// insertSelfOwnedMapSet creates the map set for a newly loaded
+// self-owned program. This is intentionally insert-only: if a kernel
+// program id is reused while an old map set with that id is still alive,
+// the primary-key collision is the fail-closed guard. Do not convert
+// this to upsert, INSERT OR IGNORE, or open-or-create semantics.
+func (s *sqliteStore) insertSelfOwnedMapSet(ctx context.Context, programID kernel.ProgramID, metadata bpfman.ProgramRecord) error {
+	start := time.Now()
+	_, err := s.stmtInsertMapSet.ExecContext(ctx,
+		programID,
+		metadata.Handles.MapsDir.String(),
+		metadata.CreatedAt.UTC().Format(time.RFC3339),
+	)
+	if err != nil {
+		s.logger.Debug("sql", "stmt", "InsertMapSet", "args", []any{programID, metadata.Handles.MapsDir.String()}, "duration_ms", msec(time.Since(start)), "error", err)
+		return fmt.Errorf("create map set %d: %w", programID, err)
+	}
+	s.logger.Debug("sql", "stmt", "InsertMapSet", "args", []any{programID, metadata.Handles.MapsDir.String()}, "duration_ms", msec(time.Since(start)), "rows_affected", 1)
+	return nil
+}
+
+func (s *sqliteStore) CountMapSets(ctx context.Context) (int, error) {
 	start := time.Now()
 	var count int
-	err := s.stmtCountDependentPrograms.QueryRowContext(ctx, programID).Scan(&count)
+	err := s.stmtCountMapSets.QueryRowContext(ctx).Scan(&count)
 	if err != nil {
-		s.logger.Debug("sql", "stmt", "CountDependentPrograms", "args", []any{programID}, "duration_ms", msec(time.Since(start)), "error", err)
+		s.logger.Debug("sql", "stmt", "CountMapSets", "duration_ms", msec(time.Since(start)), "error", err)
 		return 0, err
 	}
-	s.logger.Debug("sql", "stmt", "CountDependentPrograms", "args", []any{programID}, "duration_ms", msec(time.Since(start)), "count", count)
+	s.logger.Debug("sql", "stmt", "CountMapSets", "duration_ms", msec(time.Since(start)), "count", count)
 	return count, nil
+}
+
+func (s *sqliteStore) CountMapSetUsers(ctx context.Context, mapSetID kernel.ProgramID) (int, error) {
+	start := time.Now()
+	var count int
+	err := s.stmtCountMapSetUsers.QueryRowContext(ctx, mapSetID).Scan(&count)
+	if err != nil {
+		s.logger.Debug("sql", "stmt", "CountMapSetUsers", "args", []any{mapSetID}, "duration_ms", msec(time.Since(start)), "error", err)
+		return 0, err
+	}
+	s.logger.Debug("sql", "stmt", "CountMapSetUsers", "args", []any{mapSetID}, "duration_ms", msec(time.Since(start)), "count", count)
+	return count, nil
+}
+
+func (s *sqliteStore) ListMapSetUsers(ctx context.Context, mapSetID kernel.ProgramID) ([]kernel.ProgramID, error) {
+	start := time.Now()
+	rows, err := s.stmtListMapSetUsers.QueryContext(ctx, mapSetID)
+	if err != nil {
+		s.logger.Debug("sql", "stmt", "ListMapSetUsers", "args", []any{mapSetID}, "duration_ms", msec(time.Since(start)), "error", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []kernel.ProgramID
+	for rows.Next() {
+		var id kernel.ProgramID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		users = append(users, id)
+	}
+	if err := rows.Err(); err != nil {
+		s.logger.Debug("sql", "stmt", "ListMapSetUsers", "args", []any{mapSetID}, "duration_ms", msec(time.Since(start)), "error", err)
+		return nil, err
+	}
+	s.logger.Debug("sql", "stmt", "ListMapSetUsers", "args", []any{mapSetID}, "duration_ms", msec(time.Since(start)), "count", len(users))
+	return users, nil
+}
+
+func (s *sqliteStore) MapSetExists(ctx context.Context, mapSetID kernel.ProgramID) (bool, error) {
+	start := time.Now()
+	var exists bool
+	err := s.stmtMapSetExists.QueryRowContext(ctx, mapSetID).Scan(&exists)
+	if err != nil {
+		s.logger.Debug("sql", "stmt", "MapSetExists", "args", []any{mapSetID}, "duration_ms", msec(time.Since(start)), "error", err)
+		return false, err
+	}
+	s.logger.Debug("sql", "stmt", "MapSetExists", "args", []any{mapSetID}, "duration_ms", msec(time.Since(start)), "exists", exists)
+	return exists, nil
+}
+
+func (s *sqliteStore) DeleteMapSet(ctx context.Context, mapSetID kernel.ProgramID) error {
+	start := time.Now()
+	result, err := s.stmtDeleteMapSet.ExecContext(ctx, mapSetID)
+	if err != nil {
+		s.logger.Debug("sql", "stmt", "DeleteMapSet", "args", []any{mapSetID}, "duration_ms", msec(time.Since(start)), "error", err)
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	s.logger.Debug("sql", "stmt", "DeleteMapSet", "args", []any{mapSetID}, "duration_ms", msec(time.Since(start)), "rows_affected", rows)
+	if rows == 0 {
+		return fmt.Errorf("map set %d: %w", mapSetID, platform.ErrRecordNotFound)
+	}
+	return nil
 }
 
 // List returns all program metadata. The returned map has no guaranteed
@@ -378,7 +486,7 @@ func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (kernel.ProgramID, bpf
 		&sp.pinPath,
 		&sp.attachFunc,
 		&sp.globalDataJSON,
-		&sp.mapOwnerID,
+		&sp.mapSetID,
 		&sp.mapPinPath,
 		&sp.imageSourceJSON,
 		&sp.owner,
@@ -392,6 +500,7 @@ func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (kernel.ProgramID, bpf
 	if err != nil {
 		return 0, bpfman.ProgramRecord{}, err
 	}
+	sp.programID = programID
 	prog, err := buildProgramRecord(&sp)
 	if err != nil {
 		return 0, bpfman.ProgramRecord{}, err

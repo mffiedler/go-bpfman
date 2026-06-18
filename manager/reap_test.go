@@ -37,19 +37,30 @@ func TestReapDeadProgramRecords(t *testing.T) {
 		{Name: "owner", SectionName: "tcx", Type: bpfman.ProgramTypeTCX},
 		{Name: "dependent", SectionName: "tcx", Type: bpfman.ProgramTypeTCX},
 	})
-	shared, err := f.LoadDirect(ctx,
-		manager.LoadSource{FilePath: sharedObj}, nil,
-		manager.LoadOpts{ShareMaps: true})
+	owner, err := f.LoadDirect(ctx,
+		manager.LoadSource{FilePath: sharedObj},
+		[]manager.ProgramSpec{{Name: "owner", Type: bpfman.ProgramTypeTCX}},
+		manager.LoadOpts{})
 	require.NoError(t, err)
-	require.Len(t, shared, 2)
-	ownerID := shared[0].Record.ProgramID
-	dependentID := shared[1].Record.ProgramID
+	require.Len(t, owner, 1)
+	ownerID := owner[0].Record.ProgramID
+	dependent, err := f.LoadDirect(ctx,
+		manager.LoadSource{FilePath: sharedObj},
+		[]manager.ProgramSpec{{
+			Name:       "dependent",
+			Type:       bpfman.ProgramTypeTCX,
+			MapOwnerID: ownerID,
+		}},
+		manager.LoadOpts{})
+	require.NoError(t, err)
+	require.Len(t, dependent, 1)
+	dependentID := dependent[0].Record.ProgramID
 
 	// Guard: without a real map_owner_id FK the ordering assertion
 	// would be hollow (both rows independently deletable).
-	require.NotNil(t, shared[1].Record.Handles.MapOwnerID,
+	require.NotNil(t, dependent[0].Record.Handles.MapOwnerID,
 		"dependent must record a map owner; otherwise the test does not exercise the RESTRICT ordering")
-	require.Equal(t, ownerID, *shared[1].Record.Handles.MapOwnerID)
+	require.Equal(t, ownerID, *dependent[0].Record.Handles.MapOwnerID)
 
 	// A standalone program that stays live in the kernel.
 	liveObj := f.BytecodeFile("live.o")
@@ -130,14 +141,25 @@ func TestReapKeepsDeadOwnerWithLiveDependent(t *testing.T) {
 		{Name: "owner", SectionName: "tcx", Type: bpfman.ProgramTypeTCX},
 		{Name: "dependent", SectionName: "tcx", Type: bpfman.ProgramTypeTCX},
 	})
-	progs, err := f.LoadDirect(ctx,
-		manager.LoadSource{FilePath: obj}, nil,
-		manager.LoadOpts{ShareMaps: true})
+	owner, err := f.LoadDirect(ctx,
+		manager.LoadSource{FilePath: obj},
+		[]manager.ProgramSpec{{Name: "owner", Type: bpfman.ProgramTypeTCX}},
+		manager.LoadOpts{})
 	require.NoError(t, err)
-	require.Len(t, progs, 2)
-	ownerID := progs[0].Record.ProgramID
-	dependentID := progs[1].Record.ProgramID
-	require.NotNil(t, progs[1].Record.Handles.MapOwnerID)
+	require.Len(t, owner, 1)
+	ownerID := owner[0].Record.ProgramID
+	dependent, err := f.LoadDirect(ctx,
+		manager.LoadSource{FilePath: obj},
+		[]manager.ProgramSpec{{
+			Name:       "dependent",
+			Type:       bpfman.ProgramTypeTCX,
+			MapOwnerID: ownerID,
+		}},
+		manager.LoadOpts{})
+	require.NoError(t, err)
+	require.Len(t, dependent, 1)
+	dependentID := dependent[0].Record.ProgramID
+	require.NotNil(t, dependent[0].Record.Handles.MapOwnerID)
 
 	// Owner dies in the kernel; its dependent stays live.
 	f.Kernel.RemoveKernelProgram(ownerID)

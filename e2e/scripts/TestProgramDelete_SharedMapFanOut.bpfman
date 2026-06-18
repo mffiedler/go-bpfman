@@ -4,8 +4,8 @@
 # state and cannot run beside other scripts.
 # End-to-end proof that program delete handles a one-owner /
 # many-dependant fan-out: several programs share a single owner's maps,
-# and the delete path must order all dependants before the owner for
-# any selection containing them.
+# owner-first deletion preserves the map set while dependants survive,
+# and recursive/all deletes still expand across the fan-out.
 #
 # This complements TestProgramDelete_SharedMapOrdering, which is a
 # single owner/dependant pair. Fan-out exercises paths a pair cannot:
@@ -56,23 +56,44 @@ let dA3 = $depA3.programs[0].record.program_id
 assert $depA3.programs[0].record.handles.map_owner_id == $oA
 print "A: owner=${oA} with dependants ${dA1}, ${dA2}, ${dA3} sharing its maps"
 
-# Safety rail: a non-recursive delete of the owner alone is refused
-# while any dependant survives, and deletes nothing.
-assert fail bpfman program delete $oA
+# Safety rail: a non-recursive delete of the owner alone leaves all
+# dependants alive and still using the owner's map set.
+bpfman program delete $oA
+assert fail bpfman program get $oA
 guard afterFailA <- bpfman program list -o json
 let survivorsA = $afterFailA |> jq "[.programs[]] | length"
-assert $survivorsA == 4
-print "A: non-recursive delete of owner ${oA} alone refused; all 4 survive"
+assert $survivorsA == 3
+guard survivedA1 <- bpfman program get $dA1
+guard survivedA2 <- bpfman program get $dA2
+guard survivedA3 <- bpfman program get $dA3
+assert $survivedA1 matches { status.map_used_by: [$dA1 $dA2 $dA3] }
+assert $survivedA2 matches { status.map_used_by: [$dA1 $dA2 $dA3] }
+assert $survivedA3 matches { status.map_used_by: [$dA1 $dA2 $dA3] }
+print "A: non-recursive delete of owner ${oA} left all 3 dependants alive"
+
+bpfman program delete $dA2 $dA3 $dA1
+assert fail bpfman program get $dA1
+assert fail bpfman program get $dA2
+assert fail bpfman program get $dA3
+print "A: deleted surviving dependants ${dA2} ${dA3} ${dA1}"
 
 # Scrambled explicit batch with the owner in the middle: ordering must
 # delete all three dependants before the owner regardless of argument
 # position, and the sibling dedup must keep it from re-deleting any.
-bpfman program delete $dA2 $oA $dA3 $dA1
-assert fail bpfman program get $oA
-assert fail bpfman program get $dA1
-assert fail bpfman program get $dA2
-assert fail bpfman program get $dA3
-print "A: scrambled batch (${dA2} ${oA} ${dA3} ${dA1}) deleted all four"
+guard ownerA2 <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
+let oA2 = $ownerA2.programs[0].record.program_id
+guard depA21 <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oA2
+let dA21 = $depA21.programs[0].record.program_id
+guard depA22 <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oA2
+let dA22 = $depA22.programs[0].record.program_id
+guard depA23 <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id $oA2
+let dA23 = $depA23.programs[0].record.program_id
+bpfman program delete $dA22 $oA2 $dA23 $dA21
+assert fail bpfman program get $oA2
+assert fail bpfman program get $dA21
+assert fail bpfman program get $dA22
+assert fail bpfman program get $dA23
+print "A2: scrambled batch (${dA22} ${oA2} ${dA23} ${dA21}) deleted all four"
 
 # ----------------------------------------------------------------------
 # Recursive delete from the owner expands to every unnamed dependant.
@@ -137,4 +158,4 @@ guard listedD <- bpfman program list -o json
 let remainingD = $listedD |> jq "[.programs[]] | length"
 assert $remainingD == 0
 print "D: --all cleared the fan-out; remaining=${remainingD}"
-print "PROOF complete: fan-out ordering holds for scrambled batch, recursive, dedup, and --all"
+print "PROOF complete: fan-out lifetime holds for owner-first, scrambled batch, recursive, dedup, and --all"

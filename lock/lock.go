@@ -21,6 +21,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -54,7 +55,9 @@ type WriterScope interface {
 // writerScope is the concrete implementation of WriterScope.
 // It holds the exclusive flock and cannot be constructed outside this package.
 type writerScope struct {
-	f *os.File
+	f      *os.File
+	path   string
+	active atomic.Bool
 }
 
 func (*writerScope) writerScopeMarker() {}
@@ -75,13 +78,38 @@ func (s *writerScope) DupFD() (*os.File, error) {
 // The WriterScope proves to callees that the lock is held.
 // Uses LOCK_EX|LOCK_NB with exponential backoff, respects ctx cancellation.
 func Run(ctx context.Context, lockPath string, fn func(context.Context, WriterScope) error) error {
+	if scope, ok := activeScope(ctx, lockPath); ok {
+		return fn(ctx, scope)
+	}
+
 	f, err := acquireWriter(ctx, lockPath)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
 
-	return fn(ctx, &writerScope{f: f})
+	scope := &writerScope{f: f, path: lockPath}
+	scope.active.Store(true)
+	defer scope.active.Store(false)
+
+	return fn(context.WithValue(ctx, writerScopeContextKey{}, scope), scope)
+}
+
+type writerScopeContextKey struct{}
+
+// activeScope returns the currently active scope that Run placed in the
+// callback context. This is not a substitute for passing WriterScope to
+// mutating APIs; it only lets nested Run calls for the same lock path
+// reuse the already-held flock instead of self-deadlocking.
+func activeScope(ctx context.Context, lockPath string) (*writerScope, bool) {
+	scope, ok := ctx.Value(writerScopeContextKey{}).(*writerScope)
+	if !ok || scope == nil {
+		return nil, false
+	}
+	if scope.path != lockPath || !scope.active.Load() {
+		return nil, false
+	}
+	return scope, true
 }
 
 // RunWithTiming wraps Run with timing logs for lock acquisition and release.

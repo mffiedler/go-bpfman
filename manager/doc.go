@@ -128,10 +128,10 @@
 // passes the writer scope into the manager call. Read-only methods
 // (Get, ListPrograms, GetLink, ListLinks) are not gated by the
 // flock and may be called concurrently with mutators. Load is the
-// other lockless path at the caller level: it manages its own
-// conditional flock acquisition for LIBBPF_PIN_BY_NAME maps and
-// otherwise runs without the flock; see the package-level comments
-// on Manager.Load for the safety argument.
+// other caller-lockless path: it manages its own conditional flock
+// acquisition for explicit map-owner joins and LIBBPF_PIN_BY_NAME
+// maps, and otherwise runs without the flock; see the package-level
+// comments on Manager.Load for the safety argument.
 //
 // # Dependencies
 //

@@ -633,51 +633,7 @@ func TestCreateLink_RejectsDispatcherBackedKinds(t *testing.T) {
 // Map Ownership Tests
 // ----------------------------------------------------------------------------
 
-func TestMapOwnership_CountDependentPrograms(t *testing.T) {
-	t.Parallel()
-
-	store, err := sqlite.NewInMemory(context.Background(), testLogger())
-	require.NoError(t, err, "failed to create store")
-	defer store.Close()
-
-	ctx := context.Background()
-
-	// Create the owner program (first program from an image).
-	ownerID := kernel.ProgramID(100)
-	ownerProg := testProgram()
-	ownerProg.Meta.Name = "kprobe_counter"
-	ownerProg.Handles.MapsDir = "/sys/fs/bpf/bpfman/100"
-	require.NoError(t, store.Save(ctx, ownerID, ownerProg), "Save owner failed")
-
-	// Initially no dependents.
-	count, err := store.CountDependentPrograms(ctx, ownerID)
-	require.NoError(t, err, "CountDependentPrograms failed")
-	assert.Equal(t, 0, count, "expected 0 dependents initially")
-
-	// Create dependent programs that share the owner's maps.
-	for i := kernel.ProgramID(1); i <= 3; i++ {
-		depProg := testProgram()
-		depProg.Meta.Name = "dependent_" + string(rune('0'+i))
-		depProg.Handles.MapOwnerID = &ownerID
-		depProg.Handles.MapsDir = "/sys/fs/bpf/bpfman/100" // Same as owner
-		require.NoError(t, store.Save(ctx, 100+i, depProg), "Save dependent %d failed", i)
-	}
-
-	// Now we should have 3 dependents.
-	count, err = store.CountDependentPrograms(ctx, ownerID)
-	require.NoError(t, err, "CountDependentPrograms failed")
-	assert.Equal(t, 3, count, "expected 3 dependents")
-
-	// Delete one dependent.
-	require.NoError(t, store.Delete(ctx, kernel.ProgramID(101)), "Delete dependent failed")
-
-	// Now we should have 2 dependents.
-	count, err = store.CountDependentPrograms(ctx, ownerID)
-	require.NoError(t, err, "CountDependentPrograms failed")
-	assert.Equal(t, 2, count, "expected 2 dependents after delete")
-}
-
-func TestMapOwnership_ForeignKeyPreventsDeletingOwner(t *testing.T) {
+func TestMapOwnership_MapSetSurvivesDeletingOwner(t *testing.T) {
 	t.Parallel()
 
 	store, err := sqlite.NewInMemory(context.Background(), testLogger())
@@ -700,17 +656,26 @@ func TestMapOwnership_ForeignKeyPreventsDeletingOwner(t *testing.T) {
 	depProg.Handles.MapsDir = "/sys/fs/bpf/bpfman/100"
 	require.NoError(t, store.Save(ctx, kernel.ProgramID(101), depProg), "Save dependent failed")
 
-	// Attempt to delete the owner while dependent exists - should fail due to FK.
-	err = store.Delete(ctx, ownerID)
-	require.Error(t, err, "expected FK constraint violation when deleting owner")
+	// Deleting the owner row is allowed. Dependents reference the durable map
+	// set, not the owner program row.
+	require.NoError(t, store.Delete(ctx, ownerID), "Delete owner failed")
+
+	got, err := store.Get(ctx, kernel.ProgramID(101))
+	require.NoError(t, err, "Get dependent failed")
+	require.NotNil(t, got.Handles.MapOwnerID)
+	assert.Equal(t, ownerID, *got.Handles.MapOwnerID)
+
+	users, err := store.CountMapSetUsers(ctx, ownerID)
+	require.NoError(t, err, "CountMapSetUsers failed")
+	assert.Equal(t, 1, users)
+
+	err = store.DeleteMapSet(ctx, ownerID)
+	require.Error(t, err, "expected FK constraint violation while dependent uses map set")
 	assert.Contains(t, err.Error(), "FOREIGN KEY constraint failed",
 		"expected FK constraint error, got: %v", err)
 
-	// Delete the dependent first.
 	require.NoError(t, store.Delete(ctx, kernel.ProgramID(101)), "Delete dependent failed")
-
-	// Now we can delete the owner.
-	require.NoError(t, store.Delete(ctx, ownerID), "Delete owner failed after dependents removed")
+	require.NoError(t, store.DeleteMapSet(ctx, ownerID), "Delete map set failed after users removed")
 }
 
 func TestMapOwnership_MapPinPathPersisted(t *testing.T) {

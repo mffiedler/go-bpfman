@@ -63,10 +63,9 @@ func executeLoadFileResult(ctx context.Context, cli *bpfmancli.CLI, mgr *manager
 		globalData = bpfmancli.GlobalDataMap(c.GlobalData)
 	}
 
-	// load is lockless by construction (docs/PLAN-load-lockless.md):
-	// the kernel allocates unique program ids, the bytecode directory
-	// is namespaced by that id, and the sqlite commit is one
-	// transaction at the end. No flock acquisition is needed.
+	// Manager.Load decides whether the request needs the writer flock:
+	// ordinary loads stay lockless, while explicit map-owner joins and
+	// PinByName loads serialise internally.
 	req := manager.NewLoadRequest(manager.LoadSource{FilePath: objPath.Path}, loadProgramSpecs(c.Programs), manager.LoadRequestOpts{
 		UserMetadata: bpfmancli.MetadataMap(c.Metadata),
 		GlobalData:   globalData,

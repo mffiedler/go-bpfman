@@ -16,11 +16,9 @@ import (
 	pb "github.com/frobware/go-bpfman/server/pb"
 )
 
-// Load implements the Load RPC method. Lockless by construction
-// (docs/PLAN-load-lockless.md): the kernel allocates each program a
-// unique id, the bytecode dir is namespaced by that id, and the
-// sqlite commit is one transaction at the end. The daemon does not
-// acquire the writer flock for Load.
+// Load implements the Load RPC method. Manager.Load decides whether the
+// request needs the writer flock: ordinary loads stay lockless, while
+// explicit map-owner joins and PinByName loads serialise internally.
 func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadResponse, error) {
 	if req.Bytecode == nil {
 		return nil, status.Error(codes.InvalidArgument, "bytecode location is required")
@@ -82,12 +80,10 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 		})
 	}
 
-	// Call Load with ShareMaps enabled for multi-program loads
 	loaded, err := s.mgr.Load(ctx, source, programs, manager.LoadOpts{
 		UserMetadata: req.Metadata,
 		GlobalData:   req.GlobalData,
 		Owner:        "bpfman",
-		ShareMaps:    len(programs) > 1,
 	})
 	if err != nil {
 		if errors.Is(err, manager.ErrImagePullerNotConfigured) {
@@ -116,6 +112,7 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 			Metadata:   req.Metadata,
 			GlobalData: req.GlobalData,
 			MapPinPath: prog.Record.Handles.MapsDir.String(),
+			MapUsedBy:  programIDsToStrings(prog.Status.MapUsedBy),
 		}
 		// Set MapOwnerId for dependent programs
 		if prog.Record.Load.MapOwnerID() != 0 {

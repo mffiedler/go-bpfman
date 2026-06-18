@@ -179,10 +179,11 @@ type ProgramFinder any
 
 // MapOwnershipReader provides access to map ownership information.
 type MapOwnershipReader interface {
-	// CountDependentPrograms returns the number of programs that share maps
-	// with the given program (i.e., programs where map_owner_id = programID).
-	// This is used to determine if a program's maps can be safely deleted.
-	CountDependentPrograms(ctx context.Context, programID kernel.ProgramID) (int, error)
+	CountMapSets(ctx context.Context) (int, error)
+	CountMapSetUsers(ctx context.Context, mapSetID kernel.ProgramID) (int, error)
+	ListMapSetUsers(ctx context.Context, mapSetID kernel.ProgramID) ([]kernel.ProgramID, error)
+	MapSetExists(ctx context.Context, mapSetID kernel.ProgramID) (bool, error)
+	DeleteMapSet(ctx context.Context, mapSetID kernel.ProgramID) error
 }
 
 // ProgramStore combines all store operations.

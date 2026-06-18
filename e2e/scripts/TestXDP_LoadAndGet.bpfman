@@ -109,6 +109,7 @@ assert $prog matches exhaustive {
         bytecode: $expect_bytecode
         links:    empty
         maps:     not-empty
+        map_used_by: [$pid]
     }
 }
 assert $pid > 0
@@ -213,6 +214,7 @@ assert $got matches exhaustive {
         bytecode: $expect_bytecode
         links:    empty
         maps:     not-empty
+        map_used_by: [$pid]
     }
 }
 

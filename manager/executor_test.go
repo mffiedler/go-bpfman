@@ -59,8 +59,24 @@ func (s *stubStore) FindProgramByMetadata(ctx context.Context, key, value string
 }
 
 // MapOwnershipReader
-func (s *stubStore) CountDependentPrograms(ctx context.Context, programID kernel.ProgramID) (int, error) {
-	panic("stubStore.CountDependentPrograms not implemented")
+func (s *stubStore) CountMapSets(ctx context.Context) (int, error) {
+	panic("stubStore.CountMapSets not implemented")
+}
+
+func (s *stubStore) CountMapSetUsers(ctx context.Context, mapSetID kernel.ProgramID) (int, error) {
+	panic("stubStore.CountMapSetUsers not implemented")
+}
+
+func (s *stubStore) ListMapSetUsers(ctx context.Context, mapSetID kernel.ProgramID) ([]kernel.ProgramID, error) {
+	panic("stubStore.ListMapSetUsers not implemented")
+}
+
+func (s *stubStore) MapSetExists(ctx context.Context, mapSetID kernel.ProgramID) (bool, error) {
+	panic("stubStore.MapSetExists not implemented")
+}
+
+func (s *stubStore) DeleteMapSet(ctx context.Context, mapSetID kernel.ProgramID) error {
+	panic("stubStore.DeleteMapSet not implemented")
 }
 
 // LinkWriter

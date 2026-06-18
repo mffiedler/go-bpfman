@@ -44,8 +44,8 @@
 // handlers (List, Get, ListLinks, PullBytecode) run lockless and
 // rely on the store and kernel adapter for safe concurrent access.
 // Load also runs without a server-level lock; the manager
-// conditionally acquires the writer flock when an object shares
-// LIBBPF_PIN_BY_NAME maps (see Manager.Load). There is no
+// conditionally acquires the writer flock for explicit map-owner joins
+// and LIBBPF_PIN_BY_NAME maps (see Manager.Load). There is no
 // in-process mutex serialising manager access.
 //
 // # Startup Sequence

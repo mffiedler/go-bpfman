@@ -146,6 +146,9 @@ func (f *testFixture) AssertDatabaseEmpty() {
 	programs, err := f.Store.List(context.Background())
 	require.NoError(f.t, err, "failed to list programs from store")
 	assert.Empty(f.t, programs, "expected no programs in database")
+	mapSets, err := f.Store.CountMapSets(context.Background())
+	require.NoError(f.t, err, "failed to count map sets from store")
+	assert.Zero(f.t, mapSets, "expected no map sets in database")
 }
 
 // AssertCleanState verifies both kernel and database are empty.
@@ -195,7 +198,8 @@ func (f *testFixture) Load(ctx context.Context, spec bpfman.LoadSpec, opts manag
 		Type:       spec.ProgramType(),
 		AttachFunc: spec.AttachFunc(),
 	})
-	// Lockless after v2 (docs/PLAN-load-lockless.md): no flock acquisition.
+	// Manager.Load decides internally whether this load needs the
+	// writer lock. Explicit map-owner joins and PinByName loads take it.
 	result, err := f.Manager.Load(ctx, source, programs, opts)
 	if err != nil {
 		return bpfman.Program{}, err
@@ -236,7 +240,7 @@ func (f *testFixture) Detach(ctx context.Context, linkID bpfman.LinkID) error {
 
 // LoadDirect is a convenience wrapper that calls Manager.Load with
 // raw LoadSource and ProgramSpec arguments. Use this for tests that
-// bypass LoadSpec (e.g., auto-discovery tests). Lockless after v2.
+// bypass LoadSpec (e.g., auto-discovery tests).
 func (f *testFixture) LoadDirect(ctx context.Context, source manager.LoadSource, programs []manager.ProgramSpec, opts manager.LoadOpts) ([]bpfman.Program, error) {
 	f.t.Helper()
 	return f.Manager.Load(ctx, source, programs, opts)

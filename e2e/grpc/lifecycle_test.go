@@ -23,8 +23,9 @@ import (
 // changes; the sum must equal rpcsPerLifecycle, otherwise the
 // summary numbers stop adding up.
 //
-//   - loadsPerLifecycle: Load -- lockless at the daemon, queues
-//     only on SQLite's internal writer.
+//   - loadsPerLifecycle: Load -- no server-level lock; Manager.Load
+//     acquires the writer flock only for explicit map-owner joins and
+//     PinByName maps.
 //   - flockWritesPerLifecycle: Attach + Detach + Unload --
 //     serialised on the cross-process writer flock.
 //   - readsPerLifecycle: Get + GetLink + ListLinks +
@@ -136,7 +137,7 @@ func TestParallel_GRPC(t *testing.T) {
 			elapsed.Round(time.Millisecond), rate)
 		t.Logf("    flock writes (Attach/Detach/Unload):  %6d ops  ~%6.1f/s",
 			totalFlockWrites, flockRate)
-		t.Logf("    Loads (lockless, SQL writer):         %6d ops  ~%6.1f/s",
+		t.Logf("    Loads (manager-gated):                %6d ops  ~%6.1f/s",
 			totalLoads, loadRate)
 		t.Logf("    reads (Get/GetLink/ListLinks):        %6d ops  ~%6.1f/s",
 			totalReads, readRate)
@@ -148,6 +149,59 @@ func TestParallel_GRPC(t *testing.T) {
 			t.Parallel()
 			runParallelLifecycles(t, spec, counter)
 		})
+	}
+}
+
+func TestGRPC_MultiProgramLoadDoesNotFabricateMapOwnership(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("requires root (bpfman load)")
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	defer cancel()
+
+	loadResp, err := client.Load(ctx, &pb.LoadRequest{
+		Bytecode: &pb.BytecodeLocation{
+			Location: &pb.BytecodeLocation_File{File: testdataPath("multi_prog_kprobe_counter.bpf.o")},
+		},
+		Info: []*pb.LoadInfo{
+			{Name: "mkp_a", ProgramType: pb.BpfmanProgramType_KPROBE},
+			{Name: "mkp_b", ProgramType: pb.BpfmanProgramType_KPROBE},
+		},
+		Metadata: map[string]string{"test": "grpc_no_fabricated_map_owner"},
+	})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := len(loadResp.Programs); got != 2 {
+		t.Fatalf("Load: want 2 programs, got %d", got)
+	}
+
+	ids := make([]uint32, 0, len(loadResp.Programs))
+	for i, prog := range loadResp.Programs {
+		if prog.KernelInfo == nil {
+			t.Fatalf("Load program %d: missing KernelInfo", i)
+		}
+		if prog.Info.GetMapOwnerId() != 0 || prog.Info.MapOwnerId != nil {
+			t.Fatalf("Load program %d: fabricated map owner %d", i, prog.Info.GetMapOwnerId())
+		}
+		ids = append(ids, prog.KernelInfo.Id)
+	}
+
+	for _, id := range ids {
+		getResp, err := client.Get(ctx, &pb.GetRequest{Id: id})
+		if err != nil {
+			t.Fatalf("Get %d: %v", id, err)
+		}
+		if getResp.Info.GetMapOwnerId() != 0 || getResp.Info.MapOwnerId != nil {
+			t.Fatalf("Get program %d: persisted fabricated map owner %d", id, getResp.Info.GetMapOwnerId())
+		}
+	}
+
+	for _, id := range ids {
+		if _, err := client.Unload(ctx, &pb.UnloadRequest{Id: id}); err != nil {
+			t.Fatalf("Unload %d in load order: %v", id, err)
+		}
 	}
 }
 

@@ -11,9 +11,10 @@ func (s *sqliteStore) prepareProgramStatements(ctx context.Context) error {
 
 	const sqlGetProgram = `
 		SELECT m.program_name, m.program_type, m.object_path, m.pin_path, m.attach_func,
-		       m.global_data, m.map_owner_id, m.map_pin_path, m.image_source, m.owner, m.description,
+		       m.global_data, m.map_set_id, ms.pin_path, m.image_source, m.owner, m.description,
 		       m.license, m.gpl_compatible, m.created_at, m.updated_at, m.metadata_json
 		FROM managed_programs m
+		JOIN map_sets ms ON ms.id = m.map_set_id
 		WHERE m.program_id = ?`
 	if s.stmtGetProgram, err = s.db.PrepareContext(ctx, sqlGetProgram); err != nil {
 		return fmt.Errorf("prepare GetProgram: %w", err)
@@ -35,8 +36,8 @@ func (s *sqliteStore) prepareProgramStatements(ctx context.Context) error {
 	const sqlSaveProgram = `
 		INSERT INTO managed_programs
 		(program_id, program_name, program_type, object_path, pin_path, attach_func,
-		 global_data, map_owner_id, map_pin_path, image_source, owner, description, license, gpl_compatible, metadata_json, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 global_data, map_set_id, image_source, owner, description, license, gpl_compatible, metadata_json, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(program_id) DO UPDATE SET
 		  program_name = excluded.program_name,
 		  program_type = excluded.program_type,
@@ -44,8 +45,7 @@ func (s *sqliteStore) prepareProgramStatements(ctx context.Context) error {
 		  pin_path = excluded.pin_path,
 		  attach_func = excluded.attach_func,
 		  global_data = excluded.global_data,
-		  map_owner_id = excluded.map_owner_id,
-		  map_pin_path = excluded.map_pin_path,
+		  map_set_id = excluded.map_set_id,
 		  image_source = excluded.image_source,
 		  owner = excluded.owner,
 		  description = excluded.description,
@@ -64,16 +64,47 @@ func (s *sqliteStore) prepareProgramStatements(ctx context.Context) error {
 
 	const sqlListPrograms = `
 		SELECT m.program_id, m.program_name, m.program_type, m.object_path, m.pin_path, m.attach_func,
-		       m.global_data, m.map_owner_id, m.map_pin_path, m.image_source, m.owner, m.description,
+		       m.global_data, m.map_set_id, ms.pin_path, m.image_source, m.owner, m.description,
 		       m.license, m.gpl_compatible, m.created_at, m.updated_at, m.metadata_json
-		FROM managed_programs m`
+		FROM managed_programs m
+		JOIN map_sets ms ON ms.id = m.map_set_id`
 	if s.stmtListPrograms, err = s.db.PrepareContext(ctx, sqlListPrograms); err != nil {
 		return fmt.Errorf("prepare ListPrograms: %w", err)
 	}
 
-	const sqlCountDependentPrograms = "SELECT COUNT(*) FROM managed_programs WHERE map_owner_id = ?"
-	if s.stmtCountDependentPrograms, err = s.db.PrepareContext(ctx, sqlCountDependentPrograms); err != nil {
-		return fmt.Errorf("prepare CountDependentPrograms: %w", err)
+	const sqlProgramExists = "SELECT EXISTS(SELECT 1 FROM managed_programs WHERE program_id = ?)"
+	if s.stmtProgramExists, err = s.db.PrepareContext(ctx, sqlProgramExists); err != nil {
+		return fmt.Errorf("prepare ProgramExists: %w", err)
+	}
+
+	const sqlInsertMapSet = "INSERT INTO map_sets (id, pin_path, created_at) VALUES (?, ?, ?)"
+	if s.stmtInsertMapSet, err = s.db.PrepareContext(ctx, sqlInsertMapSet); err != nil {
+		return fmt.Errorf("prepare InsertMapSet: %w", err)
+	}
+
+	const sqlCountMapSets = "SELECT COUNT(*) FROM map_sets"
+	if s.stmtCountMapSets, err = s.db.PrepareContext(ctx, sqlCountMapSets); err != nil {
+		return fmt.Errorf("prepare CountMapSets: %w", err)
+	}
+
+	const sqlCountMapSetUsers = "SELECT COUNT(*) FROM managed_programs WHERE map_set_id = ?"
+	if s.stmtCountMapSetUsers, err = s.db.PrepareContext(ctx, sqlCountMapSetUsers); err != nil {
+		return fmt.Errorf("prepare CountMapSetUsers: %w", err)
+	}
+
+	const sqlListMapSetUsers = "SELECT program_id FROM managed_programs WHERE map_set_id = ? ORDER BY program_id"
+	if s.stmtListMapSetUsers, err = s.db.PrepareContext(ctx, sqlListMapSetUsers); err != nil {
+		return fmt.Errorf("prepare ListMapSetUsers: %w", err)
+	}
+
+	const sqlMapSetExists = "SELECT EXISTS(SELECT 1 FROM map_sets WHERE id = ?)"
+	if s.stmtMapSetExists, err = s.db.PrepareContext(ctx, sqlMapSetExists); err != nil {
+		return fmt.Errorf("prepare MapSetExists: %w", err)
+	}
+
+	const sqlDeleteMapSet = "DELETE FROM map_sets WHERE id = ?"
+	if s.stmtDeleteMapSet, err = s.db.PrepareContext(ctx, sqlDeleteMapSet); err != nil {
+		return fmt.Errorf("prepare DeleteMapSet: %w", err)
 	}
 
 	return nil

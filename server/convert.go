@@ -2,8 +2,10 @@ package server
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/platform"
 	pb "github.com/frobware/go-bpfman/server/pb"
 )
@@ -55,6 +57,14 @@ func bpfmanTypeToProto(pt bpfman.ProgramType) uint32 {
 	default:
 		return uint32(pb.BpfmanProgramType_XDP) // zero value
 	}
+}
+
+func programIDsToStrings(ids []kernel.ProgramID) []string {
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i] = strconv.FormatUint(uint64(id), 10)
+	}
+	return out
 }
 
 // protoToPullPolicy converts a proto image pull policy to managed type.

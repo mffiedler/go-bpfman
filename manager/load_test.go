@@ -2,16 +2,55 @@ package manager_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/kernel"
+	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/platform"
 )
+
+type failProgramSaveStore struct {
+	platform.Store
+	name string
+	err  error
+}
+
+func (s *failProgramSaveStore) RunInTransaction(ctx context.Context, name string, fn func(platform.Store) error) error {
+	return s.Store.RunInTransaction(ctx, name, func(tx platform.Store) error {
+		return fn(&failProgramSaveTx{Store: tx, name: s.name, err: s.err})
+	})
+}
+
+type failProgramSaveTx struct {
+	platform.Store
+	name string
+	err  error
+}
+
+func (s *failProgramSaveTx) Save(ctx context.Context, programID kernel.ProgramID, metadata bpfman.ProgramRecord) error {
+	if metadata.Meta.Name == s.name {
+		return s.err
+	}
+	return s.Store.Save(ctx, programID, metadata)
+}
+
+type recordDeleteMapSetStore struct {
+	platform.Store
+	deleted []kernel.ProgramID
+}
+
+func (s *recordDeleteMapSetStore) DeleteMapSet(ctx context.Context, mapSetID kernel.ProgramID) error {
+	s.deleted = append(s.deleted, mapSetID)
+	return s.Store.DeleteMapSet(ctx, mapSetID)
+}
 
 func newTestImageRef() *platform.ImageRef {
 	return &platform.ImageRef{
@@ -68,6 +107,462 @@ func TestLoad_AutoDiscover_MultiplePrograms(t *testing.T) {
 	assert.Equal(t, "prog_a", programs[0].Record.Meta.Name)
 	assert.Equal(t, "prog_b", programs[1].Record.Meta.Name)
 	assert.Equal(t, "prog_c", programs[2].Record.Meta.Name)
+}
+
+func TestLoad_MultiProgramDoesNotFabricateMapOwnership(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	discoverer := newFakeDiscoverer()
+	f := newTestFixtureWithDiscoverer(t, discoverer)
+	objPath := f.BytecodeFile("object.o")
+	discoverer.SetPrograms(objPath, []platform.DiscoveredProgram{
+		{Name: "prog_a", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
+		{Name: "prog_b", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
+		{Name: "prog_c", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
+	})
+
+	programs, err := f.LoadDirect(ctx, manager.LoadSource{FilePath: objPath}, nil, manager.LoadOpts{
+		ShareMaps: true,
+	})
+	require.NoError(t, err)
+	require.Len(t, programs, 3)
+
+	for _, prog := range programs {
+		assert.Nil(t, prog.Record.Handles.MapOwnerID,
+			"%s load response should not fabricate a map owner", prog.Record.Meta.Name)
+
+		got, err := f.Store.Get(ctx, prog.Record.ProgramID)
+		require.NoError(t, err)
+		assert.Nil(t, got.Handles.MapOwnerID,
+			"%s persisted record should not fabricate a map owner", prog.Record.Meta.Name)
+	}
+
+	for _, prog := range programs {
+		require.NoError(t, f.Unload(ctx, prog.Record.ProgramID),
+			"unload in load order should succeed for %s", prog.Record.Meta.Name)
+	}
+	f.AssertCleanState()
+}
+
+func TestFindLoadedProgramByMetadataUsesFirstMatchForMultiProgramLoad(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	discoverer := newFakeDiscoverer()
+	f := newTestFixtureWithDiscoverer(t, discoverer)
+	objPath := f.BytecodeFile("object.o")
+	discoverer.SetPrograms(objPath, []platform.DiscoveredProgram{
+		{Name: "prog_a", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
+		{Name: "prog_b", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
+	})
+
+	programs, err := f.LoadDirect(ctx,
+		manager.LoadSource{FilePath: objPath},
+		[]manager.ProgramSpec{
+			{Name: "prog_a", Type: bpfman.ProgramTypeXDP},
+			{Name: "prog_b", Type: bpfman.ProgramTypeXDP},
+		},
+		manager.LoadOpts{UserMetadata: map[string]string{
+			"bpfman.io/ProgramName": "shared-app",
+		}})
+	require.NoError(t, err)
+	require.Len(t, programs, 2)
+	require.Nil(t, programs[0].Record.Handles.MapOwnerID)
+	require.Nil(t, programs[1].Record.Handles.MapOwnerID)
+
+	record, id, err := f.Manager.FindLoadedProgramByMetadata(ctx, "bpfman.io/ProgramName", "shared-app")
+	require.NoError(t, err)
+	assert.Equal(t, programs[0].Record.ProgramID, id)
+	assert.Equal(t, programs[0].Record.ProgramID, record.ProgramID)
+	assert.Equal(t, programs[0].Record.Handles.MapsDir, record.Handles.MapsDir)
+}
+
+func TestLoad_MapSetSurvivesCreatorUnload(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	discoverer := newFakeDiscoverer()
+	f := newTestFixtureWithDiscoverer(t, discoverer)
+	objPath := f.BytecodeFile("object.o")
+	discoverer.SetPrograms(objPath, []platform.DiscoveredProgram{
+		{Name: "owner", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
+		{Name: "dependent", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
+	})
+
+	owner, err := f.LoadDirect(ctx,
+		manager.LoadSource{FilePath: objPath},
+		[]manager.ProgramSpec{{Name: "owner", Type: bpfman.ProgramTypeXDP}},
+		manager.LoadOpts{})
+	require.NoError(t, err)
+	require.Len(t, owner, 1)
+	ownerID := owner[0].Record.ProgramID
+	mapDir := owner[0].Record.Handles.MapsDir
+
+	dependent, err := f.LoadDirect(ctx,
+		manager.LoadSource{FilePath: objPath},
+		[]manager.ProgramSpec{{
+			Name:       "dependent",
+			Type:       bpfman.ProgramTypeXDP,
+			MapOwnerID: ownerID,
+		}},
+		manager.LoadOpts{})
+	require.NoError(t, err)
+	require.Len(t, dependent, 1)
+	dependentID := dependent[0].Record.ProgramID
+	require.NotNil(t, dependent[0].Record.Handles.MapOwnerID)
+	assert.Equal(t, ownerID, *dependent[0].Record.Handles.MapOwnerID)
+	assert.Equal(t, mapDir, dependent[0].Record.Handles.MapsDir)
+
+	require.NoError(t, f.Unload(ctx, ownerID))
+	_, err = f.Store.Get(ctx, ownerID)
+	assert.ErrorIs(t, err, platform.ErrRecordNotFound)
+
+	gotDependent, err := f.Store.Get(ctx, dependentID)
+	require.NoError(t, err)
+	require.NotNil(t, gotDependent.Handles.MapOwnerID)
+	assert.Equal(t, ownerID, *gotDependent.Handles.MapOwnerID)
+	assert.Equal(t, mapDir, gotDependent.Handles.MapsDir)
+
+	require.NoError(t, f.Unload(ctx, dependentID))
+	f.AssertCleanState()
+}
+
+func TestLoad_MapUsedByIsDerivedByManager(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	discoverer := newFakeDiscoverer()
+	f := newTestFixtureWithDiscoverer(t, discoverer)
+	objPath := f.BytecodeFile("object.o")
+	discoverer.SetPrograms(objPath, []platform.DiscoveredProgram{
+		{Name: "owner", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
+		{Name: "dependent", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
+	})
+
+	owner, err := f.LoadDirect(ctx,
+		manager.LoadSource{FilePath: objPath},
+		[]manager.ProgramSpec{{Name: "owner", Type: bpfman.ProgramTypeXDP}},
+		manager.LoadOpts{})
+	require.NoError(t, err)
+	require.Len(t, owner, 1)
+	ownerID := owner[0].Record.ProgramID
+	assert.Equal(t, []kernel.ProgramID{ownerID}, owner[0].Status.MapUsedBy)
+
+	dependent, err := f.LoadDirect(ctx,
+		manager.LoadSource{FilePath: objPath},
+		[]manager.ProgramSpec{{
+			Name:       "dependent",
+			Type:       bpfman.ProgramTypeXDP,
+			MapOwnerID: ownerID,
+		}},
+		manager.LoadOpts{})
+	require.NoError(t, err)
+	require.Len(t, dependent, 1)
+	dependentID := dependent[0].Record.ProgramID
+	wantUsers := []kernel.ProgramID{ownerID, dependentID}
+	assert.Equal(t, wantUsers, dependent[0].Status.MapUsedBy)
+
+	gotOwner, err := f.Manager.Get(ctx, ownerID)
+	require.NoError(t, err)
+	assert.Equal(t, wantUsers, gotOwner.Status.MapUsedBy)
+
+	listed, err := f.Manager.ListPrograms(ctx)
+	require.NoError(t, err)
+	require.Len(t, listed, 2)
+	assert.Equal(t, wantUsers, listed[0].Status.MapUsedBy)
+	assert.Equal(t, wantUsers, listed[1].Status.MapUsedBy)
+}
+
+func TestLoad_MapSetGCDeletesSetOnlyAfterLastUser(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	discoverer := newFakeDiscoverer()
+	var recorder *recordDeleteMapSetStore
+	f := newTestFixtureWithOptionsAndStore(t, discoverer, nil, func(store platform.Store) platform.Store {
+		recorder = &recordDeleteMapSetStore{Store: store}
+		return recorder
+	})
+	objPath := f.BytecodeFile("object.o")
+	discoverer.SetPrograms(objPath, []platform.DiscoveredProgram{
+		{Name: "owner", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
+		{Name: "dependent", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
+	})
+
+	owner, err := f.LoadDirect(ctx,
+		manager.LoadSource{FilePath: objPath},
+		[]manager.ProgramSpec{{Name: "owner", Type: bpfman.ProgramTypeXDP}},
+		manager.LoadOpts{})
+	require.NoError(t, err)
+	ownerID := owner[0].Record.ProgramID
+
+	dependent, err := f.LoadDirect(ctx,
+		manager.LoadSource{FilePath: objPath},
+		[]manager.ProgramSpec{{
+			Name:       "dependent",
+			Type:       bpfman.ProgramTypeXDP,
+			MapOwnerID: ownerID,
+		}},
+		manager.LoadOpts{})
+	require.NoError(t, err)
+	dependentID := dependent[0].Record.ProgramID
+
+	require.NoError(t, f.Unload(ctx, ownerID))
+	assert.Empty(t, recorder.deleted, "owner-first unload must not delete a map set with users")
+
+	require.NoError(t, f.Unload(ctx, dependentID))
+	assert.Equal(t, []kernel.ProgramID{ownerID}, recorder.deleted,
+		"last user unload must delete the surviving map set")
+}
+
+func TestLoad_MapSetSurvivesDependentUnloadWhileCreatorLives(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	discoverer := newFakeDiscoverer()
+	f := newTestFixtureWithDiscoverer(t, discoverer)
+	objPath := f.BytecodeFile("object.o")
+	discoverer.SetPrograms(objPath, []platform.DiscoveredProgram{
+		{Name: "owner", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
+		{Name: "dependent", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
+	})
+
+	owner, err := f.LoadDirect(ctx,
+		manager.LoadSource{FilePath: objPath},
+		[]manager.ProgramSpec{{Name: "owner", Type: bpfman.ProgramTypeXDP}},
+		manager.LoadOpts{})
+	require.NoError(t, err)
+	require.Len(t, owner, 1)
+	ownerID := owner[0].Record.ProgramID
+
+	dependent, err := f.LoadDirect(ctx,
+		manager.LoadSource{FilePath: objPath},
+		[]manager.ProgramSpec{{
+			Name:       "dependent",
+			Type:       bpfman.ProgramTypeXDP,
+			MapOwnerID: ownerID,
+		}},
+		manager.LoadOpts{})
+	require.NoError(t, err)
+	require.Len(t, dependent, 1)
+	dependentID := dependent[0].Record.ProgramID
+
+	require.NoError(t, f.Unload(ctx, dependentID))
+	gotOwner, err := f.Store.Get(ctx, ownerID)
+	require.NoError(t, err)
+	assert.Nil(t, gotOwner.Handles.MapOwnerID)
+	assert.Equal(t, owner[0].Record.Handles.MapsDir, gotOwner.Handles.MapsDir)
+
+	require.NoError(t, f.Unload(ctx, ownerID))
+	f.AssertCleanState()
+}
+
+func TestLoad_ReusedProgramIDCollidingWithSurvivingMapSetFailsClosed(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	discoverer := newFakeDiscoverer()
+	f := newTestFixtureWithDiscoverer(t, discoverer)
+	objPath := f.BytecodeFile("object.o")
+	discoverer.SetPrograms(objPath, []platform.DiscoveredProgram{
+		{Name: "owner", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
+		{Name: "dependent", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
+		{Name: "reused", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
+	})
+
+	owner, err := f.LoadDirect(ctx,
+		manager.LoadSource{FilePath: objPath},
+		[]manager.ProgramSpec{{Name: "owner", Type: bpfman.ProgramTypeXDP}},
+		manager.LoadOpts{})
+	require.NoError(t, err)
+	require.Len(t, owner, 1)
+	ownerID := owner[0].Record.ProgramID
+	mapDir := owner[0].Record.Handles.MapsDir
+
+	dependent, err := f.LoadDirect(ctx,
+		manager.LoadSource{FilePath: objPath},
+		[]manager.ProgramSpec{{
+			Name:       "dependent",
+			Type:       bpfman.ProgramTypeXDP,
+			MapOwnerID: ownerID,
+		}},
+		manager.LoadOpts{})
+	require.NoError(t, err)
+	require.Len(t, dependent, 1)
+	dependentID := dependent[0].Record.ProgramID
+
+	require.NoError(t, f.Unload(ctx, ownerID))
+	_, err = f.Store.Get(ctx, ownerID)
+	require.ErrorIs(t, err, platform.ErrRecordNotFound)
+
+	// Force the next fake kernel allocation to reuse the old owner id.
+	// fakeKernel increments before returning, so store ownerID-1.
+	f.Kernel.nextID.Store(uint32(ownerID - 1))
+
+	_, err = f.LoadDirect(ctx,
+		manager.LoadSource{FilePath: objPath},
+		[]manager.ProgramSpec{{Name: "reused", Type: bpfman.ProgramTypeXDP}},
+		manager.LoadOpts{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "create map set")
+
+	_, err = f.Store.Get(ctx, ownerID)
+	assert.ErrorIs(t, err, platform.ErrRecordNotFound, "reused program must not be persisted")
+	gotDependent, err := f.Store.Get(ctx, dependentID)
+	require.NoError(t, err)
+	require.NotNil(t, gotDependent.Handles.MapOwnerID)
+	assert.Equal(t, ownerID, *gotDependent.Handles.MapOwnerID)
+	assert.Equal(t, mapDir, gotDependent.Handles.MapsDir)
+	assert.Equal(t, 1, f.Kernel.ProgramCount(), "failed reused load must be rolled back")
+}
+
+func TestLoad_MapOwnerIDMustNameExistingMapSet(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	discoverer := newFakeDiscoverer()
+	f := newTestFixtureWithDiscoverer(t, discoverer)
+	objPath := f.BytecodeFile("object.o")
+	discoverer.SetPrograms(objPath, []platform.DiscoveredProgram{
+		{Name: "owner", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
+		{Name: "dependent", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
+		{Name: "candidate", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
+	})
+
+	_, err := f.LoadDirect(ctx,
+		manager.LoadSource{FilePath: objPath},
+		[]manager.ProgramSpec{{
+			Name:       "candidate",
+			Type:       bpfman.ProgramTypeXDP,
+			MapOwnerID: 429496729,
+		}},
+		manager.LoadOpts{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "map_owner_id does not exists")
+	assert.Equal(t, 0, f.Kernel.ProgramCount(), "invalid owner must fail before kernel load")
+
+	owner, err := f.LoadDirect(ctx,
+		manager.LoadSource{FilePath: objPath},
+		[]manager.ProgramSpec{{Name: "owner", Type: bpfman.ProgramTypeXDP}},
+		manager.LoadOpts{})
+	require.NoError(t, err)
+	ownerID := owner[0].Record.ProgramID
+
+	dependent, err := f.LoadDirect(ctx,
+		manager.LoadSource{FilePath: objPath},
+		[]manager.ProgramSpec{{
+			Name:       "dependent",
+			Type:       bpfman.ProgramTypeXDP,
+			MapOwnerID: ownerID,
+		}},
+		manager.LoadOpts{})
+	require.NoError(t, err)
+	dependentID := dependent[0].Record.ProgramID
+
+	_, err = f.LoadDirect(ctx,
+		manager.LoadSource{FilePath: objPath},
+		[]manager.ProgramSpec{{
+			Name:       "candidate",
+			Type:       bpfman.ProgramTypeXDP,
+			MapOwnerID: dependentID,
+		}},
+		manager.LoadOpts{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "map_owner_id does not exists")
+	assert.Equal(t, 2, f.Kernel.ProgramCount(), "dependent-as-owner must fail before kernel load")
+}
+
+func TestLoad_ExplicitMapOwnerReusesHeldWriterLock(t *testing.T) {
+	ctx := context.Background()
+	discoverer := newFakeDiscoverer()
+	f := newTestFixtureWithDiscoverer(t, discoverer)
+	objPath := f.BytecodeFile("object.o")
+	discoverer.SetPrograms(objPath, []platform.DiscoveredProgram{
+		{Name: "owner", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
+		{Name: "dependent", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
+	})
+
+	owner, err := f.LoadDirect(ctx,
+		manager.LoadSource{FilePath: objPath},
+		[]manager.ProgramSpec{{Name: "owner", Type: bpfman.ProgramTypeXDP}},
+		manager.LoadOpts{})
+	require.NoError(t, err)
+	require.Len(t, owner, 1)
+	ownerID := owner[0].Record.ProgramID
+
+	var dependentID kernel.ProgramID
+	err = lock.Run(ctx, f.Layout.LockPath(), func(lockedCtx context.Context, _ lock.WriterScope) error {
+		boundedCtx, cancel := context.WithTimeout(lockedCtx, time.Second)
+		defer cancel()
+
+		dependent, loadErr := f.LoadDirect(boundedCtx,
+			manager.LoadSource{FilePath: objPath},
+			[]manager.ProgramSpec{{
+				Name:       "dependent",
+				Type:       bpfman.ProgramTypeXDP,
+				MapOwnerID: ownerID,
+			}},
+			manager.LoadOpts{})
+		if loadErr != nil {
+			return loadErr
+		}
+		dependentID = dependent[0].Record.ProgramID
+		return nil
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 2, f.Kernel.ProgramCount(), "explicit-owner load should run inside the held writer lock")
+
+	programs, err := f.Store.List(ctx)
+	require.NoError(t, err)
+	assert.Len(t, programs, 2, "explicit-owner load should persist the dependent")
+
+	require.NoError(t, f.Unload(ctx, ownerID))
+	require.NoError(t, f.Unload(ctx, dependentID))
+	f.AssertCleanState()
+}
+
+func TestLoad_RollbackExplicitMapOwnerDoesNotRemoveOwnerMapSet(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	saveErr := errors.New("simulated dependent save failure")
+	discoverer := newFakeDiscoverer()
+	f := newTestFixtureWithOptionsAndStore(t, discoverer, nil, func(store platform.Store) platform.Store {
+		return &failProgramSaveStore{Store: store, name: "dependent", err: saveErr}
+	})
+	objPath := f.BytecodeFile("object.o")
+	discoverer.SetPrograms(objPath, []platform.DiscoveredProgram{
+		{Name: "owner", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
+		{Name: "dependent", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
+	})
+
+	owner, err := f.LoadDirect(ctx,
+		manager.LoadSource{FilePath: objPath},
+		[]manager.ProgramSpec{{Name: "owner", Type: bpfman.ProgramTypeXDP}},
+		manager.LoadOpts{})
+	require.NoError(t, err)
+	require.Len(t, owner, 1)
+	ownerID := owner[0].Record.ProgramID
+	ownerMapDir := owner[0].Record.Handles.MapsDir.String()
+
+	f.Kernel.FailOnUnload(ownerMapDir, errors.New("owner map set must not be removed by dependent rollback"))
+
+	_, err = f.LoadDirect(ctx,
+		manager.LoadSource{FilePath: objPath},
+		[]manager.ProgramSpec{{
+			Name:       "dependent",
+			Type:       bpfman.ProgramTypeXDP,
+			MapOwnerID: ownerID,
+		}},
+		manager.LoadOpts{})
+	require.ErrorIs(t, err, saveErr)
+
+	_, err = f.Store.Get(ctx, ownerID)
+	require.NoError(t, err, "owner record must survive dependent rollback")
+	assert.Equal(t, 0, f.Kernel.UnloadFailureCount(ownerMapDir),
+		"dependent rollback must not attempt to remove the owner's map set")
+	assert.Equal(t, 1, f.Kernel.ProgramCount(), "only the owner should remain loaded")
 }
 
 // TestLoad_ExplicitPrograms_PreservesOrder asserts the contract that

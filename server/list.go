@@ -49,6 +49,7 @@ func (s *Server) List(ctx context.Context, req *pb.ListRequest) (*pb.ListRespons
 			Metadata:   prog.Record.Meta.Metadata,
 			GlobalData: prog.Record.Load.GlobalData(),
 			MapPinPath: prog.Record.Handles.MapsDir.String(),
+			MapUsedBy:  programIDsToStrings(prog.Status.MapUsedBy),
 		}
 		if prog.Record.Handles.MapOwnerID != nil {
 			v := uint32(*prog.Record.Handles.MapOwnerID)
@@ -110,6 +111,7 @@ func (s *Server) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, 
 		Metadata:   prog.Record.Meta.Metadata,
 		GlobalData: prog.Record.Load.GlobalData(),
 		MapPinPath: prog.Record.Handles.MapsDir.String(),
+		MapUsedBy:  programIDsToStrings(prog.Status.MapUsedBy),
 		Links:      linkIDs,
 	}
 	if prog.Record.Handles.MapOwnerID != nil {

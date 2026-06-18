@@ -13,7 +13,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/platform"
 )
 
@@ -143,12 +142,6 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 				"error", err,
 			)
 			return nil, status.Errorf(codes.NotFound, "program %q not found", programName)
-		case errors.Is(err, manager.ErrMultipleProgramsFound), errors.Is(err, manager.ErrMultipleMapOwners):
-			d.logger.Error("failed to find program",
-				"programName", programName,
-				"error", err,
-			)
-			return nil, status.Errorf(codes.FailedPrecondition, "program %q: %v", programName, err)
 		default:
 			d.logger.Error("failed to find program",
 				"programName", programName,

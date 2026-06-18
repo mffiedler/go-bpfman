@@ -54,13 +54,18 @@ import (
 // the steps and stating the contract here makes the intended
 // semantics reviewable and brings program unload into line with the
 // dispatcher teardown lifecycle.
-func (m *Manager) unload(ctx context.Context, programID kernel.ProgramID, programName string, links []bpfman.LinkRecord, persisted bool) error {
-	progPinPath := m.rt.BPFFS().ProgPinPath(programID)
-	mapsDir := m.rt.BPFFS().MapPinDir(programID)
+func (m *Manager) unload(ctx context.Context, record bpfman.ProgramRecord, links []bpfman.LinkRecord, persisted bool) error {
+	programID := record.ProgramID
+	progPinPath := record.Handles.PinPath
+	mapsDir := record.Handles.MapsDir
+	mapSetID := programID
+	if record.Handles.MapOwnerID != nil {
+		mapSetID = *record.Handles.MapOwnerID
+	}
 
 	m.logger.DebugContext(ctx, "unloading program",
 		"program_id", programID,
-		"name", programName,
+		"name", record.Meta.Name,
 		"links", len(links),
 		"persisted", persisted)
 
@@ -80,12 +85,6 @@ func (m *Manager) unload(ctx context.Context, programID kernel.ProgramID, progra
 	// transient bpffs or store-cleanup failure cannot turn a
 	// completed unload into a false-negative on the caller's retry.
 	var errs []error
-	if err := m.removeProgramMapsPins(ctx, mapsDir); err != nil {
-		m.logger.WarnContext(ctx, "failed to remove orphaned map pins",
-			"program_id", programID,
-			"path", mapsDir,
-			"error", err)
-	}
 	if err := m.cleanupSharedMapPins(ctx, programID); err != nil {
 		m.logger.WarnContext(ctx, "failed to cleanup shared map pins",
 			"program_id", programID,
@@ -94,6 +93,19 @@ func (m *Manager) unload(ctx context.Context, programID kernel.ProgramID, progra
 	if persisted {
 		if err := m.deleteProgramRecord(ctx, programID); err != nil {
 			errs = append(errs, fmt.Errorf("delete program record: %w", err))
+		} else if err := m.gcMapSetIfUnused(ctx, mapSetID, mapsDir); err != nil {
+			m.logger.WarnContext(ctx, "failed to garbage-collect map set",
+				"program_id", programID,
+				"map_set_id", mapSetID,
+				"path", mapsDir,
+				"error", err)
+		}
+	} else if mapSetID == programID && m.shouldRemoveNonPersistedSelfOwnedMapPins(ctx, mapSetID) {
+		if err := m.removeProgramMapsPins(ctx, mapsDir); err != nil {
+			m.logger.WarnContext(ctx, "failed to remove orphaned map pins",
+				"program_id", programID,
+				"path", mapsDir,
+				"error", err)
 		}
 	}
 	if err := m.removeProgramBytecodeDir(programID); err != nil {
@@ -117,6 +129,44 @@ func (m *Manager) unload(ctx context.Context, programID kernel.ProgramID, progra
 	}
 	m.cleanupEmptyDispatchers(ctx, dispatcherCleanup)
 	return errors.Join(errs...)
+}
+
+func (m *Manager) shouldRemoveNonPersistedSelfOwnedMapPins(ctx context.Context, mapSetID kernel.ProgramID) bool {
+	exists, err := m.store.MapSetExists(ctx, mapSetID)
+	if err != nil {
+		m.logger.WarnContext(ctx, "failed to check map set before rollback pin cleanup",
+			"map_set_id", mapSetID,
+			"error", err)
+		return false
+	}
+	if exists {
+		m.logger.DebugContext(ctx, "skip rollback map-pin cleanup for pre-existing map set",
+			"map_set_id", mapSetID)
+		return false
+	}
+	return true
+}
+
+func (m *Manager) gcMapSetIfUnused(ctx context.Context, mapSetID kernel.ProgramID, mapsDir bpfman.MapDir) error {
+	// Mutating callers hold the writer lock, so this derived count
+	// cannot race another unload/load in-process. A crash after the
+	// program row is deleted but before this GC completes can leave
+	// orphaned pins or a map_sets row; coherency repair owns that
+	// residue class just like other post-detach hygiene.
+	users, err := m.store.CountMapSetUsers(ctx, mapSetID)
+	if err != nil {
+		return fmt.Errorf("count map set users for %d: %w", mapSetID, err)
+	}
+	if users > 0 {
+		return nil
+	}
+	if err := m.removeProgramMapsPins(ctx, mapsDir); err != nil {
+		return fmt.Errorf("remove map set pins %s: %w", mapsDir, err)
+	}
+	if err := m.store.DeleteMapSet(ctx, mapSetID); err != nil {
+		return fmt.Errorf("delete map set %d: %w", mapSetID, err)
+	}
+	return nil
 }
 
 // detachAllLinks performs BPF_LINK_DETACH on each persisted link in
@@ -241,18 +291,6 @@ func (m *Manager) Unload(ctx context.Context, writeLock lock.WriterScope, progra
 		return err
 	}
 
-	programName := progSpec.Meta.Name
-
-	// FETCH: Check for dependent programs (map sharing)
-	// Programs that share maps with this program must be unloaded first.
-	depCount, err := m.store.CountDependentPrograms(ctx, programID)
-	if err != nil {
-		return fmt.Errorf("check dependent programs for %d: %w", programID, err)
-	}
-	if depCount > 0 {
-		return fmt.Errorf("cannot unload program %d: %d dependent program(s) share its maps; unload dependents first", programID, depCount)
-	}
-
 	links, err := m.store.ListLinksByProgram(ctx, programID)
 	if err != nil {
 		return fmt.Errorf("list links for program %d: %w", programID, err)
@@ -260,7 +298,7 @@ func (m *Manager) Unload(ctx context.Context, writeLock lock.WriterScope, progra
 
 	m.logger.InfoContext(ctx, "unloading program", "program_id", programID, "links", len(links))
 
-	if err := m.unload(ctx, programID, programName, links, true); err != nil {
+	if err := m.unload(ctx, progSpec, links, true); err != nil {
 		return err
 	}
 

@@ -109,7 +109,7 @@ type LoadOpts struct {
 	UserMetadata map[string]string
 	GlobalData   map[string][]byte // batch-level, overridden per-program
 	Owner        string
-	ShareMaps    bool // first program owns maps, subsequent auto-share
+	ShareMaps    bool // deprecated no-op; use ProgramSpec.MapOwnerID explicitly
 }
 
 // LoadRequest carries an already parsed load request across a
@@ -128,7 +128,7 @@ type LoadRequestOpts struct {
 	Application  string
 	MapOwnerID   kernel.ProgramID
 	Owner        string
-	ShareMaps    bool
+	ShareMaps    bool // deprecated no-op; use MapOwnerID explicitly
 }
 
 // NewLoadRequest applies manager-owned load defaults and returns a
@@ -183,9 +183,9 @@ func (m *Manager) LoadFromRequest(ctx context.Context, req LoadRequest) ([]bpfma
 // If programs is non-nil, only those programs are loaded after
 // validation.
 //
-// When ShareMaps is true, the first program owns maps and subsequent
-// programs automatically share via MapOwnerID, unless a program
-// specifies an explicit MapOwnerID.
+// Map sharing is explicit: programs share maps only when their
+// ProgramSpec names a MapOwnerID. LoadOpts.ShareMaps is retained as a
+// no-op compatibility field while old callers are removed.
 //
 // On failure, all previously loaded programs are cleaned up by
 // calling Unload for each.
@@ -207,28 +207,20 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 		return nil, fmt.Errorf("build load specs: %w", err)
 	}
 
-	// Reap store records for programs whose kernel object is gone
-	// before loading the new generation. Such rows are left behind by
-	// a prior generation that died without an Unload (daemon restart,
-	// external unload, or a ClusterBpfApplication deleted and
-	// recreated) and they poison later TCX attaches with ENOENT (see
-	// reapDeadProgramRecords). Best-effort: a reap failure must not
-	// block the load.
-	if err := m.reapDeadProgramRecords(ctx); err != nil {
-		m.logger.WarnContext(ctx, "reaping dead program records before load failed (continuing)", "error", err)
-	}
-
 	// Decide whether the load needs the cross-process writer
-	// lock. Loads of objects without LIBBPF_PIN_BY_NAME maps touch
-	// no shared bpffs state and remain lockless. Loads of objects
-	// with pinByName maps share a name-derived bpffs pin path
-	// across every loader, so we serialise the per-program loop +
-	// Phase B against other mutations (especially unloads of the
-	// same shared map) under the writer flock. The image-pull
-	// step above already ran lockless; the lock only wraps the
-	// post-source work.
+	// lock. Loads with an explicit map owner join a first-class map
+	// set that a concurrent unload may be garbage-collecting, so the
+	// owner validation and load body must run under the writer flock.
+	// Loads with LIBBPF_PIN_BY_NAME maps also touch shared
+	// name-derived bpffs pins, so we serialise them against other
+	// mutations. The image-pull step above already ran lockless; the
+	// lock wraps the post-source work.
 	needsLock := false
 	for _, spec := range specs {
+		if spec.MapOwnerID() != 0 {
+			needsLock = true
+			break
+		}
 		has, err := m.kernel.HasPinByName(spec)
 		if err != nil {
 			return nil, fmt.Errorf("pre-check pinByName: %w", err)
@@ -239,21 +231,53 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 		}
 	}
 
-	body := func() ([]bpfman.Program, error) {
-		return m.loadBody(ctx, specs, opts)
+	body := func(runCtx context.Context) ([]bpfman.Program, error) {
+		if err := m.validateExplicitMapOwners(runCtx, specs); err != nil {
+			return nil, err
+		}
+
+		// Reap store records for programs whose kernel object is gone
+		// before loading the new generation. Such rows are left behind by
+		// a prior generation that died without an Unload (daemon restart,
+		// external unload, or a ClusterBpfApplication deleted and
+		// recreated) and they poison later TCX attaches with ENOENT (see
+		// reapDeadProgramRecords). Best-effort: a reap failure must not
+		// block the load.
+		if err := m.reapDeadProgramRecords(runCtx); err != nil {
+			m.logger.WarnContext(runCtx, "reaping dead program records before load failed (continuing)", "error", err)
+		}
+
+		return m.loadBody(runCtx, specs, opts)
 	}
 
 	if !needsLock {
-		return body()
+		return body(ctx)
 	}
 
 	var loaded []bpfman.Program
-	runErr := lock.Run(ctx, m.rt.Layout().LockPath(), func(_ context.Context, _ lock.WriterScope) error {
+	runErr := lock.Run(ctx, m.rt.Layout().LockPath(), func(runCtx context.Context, _ lock.WriterScope) error {
 		var lerr error
-		loaded, lerr = body()
+		loaded, lerr = body(runCtx)
 		return lerr
 	})
 	return loaded, runErr
+}
+
+func (m *Manager) validateExplicitMapOwners(ctx context.Context, specs []bpfman.LoadSpec) error {
+	for _, spec := range specs {
+		mapOwnerID := spec.MapOwnerID()
+		if mapOwnerID == 0 {
+			continue
+		}
+		ok, err := m.store.MapSetExists(ctx, mapOwnerID)
+		if err != nil {
+			return fmt.Errorf("validate map_owner_id %d: %w", mapOwnerID, err)
+		}
+		if !ok {
+			return fmt.Errorf("map_owner_id does not exists")
+		}
+	}
+	return nil
 }
 
 func normalizeLoadProgramSpecs(programs []ProgramSpec, opts LoadOpts) []ProgramSpec {
@@ -306,12 +330,12 @@ func actualTypeMetadataKey(programName string) string {
 // destructive action, because a failed kernel enumeration cannot
 // distinguish "dead" from "could not inspect".
 func (m *Manager) reapDeadProgramRecords(ctx context.Context) error {
-	return lock.Run(ctx, m.rt.Layout().LockPath(), func(_ context.Context, _ lock.WriterScope) error {
-		snap, err := m.observeDeadProgramReapSnapshot(ctx)
+	return lock.Run(ctx, m.rt.Layout().LockPath(), func(runCtx context.Context, _ lock.WriterScope) error {
+		snap, err := m.observeDeadProgramReapSnapshot(runCtx)
 		if err != nil {
 			return err
 		}
-		return m.executeReapPlan(ctx, planReap(snap))
+		return m.executeReapPlan(runCtx, planReap(snap))
 	})
 }
 
@@ -459,11 +483,11 @@ func (m *Manager) loadBody(ctx context.Context, specs []bpfman.LoadSpec, opts Lo
 		Owner:        opts.Owner,
 	}
 
-	// Phase A: per-program kernel + filesystem work. Lockless;
-	// see docs/PLAN-load-lockless.md. The kernel allocates each
-	// program a unique id, the bytecode directory is namespaced
-	// by that id, and no shared state is mutated -- so two
-	// concurrent loads cannot collide.
+	// Phase A: per-program kernel + filesystem work. The caller
+	// already decided whether this batch needs the writer flock.
+	// Lockless batches rely on unique kernel program ids and
+	// per-id bytecode directories; explicit-owner and PinByName
+	// batches arrive here with the flock held.
 	type loadedItem struct {
 		out    bpfman.LoadOutput
 		spec   bpfman.LoadSpec
@@ -482,18 +506,14 @@ func (m *Manager) loadBody(ctx context.Context, specs []bpfman.LoadSpec, opts Lo
 	cleanupLoaded := func() {
 		for j := len(loaded) - 1; j >= 0; j-- {
 			r := loaded[j].Record
-			if uerr := m.unload(ctx, r.ProgramID, r.Meta.Name, nil, false); uerr != nil {
+			if uerr := m.unload(ctx, r, nil, false); uerr != nil {
 				m.logger.Error("failed to unload during batch rollback",
 					"program_id", r.ProgramID, "error", uerr)
 			}
 		}
 	}
 
-	for i, spec := range specs {
-		if opts.ShareMaps && i > 0 && spec.MapOwnerID() == 0 {
-			spec = spec.WithMapOwnerID(loaded[0].Record.ProgramID)
-		}
-
+	for _, spec := range specs {
 		// Pin the timestamp to UTC and second precision so the
 		// in-memory record matches what the sqlite store
 		// persists (the Save path formats UTC at time.RFC3339).
@@ -543,12 +563,11 @@ func (m *Manager) loadBody(ctx context.Context, specs []bpfman.LoadSpec, opts Lo
 	}
 
 	// Phase B: single sqlite transaction commits the whole batch.
-	// No flock: load is lockless by construction
-	// (docs/PLAN-load-lockless.md). The kernel allocates each
-	// program a unique id, the bytecode dir is namespaced by that
-	// id, and the primary-key constraint on `programs` makes the
-	// commit non-conflicting across concurrent loads. Sqlite's
-	// own writer mutex serialises the commits themselves.
+	// The caller decides whether this batch needs the writer flock.
+	// Lockless batches rely on unique kernel program ids, per-id
+	// bytecode directories, and sqlite's writer mutex. Explicit
+	// map-owner and PinByName batches arrive here with the flock
+	// already held.
 	//
 	// We call platform.Store methods directly rather than going
 	// through the executor because the executor's SaveProgram and
@@ -574,6 +593,12 @@ func (m *Manager) loadBody(ctx context.Context, specs []bpfman.LoadSpec, opts Lo
 	}); err != nil {
 		cleanupLoaded()
 		return nil, err
+	}
+
+	for i := range loaded {
+		if err := m.enrichMapSetUsers(ctx, &loaded[i]); err != nil {
+			return nil, fmt.Errorf("list map users for program %d: %w", loaded[i].Record.ProgramID, err)
+		}
 	}
 
 	return loaded, nil

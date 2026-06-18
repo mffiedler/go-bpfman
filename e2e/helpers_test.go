@@ -294,9 +294,9 @@ func callerOp() string {
 	return name
 }
 
-// LoadImage loads BPF programs from an OCI image. Lockless after v2
-// (docs/PLAN-load-lockless.md): Manager.Load does not require the
-// writer lock.
+// LoadImage loads BPF programs from an OCI image. Manager.Load
+// conditionally acquires the writer lock for explicit map-owner joins
+// and PinByName loads.
 func (e *TestEnv) LoadImage(ctx context.Context, ref platform.ImageRef, programs []manager.ProgramSpec, opts manager.LoadOpts) ([]bpfman.Program, error) {
 	result, err := e.Manager.Load(ctx, manager.LoadSource{
 		Image: &ref,
@@ -314,8 +314,8 @@ func (e *TestEnv) LoadImage(ctx context.Context, ref platform.ImageRef, programs
 // NewTestEnv. This lets call sites keep their historical
 // "testdata/bpf/foo.bpf.o" form regardless of cwd.
 //
-// Lockless after v2 (docs/PLAN-load-lockless.md): Manager.Load
-// does not require the writer lock.
+// Manager.Load conditionally acquires the writer lock for explicit
+// map-owner joins and PinByName loads.
 func (e *TestEnv) LoadFile(ctx context.Context, filePath string, programs []manager.ProgramSpec, opts manager.LoadOpts) ([]bpfman.Program, error) {
 	if !filepath.IsAbs(filePath) {
 		filePath = filepath.Join(e.baseDir, filePath)

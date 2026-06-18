@@ -121,6 +121,12 @@
 --   position BETWEEN 0 AND 9), boolean columns (IN (0, 1)), and
 --   JSON validation (json_valid).
 
+CREATE TABLE IF NOT EXISTS map_sets (
+    id         INTEGER PRIMARY KEY,
+    pin_path   TEXT NOT NULL,
+    created_at TEXT NOT NULL
+) STRICT;
+
 -- Programs table for managed BPF programs
 -- A row exists only after successful load - no reservation/loading states.
 -- Schema is normalised: individual columns for queryable fields, JSON only for opaque data.
@@ -136,8 +142,7 @@ CREATE TABLE IF NOT EXISTS managed_programs (
     attach_func TEXT,
     global_data TEXT CHECK (global_data IS NULL OR json_valid(global_data)),
                                      -- JSON map<string, bytes>, opaque
-    map_owner_id INTEGER,        -- Self-reference: program that owns shared maps
-    map_pin_path TEXT,           -- Directory where maps are pinned
+    map_set_id INTEGER NOT NULL,
     image_source TEXT CHECK (
         image_source IS NULL
         OR (
@@ -163,11 +168,8 @@ CREATE TABLE IF NOT EXISTS managed_programs (
     -- updated" and "created at T, updated at T'" stay
     -- distinguishable on the wire.
 
-    -- Self-referential: when multiple programs share BPF maps, one is
-    -- designated the owner. RESTRICT prevents deleting the owner
-    -- while any dependent program still references it.
-    FOREIGN KEY (map_owner_id)
-        REFERENCES managed_programs(program_id)
+    FOREIGN KEY (map_set_id)
+        REFERENCES map_sets(id)
         ON DELETE RESTRICT
 ) STRICT;
 

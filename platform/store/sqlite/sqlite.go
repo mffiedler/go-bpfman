@@ -138,11 +138,17 @@ type sqliteStore struct {
 	txRetryBackoffs []time.Duration
 
 	// Prepared statements for program operations
-	stmtGetProgram             *sql.Stmt
-	stmtSaveProgram            *sql.Stmt
-	stmtDeleteProgram          *sql.Stmt
-	stmtListPrograms           *sql.Stmt
-	stmtCountDependentPrograms *sql.Stmt
+	stmtGetProgram       *sql.Stmt
+	stmtSaveProgram      *sql.Stmt
+	stmtDeleteProgram    *sql.Stmt
+	stmtListPrograms     *sql.Stmt
+	stmtProgramExists    *sql.Stmt
+	stmtInsertMapSet     *sql.Stmt
+	stmtCountMapSets     *sql.Stmt
+	stmtCountMapSetUsers *sql.Stmt
+	stmtListMapSetUsers  *sql.Stmt
+	stmtMapSetExists     *sql.Stmt
+	stmtDeleteMapSet     *sql.Stmt
 
 	// Prepared statements for link registry operations
 	stmtDeleteLink         *sql.Stmt
@@ -383,7 +389,13 @@ func (s *sqliteStore) closeStatements() {
 		s.stmtSaveProgram,
 		s.stmtDeleteProgram,
 		s.stmtListPrograms,
-		s.stmtCountDependentPrograms,
+		s.stmtProgramExists,
+		s.stmtInsertMapSet,
+		s.stmtCountMapSets,
+		s.stmtCountMapSetUsers,
+		s.stmtListMapSetUsers,
+		s.stmtMapSetExists,
+		s.stmtDeleteMapSet,
 		s.stmtDeleteLink,
 		s.stmtGetLinkRegistry,
 		s.stmtListLinks,
@@ -445,7 +457,7 @@ func (s *sqliteStore) closeStatements() {
 // Migrations are supported from version 2 onwards; an unmigrated mismatch causes New to
 // delete and recreate the database. Version 14 added links.metadata_json.
 // Version 15 added dispatchers.filter_handle.
-const schemaVersion = 15
+const schemaVersion = 16
 
 // debugLinkIDSequenceSeed makes store-allocated bpfman link handles
 // visually distinct from small kernel bpf_link IDs while the link identity
@@ -688,11 +700,17 @@ func (s *sqliteStore) runTransactionAttempt(ctx context.Context, logger *slog.Lo
 		conn:   tx,
 		logger: s.logger,
 		// Program statements
-		stmtGetProgram:             tx.StmtContext(ctx, s.stmtGetProgram),
-		stmtSaveProgram:            tx.StmtContext(ctx, s.stmtSaveProgram),
-		stmtDeleteProgram:          tx.StmtContext(ctx, s.stmtDeleteProgram),
-		stmtListPrograms:           tx.StmtContext(ctx, s.stmtListPrograms),
-		stmtCountDependentPrograms: tx.StmtContext(ctx, s.stmtCountDependentPrograms),
+		stmtGetProgram:       tx.StmtContext(ctx, s.stmtGetProgram),
+		stmtSaveProgram:      tx.StmtContext(ctx, s.stmtSaveProgram),
+		stmtDeleteProgram:    tx.StmtContext(ctx, s.stmtDeleteProgram),
+		stmtListPrograms:     tx.StmtContext(ctx, s.stmtListPrograms),
+		stmtProgramExists:    tx.StmtContext(ctx, s.stmtProgramExists),
+		stmtInsertMapSet:     tx.StmtContext(ctx, s.stmtInsertMapSet),
+		stmtCountMapSets:     tx.StmtContext(ctx, s.stmtCountMapSets),
+		stmtCountMapSetUsers: tx.StmtContext(ctx, s.stmtCountMapSetUsers),
+		stmtListMapSetUsers:  tx.StmtContext(ctx, s.stmtListMapSetUsers),
+		stmtMapSetExists:     tx.StmtContext(ctx, s.stmtMapSetExists),
+		stmtDeleteMapSet:     tx.StmtContext(ctx, s.stmtDeleteMapSet),
 		// Link registry statements
 		stmtDeleteLink:              tx.StmtContext(ctx, s.stmtDeleteLink),
 		stmtGetLinkRegistry:         tx.StmtContext(ctx, s.stmtGetLinkRegistry),

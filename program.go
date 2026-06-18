@@ -202,6 +202,9 @@ type ProgramStatus struct {
 	Bytecode string               `json:"bytecode"`
 	Links    []Link               `json:"links"` // [] when none
 	Maps     []MapStatus          `json:"maps"`  // [] when none
+	// MapUsedBy is the set of managed kernel program ids whose records point
+	// at this program's map set, including this program when it is live.
+	MapUsedBy []kernel.ProgramID `json:"map_used_by"`
 }
 
 // HasKernelProgramID is a capability interface for domain objects
@@ -239,10 +242,8 @@ func (m ProgramMeta) MarshalJSON() ([]byte, error) {
 	return json.Marshal(a)
 }
 
-// MarshalJSON for ProgramStatus coerces nil Links / Maps slices to the
-// empty slice so JSON consumers always see "links": [] and "maps": []
-// rather than null. The construction path is irrelevant to the wire
-// contract.
+// MarshalJSON for ProgramStatus coerces nil slices to empty slices so JSON
+// consumers always see collection fields as [] rather than null.
 func (s ProgramStatus) MarshalJSON() ([]byte, error) {
 	type alias ProgramStatus
 	a := alias(s)
@@ -251,6 +252,9 @@ func (s ProgramStatus) MarshalJSON() ([]byte, error) {
 	}
 	if a.Maps == nil {
 		a.Maps = []MapStatus{}
+	}
+	if a.MapUsedBy == nil {
+		a.MapUsedBy = []kernel.ProgramID{}
 	}
 	return json.Marshal(a)
 }
