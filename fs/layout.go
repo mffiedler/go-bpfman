@@ -9,7 +9,12 @@ import (
 // default both for the bpfman CLI (--runtime-dir) and for the e2e
 // suite when BPFMAN_E2E_SUITE_ROOT is unset, so production-shaped
 // callers and production-shaped tests share one source of truth.
-const DefaultRoot = "/run/bpfman"
+//
+// TEMPORARY (map-sharing-parity branch): set to /run/go-bpfman so the
+// Go and Rust binaries run side by side and /run/go-bpfman can be
+// diffed directly against Rust's /run/bpfman. Revert to /run/bpfman
+// before merging.
+const DefaultRoot = "/run/go-bpfman"
 
 // Layout is an immutable, validated filesystem layout. Fields are
 // unexported; external packages cannot construct a non-zero Layout
