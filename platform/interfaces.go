@@ -17,6 +17,14 @@ import (
 // matching row.
 var ErrRecordNotFound = errors.New("record not found")
 
+// ErrMapSetIDReused is returned when a self-owned load would create a map
+// set whose id is already held by a surviving map set: the kernel reused
+// a program id while an older map set keyed by that id is still in use.
+// The load is refused rather than silently joining or overwriting the
+// surviving set, so the failure is diagnosable instead of surfacing as a
+// bare constraint violation.
+var ErrMapSetIDReused = errors.New("reused kernel program id collided with a surviving map set")
+
 // ErrInterfaceNotFound marks a failure to resolve a network interface
 // name (in its netns) to an ifindex -- an unknown interface or an
 // unreachable netns path. Both stem from caller-supplied input, so a

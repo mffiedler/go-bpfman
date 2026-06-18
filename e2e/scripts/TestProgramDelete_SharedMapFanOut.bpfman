@@ -66,9 +66,15 @@ assert $survivorsA == 3
 guard survivedA1 <- bpfman program get $dA1
 guard survivedA2 <- bpfman program get $dA2
 guard survivedA3 <- bpfman program get $dA3
-assert $survivedA1 matches { status.map_used_by: [$dA1 $dA2 $dA3] }
-assert $survivedA2 matches { status.map_used_by: [$dA1 $dA2 $dA3] }
-assert $survivedA3 matches { status.map_used_by: [$dA1 $dA2 $dA3] }
+assert $survivedA1 matches {
+    status.map_used_by: [$dA1 $dA2 $dA3]
+}
+assert $survivedA2 matches {
+    status.map_used_by: [$dA1 $dA2 $dA3]
+}
+assert $survivedA3 matches {
+    status.map_used_by: [$dA1 $dA2 $dA3]
+}
 print "A: non-recursive delete of owner ${oA} left all 3 dependants alive"
 
 bpfman program delete $dA2 $dA3 $dA1

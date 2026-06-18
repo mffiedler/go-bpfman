@@ -81,12 +81,12 @@ assert $prog matches exhaustive {
             has_memlock:    true
             restricted:     false
         }
-        stats:    null
-        prog_pin: $expect_prog_pin
-        map_dir:  $expect_map_dir
-        bytecode: $expect_bytecode
-        links:    empty
-        maps:     not-empty
+        stats:       null
+        prog_pin:    $expect_prog_pin
+        map_dir:     $expect_map_dir
+        bytecode:    $expect_bytecode
+        links:       empty
+        maps:        not-empty
         map_used_by: [$pid]
     }
 }
@@ -177,11 +177,11 @@ assert $got matches exhaustive {
             run_count:        0
             recursion_misses: 0
         }
-        prog_pin: $expect_prog_pin
-        map_dir:  $expect_map_dir
-        bytecode: $expect_bytecode
-        links:    empty
-        maps:     not-empty
+        prog_pin:    $expect_prog_pin
+        map_dir:     $expect_map_dir
+        bytecode:    $expect_bytecode
+        links:       empty
+        maps:        not-empty
         map_used_by: [$pid]
     }
 }

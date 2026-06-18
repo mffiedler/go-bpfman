@@ -54,7 +54,9 @@ bpfman program delete $oA
 assert fail bpfman program get $oA
 guard survivedDepA <- bpfman program get $dA
 assert $survivedDepA.record.handles.map_owner_id == $oA
-assert $survivedDepA matches { status.map_used_by: [$dA] }
+assert $survivedDepA matches {
+    status.map_used_by: [$dA]
+}
 print "A: non-recursive delete of owner ${oA} left dependant ${dA} alive"
 
 bpfman program delete $dA

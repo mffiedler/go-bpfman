@@ -359,6 +359,15 @@ func (s *sqliteStore) insertSelfOwnedMapSet(ctx context.Context, programID kerne
 	)
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "InsertMapSet", "args", []any{programID, metadata.Handles.MapsDir.String()}, "duration_ms", msec(time.Since(start)), "error", err)
+		// A primary-key collision means a map set with this id already
+		// exists, which under the insert-only contract can only be a
+		// reused kernel program id meeting a still-alive map set. Name
+		// that cause rather than surfacing a bare constraint violation.
+		// A constraint failure does not abort the transaction, so the
+		// follow-up read is safe on the same connection.
+		if exists, existsErr := s.MapSetExists(ctx, programID); existsErr == nil && exists {
+			return fmt.Errorf("create map set %d: %w", programID, platform.ErrMapSetIDReused)
+		}
 		return fmt.Errorf("create map set %d: %w", programID, err)
 	}
 	s.logger.Debug("sql", "stmt", "InsertMapSet", "args", []any{programID, metadata.Handles.MapsDir.String()}, "duration_ms", msec(time.Since(start)), "rows_affected", 1)

@@ -405,7 +405,9 @@ func TestLoad_ReusedProgramIDCollidingWithSurvivingMapSetFailsClosed(t *testing.
 		[]manager.ProgramSpec{{Name: "reused", Type: bpfman.ProgramTypeXDP}},
 		manager.LoadOpts{})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "create map set")
+	assert.ErrorIs(t, err, platform.ErrMapSetIDReused,
+		"reused-id collision must surface a diagnosable error, not a bare constraint violation")
+	assert.Contains(t, err.Error(), "reused kernel program id collided with a surviving map set")
 
 	_, err = f.Store.Get(ctx, ownerID)
 	assert.ErrorIs(t, err, platform.ErrRecordNotFound, "reused program must not be persisted")
@@ -474,6 +476,8 @@ func TestLoad_MapOwnerIDMustNameExistingMapSet(t *testing.T) {
 }
 
 func TestLoad_ExplicitMapOwnerReusesHeldWriterLock(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	discoverer := newFakeDiscoverer()
 	f := newTestFixtureWithDiscoverer(t, discoverer)
