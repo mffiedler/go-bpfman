@@ -25,6 +25,11 @@ var ErrRecordNotFound = errors.New("record not found")
 // bare constraint violation.
 var ErrMapSetIDReused = errors.New("reused kernel program id collided with a surviving map set")
 
+// ErrMapOwnerNotFound is returned when a load requests an explicit map owner
+// whose map set does not exist. Callers wrap it with the offending owner id so
+// front-ends can report a useful invalid-argument error.
+var ErrMapOwnerNotFound = errors.New("map owner not found")
+
 // ErrInterfaceNotFound marks a failure to resolve a network interface
 // name (in its netns) to an ifindex -- an unknown interface or an
 // unreachable netns path. Both stem from caller-supplied input, so a

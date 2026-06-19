@@ -277,7 +277,7 @@ func (m *Manager) validateExplicitMapOwners(ctx context.Context, specs []bpfman.
 			return fmt.Errorf("validate map_owner_id %d: %w", mapOwnerID, err)
 		}
 		if !ok {
-			return fmt.Errorf("map_owner_id does not exists")
+			return fmt.Errorf("map_owner_id %d does not exist: %w", mapOwnerID, platform.ErrMapOwnerNotFound)
 		}
 	}
 	return nil

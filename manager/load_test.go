@@ -485,7 +485,8 @@ func TestLoad_MapOwnerIDMustNameExistingMapSet(t *testing.T) {
 		}},
 		manager.LoadOpts{})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "map_owner_id does not exists")
+	assert.ErrorIs(t, err, platform.ErrMapOwnerNotFound)
+	assert.Contains(t, err.Error(), "map_owner_id 429496729 does not exist")
 	assert.Equal(t, 0, f.Kernel.ProgramCount(), "invalid owner must fail before kernel load")
 
 	owner, err := f.LoadDirect(ctx,
@@ -515,7 +516,8 @@ func TestLoad_MapOwnerIDMustNameExistingMapSet(t *testing.T) {
 		}},
 		manager.LoadOpts{})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "map_owner_id does not exists")
+	assert.ErrorIs(t, err, platform.ErrMapOwnerNotFound)
+	assert.Contains(t, err.Error(), fmt.Sprintf("map_owner_id %d does not exist", dependentID))
 	assert.Equal(t, 2, f.Kernel.ProgramCount(), "dependent-as-owner must fail before kernel load")
 }
 

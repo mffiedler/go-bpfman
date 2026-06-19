@@ -86,10 +86,14 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 		Owner:        "bpfman",
 	})
 	if err != nil {
-		if errors.Is(err, manager.ErrImagePullerNotConfigured) {
+		switch {
+		case errors.Is(err, manager.ErrImagePullerNotConfigured):
 			return nil, status.Error(codes.Unimplemented, "OCI image loading not configured on this server")
+		case errors.Is(err, platform.ErrMapOwnerNotFound):
+			return nil, status.Errorf(codes.InvalidArgument, "%v", err)
+		default:
+			return nil, status.Errorf(codes.Internal, "failed to load programs: %v", err)
 		}
-		return nil, status.Errorf(codes.Internal, "failed to load programs: %v", err)
 	}
 
 	// Convert results to proto response
