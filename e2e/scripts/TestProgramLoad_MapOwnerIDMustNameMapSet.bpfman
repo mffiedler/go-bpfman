@@ -3,9 +3,10 @@
 # Managed map-set contract: an explicit --map-owner-id must name an
 # existing map set. A dependent program id is not enough -- the
 # dependent joined a set but never created one -- and an absent id is
-# rejected too. Both are refused before the kernel load, with the
-# Rust-compatible "map_owner_id does not exists" message rather than as a
-# side effect of a missing pin directory.
+# rejected too. Both are refused before the kernel load, and the error
+# names the offending id -- a wrapped ErrMapOwnerNotFound, surfaced as
+# gRPC InvalidArgument -- rather than copying Rust's misspelt
+# "does not exists" string or appearing as a missing-pin side effect.
 
 import ../lib.bpfman
 
@@ -26,9 +27,9 @@ assert $load_b.programs[0].record.handles.map_owner_id == $a
 # message names the cause.
 let dep_as_owner <- bpfman program load file $obj --programs kprobe:mkp_a --map-owner-id $b
 assert not $dep_as_owner.ok
-assert contains $dep_as_owner.stderr "map_owner_id does not exists"
+assert contains $dep_as_owner.stderr "map_owner_id ${b} does not exist"
 
 # A completely absent map-set id is rejected the same way.
 let absent <- bpfman program load file $obj --programs kprobe:mkp_a --map-owner-id 429496729
 assert not $absent.ok
-assert contains $absent.stderr "map_owner_id does not exists"
+assert contains $absent.stderr "map_owner_id 429496729 does not exist"
