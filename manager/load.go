@@ -11,6 +11,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/fs"
+	"github.com/frobware/go-bpfman/inspect"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager/action"
@@ -595,16 +596,27 @@ func (m *Manager) loadBody(ctx context.Context, specs []bpfman.LoadSpec, opts Lo
 				}
 			}
 		}
+
+		// Derive map_used_by for the loaded programs from inside the
+		// commit. tx.List sees the rows saved above (reads-your-writes
+		// within the transaction), so the derivation is the same one
+		// the read paths run, now atomic with the save rather than a
+		// fallible post-commit decoration. The response field is wire
+		// parity for the gRPC LoadResponse, but it is equally part of
+		// the in-process load contract the shell asserts on, so it is
+		// computed here, not bolted on afterwards.
+		records, err := tx.List(ctx)
+		if err != nil {
+			return fmt.Errorf("list programs for map users: %w", err)
+		}
+		members := inspect.MapSetMembers(records)
+		for i := range loaded {
+			loaded[i].Status.MapUsedBy = members[loaded[i].Record.ProgramID]
+		}
 		return nil
 	}); err != nil {
 		cleanupLoaded()
 		return nil, err
-	}
-
-	for i := range loaded {
-		if err := m.enrichMapSetUsers(ctx, &loaded[i]); err != nil {
-			return nil, fmt.Errorf("list map users for program %d: %w", loaded[i].Record.ProgramID, err)
-		}
 	}
 
 	return loaded, nil

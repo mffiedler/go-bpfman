@@ -189,9 +189,11 @@ func (m *Manager) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.P
 			Maps:     mapStatuses,
 		},
 	}
-	if err := m.enrichMapSetUsers(ctx, &prog); err != nil {
-		return bpfman.Program{}, fmt.Errorf("list map users: %w", err)
+	records, err := m.store.List(ctx)
+	if err != nil {
+		return bpfman.Program{}, fmt.Errorf("list programs for map users: %w", err)
 	}
+	prog.Status.MapUsedBy = inspect.MapSetMembers(records)[programID]
 	return prog, nil
 }
 
@@ -301,23 +303,6 @@ func (m *Manager) GetLinkInfo(ctx context.Context, linkID bpfman.LinkID) (inspec
 	return info, nil
 }
 
-func (m *Manager) mapSetUsers(ctx context.Context, record bpfman.ProgramRecord) ([]kernel.ProgramID, error) {
-	mapSetID := record.ProgramID
-	if record.Handles.MapOwnerID != nil {
-		mapSetID = *record.Handles.MapOwnerID
-	}
-	return m.store.ListMapSetUsers(ctx, mapSetID)
-}
-
-func (m *Manager) enrichMapSetUsers(ctx context.Context, prog *bpfman.Program) error {
-	users, err := m.mapSetUsers(ctx, prog.Record)
-	if err != nil {
-		return err
-	}
-	prog.Status.MapUsedBy = users
-	return nil
-}
-
 // FindLoadedProgramByMetadata finds a program by metadata key/value from
 // the reconciled list of loaded programs (those in both DB and kernel).
 //
@@ -402,9 +387,6 @@ func (m *Manager) ListPrograms(ctx context.Context, opts ...bpfman.ListOption) (
 						kernelMaps = append(kernelMaps, km)
 					}
 					p.Status.Maps = bpfman.ToMapStatus(kernelMaps)
-				}
-				if err := m.enrichMapSetUsers(ctx, &p); err != nil {
-					return nil, fmt.Errorf("list map users for program %d: %w", p.Record.ProgramID, err)
 				}
 				programs = append(programs, p)
 			}

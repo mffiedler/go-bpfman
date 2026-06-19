@@ -96,6 +96,12 @@ type ProgramView struct {
 	// Links attached to this program (correlated from Observation.Links)
 	Links []LinkRow `json:"links"` // [] when the program has no links
 
+	// MapUsedBy is the sorted set of managed program ids sharing this
+	// program's map set, derived once over the store records (see
+	// MapSetMembers). Nil for kernel-only and FS-only rows, which are
+	// not store-managed and so belong to no map set.
+	MapUsedBy []kernel.ProgramID `json:"map_used_by"`
+
 	Presence Presence `json:"presence"`
 }
 
@@ -118,8 +124,9 @@ func (v ProgramView) AsProgram() (bpfman.Program, bool) {
 	return bpfman.Program{
 		Record: *v.Managed,
 		Status: bpfman.ProgramStatus{
-			Kernel: v.Kernel, // may be nil
-			Links:  links,
+			Kernel:    v.Kernel, // may be nil
+			Links:     links,
+			MapUsedBy: v.MapUsedBy,
 		},
 	}, true
 }
@@ -407,6 +414,11 @@ func Snapshot(
 		return nil, err
 	}
 
+	// Derive map-set membership once over the full store record set,
+	// so every store-managed row carries its map-used-by set without a
+	// per-program store query.
+	mapUsedBy := MapSetMembers(storeProgs)
+
 	seenProgIDs := make(map[kernel.ProgramID]bool)
 	for programID, prog := range storeProgs {
 		seenProgIDs[programID] = true
@@ -419,6 +431,7 @@ func Snapshot(
 			Managed:     &prog,
 			FSPinPath:   fsPath,
 			MapsPresent: mapsPresent,
+			MapUsedBy:   mapUsedBy[programID],
 			Presence: Presence{
 				InStore:  true,
 				InKernel: inKernel,

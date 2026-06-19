@@ -50,6 +50,26 @@ func (s *recordDeleteMapSetStore) DeleteMapSet(ctx context.Context, mapSetID ker
 	return s.Store.DeleteMapSet(ctx, mapSetID)
 }
 
+type failListInTxStore struct {
+	platform.Store
+	err error
+}
+
+func (s *failListInTxStore) RunInTransaction(ctx context.Context, name string, fn func(platform.Store) error) error {
+	return s.Store.RunInTransaction(ctx, name, func(tx platform.Store) error {
+		return fn(&failListInTxTx{Store: tx, err: s.err})
+	})
+}
+
+type failListInTxTx struct {
+	platform.Store
+	err error
+}
+
+func (s *failListInTxTx) List(ctx context.Context) (map[kernel.ProgramID]bpfman.ProgramRecord, error) {
+	return nil, s.err
+}
+
 func newTestImageRef() *platform.ImageRef {
 	return &platform.ImageRef{
 		URL:        "test.io/image:latest",
@@ -268,6 +288,34 @@ func TestLoad_MapUsedByIsDerivedByManager(t *testing.T) {
 	require.Len(t, listed, 2)
 	assert.Equal(t, wantUsers, listed[0].Status.MapUsedBy)
 	assert.Equal(t, wantUsers, listed[1].Status.MapUsedBy)
+}
+
+func TestLoad_MapUsedByDerivationFailureRollsBackLoad(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	deriveErr := errors.New("injected map-set membership read failure")
+	f := newTestFixtureWithOptionsAndStore(t, nil, nil, func(base platform.Store) platform.Store {
+		return &failListInTxStore{Store: base, err: deriveErr}
+	})
+	objPath := f.BytecodeFile("object.o")
+	f.Discoverer.SetPrograms(objPath, []platform.DiscoveredProgram{
+		{Name: "prog", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
+	})
+
+	_, err := f.Manager.Load(ctx,
+		manager.LoadSource{FilePath: objPath},
+		[]manager.ProgramSpec{{Name: "prog", Type: bpfman.ProgramTypeXDP}},
+		manager.LoadOpts{})
+	require.ErrorIs(t, err, deriveErr)
+
+	// The map_used_by derivation runs inside the load commit, so its
+	// failure rolls the whole transaction back: no program row
+	// survives, and the kernel/fs work is compensated.
+	progs, listErr := f.Store.List(ctx)
+	require.NoError(t, listErr)
+	assert.Empty(t, progs, "load must roll back when the in-tx map_used_by derivation fails")
+	assert.Equal(t, 0, f.Kernel.ProgramCount(), "kernel program must be cleaned up after rollback")
 }
 
 func TestLoad_MapSetGCDeletesSetOnlyAfterLastUser(t *testing.T) {
