@@ -3,7 +3,9 @@
 //
 // Design principle: "Illegal states unrepresentable" - use a non-forgeable
 // scope token that proves the lock is held. Mutating operations require
-// this token (compiler enforced). No context abuse.
+// this token (compiler enforced). The context never carries the
+// capability itself -- only a breadcrumb that lets Run fail fast on
+// same-path re-entry.
 //
 // There are two ways to obtain proof of the lock:
 //
@@ -55,9 +57,7 @@ type WriterScope interface {
 // writerScope is the concrete implementation of WriterScope.
 // It holds the exclusive flock and cannot be constructed outside this package.
 type writerScope struct {
-	f      *os.File
-	path   string
-	active atomic.Bool
+	f *os.File
 }
 
 func (*writerScope) writerScopeMarker() {}
@@ -77,9 +77,19 @@ func (s *writerScope) DupFD() (*os.File, error) {
 // Run acquires the global writer lock, executes fn, then releases.
 // The WriterScope proves to callees that the lock is held.
 // Uses LOCK_EX|LOCK_NB with exponential backoff, respects ctx cancellation.
+//
+// Re-acquiring a path this context already holds would deadlock: a fresh
+// acquisition opens a new file description, which flock(2) treats
+// independently from the one already held. That can only be a caller that
+// should have threaded its WriterScope, so fail fast.
+//
+// The marker is per-Run: its frame goes inactive when Run returns, so a
+// context that escapes its callback (e.g. handed to a goroutine) will not
+// falsely trip this check once the lock has been released.
 func Run(ctx context.Context, lockPath string, fn func(context.Context, WriterScope) error) error {
-	if scope, ok := activeScope(ctx, lockPath); ok {
-		return fn(ctx, scope)
+	held, _ := ctx.Value(heldLocksKey{}).(*heldLocks)
+	if held.holds(lockPath) {
+		panic(fmt.Sprintf("lock.Run re-entered for already-held path %q: thread the WriterScope to the callee instead of re-acquiring", lockPath))
 	}
 
 	f, err := acquireWriter(ctx, lockPath)
@@ -88,28 +98,37 @@ func Run(ctx context.Context, lockPath string, fn func(context.Context, WriterSc
 	}
 	defer f.Close()
 
-	scope := &writerScope{f: f, path: lockPath}
-	scope.active.Store(true)
-	defer scope.active.Store(false)
+	frame := &heldLocks{path: lockPath, parent: held}
+	frame.active.Store(true)
+	defer frame.active.Store(false)
 
-	return fn(context.WithValue(ctx, writerScopeContextKey{}, scope), scope)
+	ctx = context.WithValue(ctx, heldLocksKey{}, frame)
+	return fn(ctx, &writerScope{f: f})
 }
 
-type writerScopeContextKey struct{}
+// heldLocks is a context-scoped stack of lock frames held in the current
+// call tree, used only by Run's same-path re-entry tripwire. It is not the
+// lock capability; that remains the passed WriterScope. The active flag is
+// liveness only -- it gates the debug breadcrumb, never authority -- and
+// goes false when its Run returns so an escaped context cannot report a
+// released lock as still held.
+type heldLocks struct {
+	path   string
+	active atomic.Bool
+	parent *heldLocks
+}
 
-// activeScope returns the currently active scope that Run placed in the
-// callback context. This is not a substitute for passing WriterScope to
-// mutating APIs; it only lets nested Run calls for the same lock path
-// reuse the already-held flock instead of self-deadlocking.
-func activeScope(ctx context.Context, lockPath string) (*writerScope, bool) {
-	scope, ok := ctx.Value(writerScopeContextKey{}).(*writerScope)
-	if !ok || scope == nil {
-		return nil, false
+type heldLocksKey struct{}
+
+// holds reports whether path is held by a still-active frame anywhere in
+// the stack. The nil receiver (no lock held yet) reports false.
+func (h *heldLocks) holds(path string) bool {
+	for n := h; n != nil; n = n.parent {
+		if n.path == path && n.active.Load() {
+			return true
+		}
 	}
-	if scope.path != lockPath || !scope.active.Load() {
-		return nil, false
-	}
-	return scope, true
+	return false
 }
 
 // RunWithTiming wraps Run with timing logs for lock acquisition and release.
@@ -153,9 +172,6 @@ func acquireWriter(ctx context.Context, path string) (*os.File, error) {
 	// pay a full 25ms even when the holder released after 1-2ms,
 	// making lock wait time the dominant factor in shared-runtime
 	// e2e wall-clock once the per-mutation work itself was small.
-	// The proper kernel-managed wait (F_OFD_SETLKW with signal-
-	// based interrupt) is the longer-term fix and would remove the
-	// polling entirely.
 	backoff := 1 * time.Millisecond
 	const maxBackoff = 500 * time.Millisecond
 

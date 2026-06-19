@@ -231,33 +231,39 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 		}
 	}
 
-	body := func(runCtx context.Context) ([]bpfman.Program, error) {
-		if err := m.validateExplicitMapOwners(runCtx, specs); err != nil {
-			return nil, err
+	// Reap store records for programs whose kernel object is gone before
+	// loading the new generation. Such rows are left behind by a prior
+	// generation that died without an Unload (daemon restart, external
+	// unload, or a ClusterBpfApplication deleted and recreated) and they
+	// poison later TCX attaches with ENOENT (see reapDeadProgramRecords).
+	// Reap mutates shared store rows, so it always runs under the writer
+	// lock; it is best-effort, so a reap failure must not block the load.
+	if !needsLock {
+		// Ordinary load: the load itself relies on unique kernel ids and
+		// sqlite's writer mutex rather than the flock, so only the reap
+		// takes the lock, and solely for its own duration.
+		if err := lock.Run(ctx, m.rt.Layout().LockPath(), func(runCtx context.Context, writeLock lock.WriterScope) error {
+			return m.reapDeadProgramRecords(runCtx, writeLock)
+		}); err != nil {
+			m.logger.WarnContext(ctx, "reaping dead program records before load failed (continuing)", "error", err)
 		}
+		return m.loadBody(ctx, specs, opts)
+	}
 
-		// Reap store records for programs whose kernel object is gone
-		// before loading the new generation. Such rows are left behind by
-		// a prior generation that died without an Unload (daemon restart,
-		// external unload, or a ClusterBpfApplication deleted and
-		// recreated) and they poison later TCX attaches with ENOENT (see
-		// reapDeadProgramRecords). Best-effort: a reap failure must not
-		// block the load.
-		if err := m.reapDeadProgramRecords(runCtx); err != nil {
+	// Explicit map-owner or PinByName load: one lock acquisition spans the
+	// owner validation, the reap, and the load so the whole sequence is
+	// serialised against other mutators. The held scope is threaded into
+	// reap as proof of the lock rather than re-acquired.
+	var loaded []bpfman.Program
+	runErr := lock.Run(ctx, m.rt.Layout().LockPath(), func(runCtx context.Context, writeLock lock.WriterScope) error {
+		if err := m.validateExplicitMapOwners(runCtx, specs); err != nil {
+			return err
+		}
+		if err := m.reapDeadProgramRecords(runCtx, writeLock); err != nil {
 			m.logger.WarnContext(runCtx, "reaping dead program records before load failed (continuing)", "error", err)
 		}
-
-		return m.loadBody(runCtx, specs, opts)
-	}
-
-	if !needsLock {
-		return body(ctx)
-	}
-
-	var loaded []bpfman.Program
-	runErr := lock.Run(ctx, m.rt.Layout().LockPath(), func(runCtx context.Context, _ lock.WriterScope) error {
 		var lerr error
-		loaded, lerr = body(runCtx)
+		loaded, lerr = m.loadBody(runCtx, specs, opts)
 		return lerr
 	})
 	return loaded, runErr
@@ -329,14 +335,18 @@ func actualTypeMetadataKey(programName string) string {
 // store/bpffs. Observation failure aborts the reap before any
 // destructive action, because a failed kernel enumeration cannot
 // distinguish "dead" from "could not inspect".
-func (m *Manager) reapDeadProgramRecords(ctx context.Context) error {
-	return lock.Run(ctx, m.rt.Layout().LockPath(), func(runCtx context.Context, _ lock.WriterScope) error {
-		snap, err := m.observeDeadProgramReapSnapshot(runCtx)
-		if err != nil {
-			return err
-		}
-		return m.executeReapPlan(runCtx, planReap(snap))
-	})
+//
+// reap mutates shared store rows, so the writer lock must be held. The
+// writeLock parameter carries that as a compile-time obligation: callers
+// cannot reach this method without a WriterScope, which only lock.Run
+// mints. The value itself is unused -- possessing the scope is the proof.
+func (m *Manager) reapDeadProgramRecords(ctx context.Context, writeLock lock.WriterScope) error {
+	_ = writeLock // proof the writer lock is held; see doc comment
+	snap, err := m.observeDeadProgramReapSnapshot(ctx)
+	if err != nil {
+		return err
+	}
+	return m.executeReapPlan(ctx, planReap(snap))
 }
 
 type reapSnapshot struct {

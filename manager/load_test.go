@@ -5,14 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/platform"
 )
@@ -473,57 +471,6 @@ func TestLoad_MapOwnerIDMustNameExistingMapSet(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "map_owner_id does not exists")
 	assert.Equal(t, 2, f.Kernel.ProgramCount(), "dependent-as-owner must fail before kernel load")
-}
-
-func TestLoad_ExplicitMapOwnerReusesHeldWriterLock(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	discoverer := newFakeDiscoverer()
-	f := newTestFixtureWithDiscoverer(t, discoverer)
-	objPath := f.BytecodeFile("object.o")
-	discoverer.SetPrograms(objPath, []platform.DiscoveredProgram{
-		{Name: "owner", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
-		{Name: "dependent", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
-	})
-
-	owner, err := f.LoadDirect(ctx,
-		manager.LoadSource{FilePath: objPath},
-		[]manager.ProgramSpec{{Name: "owner", Type: bpfman.ProgramTypeXDP}},
-		manager.LoadOpts{})
-	require.NoError(t, err)
-	require.Len(t, owner, 1)
-	ownerID := owner[0].Record.ProgramID
-
-	var dependentID kernel.ProgramID
-	err = lock.Run(ctx, f.Layout.LockPath(), func(lockedCtx context.Context, _ lock.WriterScope) error {
-		boundedCtx, cancel := context.WithTimeout(lockedCtx, time.Second)
-		defer cancel()
-
-		dependent, loadErr := f.LoadDirect(boundedCtx,
-			manager.LoadSource{FilePath: objPath},
-			[]manager.ProgramSpec{{
-				Name:       "dependent",
-				Type:       bpfman.ProgramTypeXDP,
-				MapOwnerID: ownerID,
-			}},
-			manager.LoadOpts{})
-		if loadErr != nil {
-			return loadErr
-		}
-		dependentID = dependent[0].Record.ProgramID
-		return nil
-	})
-	require.NoError(t, err)
-	assert.Equal(t, 2, f.Kernel.ProgramCount(), "explicit-owner load should run inside the held writer lock")
-
-	programs, err := f.Store.List(ctx)
-	require.NoError(t, err)
-	assert.Len(t, programs, 2, "explicit-owner load should persist the dependent")
-
-	require.NoError(t, f.Unload(ctx, ownerID))
-	require.NoError(t, f.Unload(ctx, dependentID))
-	f.AssertCleanState()
 }
 
 func TestLoad_RollbackExplicitMapOwnerDoesNotRemoveOwnerMapSet(t *testing.T) {
