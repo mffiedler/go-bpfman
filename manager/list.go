@@ -322,9 +322,14 @@ func (m *Manager) enrichMapSetUsers(ctx context.Context, prog *bpfman.Program) e
 // the reconciled list of loaded programs (those in both DB and kernel).
 //
 // When multiple programs match (e.g. multi-program applications), this
-// returns the first reconciled metadata match. The CSI publishes all
+// returns the match with the lowest program ID. The CSI publishes all
 // requested maps from that one program's MapPinPath; missing maps are a
 // clean CSI error, not a reason to infer a synthetic shared owner.
+//
+// The lowest-ID tiebreak is owned here rather than inherited from the
+// snapshot's ordering, so CSI selection cannot silently change if that
+// ordering ever does. It also matches Rust bpfman, whose CSI resolves
+// the first match over the kernel's ascending-ID program iteration.
 func (m *Manager) FindLoadedProgramByMetadata(ctx context.Context, key, value string) (bpfman.ProgramRecord, kernel.ProgramID, error) {
 	scanner := m.rt.BPFFS().Scanner()
 	obs, err := inspect.Snapshot(ctx, m.store, m.kernel, scanner)
@@ -347,6 +352,9 @@ func (m *Manager) FindLoadedProgramByMetadata(ctx context.Context, key, value st
 	case 0:
 		return bpfman.ProgramRecord{}, 0, fmt.Errorf("program with %s=%s: %w", key, value, platform.ErrRecordNotFound)
 	default:
+		slices.SortFunc(matches, func(a, b inspect.ProgramView) int {
+			return cmp.Compare(a.ProgramID, b.ProgramID)
+		})
 		m.logger.DebugContext(ctx, "found metadata match",
 			"key", key,
 			"value", value,
