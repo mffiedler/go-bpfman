@@ -357,13 +357,12 @@ Conclusion: Rust's public map-set lifetime behaviour is useful evidence;
 its lack of real map replacement for this explicit-owner fixture is not
 the semantic target.
 
-This implementation, today:
+This implementation, before the explicit-owner rewrite:
 
-- The gRPC server sets `ShareMaps: len(programs) > 1` (`server/load.go:90`)
-  and `manager/load.go:492` assigns `loaded[0]`'s id as the owner of
-  every later program that did not request one -- even for fully private
-  maps. The CLI does not do this (`cmd/bpfman/load_file.go` leaves
-  `ShareMaps` unset), so a CLI multi-program load reports
+- The gRPC server forced implicit sharing for every multi-program load,
+  and `manager/load.go` assigned `loaded[0]`'s id as the owner of every
+  later program that did not request one -- even for fully private maps.
+  The CLI did not do this, so a CLI multi-program load reported
   `map_owner_id=None` for every program, like Rust.
 - Unload refuses while dependents exist (`manager/unload.go`):
   "unload dependents first". The dependent's maps live under the owner's
@@ -1227,10 +1226,10 @@ the behavioural contract.
   `ErrMultipleMapOwners` because multiple matching rows legitimately
   have `MapOwnerID == nil`; Rust publishes from the first metadata match
   instead.
-- Green: remove the `ShareMaps: len(programs) > 1` forcing in
-  `server/load.go` and the implicit-owner assignment in
-  `manager/load.go`. Loading no longer sets `MapOwnerID` unless the
-  request supplied one. In the same slice, rework
+- Green: remove the implicit multi-program sharing in `server/load.go`
+  and the implicit-owner assignment in `manager/load.go`. Loading no
+  longer sets `MapOwnerID` unless the request supplied one. In the same
+  slice, rework
   `manager.FindLoadedProgramByMetadata` and its CSI caller. That
   helper currently assumes a multi-program application has exactly one
   `MapOwnerID == nil` program and uses that row's map pin path for CSI.

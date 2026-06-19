@@ -120,9 +120,7 @@ func TestLoad_MultiProgramDoesNotFabricateMapOwnership(t *testing.T) {
 		{Name: "prog_c", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 	})
 
-	programs, err := f.LoadDirect(ctx, manager.LoadSource{FilePath: objPath}, nil, manager.LoadOpts{
-		ShareMaps: true,
-	})
+	programs, err := f.LoadDirect(ctx, manager.LoadSource{FilePath: objPath}, nil, manager.LoadOpts{})
 	require.NoError(t, err)
 	require.Len(t, programs, 3)
 

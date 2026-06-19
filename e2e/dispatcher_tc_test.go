@@ -950,7 +950,7 @@ func TestTC_MultiPriorityChainWithOKProceedOn(t *testing.T) {
 }
 
 // TestTC_PinByNameMapSharing verifies that loading the same BPF
-// object file twice (without explicit MapOwnerID or ShareMaps)
+// object file twice (without an explicit MapOwnerID)
 // produces programs that share kernel maps declared with
 // LIBBPF_PIN_BY_NAME. This matches aya/Rust-bpfman behaviour where
 // PinByName maps are implicitly shared via a well-known pin path.

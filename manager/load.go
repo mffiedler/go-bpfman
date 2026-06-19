@@ -109,7 +109,6 @@ type LoadOpts struct {
 	UserMetadata map[string]string
 	GlobalData   map[string][]byte // batch-level, overridden per-program
 	Owner        string
-	ShareMaps    bool // deprecated no-op; use ProgramSpec.MapOwnerID explicitly
 }
 
 // LoadRequest carries an already parsed load request across a
@@ -128,7 +127,6 @@ type LoadRequestOpts struct {
 	Application  string
 	MapOwnerID   kernel.ProgramID
 	Owner        string
-	ShareMaps    bool // deprecated no-op; use MapOwnerID explicitly
 }
 
 // NewLoadRequest applies manager-owned load defaults and returns a
@@ -141,7 +139,6 @@ func NewLoadRequest(source LoadSource, programs []ProgramSpec, opts LoadRequestO
 			UserMetadata: loadRequestMetadata(opts.UserMetadata, opts.Application),
 			GlobalData:   opts.GlobalData,
 			Owner:        opts.Owner,
-			ShareMaps:    opts.ShareMaps,
 		},
 	}
 }
@@ -184,8 +181,7 @@ func (m *Manager) LoadFromRequest(ctx context.Context, req LoadRequest) ([]bpfma
 // validation.
 //
 // Map sharing is explicit: programs share maps only when their
-// ProgramSpec names a MapOwnerID. LoadOpts.ShareMaps is retained as a
-// no-op compatibility field while old callers are removed.
+// ProgramSpec names a MapOwnerID.
 //
 // On failure, all previously loaded programs are cleaned up by
 // calling Unload for each.
