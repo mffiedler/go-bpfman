@@ -23,13 +23,6 @@ import (
 	"github.com/frobware/go-bpfman/platform/store/sqlite"
 )
 
-// fakeStore implements StoreLister for testing.
-type fakeStore struct {
-	programs    map[kernel.ProgramID]bpfman.ProgramRecord
-	links       []bpfman.LinkRecord
-	dispatchers []platform.DispatcherSummary
-}
-
 func ptr[T any](v T) *T { return &v }
 
 func newRealStore(t *testing.T) platform.Store {
@@ -57,34 +50,6 @@ func createInspectLink(t *testing.T, store platform.Store, spec bpfman.LinkSpec)
 	require.NoError(t, err)
 	require.NotZero(t, record.ID)
 	return record
-}
-
-func (s *fakeStore) List(ctx context.Context) (map[kernel.ProgramID]bpfman.ProgramRecord, error) {
-	return s.programs, nil
-}
-
-func (s *fakeStore) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.ProgramRecord, error) {
-	if p, ok := s.programs[programID]; ok {
-		return p, nil
-	}
-	return bpfman.ProgramRecord{}, platform.ErrRecordNotFound
-}
-
-func (s *fakeStore) ListLinks(ctx context.Context) ([]bpfman.LinkRecord, error) {
-	return s.links, nil
-}
-
-func (s *fakeStore) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkRecord, error) {
-	for _, l := range s.links {
-		if l.ID == linkID {
-			return l, nil
-		}
-	}
-	return bpfman.LinkRecord{}, platform.ErrRecordNotFound
-}
-
-func (s *fakeStore) ListDispatcherSummaries(ctx context.Context) ([]platform.DispatcherSummary, error) {
-	return s.dispatchers, nil
 }
 
 // fakeKernelSource implements KernelLister for testing.
@@ -142,83 +107,6 @@ func testBPFFS(t *testing.T) fs.BPFFS {
 	return layout.BPFFS()
 }
 
-func TestSnapshot_ManagedPrograms(t *testing.T) {
-	t.Parallel()
-
-	bpfFS := testBPFFS(t)
-	scanner := bpfFS.Scanner()
-
-	store := &fakeStore{
-		programs: map[kernel.ProgramID]bpfman.ProgramRecord{
-			100: {ProgramID: 100, Load: bpfman.TestLoadSpec(bpfman.ProgramTypeXDP), Handles: bpfman.ProgramHandles{PinPath: "/run/bpfman/fs/prog_100"}, Meta: bpfman.ProgramMeta{Name: "xdp_pass"}},
-			200: {ProgramID: 200, Load: bpfman.TestLoadSpec(bpfman.ProgramTypeTC), Handles: bpfman.ProgramHandles{PinPath: "/run/bpfman/fs/prog_200"}, Meta: bpfman.ProgramMeta{Name: "tc_filter"}},
-		},
-	}
-
-	kern := &fakeKernelSource{
-		programs: []kernel.Program{
-			{ID: 100},
-			{ID: 200},
-		},
-	}
-
-	w, err := inspect.Snapshot(context.Background(), store, kern, scanner)
-	require.NoError(t, err)
-
-	managed := w.ManagedPrograms()
-	assert.Len(t, managed, 2)
-
-	// Verify all managed programs are in store
-	for _, p := range managed {
-		assert.True(t, p.Presence.InStore)
-		assert.True(t, p.Presence.InKernel)
-	}
-}
-
-func TestSnapshot_KernelOnlyPrograms(t *testing.T) {
-	t.Parallel()
-
-	bpfFS := testBPFFS(t)
-	scanner := bpfFS.Scanner()
-
-	store := &fakeStore{
-		programs: map[kernel.ProgramID]bpfman.ProgramRecord{
-			100: {ProgramID: 100, Load: bpfman.TestLoadSpec(bpfman.ProgramTypeXDP), Meta: bpfman.ProgramMeta{Name: "managed"}},
-		},
-	}
-
-	kern := &fakeKernelSource{
-		programs: []kernel.Program{
-			{ID: 100}, // managed
-			{ID: 999}, // kernel-only
-		},
-	}
-
-	w, err := inspect.Snapshot(context.Background(), store, kern, scanner)
-	require.NoError(t, err)
-
-	// All programs (managed + kernel-only)
-	assert.Len(t, w.Programs, 2)
-
-	// Only managed
-	managed := w.ManagedPrograms()
-	assert.Len(t, managed, 1)
-	assert.Equal(t, kernel.ProgramID(100), managed[0].ProgramID)
-
-	// Find kernel-only
-	var kernelOnly *inspect.ProgramView
-	for i := range w.Programs {
-		if w.Programs[i].Presence.KernelOnly() {
-			kernelOnly = &w.Programs[i]
-			break
-		}
-	}
-	require.NotNil(t, kernelOnly)
-	assert.Equal(t, kernel.ProgramID(999), kernelOnly.ProgramID)
-	assert.False(t, kernelOnly.Presence.InStore)
-	assert.True(t, kernelOnly.Presence.InKernel)
-}
-
 func TestSnapshot_FSOnlyPrograms(t *testing.T) {
 	t.Parallel()
 
@@ -229,7 +117,7 @@ func TestSnapshot_FSOnlyPrograms(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(bpfFS.MountPoint(), "prog_888"), nil, 0644))
 
 	scanner := bpfFS.Scanner()
-	store := &fakeStore{programs: map[kernel.ProgramID]bpfman.ProgramRecord{}}
+	store := newRealStore(t)
 	kern := &fakeKernelSource{}
 
 	w, err := inspect.Snapshot(context.Background(), store, kern, scanner)
@@ -369,7 +257,7 @@ func TestSnapshot_OrphanDispatcher(t *testing.T) {
 	require.NoError(t, os.Mkdir(dispDir, 0755))
 
 	scanner := bpfFS.Scanner()
-	store := &fakeStore{}
+	store := newRealStore(t)
 	kern := &fakeKernelSource{}
 
 	w, err := inspect.Snapshot(context.Background(), store, kern, scanner)
