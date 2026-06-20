@@ -32,14 +32,12 @@
 //
 // # Targeted Lookups
 //
-// [GetProgram], [GetLink], and [GetDispatcher] perform targeted
-// single-object lookups, which are more efficient than a full
-// Snapshot when only one object is needed.
+// [GetLink] performs targeted single-object lookups, which are more
+// efficient than a full Snapshot when only one object is needed.
 //
 // # Interfaces
 //
 // The package defines narrow interfaces ([StoreLister],
-// [StoreGetter], [KernelLister], [KernelGetter], [LinkGetter],
-// [KernelLinkGetter], [DispatcherGetter]) to accept only the methods
-// it needs from the store and kernel adapters.
+// [KernelLister], [LinkGetter], [KernelLinkGetter]) to accept only
+// the methods it needs from the store and kernel adapters.
 package inspect

@@ -25,20 +25,10 @@ type StoreLister interface {
 	ListDispatcherSummaries(ctx context.Context) ([]platform.DispatcherSummary, error)
 }
 
-// StoreGetter is the subset of platform.Store needed by GetProgram.
-type StoreGetter interface {
-	Get(ctx context.Context, programID kernel.ProgramID) (bpfman.ProgramRecord, error)
-}
-
 // KernelLister is the subset of platform.KernelSource needed by Snapshot.
 type KernelLister interface {
 	Programs(ctx context.Context) iter.Seq2[kernel.Program, error]
 	Links(ctx context.Context) iter.Seq2[kernel.Link, error]
-}
-
-// KernelGetter is the subset of platform.KernelSource needed by GetProgram.
-type KernelGetter interface {
-	GetProgramByID(ctx context.Context, id kernel.ProgramID) (kernel.Program, error)
 }
 
 // LinkGetter is the subset of platform.Store needed by GetLink.
@@ -669,56 +659,6 @@ func Snapshot(
 	})
 
 	return obs, nil
-}
-
-// GetProgram retrieves a single program by kernel ID, correlating state
-// from store, kernel, and filesystem. This is more efficient than Snapshot
-// for single-program lookups as it performs targeted queries rather than
-// enumerating everything.
-//
-// Returns ErrNotFound if the program does not exist in any source.
-func GetProgram(
-	ctx context.Context,
-	storeGetter StoreGetter,
-	kern KernelGetter,
-	scanner *fs.Scanner,
-	programID kernel.ProgramID,
-) (ProgramView, error) {
-	row := ProgramView{ProgramID: programID}
-
-	// Try store
-	prog, err := storeGetter.Get(ctx, programID)
-	if err == nil {
-		row.Managed = &prog
-		row.Presence.InStore = true
-	} else if !errors.Is(err, platform.ErrRecordNotFound) {
-		// Real error (not just "not found")
-		return ProgramView{}, err
-	}
-
-	// Try kernel
-	kp, err := kern.GetProgramByID(ctx, programID)
-	if err == nil {
-		row.Kernel = &kp
-		row.Presence.InKernel = true
-	}
-	// Kernel errors (program not found) are not fatal - just means not in kernel
-
-	// Try filesystem
-	// If we have store metadata with a pin path, check that specific path
-	if row.Managed != nil && row.Managed.Handles.PinPath != "" {
-		if scanner.PathExists(row.Managed.Handles.PinPath.String()) {
-			row.FSPinPath = row.Managed.Handles.PinPath.String()
-			row.Presence.InFS = true
-		}
-	}
-
-	// If not found in any source, return error
-	if !row.Presence.InStore && !row.Presence.InKernel && !row.Presence.InFS {
-		return ProgramView{}, ErrNotFound
-	}
-
-	return row, nil
 }
 
 // GetLink retrieves a single link by its durable bpfman ID, correlating state
