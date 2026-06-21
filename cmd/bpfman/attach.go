@@ -36,6 +36,10 @@ func runAttach(cli *bpfmancli.CLI, ctx context.Context, flags *cliformat.OutputF
 	}
 	defer cleanup()
 
+	if _, err := flags.Format(); err != nil {
+		return err
+	}
+
 	result, err := bpfmancli.RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (attachResult, error) {
 		return fn(ctx, mgr, writeLock)
 	})
@@ -43,11 +47,7 @@ func runAttach(cli *bpfmancli.CLI, ctx context.Context, flags *cliformat.OutputF
 		return err
 	}
 
-	output, err := cliformat.FormatLinkResult(result.Link, flags)
-	if err != nil {
-		return err
-	}
-	return cli.PrintOut(output)
+	return cliformat.RenderLinkAttach(cli.Out, cliformat.LinkAttachView{Link: result.Link}, flags)
 }
 
 // AttachXDPCmd attaches an XDP program to a network interface.

@@ -54,11 +54,7 @@ func (c *ListDispatchersCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error 
 		return nil
 	}
 
-	output, err := cliformat.FormatDispatcherList(summaries, &c.OutputFlags)
-	if err != nil {
-		return err
-	}
-	return cli.PrintOut(output)
+	return cliformat.RenderDispatcherList(cli.Out, cliformat.DispatcherListView{Summaries: summaries}, &c.OutputFlags)
 }
 
 // GetDispatcherCmd gets details of a dispatcher by its key.
@@ -84,11 +80,7 @@ func (c *GetDispatcherCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 		return err
 	}
 
-	output, err := cliformat.FormatDispatcherSnapshot(snap, &c.OutputFlags)
-	if err != nil {
-		return err
-	}
-	return cli.PrintOut(output)
+	return cliformat.RenderDispatcherSnapshot(cli.Out, snap, &c.OutputFlags)
 }
 
 // DeleteDispatcherCmd deletes a dispatcher by its key.

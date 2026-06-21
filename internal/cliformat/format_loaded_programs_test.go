@@ -1,6 +1,7 @@
 package cliformat
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -24,13 +25,13 @@ func programWithID(id kernel.ProgramID, name string) bpfman.Program {
 	}
 }
 
-// TestFormatLoadedPrograms_JSON_WrapsWithProgramsKey asserts that
-// formatLoadedProgramsJSON emits a top-level object whose `programs`
+// TestRenderLoadedProgramsJSON_WrapsWithProgramsKey asserts that
+// RenderLoadedPrograms emits a top-level object whose `programs`
 // key carries the slice in slice order. The contract is shared with
-// FormatProgramsComposite (program list) so jsonpath consumers can
+// RenderProgramList (program list) so jsonpath consumers can
 // write {.programs[i]...} regardless of which command produced the
 // output.
-func TestFormatLoadedPrograms_JSON_WrapsWithProgramsKey(t *testing.T) {
+func TestRenderLoadedProgramsJSON_WrapsWithProgramsKey(t *testing.T) {
 	t.Parallel()
 
 	programs := []bpfman.Program{
@@ -39,8 +40,9 @@ func TestFormatLoadedPrograms_JSON_WrapsWithProgramsKey(t *testing.T) {
 		programWithID(5, "tp_b"),
 	}
 
-	got, err := formatLoadedProgramsJSON(programs)
-	require.NoError(t, err)
+	var buf bytes.Buffer
+	require.NoError(t, RenderLoadedPrograms(&buf, LoadedProgramsView{Programs: programs}, &OutputFlags{Output: OutputValue{Value: "json"}}))
+	got := buf.String()
 
 	// Decode into a generic shape so we test the wire format
 	// without depending on bpfman.Program's strict unmarshaller
@@ -59,11 +61,11 @@ func TestFormatLoadedPrograms_JSON_WrapsWithProgramsKey(t *testing.T) {
 	}
 }
 
-// TestFormatLoadedPrograms_JSON_EmptySlice asserts that an empty
+// TestRenderLoadedProgramsJSON_EmptySlice asserts that an empty
 // load result still produces a valid object with `programs: []`,
 // not `programs: null`. Consumers that use jsonpath ranges
 // ({.programs[*]}) on the empty case must see a list, not a null.
-func TestFormatLoadedPrograms_JSON_EmptySlice(t *testing.T) {
+func TestRenderLoadedProgramsJSON_EmptySlice(t *testing.T) {
 	t.Parallel()
 
 	for _, name := range []string{"nil", "empty"} {
@@ -73,8 +75,9 @@ func TestFormatLoadedPrograms_JSON_EmptySlice(t *testing.T) {
 			if name == "empty" {
 				input = []bpfman.Program{}
 			}
-			got, err := formatLoadedProgramsJSON(input)
-			require.NoError(t, err)
+			var buf bytes.Buffer
+			require.NoError(t, RenderLoadedPrograms(&buf, LoadedProgramsView{Programs: input}, &OutputFlags{Output: OutputValue{Value: "json"}}))
+			got := buf.String()
 
 			var raw map[string]json.RawMessage
 			require.NoError(t, json.NewDecoder(strings.NewReader(got)).Decode(&raw))
@@ -85,12 +88,12 @@ func TestFormatLoadedPrograms_JSON_EmptySlice(t *testing.T) {
 	}
 }
 
-// TestFormatLoadedPrograms_JSONPath_TrailingNewline asserts that
+// TestRenderLoadedProgramsJSONPath_TrailingNewline asserts that
 // the formatter normalises trailing newlines to exactly one,
 // regardless of whether the user's template ends with {"\n"}. Shell
 // consumers should never have to strip a stray blank line at the
 // end of `bpfman ... -o jsonpath=...` output.
-func TestFormatLoadedPrograms_JSONPath_TrailingNewline(t *testing.T) {
+func TestRenderLoadedProgramsJSONPath_TrailingNewline(t *testing.T) {
 	t.Parallel()
 
 	programs := []bpfman.Program{
@@ -128,19 +131,19 @@ func TestFormatLoadedPrograms_JSONPath_TrailingNewline(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := formatLoadedProgramsJSONPath(programs, tc.expr)
-			require.NoError(t, err)
-			require.Equal(t, tc.want, got)
+			var buf bytes.Buffer
+			require.NoError(t, RenderLoadedPrograms(&buf, LoadedProgramsView{Programs: programs}, &OutputFlags{Output: OutputValue{Value: "jsonpath=" + tc.expr}}))
+			require.Equal(t, tc.want, buf.String())
 		})
 	}
 }
 
-// TestFormatLoadedPrograms_JSONPath_RootIsObject asserts that the
+// TestRenderLoadedProgramsJSONPath_RootIsObject asserts that the
 // jsonpath formatter operates on the wrapper object, so callers
 // query {.programs[N]...}. The existing jsonpath tests on bpfman.go
 // against Program (single object) cover the leaf-access behaviour;
 // this test pins the wrapping contract specifically.
-func TestFormatLoadedPrograms_JSONPath_RootIsObject(t *testing.T) {
+func TestRenderLoadedProgramsJSONPath_RootIsObject(t *testing.T) {
 	t.Parallel()
 
 	programs := []bpfman.Program{
@@ -148,11 +151,11 @@ func TestFormatLoadedPrograms_JSONPath_RootIsObject(t *testing.T) {
 		programWithID(13, "tp_a"),
 	}
 
-	got, err := formatLoadedProgramsJSONPath(programs, "{.programs[1].record.program_id}")
-	require.NoError(t, err)
-	require.Equal(t, "13\n", got)
+	var buf bytes.Buffer
+	require.NoError(t, RenderLoadedPrograms(&buf, LoadedProgramsView{Programs: programs}, &OutputFlags{Output: OutputValue{Value: "jsonpath={.programs[1].record.program_id}"}}))
+	require.Equal(t, "13\n", buf.String())
 
-	got, err = formatLoadedProgramsJSONPath(programs, "{range .programs[*]}{.record.program_id} {end}")
-	require.NoError(t, err)
-	require.Equal(t, "11 13 \n", got)
+	buf.Reset()
+	require.NoError(t, RenderLoadedPrograms(&buf, LoadedProgramsView{Programs: programs}, &OutputFlags{Output: OutputValue{Value: "jsonpath={range .programs[*]}{.record.program_id} {end}"}}))
+	require.Equal(t, "11 13 \n", buf.String())
 }

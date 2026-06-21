@@ -1,6 +1,7 @@
 package cliformat
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -10,11 +11,11 @@ import (
 	"github.com/frobware/go-bpfman"
 )
 
-// TestFormatProgramsCompositeTable_Columns asserts the default
+// TestRenderProgramListTable_Columns asserts the default
 // program-list table carries the Program ID, Application, Type,
 // Function Name and Links columns from the precomputed entry fields,
 // and that the Links cell shows a count with its IDs.
-func TestFormatProgramsCompositeTable_Columns(t *testing.T) {
+func TestRenderProgramListTable_Columns(t *testing.T) {
 	t.Parallel()
 
 	result := bpfman.ProgramListResult{
@@ -30,8 +31,9 @@ func TestFormatProgramsCompositeTable_Columns(t *testing.T) {
 		},
 	}
 
-	out, err := FormatProgramsComposite(result, &OutputFlags{Output: OutputValue{Value: "table"}})
-	require.NoError(t, err)
+	var buf bytes.Buffer
+	require.NoError(t, RenderProgramList(&buf, ProgramListView{Result: result}, &OutputFlags{Output: OutputValue{Value: "table"}}))
+	out := buf.String()
 
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
 	require.Len(t, lines, 2, "header plus one row")

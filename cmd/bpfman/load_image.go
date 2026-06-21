@@ -87,11 +87,7 @@ func (c *LoadImageCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	}
 	result := loadImageResult{Programs: loaded}
 
-	output, err := cliformat.FormatLoadedPrograms(result.Programs, &c.OutputFlags)
-	if err != nil {
-		return err
-	}
-	return cli.PrintOut(output)
+	return cliformat.RenderLoadedPrograms(cli.Out, cliformat.LoadedProgramsView{Programs: result.Programs}, &c.OutputFlags)
 }
 
 // registryAuthFromFlag decodes a base64-encoded registry-auth flag

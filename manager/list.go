@@ -303,6 +303,17 @@ func (m *Manager) GetLinkInfo(ctx context.Context, linkID bpfman.LinkID) (inspec
 	return info, nil
 }
 
+// ProgramName returns the stored name of a program by id. It reads only
+// the store record, unlike Get, so presentation joins do not depend on
+// live kernel state.
+func (m *Manager) ProgramName(ctx context.Context, programID kernel.ProgramID) (string, error) {
+	rec, err := m.store.Get(ctx, programID)
+	if err != nil {
+		return "", err
+	}
+	return rec.Meta.Name, nil
+}
+
 // FindLoadedProgramByMetadata finds a program by metadata key/value from
 // the reconciled list of loaded programs (those in both DB and kernel).
 //

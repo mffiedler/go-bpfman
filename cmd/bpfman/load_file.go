@@ -89,9 +89,5 @@ func executeLoadFile(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 	}
 
 	// Format and emit output outside the lock
-	output, err := cliformat.FormatLoadedPrograms(result.Programs, &c.OutputFlags)
-	if err != nil {
-		return err
-	}
-	return cli.PrintOut(output)
+	return cliformat.RenderLoadedPrograms(cli.Out, cliformat.LoadedProgramsView{Programs: result.Programs}, &c.OutputFlags)
 }

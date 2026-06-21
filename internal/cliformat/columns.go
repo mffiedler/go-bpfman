@@ -2,6 +2,7 @@ package cliformat
 
 import (
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -188,10 +189,9 @@ func (cs ColumnSpec) ExtractValue(prog bpfman.Program) string {
 	return cs.Extract(prog)
 }
 
-// FormatTable renders a table of programs using the column set.
-func (cs ColumnSet) FormatTable(programs []bpfman.Program) string {
-	var b strings.Builder
-	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
+// RenderTable writes a table of programs using the column set.
+func (cs ColumnSet) RenderTable(out io.Writer, programs []bpfman.Program) error {
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 
 	// Write header
 	headers := make([]string, len(cs.Columns))
@@ -209,8 +209,7 @@ func (cs ColumnSet) FormatTable(programs []bpfman.Program) string {
 		fmt.Fprintln(w, strings.Join(values, "\t"))
 	}
 
-	w.Flush()
-	return b.String()
+	return w.Flush()
 }
 
 // DefaultColumns returns the standard table columns.
@@ -317,10 +316,9 @@ func (cs ColumnSpec) ExtractLinkValue(link bpfman.LinkRecord) string {
 	return cs.ExtractLink(link)
 }
 
-// FormatLinkTable renders a table of links using the column set.
-func (cs ColumnSet) FormatLinkTable(links []bpfman.LinkRecord) string {
-	var b strings.Builder
-	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
+// RenderLinkTable writes a table of links using the column set.
+func (cs ColumnSet) RenderLinkTable(out io.Writer, links []bpfman.LinkRecord) error {
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 
 	// Write header
 	headers := make([]string, len(cs.Columns))
@@ -338,8 +336,7 @@ func (cs ColumnSet) FormatLinkTable(links []bpfman.LinkRecord) string {
 		fmt.Fprintln(w, strings.Join(values, "\t"))
 	}
 
-	w.Flush()
-	return b.String()
+	return w.Flush()
 }
 
 // nonEmpty returns s if non-empty, otherwise "<none>".

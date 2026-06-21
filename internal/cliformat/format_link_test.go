@@ -1,6 +1,7 @@
 package cliformat
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -10,7 +11,7 @@ import (
 	"github.com/frobware/go-bpfman/platform"
 )
 
-func TestFormatLinkResultTable_ExposesManagedAndKernelIDs(t *testing.T) {
+func TestRenderLinkGetTable_ExposesManagedAndKernelIDs(t *testing.T) {
 	t.Parallel()
 
 	kernelLinkID := kernel.LinkID(17)
@@ -24,10 +25,11 @@ func TestFormatLinkResultTable_ExposesManagedAndKernelIDs(t *testing.T) {
 		},
 	}
 
-	output, err := FormatLinkResult(link, &OutputFlags{Output: OutputValue{Value: "table"}})
-	if err != nil {
-		t.Fatalf("FormatLinkResult() error = %v", err)
+	var buf bytes.Buffer
+	if err := RenderLinkGet(&buf, LinkGetView{Link: link}, &OutputFlags{Output: OutputValue{Value: "table"}}); err != nil {
+		t.Fatalf("RenderLinkGet() error = %v", err)
 	}
+	output := buf.String()
 	for _, want := range []string{"Link ID: 2123456789", "Kernel Link ID:", "17"} {
 		if !strings.Contains(output, want) {
 			t.Errorf("link result table missing %q: %s", want, output)
@@ -35,7 +37,7 @@ func TestFormatLinkResultTable_ExposesManagedAndKernelIDs(t *testing.T) {
 	}
 }
 
-func TestFormatLinkResultTable_ShowsMetadata(t *testing.T) {
+func TestRenderLinkGetTable_ShowsMetadata(t *testing.T) {
 	t.Parallel()
 
 	link := bpfman.Link{
@@ -48,16 +50,83 @@ func TestFormatLinkResultTable_ShowsMetadata(t *testing.T) {
 		},
 	}
 
-	output, err := FormatLinkResult(link, &OutputFlags{Output: OutputValue{Value: "table"}})
-	if err != nil {
-		t.Fatalf("FormatLinkResult() error = %v", err)
+	var buf bytes.Buffer
+	if err := RenderLinkGet(&buf, LinkGetView{Link: link}, &OutputFlags{Output: OutputValue{Value: "table"}}); err != nil {
+		t.Fatalf("RenderLinkGet() error = %v", err)
 	}
+	output := buf.String()
 	if !strings.Contains(output, "owner=acme") {
 		t.Errorf("link result table should show metadata owner=acme:\n%s", output)
 	}
 }
 
-func TestFormatDispatcherSnapshotTable_ExposesMemberManagedAndKernelIDs(t *testing.T) {
+func TestRenderLinkAttachTable_PrintsLinkDetails(t *testing.T) {
+	t.Parallel()
+
+	link := bpfman.Link{
+		Record: bpfman.LinkRecord{
+			ID:        2_123_456_789,
+			ProgramID: 42,
+			Kind:      bpfman.LinkKindTC,
+			Details: bpfman.TCDetails{
+				Interface: "eth0",
+				Direction: bpfman.TCDirectionIngress,
+				Priority:  50,
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := RenderLinkAttach(&buf, LinkAttachView{Link: link}, &OutputFlags{Output: OutputValue{Value: "table"}}); err != nil {
+		t.Fatalf("RenderLinkAttach() error = %v", err)
+	}
+	output := buf.String()
+	for _, want := range []string{
+		"Link ID: 2123456789",
+		"Spec:",
+		"Status:",
+		"Type:",
+		"tc",
+		"Interface:",
+		"eth0",
+		"Priority:",
+		"50",
+	} {
+		if !strings.Contains(output, want) {
+			t.Errorf("link attach table missing %q:\n%s", want, output)
+		}
+	}
+}
+
+func TestRenderLinkGetTable_RendersPresentationFields(t *testing.T) {
+	t.Parallel()
+
+	link := bpfman.Link{
+		Record: bpfman.LinkRecord{
+			ID:        2_123_456_789,
+			ProgramID: 42,
+			Kind:      bpfman.LinkKindTC,
+			Details: bpfman.TCDetails{
+				Interface: "eth0",
+				Direction: bpfman.TCDirectionIngress,
+				Priority:  50,
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := RenderLinkGet(&buf, LinkGetView{Link: link, ProgramName: "stats"}, &OutputFlags{Output: OutputValue{Value: "table"}}); err != nil {
+		t.Fatalf("RenderLinkGet() error = %v", err)
+	}
+	output := buf.String()
+	for _, want := range []string{"BPF Function:", "stats", "Network Namespace:", "None"} {
+		if !strings.Contains(output, want) {
+			t.Errorf("link get table missing %q:\n%s", want, output)
+		}
+	}
+}
+
+func TestRenderDispatcherSnapshotTable_ExposesMemberManagedAndKernelIDs(t *testing.T) {
 	t.Parallel()
 
 	dispatcherKernelLinkID := kernel.LinkID(19)
@@ -86,10 +155,11 @@ func TestFormatDispatcherSnapshotTable_ExposesMemberManagedAndKernelIDs(t *testi
 		},
 	}
 
-	output, err := FormatDispatcherSnapshot(snap, &OutputFlags{Output: OutputValue{Value: "table"}})
-	if err != nil {
-		t.Fatalf("FormatDispatcherSnapshot() error = %v", err)
+	var buf bytes.Buffer
+	if err := RenderDispatcherSnapshot(&buf, snap, &OutputFlags{Output: OutputValue{Value: "table"}}); err != nil {
+		t.Fatalf("RenderDispatcherSnapshot() error = %v", err)
 	}
+	output := buf.String()
 	for _, want := range []string{"LINK_ID", "KERNEL_LINK_ID", "2123456789", "23"} {
 		if !strings.Contains(output, want) {
 			t.Errorf("dispatcher snapshot table missing %q: %s", want, output)
@@ -97,7 +167,7 @@ func TestFormatDispatcherSnapshotTable_ExposesMemberManagedAndKernelIDs(t *testi
 	}
 }
 
-func TestFormatDispatcherSnapshotTable_MissingMemberKernelIDUsesColumnSentinel(t *testing.T) {
+func TestRenderDispatcherSnapshotTable_MissingMemberKernelIDUsesColumnSentinel(t *testing.T) {
 	t.Parallel()
 
 	snap := platform.DispatcherSnapshot{
@@ -122,10 +192,11 @@ func TestFormatDispatcherSnapshotTable_MissingMemberKernelIDUsesColumnSentinel(t
 		},
 	}
 
-	output, err := FormatDispatcherSnapshot(snap, &OutputFlags{Output: OutputValue{Value: "table"}})
-	if err != nil {
-		t.Fatalf("FormatDispatcherSnapshot() error = %v", err)
+	var buf bytes.Buffer
+	if err := RenderDispatcherSnapshot(&buf, snap, &OutputFlags{Output: OutputValue{Value: "table"}}); err != nil {
+		t.Fatalf("RenderDispatcherSnapshot() error = %v", err)
 	}
+	output := buf.String()
 	for _, want := range []string{"KERNEL_LINK_ID", "<none>"} {
 		if !strings.Contains(output, want) {
 			t.Errorf("dispatcher snapshot table missing %q: %s", want, output)

@@ -19,11 +19,6 @@ func TestOutputFlags_Format(t *testing.T) {
 			want:   OutputFormatTable,
 		},
 		{
-			name:   "tree",
-			output: "tree",
-			want:   OutputFormatTree,
-		},
-		{
 			name:   "json",
 			output: "json",
 			want:   OutputFormatJSON,
@@ -103,6 +98,52 @@ func TestOutputFlags_JSONPathExpr(t *testing.T) {
 			got := f.JSONPathExpr()
 			if got != tt.want {
 				t.Errorf("JSONPathExpr() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestOutputFlags_NeedsLinkGetProgramName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		output  string
+		want    bool
+		wantErr bool
+	}{
+		{
+			name:   "table",
+			output: "table",
+			want:   true,
+		},
+		{
+			name:   "json",
+			output: "json",
+			want:   false,
+		},
+		{
+			name:   "jsonpath",
+			output: "jsonpath={.record.id}",
+			want:   false,
+		},
+		{
+			name:    "invalid format",
+			output:  "nonsense",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f := &OutputFlags{Output: OutputValue{Value: tt.output}}
+			got, err := f.NeedsLinkGetProgramName()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("NeedsLinkGetProgramName() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && got != tt.want {
+				t.Errorf("NeedsLinkGetProgramName() = %v, want %v", got, tt.want)
 			}
 		})
 	}

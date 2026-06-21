@@ -1,6 +1,7 @@
 package cliformat
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -34,13 +35,14 @@ func sampleDispatcherSummaries() []platform.DispatcherSummary {
 	}
 }
 
-func TestFormatDispatcherListJSON_WrapsInResult(t *testing.T) {
+func TestRenderDispatcherListJSON_WrapsInResult(t *testing.T) {
 	t.Parallel()
 
-	output, err := FormatDispatcherList(sampleDispatcherSummaries(), &OutputFlags{Output: OutputValue{Value: "json"}})
-	if err != nil {
-		t.Fatalf("FormatDispatcherList() error = %v", err)
+	var buf bytes.Buffer
+	if err := RenderDispatcherList(&buf, DispatcherListView{Summaries: sampleDispatcherSummaries()}, &OutputFlags{Output: OutputValue{Value: "json"}}); err != nil {
+		t.Fatalf("RenderDispatcherList() error = %v", err)
 	}
+	output := buf.String()
 	var result platform.DispatcherListResult
 	if err := json.Unmarshal([]byte(output), &result); err != nil {
 		t.Fatalf("output is not a DispatcherListResult: %v\n%s", err, output)
@@ -50,25 +52,27 @@ func TestFormatDispatcherListJSON_WrapsInResult(t *testing.T) {
 	}
 }
 
-func TestFormatDispatcherListJSON_EmptyListYieldsEmptyResult(t *testing.T) {
+func TestRenderDispatcherListJSON_EmptyListYieldsEmptyResult(t *testing.T) {
 	t.Parallel()
 
-	output, err := FormatDispatcherList(nil, &OutputFlags{Output: OutputValue{Value: "json"}})
-	if err != nil {
-		t.Fatalf("FormatDispatcherList() error = %v", err)
+	var buf bytes.Buffer
+	if err := RenderDispatcherList(&buf, DispatcherListView{}, &OutputFlags{Output: OutputValue{Value: "json"}}); err != nil {
+		t.Fatalf("RenderDispatcherList() error = %v", err)
 	}
+	output := buf.String()
 	if !strings.Contains(output, `"dispatchers": []`) {
 		t.Errorf("empty list should marshal as an empty dispatchers array: %s", output)
 	}
 }
 
-func TestFormatDispatcherListTable_SingleListingCarriesNetns(t *testing.T) {
+func TestRenderDispatcherListTable_SingleListingCarriesNetns(t *testing.T) {
 	t.Parallel()
 
-	table, err := FormatDispatcherList(sampleDispatcherSummaries(), &OutputFlags{Output: OutputValue{Value: "table"}})
-	if err != nil {
-		t.Fatalf("FormatDispatcherList(table) error = %v", err)
+	var buf bytes.Buffer
+	if err := RenderDispatcherList(&buf, DispatcherListView{Summaries: sampleDispatcherSummaries()}, &OutputFlags{Output: OutputValue{Value: "table"}}); err != nil {
+		t.Fatalf("RenderDispatcherList(table) error = %v", err)
 	}
+	table := buf.String()
 	for _, want := range []string{"NETNS", "/var/run/netns/blue"} {
 		if !strings.Contains(table, want) {
 			t.Errorf("table missing %q:\n%s", want, table)

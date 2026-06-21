@@ -127,11 +127,7 @@ func (c *ListProgramsCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 		return cli.PrintOut(b.String())
 	}
 
-	output, err := cliformat.FormatProgramsComposite(result, &c.OutputFlags)
-	if err != nil {
-		return err
-	}
-	return cli.PrintOut(output)
+	return cliformat.RenderProgramList(cli.Out, cliformat.ProgramListView{Result: result}, &c.OutputFlags)
 }
 
 // ListLinksCmd lists managed links.
@@ -223,9 +219,5 @@ func (c *ListLinksCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 		return cli.PrintOut(b.String())
 	}
 
-	output, err := cliformat.FormatLinkList(links, &c.OutputFlags)
-	if err != nil {
-		return err
-	}
-	return cli.PrintOut(output)
+	return cliformat.RenderLinkList(cli.Out, cliformat.LinkListView{Links: links}, &c.OutputFlags)
 }

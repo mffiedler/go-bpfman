@@ -432,32 +432,21 @@ func execShowProgram(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 	// JSON output always emits the full Program regardless of
 	// sub-view; consumers can select fields with jq.
 	if format == cliformat.OutputFormatJSON {
-		output, err := cliformat.FormatShowJSON(prog)
-		if err != nil {
-			return err
-		}
-		return cli.PrintOut(output)
+		return cliformat.RenderShowJSON(cli.Out, prog)
 	}
 
-	var output string
 	switch cmd.View {
 	case "summary":
-		var fmtErr error
-		output, fmtErr = cliformat.FormatProgram(prog, &cmd.Output)
-		if fmtErr != nil {
-			return fmtErr
-		}
+		return cliformat.RenderProgram(cli.Out, prog, &cmd.Output)
 	case "links":
-		output = cliformat.FormatShowLinks(prog)
+		return cliformat.RenderShowLinks(cli.Out, prog)
 	case "maps":
-		output = cliformat.FormatShowMaps(prog)
+		return cliformat.RenderShowMaps(cli.Out, prog)
 	case "paths":
-		output = cliformat.FormatShowPaths(prog)
+		return cliformat.RenderShowPaths(cli.Out, prog)
 	default:
 		return fmt.Errorf("unknown view %q (valid: summary, links, maps, paths)", cmd.View)
 	}
-
-	return cli.PrintOut(output)
 }
 
 // LoadFileCommand represents a fully parsed "load file" command.
@@ -590,11 +579,7 @@ func execLoadFile(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 	}
 	result := loadFileResult{Programs: loaded}
 
-	output, err := cliformat.FormatLoadedPrograms(result.Programs, &cmd.Output)
-	if err != nil {
-		return runtime.Value{}, err
-	}
-	if err := cli.PrintOut(output); err != nil {
+	if err := cliformat.RenderLoadedPrograms(cli.Out, cliformat.LoadedProgramsView{Programs: result.Programs}, &cmd.Output); err != nil {
 		return runtime.Value{}, err
 	}
 
@@ -1334,6 +1319,10 @@ func parseLinkAttachFexit(args []runtime.Arg) (*LinkAttachCommand, error) {
 // BPF program under lock, printing output, and returning a structured
 // Value for optional variable assignment.
 func execLinkAttach(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *LinkAttachCommand) (runtime.Value, error) {
+	if _, err := cmd.Output.Format(); err != nil {
+		return runtime.Value{}, err
+	}
+
 	link, err := bpfmancli.RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (bpfman.Link, error) {
 		return mgr.Attach(ctx, writeLock, cmd.Spec)
 	})
@@ -1341,11 +1330,7 @@ func execLinkAttach(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manage
 		return runtime.Value{}, err
 	}
 
-	output, err := cliformat.FormatLinkResult(link, &cmd.Output)
-	if err != nil {
-		return runtime.Value{}, err
-	}
-	if err := cli.PrintOut(output); err != nil {
+	if err := cliformat.RenderLinkAttach(cli.Out, cliformat.LinkAttachView{Link: link}, &cmd.Output); err != nil {
 		return runtime.Value{}, err
 	}
 
@@ -1591,11 +1576,7 @@ func execLoadImage(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager
 	}
 	result := loadImageResult{Programs: loaded}
 
-	output, err := cliformat.FormatLoadedPrograms(result.Programs, &cmd.Output)
-	if err != nil {
-		return runtime.Value{}, err
-	}
-	if err := cli.PrintOut(output); err != nil {
+	if err := cliformat.RenderLoadedPrograms(cli.Out, cliformat.LoadedProgramsView{Programs: result.Programs}, &cmd.Output); err != nil {
 		return runtime.Value{}, err
 	}
 
@@ -1673,11 +1654,7 @@ func execGetProgram(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manage
 		return runtime.Value{}, err
 	}
 
-	output, err := cliformat.FormatProgram(prog, &cmd.Output)
-	if err != nil {
-		return runtime.Value{}, err
-	}
-	if err := cli.PrintOut(output); err != nil {
+	if err := cliformat.RenderProgram(cli.Out, prog, &cmd.Output); err != nil {
 		return runtime.Value{}, err
 	}
 
@@ -1761,11 +1738,22 @@ func execGetLink(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, 
 		},
 	}
 
-	output, fmtErr := cliformat.FormatLinkResult(link, &cmd.Output)
-	if fmtErr != nil {
-		return runtime.Value{}, fmtErr
+	needName, err := cmd.Output.NeedsLinkGetProgramName()
+	if err != nil {
+		return runtime.Value{}, err
 	}
-	if err := cli.PrintOut(output); err != nil {
+	var programName string
+	if needName {
+		programName, err = mgr.ProgramName(ctx, info.Record.ProgramID)
+		if err != nil {
+			return runtime.Value{}, err
+		}
+	}
+
+	if err := cliformat.RenderLinkGet(cli.Out, cliformat.LinkGetView{
+		Link:        link,
+		ProgramName: programName,
+	}, &cmd.Output); err != nil {
 		return runtime.Value{}, err
 	}
 
@@ -2103,11 +2091,7 @@ func execListPrograms(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Mana
 				return runtime.Value{}, err
 			}
 		} else {
-			output, err := cliformat.FormatProgramsComposite(result, &cmd.Output)
-			if err != nil {
-				return runtime.Value{}, err
-			}
-			if err := cli.PrintOut(output); err != nil {
+			if err := cliformat.RenderProgramList(cli.Out, cliformat.ProgramListView{Result: result}, &cmd.Output); err != nil {
 				return runtime.Value{}, err
 			}
 		}
@@ -2276,11 +2260,7 @@ func execListLinks(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager
 				return runtime.Value{}, err
 			}
 		} else {
-			output, err := cliformat.FormatLinkList(links, &cmd.Output)
-			if err != nil {
-				return runtime.Value{}, err
-			}
-			if err := cli.PrintOut(output); err != nil {
+			if err := cliformat.RenderLinkList(cli.Out, cliformat.LinkListView{Links: links}, &cmd.Output); err != nil {
 				return runtime.Value{}, err
 			}
 		}
@@ -2388,11 +2368,7 @@ func execDispatcherList(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Ma
 	summaries = filtered
 
 	if len(summaries) > 0 || cmd.Output.IsStructured() {
-		output, err := cliformat.FormatDispatcherList(summaries, &cmd.Output)
-		if err != nil {
-			return runtime.Value{}, err
-		}
-		if err := cli.PrintOut(output); err != nil {
+		if err := cliformat.RenderDispatcherList(cli.Out, cliformat.DispatcherListView{Summaries: summaries}, &cmd.Output); err != nil {
 			return runtime.Value{}, err
 		}
 	}
@@ -2474,11 +2450,7 @@ func execDispatcherGet(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Man
 		return runtime.Value{}, err
 	}
 
-	output, err := cliformat.FormatDispatcherSnapshot(snap, &cmd.Output)
-	if err != nil {
-		return runtime.Value{}, err
-	}
-	if err := cli.PrintOut(output); err != nil {
+	if err := cliformat.RenderDispatcherSnapshot(cli.Out, snap, &cmd.Output); err != nil {
 		return runtime.Value{}, err
 	}
 	val, err := runtime.ValueFromStruct(snap)

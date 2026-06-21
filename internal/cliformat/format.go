@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -15,6 +16,17 @@ import (
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/platform"
 )
+
+func writeOutput(w io.Writer, output string) error {
+	n, err := io.WriteString(w, output)
+	if err != nil {
+		return err
+	}
+	if n != len(output) {
+		return io.ErrShortWrite
+	}
+	return nil
+}
 
 // CLI output trailing-newline contract.
 //
@@ -91,23 +103,33 @@ func executeJSONPath(data any, expr string) (string, error) {
 	return out + "\n", nil
 }
 
-// FormatProgram formats a bpfman.Program according to the specified output flags.
-func FormatProgram(prog bpfman.Program, flags *OutputFlags) (string, error) {
+func unsupportedOutputFormat(format OutputFormat) error {
+	return fmt.Errorf("unsupported output format %q", format)
+}
+
+// RenderProgram writes a program get result according to the specified output flags.
+func RenderProgram(w io.Writer, prog bpfman.Program, flags *OutputFlags) error {
 	format, err := flags.Format()
 	if err != nil {
-		return "", err
+		return err
 	}
 	switch format {
 	case OutputFormatJSON:
-		return formatProgramJSON(prog)
-	case OutputFormatTree:
-		return formatProgramTree(prog), nil
+		output, err := formatProgramJSON(prog)
+		if err != nil {
+			return err
+		}
+		return writeOutput(w, output)
 	case OutputFormatTable:
-		return formatProgramTable(prog), nil
+		return writeOutput(w, formatProgramTable(prog))
 	case OutputFormatJSONPath:
-		return formatProgramJSONPath(prog, flags.JSONPathExpr())
+		output, err := formatProgramJSONPath(prog, flags.JSONPathExpr())
+		if err != nil {
+			return err
+		}
+		return writeOutput(w, output)
 	default:
-		return formatProgramTable(prog), nil
+		return unsupportedOutputFormat(format)
 	}
 }
 
@@ -121,115 +143,6 @@ func formatProgramJSON(prog bpfman.Program) (string, error) {
 
 func formatProgramJSONPath(prog bpfman.Program, expr string) (string, error) {
 	return executeJSONPath(prog, expr)
-}
-
-func formatProgramTree(prog bpfman.Program) string {
-	var b strings.Builder
-
-	// Header
-	if prog.Status.Kernel != nil {
-		p := prog.Status.Kernel
-		fmt.Fprintf(&b, "Program %d: %s%s\n", p.ID, p.Name, p.ProgramType)
-	}
-
-	hasPathSection := prog.Status.ProgPin != ""
-
-	// Status (runtime state)
-	b.WriteString("├─ Status\n")
-	if prog.Status.Kernel != nil {
-		p := prog.Status.Kernel
-		fmt.Fprintf(&b, "│  ├─ tag:        %s\n", p.Tag)
-		if !p.LoadedAt.IsZero() {
-			fmt.Fprintf(&b, "│  ├─ loaded_at:  %s\n", p.LoadedAt.Format(time.RFC3339))
-		}
-		if p.BTFId != 0 {
-			fmt.Fprintf(&b, "│  ├─ btf_id:     %d\n", p.BTFId)
-		}
-		if p.JitedSize != 0 {
-			fmt.Fprintf(&b, "│  ├─ jited:      %d bytes\n", p.JitedSize)
-		}
-		if p.XlatedSize != 0 {
-			fmt.Fprintf(&b, "│  ├─ xlated:     %d bytes\n", p.XlatedSize)
-		}
-
-		// Maps
-		if len(prog.Status.Maps) > 0 {
-			fmt.Fprintf(&b, "│  ├─ Maps (%d)\n", len(prog.Status.Maps))
-			for i, m := range prog.Status.Maps {
-				prefix := "│  │  ├─"
-				if i == len(prog.Status.Maps)-1 {
-					prefix = "│  │  └─"
-				}
-				fmt.Fprintf(&b, "%s [%d] %s%s\n", prefix, m.ID, m.Name, m.MapType)
-				detailPrefix := "│  │  │ "
-				if i == len(prog.Status.Maps)-1 {
-					detailPrefix = "│  │    "
-				}
-				fmt.Fprintf(&b, "%s        keys: %dB, values: %dB, max: %d\n",
-					detailPrefix, m.KeySize, m.ValueSize, m.MaxEntries)
-				if m.PinPath != "" {
-					fmt.Fprintf(&b, "%s        pin: %s%s\n",
-						detailPrefix, m.PinPath, presenceSuffix(m.Present))
-				}
-			}
-		} else {
-			b.WriteString("│  ├─ Maps: none\n")
-		}
-
-		// Links - connector depends on whether Paths section follows
-		linksConnector := "└─"
-		linksIndent := "│     "
-		if hasPathSection {
-			linksConnector = "├─"
-			linksIndent = "│  │  "
-		}
-
-		if len(prog.Status.Links) > 0 {
-			fmt.Fprintf(&b, "│  %s Links (%d)\n", linksConnector, len(prog.Status.Links))
-			for i, l := range prog.Status.Links {
-				isLast := i == len(prog.Status.Links)-1
-				prefix := linksIndent + "├─"
-				if isLast {
-					prefix = linksIndent + "└─"
-				}
-				if l.Status.Kernel != nil {
-					fmt.Fprintf(&b, "%s [%d] %s\n", prefix, l.Record.ID, l.Status.Kernel.LinkType)
-				} else {
-					fmt.Fprintf(&b, "%s [%d] %s\n", prefix, l.Record.ID, l.Record.Kind)
-				}
-				if l.Record.PinPath != nil {
-					detailPrefix := linksIndent + "│ "
-					if isLast {
-						detailPrefix = linksIndent + "  "
-					}
-					fmt.Fprintf(&b, "%s        pin: %s%s\n",
-						detailPrefix, l.Record.PinPath.String(), presenceSuffix(l.Status.PinPresent))
-				}
-			}
-		} else {
-			fmt.Fprintf(&b, "│  %s Links: none\n", linksConnector)
-		}
-
-		// Paths section (only when filesystem enrichment is present)
-		if hasPathSection {
-			b.WriteString("│  └─ Paths\n")
-			fmt.Fprintf(&b, "│     ├─ prog:     %s\n", prog.Status.ProgPin)
-			fmt.Fprintf(&b, "│     ├─ maps:     %s\n", prog.Status.MapDir)
-			fmt.Fprintf(&b, "│     └─ bytecode: %s\n", prog.Status.Bytecode)
-		}
-	}
-
-	// Spec (configured state)
-	b.WriteString("│\n")
-	b.WriteString("└─ Spec\n")
-	p := &prog.Record
-	if !p.CreatedAt.IsZero() {
-		fmt.Fprintf(&b, "   ├─ created:    %s\n", p.CreatedAt.Format(time.RFC3339))
-	}
-	fmt.Fprintf(&b, "   ├─ source:     %s\n", p.Load.ObjectPath())
-	fmt.Fprintf(&b, "   └─ pin_path:   %s\n", p.Handles.PinPath)
-
-	return b.String()
 }
 
 func formatProgramTable(prog bpfman.Program) string {
@@ -407,228 +320,6 @@ func formatMetadata(meta map[string]string) string {
 	return strings.Join(parts, ", ")
 }
 
-// FormatLinkList formats a list of LinkRecord according to the specified output flags.
-func FormatLinkList(links []bpfman.LinkRecord, flags *OutputFlags) (string, error) {
-	format, err := flags.Format()
-	if err != nil {
-		return "", err
-	}
-	switch format {
-	case OutputFormatJSON:
-		return formatLinkListJSON(links)
-	case OutputFormatTable:
-		return formatLinkListTable(links), nil
-	case OutputFormatJSONPath:
-		return formatLinkListJSONPath(links, flags.JSONPathExpr())
-	default:
-		return formatLinkListTable(links), nil
-	}
-}
-
-func formatLinkListJSON(links []bpfman.LinkRecord) (string, error) {
-	if links == nil {
-		links = []bpfman.LinkRecord{}
-	}
-	result := bpfman.LinkListResult{Links: links}
-	output, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal result: %w", err)
-	}
-	return string(output) + "\n", nil
-}
-
-func formatLinkListJSONPath(links []bpfman.LinkRecord, expr string) (string, error) {
-	if links == nil {
-		links = []bpfman.LinkRecord{}
-	}
-	result := bpfman.LinkListResult{Links: links}
-	return executeJSONPath(result, expr)
-}
-
-func formatLinkListTable(links []bpfman.LinkRecord) string {
-	return DefaultLinkColumns().FormatLinkTable(links)
-}
-
-// FormatLinkResult formats a link result (from attach command) according to
-// the specified output flags.
-func FormatLinkResult(link bpfman.Link, flags *OutputFlags) (string, error) {
-	format, err := flags.Format()
-	if err != nil {
-		return "", err
-	}
-	switch format {
-	case OutputFormatJSON:
-		output, err := json.MarshalIndent(link, "", "  ")
-		if err != nil {
-			return "", fmt.Errorf("failed to marshal link: %w", err)
-		}
-		return string(output) + "\n", nil
-	case OutputFormatTable:
-		return formatLinkResultTable(link), nil
-	case OutputFormatJSONPath:
-		return executeJSONPath(link, flags.JSONPathExpr())
-	default:
-		return formatLinkResultTable(link), nil
-	}
-}
-
-func formatLinkResultTable(link bpfman.Link) string {
-	var b strings.Builder
-
-	// Primary identifier at column one (like Program ID for programs)
-	fmt.Fprintf(&b, "Link ID: %d\n", link.Record.ID)
-
-	// Collect Spec fields from LinkSpec, then sort alphabetically
-	var specFields []string
-
-	// LinkSpec fields
-	if !link.Record.CreatedAt.IsZero() {
-		specFields = append(specFields, fmt.Sprintf("    Created At:\t%s", link.Record.CreatedAt.Format(time.RFC3339)))
-	}
-	if link.Record.KernelLinkID != nil {
-		specFields = append(specFields, fmt.Sprintf("    Kernel Link ID:\t%d", *link.Record.KernelLinkID))
-	} else {
-		specFields = append(specFields, "    Kernel Link ID:\tNone")
-	}
-	specFields = append(specFields, fmt.Sprintf("    Metadata:\t%s", formatMetadata(link.Record.Metadata)))
-	if link.Record.PinPath != nil {
-		specFields = append(specFields, fmt.Sprintf("    Pin Path:\t%s", link.Record.PinPath.String()))
-	} else {
-		specFields = append(specFields, "    Pin Path:\tNone")
-	}
-	specFields = append(specFields, fmt.Sprintf("    Program ID:\t%d", link.Record.ProgramID))
-	specFields = append(specFields, fmt.Sprintf("    Type:\t%s", link.Record.Kind))
-
-	// Type-specific fields from LinkDetails
-	switch d := link.Record.Details.(type) {
-	case bpfman.FentryDetails:
-		specFields = append(specFields, fmt.Sprintf("    Target Function:\t%s", d.FnName))
-	case bpfman.FexitDetails:
-		specFields = append(specFields, fmt.Sprintf("    Target Function:\t%s", d.FnName))
-	case bpfman.KprobeDetails:
-		if d.Retprobe {
-			specFields = append(specFields, "    Attach Type:\tkretprobe")
-		} else {
-			specFields = append(specFields, "    Attach Type:\tkprobe")
-		}
-		specFields = append(specFields, fmt.Sprintf("    Target Function:\t%s", d.FnName))
-		if d.Offset != 0 {
-			specFields = append(specFields, fmt.Sprintf("    Target Offset:\t%d", d.Offset))
-		}
-	case bpfman.TCDetails:
-		specFields = append(specFields, fmt.Sprintf("    Direction:\t%s", d.Direction))
-		specFields = append(specFields, fmt.Sprintf("    Interface:\t%s", d.Interface))
-		if d.Netns != "" {
-			specFields = append(specFields, fmt.Sprintf("    Network Namespace:\t%s", d.Netns))
-		}
-		specFields = append(specFields, fmt.Sprintf("    Position:\t%d", d.Position))
-		specFields = append(specFields, fmt.Sprintf("    Priority:\t%d", d.Priority))
-		specFields = append(specFields, fmt.Sprintf("    Proceed On:\t%s", bpfman.TCActionsToString(d.ProceedOn)))
-	case bpfman.TCXDetails:
-		specFields = append(specFields, fmt.Sprintf("    Direction:\t%s", d.Direction))
-		specFields = append(specFields, fmt.Sprintf("    Interface:\t%s", d.Interface))
-		if d.Netns != "" {
-			specFields = append(specFields, fmt.Sprintf("    Network Namespace:\t%s", d.Netns))
-		}
-		specFields = append(specFields, fmt.Sprintf("    Position:\t%d", d.Position))
-		specFields = append(specFields, fmt.Sprintf("    Priority:\t%d", d.Priority))
-	case bpfman.TracepointDetails:
-		specFields = append(specFields, fmt.Sprintf("    Tracepoint:\t%s/%s", d.Group, d.Name))
-	case bpfman.UprobeDetails:
-		if d.Retprobe {
-			specFields = append(specFields, "    Attach Type:\turetprobe")
-		} else {
-			specFields = append(specFields, "    Attach Type:\tuprobe")
-		}
-		if d.PID != 0 {
-			specFields = append(specFields, fmt.Sprintf("    PID:\t%d", d.PID))
-		}
-		specFields = append(specFields, fmt.Sprintf("    Target:\t%s", d.Target))
-		specFields = append(specFields, fmt.Sprintf("    Target Function:\t%s", d.FnName))
-		if d.Offset != 0 {
-			specFields = append(specFields, fmt.Sprintf("    Target Offset:\t%d", d.Offset))
-		}
-	case bpfman.XDPDetails:
-		specFields = append(specFields, fmt.Sprintf("    Interface:\t%s", d.Interface))
-		if d.Netns != "" {
-			specFields = append(specFields, fmt.Sprintf("    Network Namespace:\t%s", d.Netns))
-		}
-		specFields = append(specFields, fmt.Sprintf("    Position:\t%d", d.Position))
-		specFields = append(specFields, fmt.Sprintf("    Priority:\t%d", d.Priority))
-		specFields = append(specFields, fmt.Sprintf("    Proceed On:\t%s", formatXDPProceedOn(d.ProceedOn)))
-	}
-
-	// Sort Spec fields alphabetically
-	slices.Sort(specFields)
-
-	// Collect Status fields from LinkStatus
-	var statusFields []string
-	if link.Status.KernelSeen {
-		statusFields = append(statusFields, "    Kernel Seen:\ttrue")
-	} else {
-		statusFields = append(statusFields, "    Kernel Seen:\tfalse")
-	}
-	if link.Status.PinPresent {
-		statusFields = append(statusFields, "    Pin Present:\ttrue")
-	} else {
-		statusFields = append(statusFields, "    Pin Present:\tfalse")
-	}
-
-	// Sort Status fields alphabetically
-	slices.Sort(statusFields)
-
-	// Run all fields through single tabwriter for unified alignment
-	var aligned strings.Builder
-	w := tabwriter.NewWriter(&aligned, 0, 0, 1, ' ', 0)
-	for _, f := range specFields {
-		fmt.Fprintln(w, f)
-	}
-	for _, f := range statusFields {
-		fmt.Fprintln(w, f)
-	}
-	w.Flush()
-
-	// Split aligned output and reassemble with headers
-	lines := strings.Split(strings.TrimSuffix(aligned.String(), "\n"), "\n")
-	b.WriteString("  Spec:\n")
-	for _, line := range lines[:len(specFields)] {
-		b.WriteString(line)
-		b.WriteString("\n")
-	}
-	b.WriteString("  Status:\n")
-	for _, line := range lines[len(specFields):] {
-		b.WriteString(line)
-		b.WriteString("\n")
-	}
-
-	return b.String()
-}
-
-// formatXDPProceedOn converts XDP proceed-on values to a human-readable string.
-func formatXDPProceedOn(actions []int32) string {
-	if len(actions) == 0 {
-		return "None"
-	}
-	// XDP actions: 0=aborted, 1=drop, 2=pass, 3=tx, 4=redirect, 31=dispatcher_return
-	xdpNames := map[int32]string{
-		0:  "aborted",
-		1:  "drop",
-		2:  "pass",
-		3:  "tx",
-		4:  "redirect",
-		31: "dispatcher_return",
-	}
-	names := make([]string, len(actions))
-	for i, a := range actions {
-		if name, ok := xdpNames[a]; ok {
-			names[i] = name
-		} else {
-			names[i] = fmt.Sprintf("unknown(%d)", a)
-		}
-	}
-	return strings.Join(names, ", ")
-}
-
 // formatAttachDetails formats type-specific link details for display.
 func formatAttachDetails(details bpfman.LinkDetails) string {
 	if details == nil {
@@ -662,26 +353,39 @@ func formatAttachDetails(details bpfman.LinkDetails) string {
 	}
 }
 
-// FormatLoadedPrograms formats a list of loaded bpfman.Program according to the specified output flags.
-// This is used for the load command output.
-func FormatLoadedPrograms(programs []bpfman.Program, flags *OutputFlags) (string, error) {
+// LoadedProgramsView is the output view for commands that load programs.
+type LoadedProgramsView struct {
+	Programs []bpfman.Program
+}
+
+// RenderLoadedPrograms writes the result of a load command.
+func RenderLoadedPrograms(w io.Writer, view LoadedProgramsView, flags *OutputFlags) error {
 	format, err := flags.Format()
 	if err != nil {
-		return "", err
+		return err
 	}
 	switch format {
 	case OutputFormatJSON:
-		return formatLoadedProgramsJSON(programs)
+		output, err := formatLoadedProgramsJSON(view)
+		if err != nil {
+			return err
+		}
+		return writeOutput(w, output)
 	case OutputFormatTable:
-		return formatLoadedProgramsTable(programs), nil
+		return writeOutput(w, formatLoadedProgramsTable(view))
 	case OutputFormatJSONPath:
-		return formatLoadedProgramsJSONPath(programs, flags.JSONPathExpr())
+		output, err := formatLoadedProgramsJSONPath(view, flags.JSONPathExpr())
+		if err != nil {
+			return err
+		}
+		return writeOutput(w, output)
 	default:
-		return formatLoadedProgramsTable(programs), nil
+		return unsupportedOutputFormat(format)
 	}
 }
 
-func formatLoadedProgramsJSON(programs []bpfman.Program) (string, error) {
+func formatLoadedProgramsJSON(view LoadedProgramsView) (string, error) {
+	programs := view.Programs
 	if programs == nil {
 		programs = []bpfman.Program{}
 	}
@@ -692,15 +396,17 @@ func formatLoadedProgramsJSON(programs []bpfman.Program) (string, error) {
 	return string(output) + "\n", nil
 }
 
-func formatLoadedProgramsJSONPath(programs []bpfman.Program, expr string) (string, error) {
+func formatLoadedProgramsJSONPath(view LoadedProgramsView, expr string) (string, error) {
+	programs := view.Programs
 	if programs == nil {
 		programs = []bpfman.Program{}
 	}
 	return executeJSONPath(bpfman.LoadResult{Programs: programs}, expr)
 }
 
-func formatLoadedProgramsTable(programs []bpfman.Program) string {
+func formatLoadedProgramsTable(view LoadedProgramsView) string {
 	// Sort programs by program ID for consistent, scannable output
+	programs := view.Programs
 	sorted := slices.Clone(programs)
 	slices.SortFunc(sorted, func(a, b bpfman.Program) int {
 		if a.Record.ProgramID < b.Record.ProgramID {
@@ -866,30 +572,38 @@ func formatLoadedProgramsTable(programs []bpfman.Program) string {
 	return b.String()
 }
 
-// FormatProgramsComposite renders the `program list` result: a set of
-// summary entries, one per program, with observation metadata, in the
-// requested output format.
-func FormatProgramsComposite(result bpfman.ProgramListResult, flags *OutputFlags) (string, error) {
+// ProgramListView is the output view for program list commands.
+type ProgramListView struct {
+	Result bpfman.ProgramListResult
+}
+
+// RenderProgramList writes a program list result.
+func RenderProgramList(w io.Writer, view ProgramListView, flags *OutputFlags) error {
+	result := view.Result
 	if result.Programs == nil {
 		result.Programs = []bpfman.ProgramListEntry{}
 	}
 	format, err := flags.Format()
 	if err != nil {
-		return "", err
+		return err
 	}
 	switch format {
 	case OutputFormatJSON:
 		output, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
-			return "", fmt.Errorf("failed to marshal: %w", err)
+			return fmt.Errorf("failed to marshal: %w", err)
 		}
-		return string(output) + "\n", nil
+		return writeOutput(w, string(output)+"\n")
 	case OutputFormatJSONPath:
-		return executeJSONPath(result, flags.JSONPathExpr())
+		output, err := executeJSONPath(result, flags.JSONPathExpr())
+		if err != nil {
+			return err
+		}
+		return writeOutput(w, output)
 	case OutputFormatTable:
-		return formatProgramsCompositeTable(result), nil
+		return writeOutput(w, formatProgramsCompositeTable(result))
 	default:
-		return formatProgramsCompositeTable(result), nil
+		return unsupportedOutputFormat(format)
 	}
 }
 
@@ -943,43 +657,54 @@ func programLinksColumn(links []bpfman.LinkID) string {
 	return fmt.Sprintf("(%d) %s", count, list)
 }
 
-// FormatDispatcherList formats a list of dispatcher summaries.
-func FormatDispatcherList(summaries []platform.DispatcherSummary, flags *OutputFlags) (string, error) {
+// DispatcherListView is the output view for dispatcher list commands.
+type DispatcherListView struct {
+	Summaries []platform.DispatcherSummary
+}
+
+// RenderDispatcherList writes a dispatcher list result.
+func RenderDispatcherList(w io.Writer, view DispatcherListView, flags *OutputFlags) error {
 	format, err := flags.Format()
 	if err != nil {
-		return "", err
+		return err
 	}
 	switch format {
 	case OutputFormatJSON:
+		summaries := view.Summaries
 		if summaries == nil {
 			summaries = []platform.DispatcherSummary{}
 		}
 		result := platform.DispatcherListResult{Dispatchers: summaries}
 		output, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
-			return "", fmt.Errorf("failed to marshal: %w", err)
+			return fmt.Errorf("failed to marshal: %w", err)
 		}
-		return string(output) + "\n", nil
+		return writeOutput(w, string(output)+"\n")
 	case OutputFormatJSONPath:
+		summaries := view.Summaries
 		if summaries == nil {
 			summaries = []platform.DispatcherSummary{}
 		}
 		result := platform.DispatcherListResult{Dispatchers: summaries}
-		return executeJSONPath(result, flags.JSONPathExpr())
+		output, err := executeJSONPath(result, flags.JSONPathExpr())
+		if err != nil {
+			return err
+		}
+		return writeOutput(w, output)
 	case OutputFormatTable:
-		return formatDispatcherListTable(summaries), nil
+		return writeOutput(w, formatDispatcherListTable(view))
 	default:
-		return formatDispatcherListTable(summaries), nil
+		return unsupportedOutputFormat(format)
 	}
 }
 
-func formatDispatcherListTable(summaries []platform.DispatcherSummary) string {
+func formatDispatcherListTable(view DispatcherListView) string {
 	var b strings.Builder
 	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
 
 	fmt.Fprintln(w, "TYPE\tNSID\tIFINDEX\tREVISION\tPROGRAM_ID\tKERNEL_LINK_ID\tPRIORITY\tHANDLE\tMEMBERS\tNETNS")
 
-	for _, s := range summaries {
+	for _, s := range view.Summaries {
 		linkID := "-"
 		if s.Runtime.KernelLinkID != nil {
 			linkID = fmt.Sprintf("%d", *s.Runtime.KernelLinkID)
@@ -1006,25 +731,29 @@ func formatDispatcherListTable(summaries []platform.DispatcherSummary) string {
 	return b.String()
 }
 
-// FormatDispatcherSnapshot formats a single dispatcher snapshot.
-func FormatDispatcherSnapshot(snap platform.DispatcherSnapshot, flags *OutputFlags) (string, error) {
+// RenderDispatcherSnapshot writes a single dispatcher snapshot.
+func RenderDispatcherSnapshot(w io.Writer, snap platform.DispatcherSnapshot, flags *OutputFlags) error {
 	format, err := flags.Format()
 	if err != nil {
-		return "", err
+		return err
 	}
 	switch format {
 	case OutputFormatJSON:
 		output, err := json.MarshalIndent(snap, "", "  ")
 		if err != nil {
-			return "", fmt.Errorf("failed to marshal: %w", err)
+			return fmt.Errorf("failed to marshal: %w", err)
 		}
-		return string(output) + "\n", nil
+		return writeOutput(w, string(output)+"\n")
 	case OutputFormatJSONPath:
-		return executeJSONPath(snap, flags.JSONPathExpr())
+		output, err := executeJSONPath(snap, flags.JSONPathExpr())
+		if err != nil {
+			return err
+		}
+		return writeOutput(w, output)
 	case OutputFormatTable:
-		return formatDispatcherSnapshotTable(snap), nil
+		return writeOutput(w, formatDispatcherSnapshotTable(snap))
 	default:
-		return formatDispatcherSnapshotTable(snap), nil
+		return unsupportedOutputFormat(format)
 	}
 }
 

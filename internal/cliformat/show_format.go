@@ -3,6 +3,7 @@ package cliformat
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"path/filepath"
 	"strings"
 	"text/tabwriter"
@@ -10,10 +11,10 @@ import (
 	"github.com/frobware/go-bpfman"
 )
 
-// FormatShowLinks renders a tabwriter table of link details.
-func FormatShowLinks(prog bpfman.Program) string {
+// RenderShowLinks writes a tabwriter table of link details.
+func RenderShowLinks(out io.Writer, prog bpfman.Program) error {
 	if len(prog.Status.Links) == 0 {
-		return "No links.\n"
+		return writeOutput(out, "No links.\n")
 	}
 
 	var b strings.Builder
@@ -37,13 +38,13 @@ func FormatShowLinks(prog bpfman.Program) string {
 	}
 
 	w.Flush()
-	return b.String()
+	return writeOutput(out, b.String())
 }
 
-// FormatShowMaps renders a tabwriter table of map details.
-func FormatShowMaps(prog bpfman.Program) string {
+// RenderShowMaps writes a tabwriter table of map details.
+func RenderShowMaps(out io.Writer, prog bpfman.Program) error {
 	if len(prog.Status.Maps) == 0 {
-		return "No maps.\n"
+		return writeOutput(out, "No maps.\n")
 	}
 
 	var b strings.Builder
@@ -59,11 +60,11 @@ func FormatShowMaps(prog bpfman.Program) string {
 	}
 
 	w.Flush()
-	return b.String()
+	return writeOutput(out, b.String())
 }
 
-// FormatShowPaths renders a two-column path inventory.
-func FormatShowPaths(prog bpfman.Program) string {
+// RenderShowPaths writes a two-column path inventory.
+func RenderShowPaths(out io.Writer, prog bpfman.Program) error {
 	var b strings.Builder
 	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
 
@@ -93,16 +94,16 @@ func FormatShowPaths(prog bpfman.Program) string {
 	fmt.Fprintln(w, prog.Status.Bytecode)
 
 	w.Flush()
-	return b.String()
+	return writeOutput(out, b.String())
 }
 
-// FormatShowJSON serialises the full Program as indented JSON.
-func FormatShowJSON(prog bpfman.Program) (string, error) {
+// RenderShowJSON writes the full Program as indented JSON.
+func RenderShowJSON(out io.Writer, prog bpfman.Program) error {
 	output, err := json.MarshalIndent(prog, "", "  ")
 	if err != nil {
-		return "", fmt.Errorf("marshal program: %w", err)
+		return fmt.Errorf("marshal program: %w", err)
 	}
-	return string(output) + "\n", nil
+	return writeOutput(out, string(output)+"\n")
 }
 
 func presenceYN(present bool) string {

@@ -38,11 +38,7 @@ func (c *GetProgramCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 		return err
 	}
 
-	output, err := cliformat.FormatProgram(prog, &c.OutputFlags)
-	if err != nil {
-		return err
-	}
-	return cli.PrintOut(output)
+	return cliformat.RenderProgram(cli.Out, prog, &c.OutputFlags)
 }
 
 // GetLinkCmd gets details of a link by link ID.
@@ -74,9 +70,20 @@ func (c *GetLinkCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 		},
 	}
 
-	output, err := cliformat.FormatLinkResult(link, &c.OutputFlags)
+	needName, err := c.OutputFlags.NeedsLinkGetProgramName()
 	if err != nil {
 		return err
 	}
-	return cli.PrintOut(output)
+	var programName string
+	if needName {
+		programName, err = mgr.ProgramName(ctx, info.Record.ProgramID)
+		if err != nil {
+			return err
+		}
+	}
+
+	return cliformat.RenderLinkGet(cli.Out, cliformat.LinkGetView{
+		Link:        link,
+		ProgramName: programName,
+	}, &c.OutputFlags)
 }

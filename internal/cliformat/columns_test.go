@@ -1,6 +1,7 @@
 package cliformat
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -101,7 +102,7 @@ func TestColumnSpec_ExtractValue(t *testing.T) {
 	}
 }
 
-func TestColumnSet_FormatTable(t *testing.T) {
+func TestColumnSet_RenderTable(t *testing.T) {
 	t.Parallel()
 
 	programs := []bpfman.Program{
@@ -128,19 +129,23 @@ func TestColumnSet_FormatTable(t *testing.T) {
 	// Use registry-backed column selection
 	columns := MustSelectProgramColumns([]string{"PROGRAM_ID", "NAME"})
 
-	output := columns.FormatTable(programs)
+	var buf bytes.Buffer
+	if err := columns.RenderTable(&buf, programs); err != nil {
+		t.Fatalf("RenderTable() error = %v", err)
+	}
+	output := buf.String()
 
 	// Verify header exists
 	if !strings.Contains(output, "PROGRAM_ID") || !strings.Contains(output, "NAME") {
-		t.Errorf("FormatTable() output missing headers: %s", output)
+		t.Errorf("RenderTable() output missing headers: %s", output)
 	}
 
 	// Verify data rows
 	if !strings.Contains(output, "42") || !strings.Contains(output, "prog1") {
-		t.Errorf("FormatTable() output missing first row data: %s", output)
+		t.Errorf("RenderTable() output missing first row data: %s", output)
 	}
 	if !strings.Contains(output, "43") || !strings.Contains(output, "prog2") {
-		t.Errorf("FormatTable() output missing second row data: %s", output)
+		t.Errorf("RenderTable() output missing second row data: %s", output)
 	}
 }
 
@@ -181,7 +186,11 @@ func TestDefaultLinkColumns_ExposeManagedAndKernelIDs(t *testing.T) {
 		KernelLinkID: &kernelLinkID,
 		Kind:         bpfman.LinkKindTracepoint,
 	}
-	output := cols.FormatLinkTable([]bpfman.LinkRecord{link})
+	var buf bytes.Buffer
+	if err := cols.RenderLinkTable(&buf, []bpfman.LinkRecord{link}); err != nil {
+		t.Fatalf("RenderLinkTable() error = %v", err)
+	}
+	output := buf.String()
 	for _, want := range []string{"LINK ID", "KERNEL LINK ID", "2123456789", "17"} {
 		if !strings.Contains(output, want) {
 			t.Errorf("link table missing %q: %s", want, output)
