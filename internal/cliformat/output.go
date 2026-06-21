@@ -8,8 +8,8 @@ import (
 type OutputFormat string
 
 const (
-	OutputFormatTable OutputFormat = "table"
-	OutputFormatJSON  OutputFormat = "json"
+	OutputFormatText OutputFormat = "text"
+	OutputFormatJSON OutputFormat = "json"
 )
 
 // OutputValue wraps an output format string and tracks whether it has been set.
@@ -21,40 +21,30 @@ type OutputValue struct {
 
 // OutputFlags provides output formatting flags.
 type OutputFlags struct {
-	Output OutputValue `short:"o" help:"Output format: table, json." default:"table"`
+	Output OutputValue `short:"o" help:"Output format: text, json." default:"text"`
 }
 
 // Format returns the base format type, or an error if the format is unrecognised.
 func (f *OutputFlags) Format() (OutputFormat, error) {
 	v := f.Output.Value
 	switch {
-	case v == "table":
-		return OutputFormatTable, nil
+	case v == "text":
+		return OutputFormatText, nil
 	case v == "json":
 		return OutputFormatJSON, nil
 	default:
-		return "", fmt.Errorf("unknown output format %q; valid formats: table, json", v)
+		return "", fmt.Errorf("unknown output format %q; valid formats: text, json", v)
 	}
 }
 
-// IsStructured reports whether the output format is structured and
-// should produce valid output even when the result set is empty.
-func (f *OutputFlags) IsStructured() bool {
-	format, err := f.Format()
-	if err != nil {
-		return false
-	}
-	return format == OutputFormatJSON
+// IsStructured reports whether the output format should produce valid
+// output even when the result set is empty.
+func (f OutputFormat) IsStructured() bool {
+	return f == OutputFormatJSON
 }
 
 // NeedsLinkGetProgramName reports whether get-link output renders the
-// presentation-only BPF Function row. It returns format errors instead
-// of swallowing them so callers can reject invalid -o values before
-// doing lookup work.
-func (f *OutputFlags) NeedsLinkGetProgramName() (bool, error) {
-	format, err := f.Format()
-	if err != nil {
-		return false, err
-	}
-	return format == OutputFormatTable, nil
+// presentation-only BPF Function row.
+func (f OutputFormat) NeedsLinkGetProgramName() bool {
+	return f == OutputFormatText
 }

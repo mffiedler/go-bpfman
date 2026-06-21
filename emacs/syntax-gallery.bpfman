@@ -384,7 +384,7 @@ guard p_multi <- bpfman program load file        \
     -m owner=test-team                           \
     -g SAMPLING_RATE=0x0a000000
 
-bpfman program list -o table
+bpfman program list -o text
 bpfman program list -o json
 bpfman program delete 42 -r
 bpfman gc --dry-run

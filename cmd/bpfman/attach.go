@@ -30,15 +30,16 @@ type attachResult struct {
 
 // runAttach is the common attach pattern: create manager, run under lock, format output.
 func runAttach(cli *bpfmancli.CLI, ctx context.Context, flags *cliformat.OutputFlags, fn func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error)) error {
+	format, err := flags.Format()
+	if err != nil {
+		return err
+	}
+
 	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
 	}
 	defer cleanup()
-
-	if _, err := flags.Format(); err != nil {
-		return err
-	}
 
 	result, err := bpfmancli.RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (attachResult, error) {
 		return fn(ctx, mgr, writeLock)
@@ -47,7 +48,7 @@ func runAttach(cli *bpfmancli.CLI, ctx context.Context, flags *cliformat.OutputF
 		return err
 	}
 
-	return cliformat.RenderLinkAttach(cli.Out, cliformat.LinkAttachView{Link: result.Link}, flags)
+	return cliformat.RenderLinkAttach(cli.Out, cliformat.LinkAttachView{Link: result.Link}, format)
 }
 
 // AttachXDPCmd attaches an XDP program to a network interface.

@@ -33,11 +33,7 @@ type LinkListView struct {
 }
 
 // RenderLinkAttach writes the result of a link attach command.
-func RenderLinkAttach(w io.Writer, view LinkAttachView, flags *OutputFlags) error {
-	format, err := flags.Format()
-	if err != nil {
-		return err
-	}
+func RenderLinkAttach(w io.Writer, view LinkAttachView, format OutputFormat) error {
 	switch format {
 	case OutputFormatJSON:
 		output, err := json.MarshalIndent(view.Link, "", "  ")
@@ -45,7 +41,7 @@ func RenderLinkAttach(w io.Writer, view LinkAttachView, flags *OutputFlags) erro
 			return fmt.Errorf("failed to marshal link: %w", err)
 		}
 		return writeOutput(w, string(output)+"\n")
-	case OutputFormatTable:
+	case OutputFormatText:
 		return writeOutput(w, formatLinkTable(LinkGetView{Link: view.Link}))
 	default:
 		return unsupportedOutputFormat(format)
@@ -53,11 +49,7 @@ func RenderLinkAttach(w io.Writer, view LinkAttachView, flags *OutputFlags) erro
 }
 
 // RenderLinkGet writes the result of a get-link command.
-func RenderLinkGet(w io.Writer, view LinkGetView, flags *OutputFlags) error {
-	format, err := flags.Format()
-	if err != nil {
-		return err
-	}
+func RenderLinkGet(w io.Writer, view LinkGetView, format OutputFormat) error {
 	switch format {
 	case OutputFormatJSON:
 		output, err := json.MarshalIndent(view.Link, "", "  ")
@@ -65,7 +57,7 @@ func RenderLinkGet(w io.Writer, view LinkGetView, flags *OutputFlags) error {
 			return fmt.Errorf("failed to marshal link: %w", err)
 		}
 		return writeOutput(w, string(output)+"\n")
-	case OutputFormatTable:
+	case OutputFormatText:
 		return writeOutput(w, formatLinkTable(view))
 	default:
 		return unsupportedOutputFormat(format)
@@ -73,11 +65,7 @@ func RenderLinkGet(w io.Writer, view LinkGetView, flags *OutputFlags) error {
 }
 
 // RenderLinkList writes the result of a link list command.
-func RenderLinkList(w io.Writer, view LinkListView, flags *OutputFlags) error {
-	format, err := flags.Format()
-	if err != nil {
-		return err
-	}
+func RenderLinkList(w io.Writer, view LinkListView, format OutputFormat) error {
 	switch format {
 	case OutputFormatJSON:
 		output, err := formatLinkListJSON(view)
@@ -85,7 +73,7 @@ func RenderLinkList(w io.Writer, view LinkListView, flags *OutputFlags) error {
 			return err
 		}
 		return writeOutput(w, output)
-	case OutputFormatTable:
+	case OutputFormatText:
 		return renderLinkListTable(w, view)
 	default:
 		return unsupportedOutputFormat(format)

@@ -30,6 +30,11 @@ type LoadImageCmd struct {
 
 // Run executes the load image command.
 func (c *LoadImageCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
+	format, err := c.OutputFlags.Format()
+	if err != nil {
+		return err
+	}
+
 	logger := cli.Logger()
 
 	// Use NewManagerWithPuller for image loading operations
@@ -86,7 +91,7 @@ func (c *LoadImageCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	}
 	result := loadImageResult{Programs: loaded}
 
-	return cliformat.RenderLoadedPrograms(cli.Out, cliformat.LoadedProgramsView{Programs: result.Programs}, &c.OutputFlags)
+	return cliformat.RenderLoadedPrograms(cli.Out, cliformat.LoadedProgramsView{Programs: result.Programs}, format)
 }
 
 // registryAuthFromFlag decodes a base64-encoded registry-auth flag

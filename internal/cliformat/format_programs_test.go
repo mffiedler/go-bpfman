@@ -32,7 +32,7 @@ func TestRenderProgramListTable_Columns(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	require.NoError(t, RenderProgramList(&buf, ProgramListView{Result: result}, &OutputFlags{Output: OutputValue{Value: "table"}}))
+	require.NoError(t, RenderProgramList(&buf, ProgramListView{Result: result}, OutputFormatText))
 	out := buf.String()
 
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")

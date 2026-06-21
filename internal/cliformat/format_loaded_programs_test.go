@@ -38,7 +38,7 @@ func TestRenderLoadedProgramsJSON_WrapsWithProgramsKey(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	require.NoError(t, RenderLoadedPrograms(&buf, LoadedProgramsView{Programs: programs}, &OutputFlags{Output: OutputValue{Value: "json"}}))
+	require.NoError(t, RenderLoadedPrograms(&buf, LoadedProgramsView{Programs: programs}, OutputFormatJSON))
 	got := buf.String()
 
 	// Decode into a generic shape so we test the wire format
@@ -72,7 +72,7 @@ func TestRenderLoadedProgramsJSON_EmptySlice(t *testing.T) {
 				input = []bpfman.Program{}
 			}
 			var buf bytes.Buffer
-			require.NoError(t, RenderLoadedPrograms(&buf, LoadedProgramsView{Programs: input}, &OutputFlags{Output: OutputValue{Value: "json"}}))
+			require.NoError(t, RenderLoadedPrograms(&buf, LoadedProgramsView{Programs: input}, OutputFormatJSON))
 			got := buf.String()
 
 			var raw map[string]json.RawMessage

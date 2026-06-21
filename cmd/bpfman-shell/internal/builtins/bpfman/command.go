@@ -374,7 +374,7 @@ func parseShowProgram(args []runtime.Arg) (*ShowProgramCommand, error) {
 		ID:   id,
 		View: "summary",
 		Output: cliformat.OutputFlags{
-			Output: cliformat.OutputValue{Value: "table"},
+			Output: cliformat.OutputValue{Value: "text"},
 		},
 	}
 
@@ -437,7 +437,7 @@ func execShowProgram(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 
 	switch cmd.View {
 	case "summary":
-		return cliformat.RenderProgram(cli.Out, prog, &cmd.Output)
+		return cliformat.RenderProgram(cli.Out, prog, format)
 	case "links":
 		return cliformat.RenderShowLinks(cli.Out, prog)
 	case "maps":
@@ -469,7 +469,7 @@ func (*LoadFileCommand) isCommand() {}
 //	[-a <app>] [--map-owner-id <id>] [-o <format>]
 func parseLoadFile(args []runtime.Arg) (*LoadFileCommand, error) {
 	cmd := &LoadFileCommand{
-		Output: cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}},
+		Output: cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "text"}},
 	}
 
 	for i := 0; i < len(args); i++ {
@@ -554,6 +554,11 @@ func parseLoadFile(args []runtime.Arg) (*LoadFileCommand, error) {
 // program from a local object file, printing output, and returning a
 // structured Value for optional variable assignment.
 func execLoadFile(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *LoadFileCommand) (runtime.Value, error) {
+	format, err := cmd.Output.Format()
+	if err != nil {
+		return runtime.Value{}, err
+	}
+
 	objPath, err := bpfmancli.ParseObjectPath(cmd.Path)
 	if err != nil {
 		return runtime.Value{}, err
@@ -579,7 +584,7 @@ func execLoadFile(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 	}
 	result := loadFileResult{Programs: loaded}
 
-	if err := cliformat.RenderLoadedPrograms(cli.Out, cliformat.LoadedProgramsView{Programs: result.Programs}, &cmd.Output); err != nil {
+	if err := cliformat.RenderLoadedPrograms(cli.Out, cliformat.LoadedProgramsView{Programs: result.Programs}, format); err != nil {
 		return runtime.Value{}, err
 	}
 
@@ -663,7 +668,7 @@ func parseLinkAttachXDP(args []runtime.Arg) (*LinkAttachCommand, error) {
 		progArg   runtime.Arg
 		pos       []runtime.Arg
 		metadata  []bpfmancli.KeyValue
-		output    = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}}
+		output    = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "text"}}
 	)
 
 	defaults := true
@@ -770,7 +775,7 @@ func parseLinkAttachTC(args []runtime.Arg) (*LinkAttachCommand, error) {
 		progArg   runtime.Arg
 		pos       []runtime.Arg
 		metadata  []bpfmancli.KeyValue
-		output    = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}}
+		output    = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "text"}}
 	)
 
 	defaults := true
@@ -877,7 +882,7 @@ func parseLinkAttachTCX(args []runtime.Arg) (*LinkAttachCommand, error) {
 		progArg   runtime.Arg
 		pos       []runtime.Arg
 		metadata  []bpfmancli.KeyValue
-		output    = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}}
+		output    = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "text"}}
 	)
 
 	for i := 0; i < len(args); i++ {
@@ -961,7 +966,7 @@ func parseLinkAttachTracepoint(args []runtime.Arg) (*LinkAttachCommand, error) {
 		progArg    runtime.Arg
 		tracepoint string
 		metadata   []bpfmancli.KeyValue
-		output     = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}}
+		output     = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "text"}}
 	)
 
 	for i := 0; i < len(args); i++ {
@@ -1028,7 +1033,7 @@ func parseLinkAttachKprobe(args []runtime.Arg) (*LinkAttachCommand, error) {
 		progArg  runtime.Arg
 		pos      []runtime.Arg
 		metadata []bpfmancli.KeyValue
-		output   = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}}
+		output   = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "text"}}
 	)
 
 	for i := 0; i < len(args); i++ {
@@ -1107,7 +1112,7 @@ func parseLinkAttachUprobe(args []runtime.Arg) (*LinkAttachCommand, error) {
 		progArg      runtime.Arg
 		pos          []runtime.Arg
 		metadata     []bpfmancli.KeyValue
-		output       = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}}
+		output       = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "text"}}
 	)
 
 	for i := 0; i < len(args); i++ {
@@ -1208,7 +1213,7 @@ func parseLinkAttachFentry(args []runtime.Arg) (*LinkAttachCommand, error) {
 	var (
 		progArg  runtime.Arg
 		metadata []bpfmancli.KeyValue
-		output   = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}}
+		output   = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "text"}}
 	)
 
 	for i := 0; i < len(args); i++ {
@@ -1265,7 +1270,7 @@ func parseLinkAttachFexit(args []runtime.Arg) (*LinkAttachCommand, error) {
 	var (
 		progArg  runtime.Arg
 		metadata []bpfmancli.KeyValue
-		output   = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}}
+		output   = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "text"}}
 	)
 
 	for i := 0; i < len(args); i++ {
@@ -1319,7 +1324,8 @@ func parseLinkAttachFexit(args []runtime.Arg) (*LinkAttachCommand, error) {
 // BPF program under lock, printing output, and returning a structured
 // Value for optional variable assignment.
 func execLinkAttach(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *LinkAttachCommand) (runtime.Value, error) {
-	if _, err := cmd.Output.Format(); err != nil {
+	format, err := cmd.Output.Format()
+	if err != nil {
 		return runtime.Value{}, err
 	}
 
@@ -1330,7 +1336,7 @@ func execLinkAttach(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manage
 		return runtime.Value{}, err
 	}
 
-	if err := cliformat.RenderLinkAttach(cli.Out, cliformat.LinkAttachView{Link: link}, &cmd.Output); err != nil {
+	if err := cliformat.RenderLinkAttach(cli.Out, cliformat.LinkAttachView{Link: link}, format); err != nil {
 		return runtime.Value{}, err
 	}
 
@@ -1427,7 +1433,7 @@ func (*LoadImageCommand) isCommand() {}
 func parseLoadImage(args []runtime.Arg) (*LoadImageCommand, error) {
 	cmd := &LoadImageCommand{
 		PullPolicy: "IfNotPresent",
-		Output:     cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}},
+		Output:     cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "text"}},
 	}
 
 	for i := 0; i < len(args); i++ {
@@ -1524,6 +1530,11 @@ func parseLoadImage(args []runtime.Arg) (*LoadImageCommand, error) {
 // programs from an OCI image, printing output, and returning a
 // structured Value for optional variable assignment.
 func execLoadImage(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *LoadImageCommand) (runtime.Value, error) {
+	format, err := cmd.Output.Format()
+	if err != nil {
+		return runtime.Value{}, err
+	}
+
 	pullPolicy, err := bpfman.ParseImagePullPolicy(cmd.PullPolicy)
 	if err != nil {
 		return runtime.Value{}, fmt.Errorf("load image: invalid pull policy %q: %w", cmd.PullPolicy, err)
@@ -1576,7 +1587,7 @@ func execLoadImage(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager
 	}
 	result := loadImageResult{Programs: loaded}
 
-	if err := cliformat.RenderLoadedPrograms(cli.Out, cliformat.LoadedProgramsView{Programs: result.Programs}, &cmd.Output); err != nil {
+	if err := cliformat.RenderLoadedPrograms(cli.Out, cliformat.LoadedProgramsView{Programs: result.Programs}, format); err != nil {
 		return runtime.Value{}, err
 	}
 
@@ -1616,7 +1627,7 @@ func parseGetProgram(args []runtime.Arg) (*GetProgramCommand, error) {
 	cmd := &GetProgramCommand{
 		ID: id,
 		Output: cliformat.OutputFlags{
-			Output: cliformat.OutputValue{Value: "table"},
+			Output: cliformat.OutputValue{Value: "text"},
 		},
 	}
 
@@ -1649,12 +1660,17 @@ func parseGetProgram(args []runtime.Arg) (*GetProgramCommand, error) {
 // program from the store, rendering output, and returning a
 // structured Value for variable assignment.
 func execGetProgram(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *GetProgramCommand) (runtime.Value, error) {
+	format, err := cmd.Output.Format()
+	if err != nil {
+		return runtime.Value{}, err
+	}
+
 	prog, err := mgr.Get(ctx, cmd.ID)
 	if err != nil {
 		return runtime.Value{}, err
 	}
 
-	if err := cliformat.RenderProgram(cli.Out, prog, &cmd.Output); err != nil {
+	if err := cliformat.RenderProgram(cli.Out, prog, format); err != nil {
 		return runtime.Value{}, err
 	}
 
@@ -1691,7 +1707,7 @@ func parseGetLink(args []runtime.Arg) (*GetLinkCommand, error) {
 	cmd := &GetLinkCommand{
 		ID: id,
 		Output: cliformat.OutputFlags{
-			Output: cliformat.OutputValue{Value: "table"},
+			Output: cliformat.OutputValue{Value: "text"},
 		},
 	}
 
@@ -1724,6 +1740,11 @@ func parseGetLink(args []runtime.Arg) (*GetLinkCommand, error) {
 // from the store, rendering output, and returning a structured Value
 // for variable assignment.
 func execGetLink(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *GetLinkCommand) (runtime.Value, error) {
+	format, err := cmd.Output.Format()
+	if err != nil {
+		return runtime.Value{}, err
+	}
+
 	info, err := mgr.GetLinkInfo(ctx, cmd.ID)
 	if err != nil {
 		return runtime.Value{}, err
@@ -1738,12 +1759,8 @@ func execGetLink(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, 
 		},
 	}
 
-	needName, err := cmd.Output.NeedsLinkGetProgramName()
-	if err != nil {
-		return runtime.Value{}, err
-	}
 	var programName string
-	if needName {
+	if format.NeedsLinkGetProgramName() {
 		programName, err = mgr.ProgramName(ctx, info.Record.ProgramID)
 		if err != nil {
 			return runtime.Value{}, err
@@ -1753,7 +1770,7 @@ func execGetLink(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, 
 	if err := cliformat.RenderLinkGet(cli.Out, cliformat.LinkGetView{
 		Link:        link,
 		ProgramName: programName,
-	}, &cmd.Output); err != nil {
+	}, format); err != nil {
 		return runtime.Value{}, err
 	}
 
@@ -1964,7 +1981,7 @@ func (*ListProgramsCommand) isCommand() {}
 //	[-m <key=val>]... [-l <selector>] [-a] [-o <format>]
 func parseListPrograms(args []runtime.Arg) (*ListProgramsCommand, error) {
 	cmd := &ListProgramsCommand{
-		Output: cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}},
+		Output: cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "text"}},
 	}
 
 	for i := 0; i < len(args); i++ {
@@ -2038,6 +2055,11 @@ func parseListPrograms(args []runtime.Arg) (*ListProgramsCommand, error) {
 // result as a bindable value so shell scripts can inspect the list
 // structurally.
 func execListPrograms(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *ListProgramsCommand) (runtime.Value, error) {
+	format, err := cmd.Output.Format()
+	if err != nil {
+		return runtime.Value{}, err
+	}
+
 	var opts []bpfman.ListOption
 
 	if cmd.Attached {
@@ -2081,7 +2103,7 @@ func execListPrograms(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Mana
 		return runtime.Value{}, err
 	}
 
-	if len(result.Programs) > 0 || cmd.Output.IsStructured() {
+	if len(result.Programs) > 0 || format.IsStructured() {
 		if cmd.Quiet {
 			var b strings.Builder
 			for _, p := range result.Programs {
@@ -2091,7 +2113,7 @@ func execListPrograms(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Mana
 				return runtime.Value{}, err
 			}
 		} else {
-			if err := cliformat.RenderProgramList(cli.Out, cliformat.ProgramListView{Result: result}, &cmd.Output); err != nil {
+			if err := cliformat.RenderProgramList(cli.Out, cliformat.ProgramListView{Result: result}, format); err != nil {
 				return runtime.Value{}, err
 			}
 		}
@@ -2126,7 +2148,7 @@ func (*ListLinksCommand) isCommand() {}
 //	[-m <key=val>]... [-o <format>]
 func parseListLinks(args []runtime.Arg) (*ListLinksCommand, error) {
 	cmd := &ListLinksCommand{
-		Output: cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}},
+		Output: cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "text"}},
 	}
 
 	for i := 0; i < len(args); i++ {
@@ -2229,6 +2251,11 @@ func linkProgramScopeOptions(cmd *ListLinksCommand) ([]bpfman.ListOption, bool) 
 // execListLinks executes a parsed ListLinksCommand, listing links
 // from the store and rendering output.
 func execListLinks(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *ListLinksCommand) (runtime.Value, error) {
+	format, err := cmd.Output.Format()
+	if err != nil {
+		return runtime.Value{}, err
+	}
+
 	var opts []bpfman.LinkListOption
 
 	if cmd.ProgramID != nil {
@@ -2240,7 +2267,6 @@ func execListLinks(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager
 	}
 
 	var links []bpfman.LinkRecord
-	var err error
 	if progOpts, scoped := linkProgramScopeOptions(cmd); scoped {
 		links, err = mgr.ListLinksScopedToPrograms(ctx, progOpts, opts)
 	} else {
@@ -2250,7 +2276,7 @@ func execListLinks(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager
 		return runtime.Value{}, err
 	}
 
-	if len(links) > 0 || cmd.Output.IsStructured() {
+	if len(links) > 0 || format.IsStructured() {
 		if cmd.Quiet {
 			var b strings.Builder
 			for _, l := range links {
@@ -2260,7 +2286,7 @@ func execListLinks(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager
 				return runtime.Value{}, err
 			}
 		} else {
-			if err := cliformat.RenderLinkList(cli.Out, cliformat.LinkListView{Links: links}, &cmd.Output); err != nil {
+			if err := cliformat.RenderLinkList(cli.Out, cliformat.LinkListView{Links: links}, format); err != nil {
 				return runtime.Value{}, err
 			}
 		}
@@ -2292,7 +2318,7 @@ func (*DispatcherListCommand) isCommand() {}
 //	[--type <type>] [--nsid <nsid>] [--ifindex <ifindex>] [-o <format>]
 func parseDispatcherList(args []runtime.Arg) (*DispatcherListCommand, error) {
 	cmd := &DispatcherListCommand{
-		Output: cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}},
+		Output: cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "text"}},
 	}
 
 	for i := 0; i < len(args); i++ {
@@ -2353,6 +2379,11 @@ func parseDispatcherList(args []runtime.Arg) (*DispatcherListCommand, error) {
 // filtered summaries as a bindable value so scripts can assert on
 // the result the way they do with link list.
 func execDispatcherList(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *DispatcherListCommand) (runtime.Value, error) {
+	format, err := cmd.Output.Format()
+	if err != nil {
+		return runtime.Value{}, err
+	}
+
 	summaries, err := mgr.ListDispatcherSummaries(ctx)
 	if err != nil {
 		return runtime.Value{}, err
@@ -2367,8 +2398,8 @@ func execDispatcherList(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Ma
 	}
 	summaries = filtered
 
-	if len(summaries) > 0 || cmd.Output.IsStructured() {
-		if err := cliformat.RenderDispatcherList(cli.Out, cliformat.DispatcherListView{Summaries: summaries}, &cmd.Output); err != nil {
+	if len(summaries) > 0 || format.IsStructured() {
+		if err := cliformat.RenderDispatcherList(cli.Out, cliformat.DispatcherListView{Summaries: summaries}, format); err != nil {
 			return runtime.Value{}, err
 		}
 	}
@@ -2414,7 +2445,7 @@ func parseDispatcherGet(args []runtime.Arg) (*DispatcherGetCommand, error) {
 
 	cmd := &DispatcherGetCommand{
 		Key:    dispatcher.NewKey(dispType, nsid, uint32(ifindex)),
-		Output: cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}},
+		Output: cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "text"}},
 	}
 
 	for i := 3; i < len(args); i++ {
@@ -2445,12 +2476,17 @@ func parseDispatcherGet(args []runtime.Arg) (*DispatcherGetCommand, error) {
 // as a typed Value so callers using `guard snap <- bpfman dispatcher
 // get ...` get a structured handle they can walk.
 func execDispatcherGet(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *DispatcherGetCommand) (runtime.Value, error) {
+	format, err := cmd.Output.Format()
+	if err != nil {
+		return runtime.Value{}, err
+	}
+
 	snap, err := mgr.GetDispatcherSnapshot(ctx, cmd.Key)
 	if err != nil {
 		return runtime.Value{}, err
 	}
 
-	if err := cliformat.RenderDispatcherSnapshot(cli.Out, snap, &cmd.Output); err != nil {
+	if err := cliformat.RenderDispatcherSnapshot(cli.Out, snap, format); err != nil {
 		return runtime.Value{}, err
 	}
 	val, err := runtime.ValueFromStruct(snap)

@@ -282,14 +282,14 @@ func TestParseShowProgram(t *testing.T) {
 			args:       []runtime.Arg{runtime.WordArg{Text: "123"}},
 			wantID:     123,
 			wantView:   "summary",
-			wantOutput: "table",
+			wantOutput: "text",
 		},
 		{
 			name:       "hex ID",
 			args:       []runtime.Arg{runtime.WordArg{Text: "0x1a"}},
 			wantID:     26,
 			wantView:   "summary",
-			wantOutput: "table",
+			wantOutput: "text",
 		},
 		{
 			name: "structured variable ref",
@@ -298,7 +298,7 @@ func TestParseShowProgram(t *testing.T) {
 			},
 			wantID:     42,
 			wantView:   "summary",
-			wantOutput: "table",
+			wantOutput: "text",
 		},
 		{
 			name: "scalar value arg",
@@ -307,7 +307,7 @@ func TestParseShowProgram(t *testing.T) {
 			},
 			wantID:     55,
 			wantView:   "summary",
-			wantOutput: "table",
+			wantOutput: "text",
 		},
 		{
 			name: "with view argument",
@@ -317,7 +317,7 @@ func TestParseShowProgram(t *testing.T) {
 			},
 			wantID:     100,
 			wantView:   "links",
-			wantOutput: "table",
+			wantOutput: "text",
 		},
 		{
 			name: "with output flag",
@@ -362,7 +362,7 @@ func TestParseShowProgram(t *testing.T) {
 			},
 			wantID:     42,
 			wantView:   "maps",
-			wantOutput: "table",
+			wantOutput: "text",
 		},
 		{
 			name:    "no arguments",
@@ -458,7 +458,7 @@ func TestParseLoadFile(t *testing.T) {
 			name:       "path only",
 			args:       []runtime.Arg{word("/tmp/test.o")},
 			wantPath:   "/tmp/test.o",
-			wantOutput: "table",
+			wantOutput: "text",
 		},
 		{
 			name: "all flags",
@@ -488,7 +488,7 @@ func TestParseLoadFile(t *testing.T) {
 			},
 			wantPath:   "/tmp/test.o",
 			wantProgs:  2,
-			wantOutput: "table",
+			wantOutput: "text",
 		},
 		{
 			name: "multiple metadata",
@@ -499,7 +499,7 @@ func TestParseLoadFile(t *testing.T) {
 			},
 			wantPath:   "/tmp/test.o",
 			wantMeta:   2,
-			wantOutput: "table",
+			wantOutput: "text",
 		},
 		{
 			name:    "missing path",
@@ -591,7 +591,7 @@ func TestParseLoadImage(t *testing.T) {
 			args:           []runtime.Arg{word("quay.io/bpfman/xdp_pass:latest")},
 			wantURL:        "quay.io/bpfman/xdp_pass:latest",
 			wantPullPolicy: "IfNotPresent",
-			wantOutput:     "table",
+			wantOutput:     "text",
 		},
 		{
 			name: "all flags",
@@ -712,7 +712,7 @@ func TestParseLinkAttachTracepoint(t *testing.T) {
 		{
 			name:       "minimal",
 			args:       []runtime.Arg{word("tracepoint"), word("42"), word("sched/sched_switch")},
-			wantOutput: "table",
+			wantOutput: "text",
 		},
 		{
 			name: "with output flag before positionals",
@@ -727,7 +727,7 @@ func TestParseLinkAttachTracepoint(t *testing.T) {
 			args: []runtime.Arg{
 				word("tracepoint"), structuredProgram("prog", 99), word("sched/sched_switch"),
 			},
-			wantOutput: "table",
+			wantOutput: "text",
 		},
 		{
 			name:    "missing tracepoint",
@@ -788,7 +788,7 @@ func TestParseLinkAttachKprobe(t *testing.T) {
 		{
 			name:       "minimal",
 			args:       []runtime.Arg{word("kprobe"), word("42"), word("do_unlinkat")},
-			wantOutput: "table",
+			wantOutput: "text",
 		},
 		{
 			name: "with offset",
@@ -796,7 +796,7 @@ func TestParseLinkAttachKprobe(t *testing.T) {
 				word("kprobe"), word("42"), word("do_unlinkat"),
 				word("--offset"), word("16"),
 			},
-			wantOutput: "table",
+			wantOutput: "text",
 		},
 		{
 			name:    "missing fn-name",
@@ -842,7 +842,7 @@ func TestParseLinkAttachUprobe(t *testing.T) {
 		{
 			name:       "minimal",
 			args:       []runtime.Arg{word("uprobe"), word("42"), word("/usr/lib/libc.so.6")},
-			wantOutput: "table",
+			wantOutput: "text",
 		},
 		{
 			name: "all optional flags",
@@ -872,7 +872,7 @@ func TestParseLinkAttachUprobe(t *testing.T) {
 		{
 			name:       "pid filter",
 			args:       []runtime.Arg{word("uprobe"), word("42"), word("/bin/foo"), word("--pid"), word("1234")},
-			wantOutput: "table",
+			wantOutput: "text",
 		},
 		{
 			name:    "invalid pid",
@@ -924,7 +924,7 @@ func TestParseLinkAttachFentry(t *testing.T) {
 		{
 			name:       "program ID only",
 			args:       []runtime.Arg{word("fentry"), word("42")},
-			wantOutput: "table",
+			wantOutput: "text",
 		},
 		{
 			name:       "with output flag",
@@ -936,7 +936,7 @@ func TestParseLinkAttachFentry(t *testing.T) {
 			args: []runtime.Arg{
 				word("fentry"), structuredProgram("prog", 55),
 			},
-			wantOutput: "table",
+			wantOutput: "text",
 		},
 		{
 			name:    "missing program ID",
@@ -982,7 +982,7 @@ func TestParseLinkAttachFexit(t *testing.T) {
 		{
 			name:       "program ID only",
 			args:       []runtime.Arg{word("fexit"), word("42")},
-			wantOutput: "table",
+			wantOutput: "text",
 		},
 		{
 			name:    "missing program ID",
@@ -1017,12 +1017,12 @@ func TestParseLinkAttachNetworkTypes(t *testing.T) {
 		{
 			name:       "xdp",
 			args:       []runtime.Arg{word("xdp"), word("42"), word("lo"), word("--priority"), word("10")},
-			wantOutput: "table",
+			wantOutput: "text",
 		},
 		{
 			name:       "tc",
 			args:       []runtime.Arg{word("tc"), word("42"), word("lo"), word("ingress"), word("--priority"), word("10")},
-			wantOutput: "table",
+			wantOutput: "text",
 		},
 		{
 			name:       "tcx",
@@ -1339,13 +1339,13 @@ func TestParseGetProgram(t *testing.T) {
 			name:       "numeric ID",
 			args:       []runtime.Arg{word("123")},
 			wantID:     123,
-			wantOutput: "table",
+			wantOutput: "text",
 		},
 		{
 			name:       "hex ID",
 			args:       []runtime.Arg{word("0x1a")},
 			wantID:     26,
-			wantOutput: "table",
+			wantOutput: "text",
 		},
 		{
 			name: "structured variable ref",
@@ -1353,7 +1353,7 @@ func TestParseGetProgram(t *testing.T) {
 				runtime.StructuredValueArg{Name: "prog", Value: structuredVal},
 			},
 			wantID:     42,
-			wantOutput: "table",
+			wantOutput: "text",
 		},
 		{
 			name: "scalar value arg",
@@ -1361,7 +1361,7 @@ func TestParseGetProgram(t *testing.T) {
 				runtime.ScalarValueArg{Text: "55"},
 			},
 			wantID:     55,
-			wantOutput: "table",
+			wantOutput: "text",
 		},
 		{
 			name: "with output flag",
@@ -1453,13 +1453,13 @@ func TestParseGetLink(t *testing.T) {
 			name:       "numeric ID",
 			args:       []runtime.Arg{word("77")},
 			wantID:     77,
-			wantOutput: "table",
+			wantOutput: "text",
 		},
 		{
 			name:       "hex ID",
 			args:       []runtime.Arg{word("0x4d")},
 			wantID:     77,
-			wantOutput: "table",
+			wantOutput: "text",
 		},
 		{
 			name: "structured variable ref",
@@ -1467,13 +1467,13 @@ func TestParseGetLink(t *testing.T) {
 				runtime.StructuredValueArg{Name: "lnk", Value: structuredVal},
 			},
 			wantID:     77,
-			wantOutput: "table",
+			wantOutput: "text",
 		},
 		{
 			name:       "scalar value arg",
 			args:       []runtime.Arg{runtime.ScalarValueArg{Text: "55"}},
 			wantID:     55,
-			wantOutput: "table",
+			wantOutput: "text",
 		},
 		{
 			name: "with output flag",

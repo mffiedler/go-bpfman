@@ -27,6 +27,11 @@ type GetProgramCmd struct {
 
 // Run executes the get program command.
 func (c *GetProgramCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
+	format, err := c.OutputFlags.Format()
+	if err != nil {
+		return err
+	}
+
 	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
@@ -38,7 +43,7 @@ func (c *GetProgramCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 		return err
 	}
 
-	return cliformat.RenderProgram(cli.Out, prog, &c.OutputFlags)
+	return cliformat.RenderProgram(cli.Out, prog, format)
 }
 
 // GetLinkCmd gets details of a link by link ID.
@@ -49,6 +54,11 @@ type GetLinkCmd struct {
 
 // Run executes the get link command.
 func (c *GetLinkCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
+	format, err := c.OutputFlags.Format()
+	if err != nil {
+		return err
+	}
+
 	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
@@ -70,12 +80,8 @@ func (c *GetLinkCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 		},
 	}
 
-	needName, err := c.OutputFlags.NeedsLinkGetProgramName()
-	if err != nil {
-		return err
-	}
 	var programName string
-	if needName {
+	if format.NeedsLinkGetProgramName() {
 		programName, err = mgr.ProgramName(ctx, info.Record.ProgramID)
 		if err != nil {
 			return err
@@ -85,5 +91,5 @@ func (c *GetLinkCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	return cliformat.RenderLinkGet(cli.Out, cliformat.LinkGetView{
 		Link:        link,
 		ProgramName: programName,
-	}, &c.OutputFlags)
+	}, format)
 }

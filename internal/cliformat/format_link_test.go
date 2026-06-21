@@ -26,7 +26,7 @@ func TestRenderLinkGetTable_ExposesManagedAndKernelIDs(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := RenderLinkGet(&buf, LinkGetView{Link: link}, &OutputFlags{Output: OutputValue{Value: "table"}}); err != nil {
+	if err := RenderLinkGet(&buf, LinkGetView{Link: link}, OutputFormatText); err != nil {
 		t.Fatalf("RenderLinkGet() error = %v", err)
 	}
 	output := buf.String()
@@ -51,7 +51,7 @@ func TestRenderLinkGetTable_ShowsMetadata(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := RenderLinkGet(&buf, LinkGetView{Link: link}, &OutputFlags{Output: OutputValue{Value: "table"}}); err != nil {
+	if err := RenderLinkGet(&buf, LinkGetView{Link: link}, OutputFormatText); err != nil {
 		t.Fatalf("RenderLinkGet() error = %v", err)
 	}
 	output := buf.String()
@@ -77,7 +77,7 @@ func TestRenderLinkAttachTable_PrintsLinkDetails(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := RenderLinkAttach(&buf, LinkAttachView{Link: link}, &OutputFlags{Output: OutputValue{Value: "table"}}); err != nil {
+	if err := RenderLinkAttach(&buf, LinkAttachView{Link: link}, OutputFormatText); err != nil {
 		t.Fatalf("RenderLinkAttach() error = %v", err)
 	}
 	output := buf.String()
@@ -115,7 +115,7 @@ func TestRenderLinkGetTable_RendersPresentationFields(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := RenderLinkGet(&buf, LinkGetView{Link: link, ProgramName: "stats"}, &OutputFlags{Output: OutputValue{Value: "table"}}); err != nil {
+	if err := RenderLinkGet(&buf, LinkGetView{Link: link, ProgramName: "stats"}, OutputFormatText); err != nil {
 		t.Fatalf("RenderLinkGet() error = %v", err)
 	}
 	output := buf.String()
@@ -156,7 +156,7 @@ func TestRenderDispatcherSnapshotTable_ExposesMemberManagedAndKernelIDs(t *testi
 	}
 
 	var buf bytes.Buffer
-	if err := RenderDispatcherSnapshot(&buf, snap, &OutputFlags{Output: OutputValue{Value: "table"}}); err != nil {
+	if err := RenderDispatcherSnapshot(&buf, snap, OutputFormatText); err != nil {
 		t.Fatalf("RenderDispatcherSnapshot() error = %v", err)
 	}
 	output := buf.String()
@@ -193,7 +193,7 @@ func TestRenderDispatcherSnapshotTable_MissingMemberKernelIDUsesColumnSentinel(t
 	}
 
 	var buf bytes.Buffer
-	if err := RenderDispatcherSnapshot(&buf, snap, &OutputFlags{Output: OutputValue{Value: "table"}}); err != nil {
+	if err := RenderDispatcherSnapshot(&buf, snap, OutputFormatText); err != nil {
 		t.Fatalf("RenderDispatcherSnapshot() error = %v", err)
 	}
 	output := buf.String()

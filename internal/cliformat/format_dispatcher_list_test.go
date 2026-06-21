@@ -39,7 +39,7 @@ func TestRenderDispatcherListJSON_WrapsInResult(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
-	if err := RenderDispatcherList(&buf, DispatcherListView{Summaries: sampleDispatcherSummaries()}, &OutputFlags{Output: OutputValue{Value: "json"}}); err != nil {
+	if err := RenderDispatcherList(&buf, DispatcherListView{Summaries: sampleDispatcherSummaries()}, OutputFormatJSON); err != nil {
 		t.Fatalf("RenderDispatcherList() error = %v", err)
 	}
 	output := buf.String()
@@ -56,7 +56,7 @@ func TestRenderDispatcherListJSON_EmptyListYieldsEmptyResult(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
-	if err := RenderDispatcherList(&buf, DispatcherListView{}, &OutputFlags{Output: OutputValue{Value: "json"}}); err != nil {
+	if err := RenderDispatcherList(&buf, DispatcherListView{}, OutputFormatJSON); err != nil {
 		t.Fatalf("RenderDispatcherList() error = %v", err)
 	}
 	output := buf.String()
@@ -69,7 +69,7 @@ func TestRenderDispatcherListTable_SingleListingCarriesNetns(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
-	if err := RenderDispatcherList(&buf, DispatcherListView{Summaries: sampleDispatcherSummaries()}, &OutputFlags{Output: OutputValue{Value: "table"}}); err != nil {
+	if err := RenderDispatcherList(&buf, DispatcherListView{Summaries: sampleDispatcherSummaries()}, OutputFormatText); err != nil {
 		t.Fatalf("RenderDispatcherList(table) error = %v", err)
 	}
 	table := buf.String()

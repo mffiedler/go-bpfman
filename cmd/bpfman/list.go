@@ -99,6 +99,11 @@ func (c *ListProgramsCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 		return err
 	}
 
+	format, err := c.OutputFlags.Format()
+	if err != nil {
+		return err
+	}
+
 	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
@@ -115,7 +120,7 @@ func (c *ListProgramsCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 		return err
 	}
 
-	if len(result.Programs) == 0 && !c.OutputFlags.IsStructured() {
+	if len(result.Programs) == 0 && !format.IsStructured() {
 		return nil
 	}
 
@@ -127,7 +132,7 @@ func (c *ListProgramsCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 		return cli.PrintOut(b.String())
 	}
 
-	return cliformat.RenderProgramList(cli.Out, cliformat.ProgramListView{Result: result}, &c.OutputFlags)
+	return cliformat.RenderProgramList(cli.Out, cliformat.ProgramListView{Result: result}, format)
 }
 
 // ListLinksCmd lists managed links.
@@ -186,6 +191,11 @@ func (c *ListLinksCmd) programScopeOptions() ([]bpfman.ListOption, bool) {
 
 // Run executes the list links command.
 func (c *ListLinksCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
+	format, err := c.OutputFlags.Format()
+	if err != nil {
+		return err
+	}
+
 	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
@@ -207,7 +217,7 @@ func (c *ListLinksCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 		return err
 	}
 
-	if len(links) == 0 && !c.OutputFlags.IsStructured() {
+	if len(links) == 0 && !format.IsStructured() {
 		return nil
 	}
 
@@ -219,5 +229,5 @@ func (c *ListLinksCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 		return cli.PrintOut(b.String())
 	}
 
-	return cliformat.RenderLinkList(cli.Out, cliformat.LinkListView{Links: links}, &c.OutputFlags)
+	return cliformat.RenderLinkList(cli.Out, cliformat.LinkListView{Links: links}, format)
 }

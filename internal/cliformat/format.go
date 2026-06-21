@@ -48,12 +48,8 @@ func unsupportedOutputFormat(format OutputFormat) error {
 	return fmt.Errorf("unsupported output format %q", format)
 }
 
-// RenderProgram writes a program get result according to the specified output flags.
-func RenderProgram(w io.Writer, prog bpfman.Program, flags *OutputFlags) error {
-	format, err := flags.Format()
-	if err != nil {
-		return err
-	}
+// RenderProgram writes a program get result in the specified output format.
+func RenderProgram(w io.Writer, prog bpfman.Program, format OutputFormat) error {
 	switch format {
 	case OutputFormatJSON:
 		output, err := formatProgramJSON(prog)
@@ -61,7 +57,7 @@ func RenderProgram(w io.Writer, prog bpfman.Program, flags *OutputFlags) error {
 			return err
 		}
 		return writeOutput(w, output)
-	case OutputFormatTable:
+	case OutputFormatText:
 		return writeOutput(w, formatProgramTable(prog))
 	default:
 		return unsupportedOutputFormat(format)
@@ -290,11 +286,7 @@ type LoadedProgramsView struct {
 }
 
 // RenderLoadedPrograms writes the result of a load command.
-func RenderLoadedPrograms(w io.Writer, view LoadedProgramsView, flags *OutputFlags) error {
-	format, err := flags.Format()
-	if err != nil {
-		return err
-	}
+func RenderLoadedPrograms(w io.Writer, view LoadedProgramsView, format OutputFormat) error {
 	switch format {
 	case OutputFormatJSON:
 		output, err := formatLoadedProgramsJSON(view)
@@ -302,7 +294,7 @@ func RenderLoadedPrograms(w io.Writer, view LoadedProgramsView, flags *OutputFla
 			return err
 		}
 		return writeOutput(w, output)
-	case OutputFormatTable:
+	case OutputFormatText:
 		return writeOutput(w, formatLoadedProgramsTable(view))
 	default:
 		return unsupportedOutputFormat(format)
@@ -495,14 +487,10 @@ type ProgramListView struct {
 }
 
 // RenderProgramList writes a program list result.
-func RenderProgramList(w io.Writer, view ProgramListView, flags *OutputFlags) error {
+func RenderProgramList(w io.Writer, view ProgramListView, format OutputFormat) error {
 	result := view.Result
 	if result.Programs == nil {
 		result.Programs = []bpfman.ProgramListEntry{}
-	}
-	format, err := flags.Format()
-	if err != nil {
-		return err
 	}
 	switch format {
 	case OutputFormatJSON:
@@ -511,7 +499,7 @@ func RenderProgramList(w io.Writer, view ProgramListView, flags *OutputFlags) er
 			return fmt.Errorf("failed to marshal: %w", err)
 		}
 		return writeOutput(w, string(output)+"\n")
-	case OutputFormatTable:
+	case OutputFormatText:
 		return writeOutput(w, formatProgramsCompositeTable(result))
 	default:
 		return unsupportedOutputFormat(format)
@@ -574,11 +562,7 @@ type DispatcherListView struct {
 }
 
 // RenderDispatcherList writes a dispatcher list result.
-func RenderDispatcherList(w io.Writer, view DispatcherListView, flags *OutputFlags) error {
-	format, err := flags.Format()
-	if err != nil {
-		return err
-	}
+func RenderDispatcherList(w io.Writer, view DispatcherListView, format OutputFormat) error {
 	switch format {
 	case OutputFormatJSON:
 		summaries := view.Summaries
@@ -591,7 +575,7 @@ func RenderDispatcherList(w io.Writer, view DispatcherListView, flags *OutputFla
 			return fmt.Errorf("failed to marshal: %w", err)
 		}
 		return writeOutput(w, string(output)+"\n")
-	case OutputFormatTable:
+	case OutputFormatText:
 		return writeOutput(w, formatDispatcherListTable(view))
 	default:
 		return unsupportedOutputFormat(format)
@@ -632,11 +616,7 @@ func formatDispatcherListTable(view DispatcherListView) string {
 }
 
 // RenderDispatcherSnapshot writes a single dispatcher snapshot.
-func RenderDispatcherSnapshot(w io.Writer, snap platform.DispatcherSnapshot, flags *OutputFlags) error {
-	format, err := flags.Format()
-	if err != nil {
-		return err
-	}
+func RenderDispatcherSnapshot(w io.Writer, snap platform.DispatcherSnapshot, format OutputFormat) error {
 	switch format {
 	case OutputFormatJSON:
 		output, err := json.MarshalIndent(snap, "", "  ")
@@ -644,7 +624,7 @@ func RenderDispatcherSnapshot(w io.Writer, snap platform.DispatcherSnapshot, fla
 			return fmt.Errorf("failed to marshal: %w", err)
 		}
 		return writeOutput(w, string(output)+"\n")
-	case OutputFormatTable:
+	case OutputFormatText:
 		return writeOutput(w, formatDispatcherSnapshotTable(snap))
 	default:
 		return unsupportedOutputFormat(format)

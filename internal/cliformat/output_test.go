@@ -14,9 +14,9 @@ func TestOutputFlags_Format(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:   "table",
-			output: "table",
-			want:   OutputFormatTable,
+			name:   "text",
+			output: "text",
+			want:   OutputFormatText,
 		},
 		{
 			name:   "json",
@@ -61,42 +61,62 @@ func TestOutputFlags_Format(t *testing.T) {
 	}
 }
 
-func TestOutputFlags_NeedsLinkGetProgramName(t *testing.T) {
+func TestOutputFormat_NeedsLinkGetProgramName(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		output  string
-		want    bool
-		wantErr bool
+		name   string
+		format OutputFormat
+		want   bool
 	}{
 		{
-			name:   "table",
-			output: "table",
+			name:   "text",
+			format: OutputFormatText,
 			want:   true,
 		},
 		{
 			name:   "json",
-			output: "json",
+			format: OutputFormatJSON,
 			want:   false,
-		},
-		{
-			name:    "invalid format",
-			output:  "nonsense",
-			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			f := &OutputFlags{Output: OutputValue{Value: tt.output}}
-			got, err := f.NeedsLinkGetProgramName()
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("NeedsLinkGetProgramName() error = %v, wantErr %v", err, tt.wantErr)
-			}
-			if !tt.wantErr && got != tt.want {
+			got := tt.format.NeedsLinkGetProgramName()
+			if got != tt.want {
 				t.Errorf("NeedsLinkGetProgramName() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestOutputFormat_IsStructured(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		format OutputFormat
+		want   bool
+	}{
+		{
+			name:   "text",
+			format: OutputFormatText,
+			want:   false,
+		},
+		{
+			name:   "json",
+			format: OutputFormatJSON,
+			want:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := tt.format.IsStructured(); got != tt.want {
+				t.Errorf("IsStructured() = %v, want %v", got, tt.want)
 			}
 		})
 	}

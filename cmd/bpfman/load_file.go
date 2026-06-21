@@ -36,13 +36,18 @@ type loadFileResult struct {
 
 // Run executes the load file command.
 func (c *LoadFileCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
+	format, err := c.OutputFlags.Format()
+	if err != nil {
+		return err
+	}
+
 	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
 	}
 	defer cleanup()
 
-	return executeLoadFile(ctx, cli, mgr, c)
+	return executeLoadFile(ctx, cli, mgr, c, format)
 }
 
 // executeLoadFileResult is the shared implementation for loading a
@@ -81,12 +86,12 @@ func executeLoadFileResult(ctx context.Context, cli *bpfmancli.CLI, mgr *manager
 // executeLoadFile is the shared implementation for loading a BPF
 // program from a local object file. The CLI command calls this
 // function; bpfman-shell uses executeLoadFileResult directly.
-func executeLoadFile(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, c *LoadFileCmd) error {
+func executeLoadFile(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, c *LoadFileCmd, format cliformat.OutputFormat) error {
 	result, err := executeLoadFileResult(ctx, cli, mgr, c)
 	if err != nil {
 		return err
 	}
 
 	// Format and emit output outside the lock
-	return cliformat.RenderLoadedPrograms(cli.Out, cliformat.LoadedProgramsView{Programs: result.Programs}, &c.OutputFlags)
+	return cliformat.RenderLoadedPrograms(cli.Out, cliformat.LoadedProgramsView{Programs: result.Programs}, format)
 }

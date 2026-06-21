@@ -29,6 +29,11 @@ type ListDispatchersCmd struct {
 
 // Run executes the list dispatchers command.
 func (c *ListDispatchersCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
+	format, err := c.OutputFlags.Format()
+	if err != nil {
+		return err
+	}
+
 	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
@@ -50,11 +55,11 @@ func (c *ListDispatchersCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error 
 	}
 	summaries = filtered
 
-	if len(summaries) == 0 && !c.OutputFlags.IsStructured() {
+	if len(summaries) == 0 && !format.IsStructured() {
 		return nil
 	}
 
-	return cliformat.RenderDispatcherList(cli.Out, cliformat.DispatcherListView{Summaries: summaries}, &c.OutputFlags)
+	return cliformat.RenderDispatcherList(cli.Out, cliformat.DispatcherListView{Summaries: summaries}, format)
 }
 
 // GetDispatcherCmd gets details of a dispatcher by its key.
@@ -67,6 +72,11 @@ type GetDispatcherCmd struct {
 
 // Run executes the get dispatcher command.
 func (c *GetDispatcherCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
+	format, err := c.OutputFlags.Format()
+	if err != nil {
+		return err
+	}
+
 	key := dispatcher.NewKey(c.Type, c.Nsid, c.Ifindex)
 
 	mgr, cleanup, err := cli.NewManager(ctx)
@@ -80,7 +90,7 @@ func (c *GetDispatcherCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 		return err
 	}
 
-	return cliformat.RenderDispatcherSnapshot(cli.Out, snap, &c.OutputFlags)
+	return cliformat.RenderDispatcherSnapshot(cli.Out, snap, format)
 }
 
 // DeleteDispatcherCmd deletes a dispatcher by its key.
