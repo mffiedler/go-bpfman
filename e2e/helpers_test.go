@@ -28,11 +28,11 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
+	bpfresidue "github.com/frobware/go-bpfman/e2e/residue"
 	"github.com/frobware/go-bpfman/e2e/testbpf"
 	"github.com/frobware/go-bpfman/e2e/testnet"
 	"github.com/frobware/go-bpfman/fs"
 	fsruntime "github.com/frobware/go-bpfman/fs/runtime"
-	"github.com/frobware/go-bpfman/internal/bpfresidue"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/logging"

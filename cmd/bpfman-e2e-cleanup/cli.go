@@ -8,8 +8,8 @@ import (
 	"github.com/alecthomas/kong"
 
 	"github.com/frobware/go-bpfman/cmd/internal/runtime"
+	bpfresidue "github.com/frobware/go-bpfman/e2e/residue"
 	"github.com/frobware/go-bpfman/fs"
-	"github.com/frobware/go-bpfman/internal/bpfresidue"
 )
 
 // CLI is the bpfman-e2e-cleanup root. One command, one plan. The
