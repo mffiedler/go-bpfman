@@ -8,7 +8,7 @@ import (
 	"github.com/alecthomas/kong"
 
 	"github.com/frobware/go-bpfman/cmd/internal/runtime"
-	bpfresidue "github.com/frobware/go-bpfman/e2e/residue"
+	"github.com/frobware/go-bpfman/e2e/residue"
 	"github.com/frobware/go-bpfman/fs"
 )
 
@@ -53,7 +53,7 @@ func NewCLI() (*CLI, error) {
 // Pin paths are deduplicated across the three scans so a pin
 // caught by both the orphan and iface paths is listed once.
 func (c *CLI) Execute(ctx context.Context) error {
-	var plan bpfresidue.Plan
+	var plan residue.Plan
 
 	// --wipe replaces the snapshot-based orphan scan (the store
 	// it would read is about to be deleted) with a wholesale
@@ -68,7 +68,7 @@ func (c *CLI) Execute(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("resolve layout: %w", err)
 		}
-		wipePlan, err := bpfresidue.ScanWipe(layout)
+		wipePlan, err := residue.ScanWipe(layout)
 		if err != nil {
 			return fmt.Errorf("scan runtime dir for wipe: %w", err)
 		}
@@ -83,7 +83,7 @@ func (c *CLI) Execute(ctx context.Context) error {
 			defer cleanup()
 			obs, err := mgr.Snapshot(ctx)
 			if err == nil {
-				plan = append(plan, bpfresidue.PlanFromObservation(obs)...)
+				plan = append(plan, residue.PlanFromObservation(obs)...)
 			} else {
 				fmt.Fprintf(c.Out, "# warning: snapshot bpfman state: %v\n", err)
 			}
@@ -93,7 +93,7 @@ func (c *CLI) Execute(ctx context.Context) error {
 	}
 
 	// 2. tc_dispatcher clsact on test-named interfaces.
-	tcPlan, err := bpfresidue.ScanTCDispatcherResidue(bpfresidue.DefaultNetnsDir)
+	tcPlan, err := residue.ScanTCDispatcherResidue(residue.DefaultNetnsDir)
 	if err != nil {
 		return fmt.Errorf("scan TC dispatcher residue: %w", err)
 	}
@@ -105,7 +105,7 @@ func (c *CLI) Execute(ctx context.Context) error {
 	// ScanE2EResidue's iface universe; we keep them for cases
 	// where the qdisc lives on a netdev outside the regex (e.g.
 	// in a B<hex>N netns on a non-B<hex>N peer name).
-	e2ePlan, err := bpfresidue.ScanE2EResidue(bpfresidue.DefaultBPFFS, bpfresidue.DefaultNetnsDir)
+	e2ePlan, err := residue.ScanE2EResidue(residue.DefaultBPFFS, residue.DefaultNetnsDir)
 	if err != nil {
 		return fmt.Errorf("scan e2e residue: %w", err)
 	}
@@ -118,7 +118,7 @@ func (c *CLI) Execute(ctx context.Context) error {
 
 // finish prints the plan in dry-run mode or applies it. Shared
 // by the normal scan path and the --wipe path.
-func (c *CLI) finish(plan bpfresidue.Plan) error {
+func (c *CLI) finish(plan residue.Plan) error {
 	if !c.Apply {
 		fmt.Fprintln(c.Out, "# dry run -- pass --apply to execute")
 		if plan.Empty() {

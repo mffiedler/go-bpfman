@@ -1,4 +1,4 @@
-package bpfresidue
+package residue
 
 import (
 	"github.com/cilium/ebpf/link"

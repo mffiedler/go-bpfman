@@ -1,4 +1,4 @@
-package bpfresidue_test
+package residue_test
 
 import (
 	"os"
@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	bpfresidue "github.com/frobware/go-bpfman/e2e/residue"
+	"github.com/frobware/go-bpfman/e2e/residue"
 	"github.com/frobware/go-bpfman/fs"
 )
 
@@ -31,7 +31,7 @@ func TestScanWipe_RemovesRuntimeRoot(t *testing.T) {
 	layout, err := fs.New(base)
 	require.NoError(t, err)
 
-	plan, err := bpfresidue.ScanWipe(layout)
+	plan, err := residue.ScanWipe(layout)
 	require.NoError(t, err)
 	require.Len(t, plan, 1, "expected a single RemoveTree action (no bpffs mounted in test)")
 
@@ -50,7 +50,7 @@ func TestScanWipe_AbsentRuntimeRoot(t *testing.T) {
 	layout, err := fs.New(base)
 	require.NoError(t, err)
 
-	plan, err := bpfresidue.ScanWipe(layout)
+	plan, err := residue.ScanWipe(layout)
 	require.NoError(t, err)
 	assert.True(t, plan.Empty(), "no actions expected when base is absent")
 }

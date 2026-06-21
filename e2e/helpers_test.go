@@ -28,7 +28,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
-	bpfresidue "github.com/frobware/go-bpfman/e2e/residue"
+	"github.com/frobware/go-bpfman/e2e/residue"
 	"github.com/frobware/go-bpfman/e2e/testbpf"
 	"github.com/frobware/go-bpfman/e2e/testnet"
 	"github.com/frobware/go-bpfman/fs"
@@ -739,7 +739,7 @@ const staleTestDirPrefix = "bpfman-e2e-"
 // list is written to stderr so an interrupted prior run is
 // announced rather than silently swept.
 func cleanupStaleTestDirs() error {
-	plan, failures, err := bpfresidue.CleanupStaleInterfaces(bpfresidue.DefaultBPFFS, bpfresidue.DefaultNetnsDir)
+	plan, failures, err := residue.CleanupStaleInterfaces(residue.DefaultBPFFS, residue.DefaultNetnsDir)
 	if err != nil {
 		return err
 	}
