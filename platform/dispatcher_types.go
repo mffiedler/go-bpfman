@@ -89,8 +89,7 @@ type DispatcherSummary struct {
 }
 
 // DispatcherListResult wraps dispatcher list output for consistent
-// JSON structure, mirroring LinkListResult. The wrapper provides a
-// stable path for jsonpath queries (e.g. {.dispatchers[*].key}).
+// JSON structure, mirroring LinkListResult.
 type DispatcherListResult struct {
 	Dispatchers []DispatcherSummary `json:"dispatchers"`
 }

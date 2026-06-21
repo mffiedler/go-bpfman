@@ -47,12 +47,6 @@ func RenderLinkAttach(w io.Writer, view LinkAttachView, flags *OutputFlags) erro
 		return writeOutput(w, string(output)+"\n")
 	case OutputFormatTable:
 		return writeOutput(w, formatLinkTable(LinkGetView{Link: view.Link}))
-	case OutputFormatJSONPath:
-		output, err := executeJSONPath(view.Link, flags.JSONPathExpr())
-		if err != nil {
-			return err
-		}
-		return writeOutput(w, output)
 	default:
 		return unsupportedOutputFormat(format)
 	}
@@ -73,12 +67,6 @@ func RenderLinkGet(w io.Writer, view LinkGetView, flags *OutputFlags) error {
 		return writeOutput(w, string(output)+"\n")
 	case OutputFormatTable:
 		return writeOutput(w, formatLinkTable(view))
-	case OutputFormatJSONPath:
-		output, err := executeJSONPath(view.Link, flags.JSONPathExpr())
-		if err != nil {
-			return err
-		}
-		return writeOutput(w, output)
 	default:
 		return unsupportedOutputFormat(format)
 	}
@@ -99,12 +87,6 @@ func RenderLinkList(w io.Writer, view LinkListView, flags *OutputFlags) error {
 		return writeOutput(w, output)
 	case OutputFormatTable:
 		return renderLinkListTable(w, view)
-	case OutputFormatJSONPath:
-		output, err := formatLinkListJSONPath(view, flags.JSONPathExpr())
-		if err != nil {
-			return err
-		}
-		return writeOutput(w, output)
 	default:
 		return unsupportedOutputFormat(format)
 	}
@@ -121,15 +103,6 @@ func formatLinkListJSON(view LinkListView) (string, error) {
 		return "", fmt.Errorf("failed to marshal result: %w", err)
 	}
 	return string(output) + "\n", nil
-}
-
-func formatLinkListJSONPath(view LinkListView, expr string) (string, error) {
-	links := view.Links
-	if links == nil {
-		links = []bpfman.LinkRecord{}
-	}
-	result := bpfman.LinkListResult{Links: links}
-	return executeJSONPath(result, expr)
 }
 
 func renderLinkListTable(w io.Writer, view LinkListView) error {

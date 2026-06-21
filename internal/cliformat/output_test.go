@@ -24,11 +24,6 @@ func TestOutputFlags_Format(t *testing.T) {
 			want:   OutputFormatJSON,
 		},
 		{
-			name:   "jsonpath",
-			output: "jsonpath={.items}",
-			want:   OutputFormatJSONPath,
-		},
-		{
 			name:    "unknown format",
 			output:  "xml",
 			wantErr: true,
@@ -66,43 +61,6 @@ func TestOutputFlags_Format(t *testing.T) {
 	}
 }
 
-func TestOutputFlags_JSONPathExpr(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name   string
-		output string
-		want   string
-	}{
-		{
-			name:   "jsonpath expression",
-			output: "jsonpath={.items[*].metadata.name}",
-			want:   "{.items[*].metadata.name}",
-		},
-		{
-			name:   "not jsonpath",
-			output: "table",
-			want:   "",
-		},
-		{
-			name:   "empty value after equals",
-			output: "jsonpath=",
-			want:   "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			f := &OutputFlags{Output: OutputValue{Value: tt.output}}
-			got := f.JSONPathExpr()
-			if got != tt.want {
-				t.Errorf("JSONPathExpr() = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestOutputFlags_NeedsLinkGetProgramName(t *testing.T) {
 	t.Parallel()
 
@@ -120,11 +78,6 @@ func TestOutputFlags_NeedsLinkGetProgramName(t *testing.T) {
 		{
 			name:   "json",
 			output: "json",
-			want:   false,
-		},
-		{
-			name:   "jsonpath",
-			output: "jsonpath={.record.id}",
 			want:   false,
 		},
 		{

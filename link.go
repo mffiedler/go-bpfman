@@ -536,7 +536,6 @@ func (r *LinkRecord) UnmarshalJSON(data []byte) error {
 }
 
 // LinkListResult wraps link list output for consistent JSON structure.
-// The wrapper provides a stable path for jsonpath queries (e.g., {.links[*].id}).
 type LinkListResult struct {
 	Links []LinkRecord `json:"links"`
 }

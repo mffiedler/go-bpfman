@@ -141,7 +141,7 @@ func argToCLIText(a runtime.Arg) (string, error) {
 // hasOutputFlag reports whether argv already specifies an output
 // format via -o or --output. Used to avoid clobbering an
 // explicit user choice when the script invokes a CLI form that
-// already passes -o json (or jsonpath, etc.).
+// already passes an output format.
 func hasOutputFlag(argv []string) bool {
 	for _, a := range argv {
 		switch {

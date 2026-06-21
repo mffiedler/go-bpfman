@@ -347,8 +347,8 @@ func nonEmpty(s string) string {
 	return s
 }
 
-// formatMapIDs formats a slice of map IDs to match the JSON array format
-// previously produced by JSONPath (e.g., "[1,2,3]").
+// formatMapIDs formats a slice of map IDs to match the JSON array
+// shape used by the table output (e.g., "[1,2,3]").
 func formatMapIDs(ids []kernel.MapID) string {
 	parts := make([]string, len(ids))
 	for i, id := range ids {

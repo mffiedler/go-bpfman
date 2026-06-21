@@ -3,7 +3,6 @@ package cliformat
 import (
 	"bytes"
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -50,64 +49,6 @@ func TestStdlibJSONMarshal_NoTrailingNewline(t *testing.T) {
 			require.NoError(t, err)
 			require.False(t, bytes.HasSuffix(indented, []byte("\n")),
 				"json.MarshalIndent(%v) unexpectedly ends with \\n: %q", tc.v, indented)
-		})
-	}
-}
-
-// TestExecuteJSONPath_OutputContract pins the executeJSONPath
-// output contract: the returned string ends with exactly one "\n"
-// regardless of whether the template's last token emits a newline.
-// The contract underpins examples/tracepoint.sh and any downstream
-// shell consumer; do not relax it without updating the file-level
-// comment block in format.go and every shell example that relies
-// on it.
-func TestExecuteJSONPath_OutputContract(t *testing.T) {
-	t.Parallel()
-
-	type rec struct {
-		ID int `json:"id"`
-	}
-	data := struct {
-		Items []rec `json:"items"`
-	}{
-		Items: []rec{{ID: 1}, {ID: 2}, {ID: 3}},
-	}
-
-	tests := []struct {
-		name string
-		expr string
-		want string
-	}{
-		{
-			name: "single value, no template newline",
-			expr: "{.items[0].id}",
-			want: "1\n",
-		},
-		{
-			name: "range with explicit newline",
-			expr: `{range .items[*]}{.id}{"\n"}{end}`,
-			want: "1\n2\n3\n",
-		},
-		{
-			name: "range without separator",
-			expr: `{range .items[*]}{.id}{end}`,
-			want: "123\n",
-		},
-		{
-			name: "range with space separator",
-			expr: `{range .items[*]}{.id} {end}`,
-			want: "1 2 3 \n",
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			got, err := executeJSONPath(data, tc.expr)
-			require.NoError(t, err)
-			require.Equal(t, tc.want, got)
-			require.True(t, strings.HasSuffix(got, "\n"))
-			require.False(t, strings.HasSuffix(got, "\n\n"),
-				"output must not end in two newlines: %q", got)
 		})
 	}
 }

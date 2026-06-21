@@ -1,7 +1,6 @@
 package cliformat
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,8 +8,6 @@ import (
 	"strings"
 	"text/tabwriter"
 	"time"
-
-	"k8s.io/client-go/util/jsonpath"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
@@ -33,75 +30,19 @@ func writeOutput(w io.Writer, output string) error {
 // Every formatter that returns a string for CLI emission MUST end
 // its output with exactly one "\n", matching the Unix convention
 // for text streams and what every comparable CLI does (kubectl,
-// aws, gcloud, jq, ...). Two paths reach this contract differently:
-//
-//   - Marshaller-driven formatters (formatProgramJSON,
-//     formatLoadedProgramsJSON, etc.) lean on the encoding/json
-//     contract. encoding/json.Marshal and MarshalIndent never emit
-//     a trailing newline (see Marshal / MarshalIndent godoc),
-//     so `string(output) + "\n"` produces exactly one. No trim
-//     needed; the producer-side guarantee is checked by
-//     TestStdlibJSONMarshal_NoTrailingNewline so a future Go
-//     upgrade that changes the stdlib behaviour is caught.
-//
-//   - executeJSONPath is template-driven: a user-supplied template
-//     may or may not emit trailing newlines (`{range...}{"\n"}{end}`
-//     ends in one, `{.id}` does not). There is no producer-side
-//     contract to lean on, so the function normalises by trimming
-//     trailing newlines before appending exactly one. The trim
-//     here is required for the contract to hold; it is NOT a
-//     workaround for double-newline output.
+// aws, gcloud, jq, ...). Marshaller-driven formatters
+// (formatProgramJSON, formatLoadedProgramsJSON, etc.) lean on the
+// encoding/json contract. encoding/json.Marshal and MarshalIndent
+// never emit a trailing newline (see Marshal / MarshalIndent godoc),
+// so `string(output) + "\n"` produces exactly one. No trim needed;
+// the producer-side guarantee is checked by
+// TestStdlibJSONMarshal_NoTrailingNewline so a future Go upgrade that
+// changes the stdlib behaviour is caught.
 //
 // Code that emits CLI strings should not reinvent either path.
-// Marshaller paths use `string(jsonBytes) + "\n"`. JSONPath paths
-// route through executeJSONPath. Anything else risks breaking the
-// shape that consumers (examples/tracepoint.sh, integration tests,
-// downstream scripts) rely on.
-
-// executeJSONPath parses and executes a JSONPath expression against
-// the given data and returns the rendered string with exactly one
-// trailing newline.
-//
-// Input contract: the user-supplied template `expr` may emit any
-// shape; this function does not constrain it.
-//
-// Output contract: the returned string ends with exactly one "\n",
-// regardless of whether the template's last token emits a newline.
-// The buffer is normalised with TrimRight(..., "\n") + "\n" to
-// enforce this; do not "simplify" the trim away.
-//
-// The data is marshalled to JSON and back to ensure consistent
-// field access. UseNumber is enabled so that large integer IDs render as
-// decimal rather than scientific notation.
-func executeJSONPath(data any, expr string) (string, error) {
-	jp := jsonpath.New("output")
-	if err := jp.Parse(expr); err != nil {
-		return "", fmt.Errorf("invalid jsonpath expression %q: %w", expr, err)
-	}
-
-	jsonBytes, err := json.Marshal(data)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal: %w", err)
-	}
-
-	var generic any
-	dec := json.NewDecoder(bytes.NewReader(jsonBytes))
-	dec.UseNumber()
-	if err := dec.Decode(&generic); err != nil {
-		return "", fmt.Errorf("failed to unmarshal: %w", err)
-	}
-
-	var buf bytes.Buffer
-	if err := jp.Execute(&buf, generic); err != nil {
-		return "", fmt.Errorf("jsonpath execution failed: %w", err)
-	}
-
-	// Output contract enforcement: see file-level comment block.
-	// Trim then re-append so the result has exactly one trailing
-	// "\n" regardless of the template's terminating shape.
-	out := strings.TrimRight(buf.String(), "\n")
-	return out + "\n", nil
-}
+// Marshaller paths use `string(jsonBytes) + "\n"`. Anything else risks
+// breaking the shape that consumers, integration tests, and downstream
+// scripts rely on.
 
 func unsupportedOutputFormat(format OutputFormat) error {
 	return fmt.Errorf("unsupported output format %q", format)
@@ -122,12 +63,6 @@ func RenderProgram(w io.Writer, prog bpfman.Program, flags *OutputFlags) error {
 		return writeOutput(w, output)
 	case OutputFormatTable:
 		return writeOutput(w, formatProgramTable(prog))
-	case OutputFormatJSONPath:
-		output, err := formatProgramJSONPath(prog, flags.JSONPathExpr())
-		if err != nil {
-			return err
-		}
-		return writeOutput(w, output)
 	default:
 		return unsupportedOutputFormat(format)
 	}
@@ -139,10 +74,6 @@ func formatProgramJSON(prog bpfman.Program) (string, error) {
 		return "", fmt.Errorf("failed to marshal result: %w", err)
 	}
 	return string(output) + "\n", nil
-}
-
-func formatProgramJSONPath(prog bpfman.Program, expr string) (string, error) {
-	return executeJSONPath(prog, expr)
 }
 
 func formatProgramTable(prog bpfman.Program) string {
@@ -373,12 +304,6 @@ func RenderLoadedPrograms(w io.Writer, view LoadedProgramsView, flags *OutputFla
 		return writeOutput(w, output)
 	case OutputFormatTable:
 		return writeOutput(w, formatLoadedProgramsTable(view))
-	case OutputFormatJSONPath:
-		output, err := formatLoadedProgramsJSONPath(view, flags.JSONPathExpr())
-		if err != nil {
-			return err
-		}
-		return writeOutput(w, output)
 	default:
 		return unsupportedOutputFormat(format)
 	}
@@ -394,14 +319,6 @@ func formatLoadedProgramsJSON(view LoadedProgramsView) (string, error) {
 		return "", fmt.Errorf("failed to marshal result: %w", err)
 	}
 	return string(output) + "\n", nil
-}
-
-func formatLoadedProgramsJSONPath(view LoadedProgramsView, expr string) (string, error) {
-	programs := view.Programs
-	if programs == nil {
-		programs = []bpfman.Program{}
-	}
-	return executeJSONPath(bpfman.LoadResult{Programs: programs}, expr)
 }
 
 func formatLoadedProgramsTable(view LoadedProgramsView) string {
@@ -594,12 +511,6 @@ func RenderProgramList(w io.Writer, view ProgramListView, flags *OutputFlags) er
 			return fmt.Errorf("failed to marshal: %w", err)
 		}
 		return writeOutput(w, string(output)+"\n")
-	case OutputFormatJSONPath:
-		output, err := executeJSONPath(result, flags.JSONPathExpr())
-		if err != nil {
-			return err
-		}
-		return writeOutput(w, output)
 	case OutputFormatTable:
 		return writeOutput(w, formatProgramsCompositeTable(result))
 	default:
@@ -680,17 +591,6 @@ func RenderDispatcherList(w io.Writer, view DispatcherListView, flags *OutputFla
 			return fmt.Errorf("failed to marshal: %w", err)
 		}
 		return writeOutput(w, string(output)+"\n")
-	case OutputFormatJSONPath:
-		summaries := view.Summaries
-		if summaries == nil {
-			summaries = []platform.DispatcherSummary{}
-		}
-		result := platform.DispatcherListResult{Dispatchers: summaries}
-		output, err := executeJSONPath(result, flags.JSONPathExpr())
-		if err != nil {
-			return err
-		}
-		return writeOutput(w, output)
 	case OutputFormatTable:
 		return writeOutput(w, formatDispatcherListTable(view))
 	default:
@@ -744,12 +644,6 @@ func RenderDispatcherSnapshot(w io.Writer, snap platform.DispatcherSnapshot, fla
 			return fmt.Errorf("failed to marshal: %w", err)
 		}
 		return writeOutput(w, string(output)+"\n")
-	case OutputFormatJSONPath:
-		output, err := executeJSONPath(snap, flags.JSONPathExpr())
-		if err != nil {
-			return err
-		}
-		return writeOutput(w, output)
 	case OutputFormatTable:
 		return writeOutput(w, formatDispatcherSnapshotTable(snap))
 	default:

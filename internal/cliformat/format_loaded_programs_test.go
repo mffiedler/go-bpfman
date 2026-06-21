@@ -27,10 +27,7 @@ func programWithID(id kernel.ProgramID, name string) bpfman.Program {
 
 // TestRenderLoadedProgramsJSON_WrapsWithProgramsKey asserts that
 // RenderLoadedPrograms emits a top-level object whose `programs`
-// key carries the slice in slice order. The contract is shared with
-// RenderProgramList (program list) so jsonpath consumers can
-// write {.programs[i]...} regardless of which command produced the
-// output.
+// key carries the slice in slice order.
 func TestRenderLoadedProgramsJSON_WrapsWithProgramsKey(t *testing.T) {
 	t.Parallel()
 
@@ -63,8 +60,7 @@ func TestRenderLoadedProgramsJSON_WrapsWithProgramsKey(t *testing.T) {
 
 // TestRenderLoadedProgramsJSON_EmptySlice asserts that an empty
 // load result still produces a valid object with `programs: []`,
-// not `programs: null`. Consumers that use jsonpath ranges
-// ({.programs[*]}) on the empty case must see a list, not a null.
+// not `programs: null`.
 func TestRenderLoadedProgramsJSON_EmptySlice(t *testing.T) {
 	t.Parallel()
 
@@ -86,76 +82,4 @@ func TestRenderLoadedProgramsJSON_EmptySlice(t *testing.T) {
 				"empty load result must marshal as `programs: []`, not null")
 		})
 	}
-}
-
-// TestRenderLoadedProgramsJSONPath_TrailingNewline asserts that
-// the formatter normalises trailing newlines to exactly one,
-// regardless of whether the user's template ends with {"\n"}. Shell
-// consumers should never have to strip a stray blank line at the
-// end of `bpfman ... -o jsonpath=...` output.
-func TestRenderLoadedProgramsJSONPath_TrailingNewline(t *testing.T) {
-	t.Parallel()
-
-	programs := []bpfman.Program{
-		programWithID(11, "tp_a"),
-		programWithID(13, "tp_b"),
-		programWithID(17, "tp_c"),
-	}
-
-	tests := []struct {
-		name string
-		expr string
-		want string
-	}{
-		{
-			name: "single value gets one trailing newline",
-			expr: "{.programs[0].record.program_id}",
-			want: "11\n",
-		},
-		{
-			name: "range with explicit newline does not double",
-			expr: `{range .programs[*]}{.record.program_id}{"\n"}{end}`,
-			want: "11\n13\n17\n",
-		},
-		{
-			name: "range with space separator gets one trailing newline",
-			expr: `{range .programs[*]}{.record.program_id} {end}`,
-			want: "11 13 17 \n",
-		},
-		{
-			name: "range with no trailing separator gets one trailing newline",
-			expr: `{range .programs[*]}{.record.program_id}{end}`,
-			want: "111317\n",
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			var buf bytes.Buffer
-			require.NoError(t, RenderLoadedPrograms(&buf, LoadedProgramsView{Programs: programs}, &OutputFlags{Output: OutputValue{Value: "jsonpath=" + tc.expr}}))
-			require.Equal(t, tc.want, buf.String())
-		})
-	}
-}
-
-// TestRenderLoadedProgramsJSONPath_RootIsObject asserts that the
-// jsonpath formatter operates on the wrapper object, so callers
-// query {.programs[N]...}. The existing jsonpath tests on bpfman.go
-// against Program (single object) cover the leaf-access behaviour;
-// this test pins the wrapping contract specifically.
-func TestRenderLoadedProgramsJSONPath_RootIsObject(t *testing.T) {
-	t.Parallel()
-
-	programs := []bpfman.Program{
-		programWithID(11, "tp_c"),
-		programWithID(13, "tp_a"),
-	}
-
-	var buf bytes.Buffer
-	require.NoError(t, RenderLoadedPrograms(&buf, LoadedProgramsView{Programs: programs}, &OutputFlags{Output: OutputValue{Value: "jsonpath={.programs[1].record.program_id}"}}))
-	require.Equal(t, "13\n", buf.String())
-
-	buf.Reset()
-	require.NoError(t, RenderLoadedPrograms(&buf, LoadedProgramsView{Programs: programs}, &OutputFlags{Output: OutputValue{Value: "jsonpath={range .programs[*]}{.record.program_id} {end}"}}))
-	require.Equal(t, "11 13 \n", buf.String())
 }

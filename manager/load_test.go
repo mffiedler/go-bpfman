@@ -567,9 +567,9 @@ func TestLoad_RollbackExplicitMapOwnerDoesNotRemoveOwnerMapSet(t *testing.T) {
 // TestLoad_ExplicitPrograms_PreservesOrder asserts the contract that
 // Manager.Load returns programs in the same order as the input
 // ProgramSpec slice, independent of the order they appear in the
-// object file. CLI and SDK consumers depend on this for stable
-// jsonpath access (`{.programs[i]...}`) and for variable assignment
-// in shell scripts (`let progs = [bpfman program load ...]`).
+// object file. CLI and SDK consumers depend on this for stable JSON
+// output and for variable assignment in shell scripts
+// (`let progs = [bpfman program load ...]`).
 func TestLoad_ExplicitPrograms_PreservesOrder(t *testing.T) {
 	t.Parallel()
 
