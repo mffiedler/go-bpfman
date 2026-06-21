@@ -11,7 +11,7 @@ guard loaded <- bpfman program load file testdata/bpf/tc_counter.bpf.o --program
 let prog = $loaded.programs[0]
 defer bpfman program unload $prog
 
-guard link <- bpfman link attach tc $prog $pair.host_link ingress -p 50 --proceed-on unspec
+guard link <- bpfman link attach tc $prog $pair.host_link ingress --priority 50 --proceed-on unspec
 defer bpfman link detach $link
 
 guard got <- bpfman link get $link

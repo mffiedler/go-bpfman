@@ -22,7 +22,7 @@ defer bpfman program unload $pid
 expect_program_load $prog xdp extension xdp_stats
 expect_loaded_image_source $prog $image $published.inspected
 
-guard link <- bpfman link attach xdp $prog $pair.host_link
+guard link <- bpfman link attach xdp $prog $pair.host_link --priority 50
 let linkID = $link.record.id
 expect_pinned_link_identity $link
 assert $link.record.kind == xdp

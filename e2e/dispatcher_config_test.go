@@ -413,24 +413,24 @@ func TestTCX_PriorityOrdering(t *testing.T) {
 	}
 }
 
-// TestDispatcher_ZeroPriorityDefaultOrdering verifies that attaching
-// a program with priority=0 stores and orders it as the default
-// priority 50.
-func TestDispatcher_ZeroPriorityDefaultOrdering(t *testing.T) {
+// TestDispatcher_ZeroPriorityOrdering verifies Rust parity for
+// priority 0: it is stored verbatim and sorts before positive
+// priorities.
+func TestDispatcher_ZeroPriorityOrdering(t *testing.T) {
 	t.Parallel()
 	for _, h := range eachDispatcherType(t) {
 		t.Run(h.name, func(t *testing.T) {
 			t.Parallel()
-			testZeroPriorityDefaultOrdering(t, h)
+			testZeroPriorityOrdering(t, h)
 		})
 	}
 }
 
-func testZeroPriorityDefaultOrdering(t *testing.T, h dispatcherTestHarness) {
+func testZeroPriorityOrdering(t *testing.T, h dispatcherTestHarness) {
 	progID := h.loadProg(t)
 
-	// Attach three programs: priority 25 (runs first), priority 0
-	// (normalised to default priority 50), and priority 75 (runs last).
+	// Attach three programs: Rust bpfman stores the raw priority and
+	// sorts ascending, so priority 0 must run first.
 	link25 := h.attach(t, progID, 25)
 	link0 := h.attach(t, progID, 0)
 	link75 := h.attach(t, progID, 75)
@@ -441,22 +441,22 @@ func testZeroPriorityDefaultOrdering(t *testing.T, h dispatcherTestHarness) {
 		h.env.Detach(context.Background(), link75.ID)
 	})
 
-	// The stored priority should be the normalised priority.
+	// The stored priority is the raw requested priority.
 	assert.Equal(t, int32(25), h.linkPriority(t, link25.ID),
 		"priority=25 should be stored as 25")
-	assert.Equal(t, int32(50), h.linkPriority(t, link0.ID),
-		"priority=0 should be stored as default priority 50")
+	assert.Equal(t, int32(0), h.linkPriority(t, link0.ID),
+		"priority=0 should be stored as 0")
 	assert.Equal(t, int32(75), h.linkPriority(t, link75.ID),
 		"priority=75 should be stored as 75")
 
-	// The ordering should use the stored default priority:
-	// position 0: priority 25
-	// position 1: priority 50
+	// The ordering follows Rust's raw priority sort:
+	// position 0: priority 0
+	// position 1: priority 25
 	// position 2: priority 75
-	assert.Equal(t, int32(0), h.linkPosition(t, link25.ID),
-		"priority=25 should be at position 0")
-	assert.Equal(t, int32(1), h.linkPosition(t, link0.ID),
-		"priority=0/default 50 should be at position 1")
+	assert.Equal(t, int32(0), h.linkPosition(t, link0.ID),
+		"priority=0 should be at position 0")
+	assert.Equal(t, int32(1), h.linkPosition(t, link25.ID),
+		"priority=25 should be at position 1")
 	assert.Equal(t, int32(2), h.linkPosition(t, link75.ID),
 		"priority=75 should be at position 2")
 }

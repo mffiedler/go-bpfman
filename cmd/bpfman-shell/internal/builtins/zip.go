@@ -4,7 +4,7 @@
 // script expresses parallel iteration without index bookkeeping:
 //
 //	foreach (prio po) in (zip $priorities $proceed_ons) {
-//	    bpfman link attach tc ... -p $prio --proceed-on $po $prog
+//	    bpfman link attach tc ... --priority $prio --proceed-on $po $prog
 //	}
 //
 // Arity is fixed at 2. A variadic 'zip A B C ...' would mirror

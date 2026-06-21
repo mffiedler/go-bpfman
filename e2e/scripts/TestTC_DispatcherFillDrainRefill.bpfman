@@ -108,16 +108,16 @@ let m_700 = $p_700 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .i
 let m_800 = $p_800 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 let m_900 = $p_900 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 
-guard l_0 <- bpfman link attach tc $p_0 $pair.host_link ingress -p 0 --proceed-on ok,pipe,dispatcher_return
-guard l_100 <- bpfman link attach tc $p_100 $pair.host_link ingress -p 100 --proceed-on ok,pipe,dispatcher_return
-guard l_200 <- bpfman link attach tc $p_200 $pair.host_link ingress -p 200 --proceed-on ok,pipe,dispatcher_return
-guard l_300 <- bpfman link attach tc $p_300 $pair.host_link ingress -p 300 --proceed-on ok,pipe,dispatcher_return
-guard l_400 <- bpfman link attach tc $p_400 $pair.host_link ingress -p 400 --proceed-on ok,pipe,dispatcher_return
-guard l_500 <- bpfman link attach tc $p_500 $pair.host_link ingress -p 500 --proceed-on ok,pipe,dispatcher_return
-guard l_600 <- bpfman link attach tc $p_600 $pair.host_link ingress -p 600 --proceed-on ok,pipe,dispatcher_return
-guard l_700 <- bpfman link attach tc $p_700 $pair.host_link ingress -p 700 --proceed-on ok,pipe,dispatcher_return
-guard l_800 <- bpfman link attach tc $p_800 $pair.host_link ingress -p 800 --proceed-on ok,pipe,dispatcher_return
-guard l_900 <- bpfman link attach tc $p_900 $pair.host_link ingress -p 900 --proceed-on ok,pipe,dispatcher_return
+guard l_0 <- bpfman link attach tc $p_0 $pair.host_link ingress --priority 0 --proceed-on ok,pipe,dispatcher_return
+guard l_100 <- bpfman link attach tc $p_100 $pair.host_link ingress --priority 100 --proceed-on ok,pipe,dispatcher_return
+guard l_200 <- bpfman link attach tc $p_200 $pair.host_link ingress --priority 200 --proceed-on ok,pipe,dispatcher_return
+guard l_300 <- bpfman link attach tc $p_300 $pair.host_link ingress --priority 300 --proceed-on ok,pipe,dispatcher_return
+guard l_400 <- bpfman link attach tc $p_400 $pair.host_link ingress --priority 400 --proceed-on ok,pipe,dispatcher_return
+guard l_500 <- bpfman link attach tc $p_500 $pair.host_link ingress --priority 500 --proceed-on ok,pipe,dispatcher_return
+guard l_600 <- bpfman link attach tc $p_600 $pair.host_link ingress --priority 600 --proceed-on ok,pipe,dispatcher_return
+guard l_700 <- bpfman link attach tc $p_700 $pair.host_link ingress --priority 700 --proceed-on ok,pipe,dispatcher_return
+guard l_800 <- bpfman link attach tc $p_800 $pair.host_link ingress --priority 800 --proceed-on ok,pipe,dispatcher_return
+guard l_900 <- bpfman link attach tc $p_900 $pair.host_link ingress --priority 900 --proceed-on ok,pipe,dispatcher_return
 
 # Peak-0 links: none survive to script exit. Slots 0..5 (l_0
 # through l_500) are detached in trough 1; slots 6..9 (l_600
@@ -231,12 +231,12 @@ let m_650 = $p_650 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .i
 let m_550 = $p_550 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 let m_450 = $p_450 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 
-guard l_950 <- bpfman link attach tc $p_950 $pair.host_link ingress -p 950 --proceed-on ok,pipe,dispatcher_return
-guard l_850 <- bpfman link attach tc $p_850 $pair.host_link ingress -p 850 --proceed-on ok,pipe,dispatcher_return
-guard l_750 <- bpfman link attach tc $p_750 $pair.host_link ingress -p 750 --proceed-on ok,pipe,dispatcher_return
-guard l_650 <- bpfman link attach tc $p_650 $pair.host_link ingress -p 650 --proceed-on ok,pipe,dispatcher_return
-guard l_550 <- bpfman link attach tc $p_550 $pair.host_link ingress -p 550 --proceed-on ok,pipe,dispatcher_return
-guard l_450 <- bpfman link attach tc $p_450 $pair.host_link ingress -p 450 --proceed-on ok,pipe,dispatcher_return
+guard l_950 <- bpfman link attach tc $p_950 $pair.host_link ingress --priority 950 --proceed-on ok,pipe,dispatcher_return
+guard l_850 <- bpfman link attach tc $p_850 $pair.host_link ingress --priority 850 --proceed-on ok,pipe,dispatcher_return
+guard l_750 <- bpfman link attach tc $p_750 $pair.host_link ingress --priority 750 --proceed-on ok,pipe,dispatcher_return
+guard l_650 <- bpfman link attach tc $p_650 $pair.host_link ingress --priority 650 --proceed-on ok,pipe,dispatcher_return
+guard l_550 <- bpfman link attach tc $p_550 $pair.host_link ingress --priority 550 --proceed-on ok,pipe,dispatcher_return
+guard l_450 <- bpfman link attach tc $p_450 $pair.host_link ingress --priority 450 --proceed-on ok,pipe,dispatcher_return
 
 # Peak-1 links: none survive to script exit. l_650, l_550,
 # l_450 are detached in trough 2 (slots 3..5). l_950, l_850,
@@ -356,13 +356,13 @@ let m_425 = $p_425 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .i
 let m_525 = $p_525 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 let m_625 = $p_625 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 
-guard l_25 <- bpfman link attach tc $p_25 $pair.host_link ingress -p 25 --proceed-on ok,pipe,dispatcher_return
-guard l_125 <- bpfman link attach tc $p_125 $pair.host_link ingress -p 125 --proceed-on ok,pipe,dispatcher_return
-guard l_225 <- bpfman link attach tc $p_225 $pair.host_link ingress -p 225 --proceed-on ok,pipe,dispatcher_return
-guard l_325 <- bpfman link attach tc $p_325 $pair.host_link ingress -p 325 --proceed-on ok,pipe,dispatcher_return
-guard l_425 <- bpfman link attach tc $p_425 $pair.host_link ingress -p 425 --proceed-on ok,pipe,dispatcher_return
-guard l_525 <- bpfman link attach tc $p_525 $pair.host_link ingress -p 525 --proceed-on ok,pipe,dispatcher_return
-guard l_625 <- bpfman link attach tc $p_625 $pair.host_link ingress -p 625 --proceed-on ok,pipe,dispatcher_return
+guard l_25 <- bpfman link attach tc $p_25 $pair.host_link ingress --priority 25 --proceed-on ok,pipe,dispatcher_return
+guard l_125 <- bpfman link attach tc $p_125 $pair.host_link ingress --priority 125 --proceed-on ok,pipe,dispatcher_return
+guard l_225 <- bpfman link attach tc $p_225 $pair.host_link ingress --priority 225 --proceed-on ok,pipe,dispatcher_return
+guard l_325 <- bpfman link attach tc $p_325 $pair.host_link ingress --priority 325 --proceed-on ok,pipe,dispatcher_return
+guard l_425 <- bpfman link attach tc $p_425 $pair.host_link ingress --priority 425 --proceed-on ok,pipe,dispatcher_return
+guard l_525 <- bpfman link attach tc $p_525 $pair.host_link ingress --priority 525 --proceed-on ok,pipe,dispatcher_return
+guard l_625 <- bpfman link attach tc $p_625 $pair.host_link ingress --priority 625 --proceed-on ok,pipe,dispatcher_return
 
 # Peak-2 survivors (slots 8..9 after trough 3): 525, 625.
 defer bpfman link detach $l_525
@@ -487,14 +487,14 @@ let m_562 = $p_562 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .i
 let m_662 = $p_662 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 let m_762 = $p_762 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 
-guard l_62 <- bpfman link attach tc $p_62 $pair.host_link ingress -p 62 --proceed-on ok,pipe,dispatcher_return
-guard l_162 <- bpfman link attach tc $p_162 $pair.host_link ingress -p 162 --proceed-on ok,pipe,dispatcher_return
-guard l_262 <- bpfman link attach tc $p_262 $pair.host_link ingress -p 262 --proceed-on ok,pipe,dispatcher_return
-guard l_362 <- bpfman link attach tc $p_362 $pair.host_link ingress -p 362 --proceed-on ok,pipe,dispatcher_return
-guard l_462 <- bpfman link attach tc $p_462 $pair.host_link ingress -p 462 --proceed-on ok,pipe,dispatcher_return
-guard l_562 <- bpfman link attach tc $p_562 $pair.host_link ingress -p 562 --proceed-on ok,pipe,dispatcher_return
-guard l_662 <- bpfman link attach tc $p_662 $pair.host_link ingress -p 662 --proceed-on ok,pipe,dispatcher_return
-guard l_762 <- bpfman link attach tc $p_762 $pair.host_link ingress -p 762 --proceed-on ok,pipe,dispatcher_return
+guard l_62 <- bpfman link attach tc $p_62 $pair.host_link ingress --priority 62 --proceed-on ok,pipe,dispatcher_return
+guard l_162 <- bpfman link attach tc $p_162 $pair.host_link ingress --priority 162 --proceed-on ok,pipe,dispatcher_return
+guard l_262 <- bpfman link attach tc $p_262 $pair.host_link ingress --priority 262 --proceed-on ok,pipe,dispatcher_return
+guard l_362 <- bpfman link attach tc $p_362 $pair.host_link ingress --priority 362 --proceed-on ok,pipe,dispatcher_return
+guard l_462 <- bpfman link attach tc $p_462 $pair.host_link ingress --priority 462 --proceed-on ok,pipe,dispatcher_return
+guard l_562 <- bpfman link attach tc $p_562 $pair.host_link ingress --priority 562 --proceed-on ok,pipe,dispatcher_return
+guard l_662 <- bpfman link attach tc $p_662 $pair.host_link ingress --priority 662 --proceed-on ok,pipe,dispatcher_return
+guard l_762 <- bpfman link attach tc $p_762 $pair.host_link ingress --priority 762 --proceed-on ok,pipe,dispatcher_return
 
 defer bpfman link detach $l_62
 defer bpfman link detach $l_162

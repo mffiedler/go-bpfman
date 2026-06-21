@@ -32,7 +32,7 @@ let tcxProg = $tcxLoaded.programs[0]
 let tcxPID = $tcxProg.record.program_id
 defer bpfman program unload $tcxPID
 
-guard xdpLink <- bpfman link attach xdp $xdpProg $pair.peer_link --netns $netns
+guard xdpLink <- bpfman link attach xdp $xdpProg $pair.peer_link --priority 50 --netns $netns
 defer bpfman link detach $xdpLink
 
 print "xdp attach resolved ${pair.peer_link} through ${netns}"

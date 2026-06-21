@@ -36,9 +36,9 @@ const HelpDetail = `Subcommands:
     bpfman image inspect <image>                        Inspect bytecode image metadata
 
   Link management:
-    bpfman link attach xdp <id> <iface> [flags]         Attach an XDP program (assignable)
-    bpfman link attach tc <id> <iface> <dir> [flags]    Attach a TC program (assignable)
-    bpfman link attach tcx <id> <iface> <dir> [flags]   Attach a TCX program (assignable)
+    bpfman link attach xdp <id> <iface> --priority <prio> [flags]         Attach an XDP program (assignable)
+    bpfman link attach tc <id> <iface> <dir> --priority <prio> [flags]    Attach a TC program (assignable)
+    bpfman link attach tcx <id> <iface> <dir> --priority <prio> [flags]   Attach a TCX program (assignable)
     bpfman link attach tracepoint <id> <group/name>     Attach a tracepoint program (assignable)
     bpfman link attach kprobe <id> <fn> [flags]         Attach a kprobe program (assignable)
     bpfman link attach uprobe <id> <target> [flags]     Attach a uprobe program (assignable)

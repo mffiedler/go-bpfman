@@ -39,9 +39,9 @@ let mapID_100 = $prog_100 |> jq '[.status.maps[] | select(.name == "tc_stats_map
 
 # Explicit proceed-on includes OK; the chain runs through every
 # member instead of halting at position 0.
-guard l_0 <- bpfman link attach tc $prog_0 $pair.host_link ingress -p 0 --proceed-on ok,pipe,dispatcher_return
-guard l_55 <- bpfman link attach tc $prog_55 $pair.host_link ingress -p 55 --proceed-on ok,pipe,dispatcher_return
-guard l_100 <- bpfman link attach tc $prog_100 $pair.host_link ingress -p 100 --proceed-on ok,pipe,dispatcher_return
+guard l_0 <- bpfman link attach tc $prog_0 $pair.host_link ingress --priority 0 --proceed-on ok,pipe,dispatcher_return
+guard l_55 <- bpfman link attach tc $prog_55 $pair.host_link ingress --priority 55 --proceed-on ok,pipe,dispatcher_return
+guard l_100 <- bpfman link attach tc $prog_100 $pair.host_link ingress --priority 100 --proceed-on ok,pipe,dispatcher_return
 defer bpfman link detach $l_0
 defer bpfman link detach $l_55
 defer bpfman link detach $l_100

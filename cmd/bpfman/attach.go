@@ -57,7 +57,7 @@ type AttachXDPCmd struct {
 	Example   ExampleFlag         `name:"example" help:"Show working examples and exit."`
 	ProgramID bpfmancli.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
 	Iface     string              `arg:"" name:"iface" help:"Network interface."`
-	Priority  int                 `short:"p" name:"priority" help:"Priority in chain (lower runs first; non-negative; 0 or omitted = default 50). Slot exhaustion (more than 10 attachments) is reported by the dispatcher, not by this flag."`
+	Priority  int                 `short:"p" name:"priority" required:"" help:"Priority in chain (lower runs first; non-negative). Slot exhaustion (more than 10 attachments) is reported by the dispatcher, not by this flag."`
 	ProceedOn []bpfman.XDPAction  `name:"proceed-on" sep:"," help:"XDP actions to proceed on (comma-separated or repeated). Values: aborted, drop, pass, tx, redirect, dispatcher_return." default:"pass,dispatcher_return"`
 	Netns     string              `short:"n" name:"netns" help:"Network namespace path."`
 }
@@ -91,7 +91,7 @@ type AttachTCCmd struct {
 	ProgramID bpfmancli.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
 	Iface     string              `arg:"" name:"iface" help:"Network interface."`
 	Direction bpfman.TCDirection  `arg:"" name:"direction" help:"Direction (ingress or egress)."`
-	Priority  int                 `short:"p" name:"priority" help:"Priority in chain (lower runs first; non-negative; 0 or omitted = default 50). Slot exhaustion (more than 10 attachments) is reported by the dispatcher, not by this flag."`
+	Priority  int                 `short:"p" name:"priority" required:"" help:"Priority in chain (lower runs first; non-negative). Slot exhaustion (more than 10 attachments) is reported by the dispatcher, not by this flag."`
 	ProceedOn []bpfman.TCAction   `name:"proceed-on" sep:"," help:"TC actions to proceed on (comma-separated or repeated). Values: unspec, ok, reclassify, shot, pipe, stolen, queued, repeat, redirect, trap, dispatcher_return." default:"pipe,dispatcher_return"`
 	Netns     string              `short:"n" name:"netns" help:"Network namespace path."`
 }
@@ -125,7 +125,7 @@ type AttachTCXCmd struct {
 	ProgramID bpfmancli.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
 	Iface     string              `arg:"" name:"iface" help:"Network interface."`
 	Direction bpfman.TCDirection  `arg:"" name:"direction" help:"Direction (ingress or egress)."`
-	Priority  int                 `short:"p" name:"priority" help:"Priority in chain (lower runs first; non-negative; omitted means 0). TCX uses native kernel ordering, not a dispatcher."`
+	Priority  int                 `short:"p" name:"priority" required:"" help:"Priority in chain (lower runs first; non-negative). TCX uses native kernel ordering, not a dispatcher."`
 	Netns     string              `short:"n" name:"netns" help:"Network namespace path."`
 }
 

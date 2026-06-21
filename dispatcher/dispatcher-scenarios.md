@@ -236,7 +236,7 @@ Detach E2.
 
 1. Load dispatcher rev N+1 with two enabled slots.
 2. Recompute slot ordering for the surviving programs (sorted by
-   effective priority ASC, then program name ASC).
+   priority ASC, then program name ASC).
 3. Re-attach E1 and E3 to the new dispatcher, creating new links
    K4 and K5. Old extension links destroyed.
 4. Swap interface attachment.
@@ -437,8 +437,8 @@ affects the deterministic tie-break.
 
 ### Slot ordering rule
 
-Extensions are sorted by (effective priority ASC, program name
-ASC). Effective priority maps 0 to the default (50). After sorting,
+Extensions are sorted by (priority ASC, program name ASC). Priority 0
+is stored verbatim and sorts before positive values. After sorting,
 slot positions are assigned sequentially from 0.
 
 ### Steps
@@ -597,9 +597,9 @@ correctly tears everything down.
 
 ### Two kinds of priority
 
-- **Extension slot priority**: user-supplied per extension, default
-  50. Determines slot ordering via (effective priority ASC, program
-  name ASC).
+- **Extension slot priority**: user-supplied per extension. Determines
+  slot ordering via (priority ASC, program name ASC); priority 0 is a
+  real value that sorts first.
 - **TC filter priority**: fixed at 50 for the dispatcher's netlink
   filter. Not user-configurable.
 

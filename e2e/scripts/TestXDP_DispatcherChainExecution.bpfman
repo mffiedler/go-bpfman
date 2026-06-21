@@ -11,10 +11,10 @@
 #
 # XDP's default proceed-on is [XDP_PASS, dispatcher_return],
 # which is what xdp_counter.bpf.o returns; no --proceed-on is
-# needed for the chain to continue. Priorities are left at the
-# default too -- the dispatcher's name-based tiebreak orders the
-# slots deterministically and the test does not depend on the
-# order, only on every slot receiving traffic.
+# needed for the chain to continue. Every attach uses the same
+# priority; the dispatcher's name-based tiebreak orders the slots
+# deterministically and the test does not depend on the order, only
+# on every slot receiving traffic.
 #
 # Retrofit notes: same shape as the TC ChainExecution
 # retrofit. mapIDs and counts use compound list literals with
@@ -42,7 +42,7 @@ guard links <- foreach _ in range 10 {
     guard loaded <- bpfman program load file testdata/bpf/xdp_counter.bpf.o --programs xdp:xdp_stats
     let prog = $loaded.programs[0]
     defer bpfman program unload $prog
-    bpfman link attach xdp $prog $pair.host_link
+    bpfman link attach xdp $prog $pair.host_link --priority 50
 }
 
 foreach l in $links {

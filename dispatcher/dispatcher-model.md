@@ -79,7 +79,7 @@ Three `.rodata` fields control behaviour:
 |----------------------|--------------|----------------------------------------------|
 | `num_progs_enabled`  | `u8`         | How many slots (from `prog0`) are active      |
 | `chain_call_actions` | `u32[10]`    | Per-slot bitmask of return values that chain  |
-| `run_prios`          | `u32[10]`    | Per-slot priority (used by manager for ordering) |
+| `run_prios`          | `u32[10]`    | Dispatcher run-priority config; chain order comes from stored link priority and position |
 
 Because the configuration is declared `const volatile` in the BPF
 source, the verifier dead-code-eliminates disabled slots at load

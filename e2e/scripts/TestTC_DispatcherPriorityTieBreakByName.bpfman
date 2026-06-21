@@ -31,8 +31,8 @@ let prog_alpha = $loaded_alpha.programs[0]
 defer bpfman program unload $prog_beta
 defer bpfman program unload $prog_alpha
 
-guard l_beta <- bpfman link attach tc $prog_beta $pair.host_link ingress -p 100
-guard l_alpha <- bpfman link attach tc $prog_alpha $pair.host_link ingress -p 100
+guard l_beta <- bpfman link attach tc $prog_beta $pair.host_link ingress --priority 100
+guard l_alpha <- bpfman link attach tc $prog_alpha $pair.host_link ingress --priority 100
 defer bpfman link detach $l_beta
 defer bpfman link detach $l_alpha
 

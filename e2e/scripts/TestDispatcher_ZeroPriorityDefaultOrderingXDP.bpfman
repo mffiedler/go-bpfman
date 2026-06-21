@@ -6,11 +6,11 @@
 # TestDispatcher_ZeroPriorityDefaultOrderingTC covers TC ingress.
 #
 # Three programs attached at priorities 25, 0, and 75 in that
-# order. Priority 0 is normalised to the default priority 50
-# before the link is stored, so the positions come out:
+# order. Rust bpfman stores priority 0 verbatim and sorts it
+# before positive priorities; Go must match that chain order:
 #
-#   priority 25 -> position 0
-#   priority 50 -> position 1  (requested as 0)
+#   priority 0  -> position 0
+#   priority 25 -> position 1
 #   priority 75 -> position 2
 #
 # Run from e2e/:
@@ -27,9 +27,9 @@ guard loaded <- bpfman program load file testdata/bpf/xdp_counter.bpf.o --progra
 let prog = $loaded.programs[0]
 defer bpfman program unload $prog
 
-guard l_25 <- bpfman link attach xdp $prog $pair.host_link -p 25
-guard l_0 <- bpfman link attach xdp $prog $pair.host_link -p 0
-guard l_75 <- bpfman link attach xdp $prog $pair.host_link -p 75
+guard l_25 <- bpfman link attach xdp $prog $pair.host_link --priority 25
+guard l_0 <- bpfman link attach xdp $prog $pair.host_link --priority 0
+guard l_75 <- bpfman link attach xdp $prog $pair.host_link --priority 75
 
 defer bpfman link detach $l_25
 defer bpfman link detach $l_0
@@ -43,11 +43,11 @@ guard snap <- bpfman dispatcher get xdp $pair.host_nsid $pair.host_ifindex
 assert ($snap |> jq ".members | length") == 3
 
 assert $g_25.record.details.priority == 25
-assert $g_0.record.details.priority == 50
+assert $g_0.record.details.priority == 0
 assert $g_75.record.details.priority == 75
 
-assert $g_25.record.details.position == 0
-assert $g_0.record.details.position == 1
+assert $g_0.record.details.position == 0
+assert $g_25.record.details.position == 1
 assert $g_75.record.details.position == 2
 
 let id_25 = $l_25.record.id
@@ -63,9 +63,9 @@ let snap_0_position = $snap |> jq ".members[] | select(.link_id == ${id_0}) | .p
 let snap_75_position = $snap |> jq ".members[] | select(.link_id == ${id_75}) | .position"
 
 assert $snap_25_priority == 25
-assert $snap_0_priority == 50
+assert $snap_0_priority == 0
 assert $snap_75_priority == 75
 
-assert $snap_25_position == 0
-assert $snap_0_position == 1
+assert $snap_0_position == 0
+assert $snap_25_position == 1
 assert $snap_75_position == 2

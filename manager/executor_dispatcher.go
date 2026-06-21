@@ -126,7 +126,6 @@ func (e *executor) rebuildXDPDispatcher(
 	}
 	for i, slot := range allSlots {
 		cfg.ChainCallActions[i] = slot.ProceedOn
-		cfg.RunPrios[i] = uint32(slot.Priority)
 	}
 
 	// Compute new revision.
@@ -444,7 +443,6 @@ func (e *executor) rebuildTCDispatcher(
 	}
 	for i, slot := range allSlots {
 		cfg.ChainCallActions[i] = slot.ProceedOn
-		cfg.RunPrios[i] = uint32(slot.Priority)
 	}
 
 	// Compute new revision.
@@ -809,7 +807,6 @@ func (e *executor) rebuildXDPForDetach(
 	}
 	for i, slot := range slots {
 		cfg.ChainCallActions[i] = slot.ProceedOn
-		cfg.RunPrios[i] = uint32(slot.Priority)
 	}
 
 	dispatcherID, err := e.kernel.LoadAndPinXDPDispatcher(ctx, cfg, progPinPath)
@@ -957,7 +954,6 @@ func (e *executor) rebuildTCForDetach(
 	}
 	for i, slot := range slots {
 		cfg.ChainCallActions[i] = slot.ProceedOn
-		cfg.RunPrios[i] = uint32(slot.Priority)
 	}
 
 	dispatcherID, err := e.kernel.LoadAndPinTCDispatcher(ctx, cfg, progPinPath)
@@ -1303,8 +1299,8 @@ func isNotFound(err error) bool {
 
 // sortRebuildSlots sorts rebuild slots by
 // (priority ASC, attached ASC, programName ASC). Priorities are
-// already normalised at spec construction (0 -> DefaultAttachPriority,
-// negatives rejected), so they are used here as stored.
+// validated at spec construction (negatives rejected) and used here
+// as stored, so priority 0 sorts first.
 //
 // The attached tie-breaker matches Rust bpfman: new (unattached)
 // programs sort before existing (attached) ones at the same priority.

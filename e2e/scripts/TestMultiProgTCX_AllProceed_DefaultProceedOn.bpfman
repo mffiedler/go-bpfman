@@ -48,9 +48,9 @@ let mapID_c = $c |> jq '[.status.maps[] | select(.name == "mtcx_c_count") | .id]
 # Attach each TCX program at a distinct priority on ingress. TCX
 # has no proceed-on flag -- the chain-continue verdict is
 # TC_ACT_UNSPEC, hard-coded in the .bpf.o.
-guard link_a <- bpfman link attach tcx $a $pair.host_link ingress -p 50
-guard link_b <- bpfman link attach tcx $b $pair.host_link ingress -p 60
-guard link_c <- bpfman link attach tcx $c $pair.host_link ingress -p 70
+guard link_a <- bpfman link attach tcx $a $pair.host_link ingress --priority 50
+guard link_b <- bpfman link attach tcx $b $pair.host_link ingress --priority 60
+guard link_c <- bpfman link attach tcx $c $pair.host_link ingress --priority 70
 
 let counter_filter = "fromjson | .[0].formatted.value | tonumber"
 

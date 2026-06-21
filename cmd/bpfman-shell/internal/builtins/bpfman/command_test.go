@@ -1016,17 +1016,17 @@ func TestParseLinkAttachNetworkTypes(t *testing.T) {
 	}{
 		{
 			name:       "xdp",
-			args:       []runtime.Arg{word("xdp"), word("42"), word("lo"), word("-p"), word("10")},
+			args:       []runtime.Arg{word("xdp"), word("42"), word("lo"), word("--priority"), word("10")},
 			wantOutput: "table",
 		},
 		{
 			name:       "tc",
-			args:       []runtime.Arg{word("tc"), word("42"), word("lo"), word("ingress"), word("-p"), word("10")},
+			args:       []runtime.Arg{word("tc"), word("42"), word("lo"), word("ingress"), word("--priority"), word("10")},
 			wantOutput: "table",
 		},
 		{
 			name:       "tcx",
-			args:       []runtime.Arg{word("tcx"), word("42"), word("lo"), word("egress"), word("-p"), word("10"), word("-o"), word("json")},
+			args:       []runtime.Arg{word("tcx"), word("42"), word("lo"), word("egress"), word("--priority"), word("10"), word("-o"), word("json")},
 			wantOutput: "json",
 		},
 	}
@@ -1066,8 +1066,13 @@ func TestParseLinkAttachXDP_Errors(t *testing.T) {
 			wantErr: "unknown flag",
 		},
 		{
+			name:    "missing priority",
+			args:    []runtime.Arg{word("xdp"), word("42"), word("lo")},
+			wantErr: "requires --priority",
+		},
+		{
 			name:    "invalid priority",
-			args:    []runtime.Arg{word("xdp"), word("42"), word("lo"), word("-p"), word("abc")},
+			args:    []runtime.Arg{word("xdp"), word("42"), word("lo"), word("--priority"), word("abc")},
 			wantErr: "invalid priority",
 		},
 	}
@@ -1104,6 +1109,11 @@ func TestParseLinkAttachTC_Errors(t *testing.T) {
 			args:    []runtime.Arg{word("tc")},
 			wantErr: "requires <program-id> <iface> <direction>",
 		},
+		{
+			name:    "missing priority",
+			args:    []runtime.Arg{word("tc"), word("42"), word("lo"), word("ingress")},
+			wantErr: "requires --priority",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1138,6 +1148,11 @@ func TestParseLinkAttachTCX_Errors(t *testing.T) {
 			args:    []runtime.Arg{word("tcx")},
 			wantErr: "requires <program-id> <iface> <direction>",
 		},
+		{
+			name:    "missing priority",
+			args:    []runtime.Arg{word("tcx"), word("42"), word("lo"), word("ingress")},
+			wantErr: "requires --priority",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1158,15 +1173,15 @@ func TestParseLinkAttachMetadataThreadedToSpec(t *testing.T) {
 	}{
 		{
 			name: "xdp",
-			args: []runtime.Arg{word("xdp"), word("42"), word("lo"), word("-m"), word("k=v")},
+			args: []runtime.Arg{word("xdp"), word("42"), word("lo"), word("--priority"), word("50"), word("-m"), word("k=v")},
 		},
 		{
 			name: "tc",
-			args: []runtime.Arg{word("tc"), word("42"), word("lo"), word("ingress"), word("-m"), word("k=v")},
+			args: []runtime.Arg{word("tc"), word("42"), word("lo"), word("ingress"), word("--priority"), word("50"), word("-m"), word("k=v")},
 		},
 		{
 			name: "tcx",
-			args: []runtime.Arg{word("tcx"), word("42"), word("lo"), word("ingress"), word("-m"), word("k=v")},
+			args: []runtime.Arg{word("tcx"), word("42"), word("lo"), word("ingress"), word("--priority"), word("50"), word("-m"), word("k=v")},
 		},
 		{
 			name: "tracepoint",

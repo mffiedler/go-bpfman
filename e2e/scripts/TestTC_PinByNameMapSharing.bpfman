@@ -72,8 +72,8 @@ assert $mapID_a == $mapID_b
 # would leak the links until the next test that flushes them;
 # the trade-off is unavoidable without a defer-cancellation
 # primitive.
-guard l_a <- bpfman link attach tc $prog_a $pair.host_link ingress -p 100 --proceed-on ok,pipe,dispatcher_return
-guard l_b <- bpfman link attach tc $prog_b $pair.host_link ingress -p 200 --proceed-on ok,pipe,dispatcher_return
+guard l_a <- bpfman link attach tc $prog_a $pair.host_link ingress --priority 100 --proceed-on ok,pipe,dispatcher_return
+guard l_b <- bpfman link attach tc $prog_b $pair.host_link ingress --priority 200 --proceed-on ok,pipe,dispatcher_return
 
 # The shared pin lives under the active runtime root, not a hard-coded
 # default. While at least one program is loaded the pin must exist.

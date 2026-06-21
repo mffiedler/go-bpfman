@@ -57,7 +57,7 @@ var commandExamples = map[string]string{
   --programs xdp:pass \
   -o 'jsonpath={.programs[0].record.program_id}')
 
-bpfman link attach xdp "$BPFMAN_PROG_ID" lo
+bpfman link attach xdp "$BPFMAN_PROG_ID" lo --priority 50
 `,
 
 	"link attach tc": `BPFMAN_PROG_ID=$(bpfman program load image \
@@ -65,7 +65,7 @@ bpfman link attach xdp "$BPFMAN_PROG_ID" lo
   --programs tc:stats \
   -o 'jsonpath={.programs[0].record.program_id}')
 
-bpfman link attach tc "$BPFMAN_PROG_ID" lo ingress
+bpfman link attach tc "$BPFMAN_PROG_ID" lo ingress --priority 50
 `,
 
 	"link attach tcx": `BPFMAN_PROG_ID=$(bpfman program load image \
@@ -73,7 +73,7 @@ bpfman link attach tc "$BPFMAN_PROG_ID" lo ingress
   --programs tcx:stats \
   -o 'jsonpath={.programs[0].record.program_id}')
 
-bpfman link attach tcx "$BPFMAN_PROG_ID" lo ingress
+bpfman link attach tcx "$BPFMAN_PROG_ID" lo ingress --priority 50
 `,
 
 	"link attach tracepoint": `BPFMAN_PROG_ID=$(bpfman program load image \

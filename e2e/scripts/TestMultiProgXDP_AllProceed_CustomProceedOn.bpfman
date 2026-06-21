@@ -57,9 +57,9 @@ let mapID_b = $b |> jq '[.status.maps[] | select(.name == "mxdv_b_count") | .id]
 let mapID_c = $c |> jq '[.status.maps[] | select(.name == "mxdv_c_count") | .id][0]'
 
 # Custom proceed-on includes DROP so the chain doesn't stop.
-guard link_a <- bpfman link attach xdp $a $pair.host_link -p 50 --proceed-on drop,dispatcher_return
-guard link_b <- bpfman link attach xdp $b $pair.host_link -p 60 --proceed-on drop,dispatcher_return
-guard link_c <- bpfman link attach xdp $c $pair.host_link -p 70 --proceed-on drop,dispatcher_return
+guard link_a <- bpfman link attach xdp $a $pair.host_link --priority 50 --proceed-on drop,dispatcher_return
+guard link_b <- bpfman link attach xdp $b $pair.host_link --priority 60 --proceed-on drop,dispatcher_return
+guard link_c <- bpfman link attach xdp $c $pair.host_link --priority 70 --proceed-on drop,dispatcher_return
 
 let counter_filter = "fromjson | .[0].formatted.value | tonumber"
 

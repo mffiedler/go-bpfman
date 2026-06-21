@@ -42,9 +42,9 @@ let mapID_100 = $prog_100 |> jq '[.status.maps[] | select(.name == "tc_stats_map
 
 # Attach without --proceed-on; the CLI default is (pipe,
 # dispatcher_return) which excludes TC_ACT_OK.
-guard l_0 <- bpfman link attach tc $prog_0 $pair.host_link ingress -p 0
-guard l_55 <- bpfman link attach tc $prog_55 $pair.host_link ingress -p 55
-guard l_100 <- bpfman link attach tc $prog_100 $pair.host_link ingress -p 100
+guard l_0 <- bpfman link attach tc $prog_0 $pair.host_link ingress --priority 0
+guard l_55 <- bpfman link attach tc $prog_55 $pair.host_link ingress --priority 55
+guard l_100 <- bpfman link attach tc $prog_100 $pair.host_link ingress --priority 100
 defer bpfman link detach $l_0
 defer bpfman link detach $l_55
 defer bpfman link detach $l_100

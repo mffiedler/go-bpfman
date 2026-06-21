@@ -7,17 +7,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Priority for XDP and TC is parsed at construction: an omitted (0)
-// priority normalises to DefaultAttachPriority, a positive value is
-// kept verbatim, and a negative value is rejected. The stored value
-// is therefore the effective value and the library never re-checks it.
-
 func TestXDPAttachSpecPriorityParsing(t *testing.T) {
 	t.Parallel()
 
-	omitted, err := NewXDPAttachSpec(1, "eth0", 0)
+	zero, err := NewXDPAttachSpec(1, "eth0", 0)
 	require.NoError(t, err)
-	assert.Equal(t, DefaultAttachPriority, omitted.Priority())
+	assert.Equal(t, 0, zero.Priority())
 
 	explicit, err := NewXDPAttachSpec(1, "eth0", 25)
 	require.NoError(t, err)
@@ -32,9 +27,9 @@ func TestXDPAttachSpecPriorityParsing(t *testing.T) {
 func TestTCAttachSpecPriorityParsing(t *testing.T) {
 	t.Parallel()
 
-	omitted, err := NewTCAttachSpec(1, "eth0", TCDirectionIngress, 0)
+	zero, err := NewTCAttachSpec(1, "eth0", TCDirectionIngress, 0)
 	require.NoError(t, err)
-	assert.Equal(t, DefaultAttachPriority, omitted.Priority())
+	assert.Equal(t, 0, zero.Priority())
 
 	explicit, err := NewTCAttachSpec(1, "eth0", TCDirectionIngress, 25)
 	require.NoError(t, err)
@@ -88,9 +83,9 @@ func TestTCAttachSpecProceedOnCodesValidateActions(t *testing.T) {
 	assert.Contains(t, err.Error(), "unknown TC action code 9")
 }
 
-// TCX priority is stored verbatim, matching Rust: TCX has no
-// dispatcher default, so an omitted (0) priority stays 0, a positive
-// value is kept as given, and only a negative value is rejected.
+// Priority is stored verbatim, matching Rust's raw ordering: 0 is a
+// real priority that sorts before positive values, and only a negative
+// value is rejected.
 func TestTCXAttachSpecPriorityParsing(t *testing.T) {
 	t.Parallel()
 

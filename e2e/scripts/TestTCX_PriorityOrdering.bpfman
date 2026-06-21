@@ -45,7 +45,7 @@ guard links <- foreach prio in $priorities {
     guard loaded <- bpfman program load file testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
     let prog = $loaded.programs[0]
     defer bpfman program unload $prog
-    bpfman link attach tcx $prog $pair.host_link ingress -p $prio
+    bpfman link attach tcx $prog $pair.host_link ingress --priority $prio
 }
 
 foreach l in $links {

@@ -51,7 +51,7 @@ assert fail bpfman link attach fentry $fexit
 # Network kinds: xdp via tc and tcx verbs, and tc via xdp.
 assert fail bpfman link attach tc $xdp lo ingress --priority 50
 assert fail bpfman link attach tcx $xdp lo ingress --priority 50
-assert fail bpfman link attach xdp $tcprog lo
+assert fail bpfman link attach xdp $tcprog lo --priority 50
 
 # Lock the rejection message shape.
 let r <- bpfman link attach kprobe $uprobe do_unlinkat

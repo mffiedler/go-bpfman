@@ -31,8 +31,8 @@ guard _ <- net exec $pair.a tc qdisc add dev $pair.a.link ingress
 
 # Egress over an ingress-only qdisc cannot work; ingress would only work
 # by riding a qdisc bpfman does not own. Both must be refused.
-assert fail bpfman link attach tc $prog $pair.a.link egress -p 50 --netns $netns
-assert fail bpfman link attach tc $prog $pair.a.link ingress -p 50 --netns $netns
+assert fail bpfman link attach tc $prog $pair.a.link egress --priority 50 --netns $netns
+assert fail bpfman link attach tc $prog $pair.a.link ingress --priority 50 --netns $netns
 
 # The foreign qdisc must still be present -- bpfman must not have torn it
 # down as a side effect of the refusal.

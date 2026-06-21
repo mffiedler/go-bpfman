@@ -7,12 +7,6 @@ import (
 	"github.com/frobware/go-bpfman/kernel"
 )
 
-const (
-	// DefaultAttachPriority is the run priority used when a dispatcher
-	// attach request omits priority or explicitly asks for priority 0.
-	DefaultAttachPriority = 50
-)
-
 var ErrInvalidAttachSpec = errors.New("invalid attach spec")
 
 // AttachSpec is a sealed interface satisfied by all concrete attach
@@ -32,9 +26,6 @@ func invalidAttachSpec(format string, args ...any) error {
 func validatePriority(p int) (int, error) {
 	if p < 0 {
 		return 0, invalidAttachSpec("priority must be non-negative, got %d", p)
-	}
-	if p == 0 {
-		return DefaultAttachPriority, nil
 	}
 	return p, nil
 }
@@ -217,9 +208,10 @@ type XDPAttachSpec struct {
 // NewXDPAttachSpec creates an XDPAttachSpec with validated fields.
 // The interface is named, not pre-resolved: the manager resolves the
 // name to an ifindex inside the target namespace at attach time.
-// Priority is parsed here -- the single boundary: 0 normalises to
-// DefaultAttachPriority and a negative value is rejected, so the
-// stored value is the effective value and the library never re-checks.
+// Priority is parsed here -- the single boundary: a negative value is
+// rejected and all non-negative values, including 0, are stored
+// verbatim. Lower values run first, matching Rust bpfman's raw
+// priority ordering.
 func NewXDPAttachSpec(programID kernel.ProgramID, ifname string, priority int) (XDPAttachSpec, error) {
 	if programID == 0 {
 		return XDPAttachSpec{}, errors.New("programID is required")
@@ -281,9 +273,10 @@ type TCAttachSpec struct {
 }
 
 // NewTCAttachSpec creates a TCAttachSpec with validated fields.
-// Priority is parsed here -- the single boundary: 0 normalises to
-// DefaultAttachPriority and a negative value is rejected, so the
-// stored value is the effective value and the library never re-checks.
+// Priority is parsed here -- the single boundary: a negative value is
+// rejected and all non-negative values, including 0, are stored
+// verbatim. Lower values run first, matching Rust bpfman's raw
+// priority ordering.
 func NewTCAttachSpec(programID kernel.ProgramID, ifname string, direction TCDirection, priority int) (TCAttachSpec, error) {
 	if programID == 0 {
 		return TCAttachSpec{}, errors.New("programID is required")
@@ -359,13 +352,8 @@ type TCXAttachSpec struct {
 // NewTCXAttachSpec creates a TCXAttachSpec with validated fields.
 // Priority is a userspace ordering key, stored verbatim: lower values
 // run earlier and a negative value is rejected. Zero is a real
-// priority that runs first and is deliberately NOT remapped to
-// DefaultAttachPriority -- that 50 default is an XDP/TC dispatcher
-// concept TCX has no equivalent of. An omitted Go CLI flag and an
-// omitted proto3 int32 field both arrive as 0, which matches Rust's
-// gRPC/runtime behaviour, so 0 is the correct unspecified value; do
-// not "fix" it to 50 or 1000 (the proto's "default 1000" comment is
-// stale even upstream).
+// priority that runs first and is deliberately not remapped to a
+// dispatcher run-priority constant.
 func NewTCXAttachSpec(programID kernel.ProgramID, ifname string, direction TCDirection, priority int) (TCXAttachSpec, error) {
 	if programID == 0 {
 		return TCXAttachSpec{}, errors.New("programID is required")

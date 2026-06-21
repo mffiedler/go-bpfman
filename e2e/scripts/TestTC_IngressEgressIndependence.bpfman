@@ -9,8 +9,8 @@
 #
 # The script loads one TC program and reuses it for all five
 # attaches (the dispatcher-side accounting is the test, not the
-# program identity). Priorities are default, 100, 200 for ingress
-# and default, 100 for egress; priority 0 requests the default 50.
+# program identity). Priorities are 0, 100, 200 for ingress and 0,
+# 100 for egress.
 #
 # Run from e2e/:
 #
@@ -27,9 +27,9 @@ let prog = $loaded.programs[0]
 defer bpfman program unload $prog
 
 # Three members on ingress.
-guard in_0 <- bpfman link attach tc $prog $pair.host_link ingress -p 0
-guard in_100 <- bpfman link attach tc $prog $pair.host_link ingress -p 100
-guard in_200 <- bpfman link attach tc $prog $pair.host_link ingress -p 200
+guard in_0 <- bpfman link attach tc $prog $pair.host_link ingress --priority 0
+guard in_100 <- bpfman link attach tc $prog $pair.host_link ingress --priority 100
+guard in_200 <- bpfman link attach tc $prog $pair.host_link ingress --priority 200
 defer bpfman link detach $in_0
 defer bpfman link detach $in_100
 defer bpfman link detach $in_200
@@ -39,8 +39,8 @@ assert ($snap_in_before |> jq ".members | length") == 3
 
 # Two members on egress. No defers: the script detaches them
 # mid-test as the operation under test.
-guard eg_0 <- bpfman link attach tc $prog $pair.host_link egress -p 0
-guard eg_100 <- bpfman link attach tc $prog $pair.host_link egress -p 100
+guard eg_0 <- bpfman link attach tc $prog $pair.host_link egress --priority 0
+guard eg_100 <- bpfman link attach tc $prog $pair.host_link egress --priority 100
 
 guard snap_eg <- bpfman dispatcher get tc-egress $pair.host_nsid $pair.host_ifindex
 assert ($snap_eg |> jq ".members | length") == 2

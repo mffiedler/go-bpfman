@@ -58,9 +58,9 @@ let mapID_a = $a |> jq '[.status.maps[] | select(.name == "mxda_count") | .id][0
 let mapID_b = $b |> jq '[.status.maps[] | select(.name == "mxdb_count") | .id][0]'
 let mapID_c = $c |> jq '[.status.maps[] | select(.name == "mxdc_count") | .id][0]'
 
-guard link_a <- bpfman link attach xdp $a $pair.host_link -p 50
-guard link_b <- bpfman link attach xdp $b $pair.host_link -p 60
-guard link_c <- bpfman link attach xdp $c $pair.host_link -p 70
+guard link_a <- bpfman link attach xdp $a $pair.host_link --priority 50
+guard link_b <- bpfman link attach xdp $b $pair.host_link --priority 60
+guard link_c <- bpfman link attach xdp $c $pair.host_link --priority 70
 
 let counter_filter = "fromjson | .[0].formatted.value | tonumber"
 

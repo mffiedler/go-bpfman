@@ -34,7 +34,7 @@ let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 defer bpfman program unload $pid
 
-guard link <- bpfman link attach xdp $prog $pair.host_link -m owner=xdp
+guard link <- bpfman link attach xdp $prog $pair.host_link --priority 50 -m owner=xdp
 let linkID = $link.record.id
 expect_pinned_link_identity $link
 

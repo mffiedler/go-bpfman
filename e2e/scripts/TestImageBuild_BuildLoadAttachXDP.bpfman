@@ -44,7 +44,7 @@ def main() {
     print "image-build: veth host=${pair.host_link} peer=${pair.peer_link}"
 
     print "image-build: attaching xdp pid=${pid} iface=${pair.host_link}"
-    guard link <- bpfman link attach xdp $prog $pair.host_link
+    guard link <- bpfman link attach xdp $prog $pair.host_link --priority 50
     let linkID = $link.record.id
     expect_pinned_link_identity $link
     print "image-build: attached link=${linkID}"

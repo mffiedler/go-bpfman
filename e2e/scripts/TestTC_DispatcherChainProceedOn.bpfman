@@ -53,7 +53,7 @@ guard links <- foreach (prio po) in zip $priorities $proceed_ons {
     guard loaded <- bpfman program load file testdata/bpf/tc_counter.bpf.o --programs tc:stats
     let prog = $loaded.programs[0]
     defer bpfman program unload $prog
-    bpfman link attach tc $prog $pair.host_link ingress -p $prio --proceed-on $po
+    bpfman link attach tc $prog $pair.host_link ingress --priority $prio --proceed-on $po
 }
 
 foreach l in $links {

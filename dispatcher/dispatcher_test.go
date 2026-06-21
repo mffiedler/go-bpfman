@@ -58,8 +58,8 @@ func TestNewXDPConfig(t *testing.T) {
 			t.Fatal(err)
 		}
 		for i := range dispatcher.MaxPrograms {
-			if cfg.RunPrios[i] != dispatcher.DefaultPriority {
-				t.Errorf("RunPrios[%d] = %d, want %d", i, cfg.RunPrios[i], dispatcher.DefaultPriority)
+			if cfg.RunPrios[i] != dispatcher.DispatcherRunPriority {
+				t.Errorf("RunPrios[%d] = %d, want %d", i, cfg.RunPrios[i], dispatcher.DispatcherRunPriority)
 			}
 		}
 	})
@@ -109,8 +109,8 @@ func TestNewTCConfig(t *testing.T) {
 			t.Fatal(err)
 		}
 		for i := range dispatcher.MaxPrograms {
-			if cfg.RunPrios[i] != dispatcher.DefaultPriority {
-				t.Errorf("RunPrios[%d] = %d, want %d", i, cfg.RunPrios[i], dispatcher.DefaultPriority)
+			if cfg.RunPrios[i] != dispatcher.DispatcherRunPriority {
+				t.Errorf("RunPrios[%d] = %d, want %d", i, cfg.RunPrios[i], dispatcher.DispatcherRunPriority)
 			}
 		}
 	})

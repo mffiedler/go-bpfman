@@ -31,7 +31,7 @@ defer bpfman program unload $prog
 # changes; there is no index-by-variable in path lookups today,
 # so each step is spelled out.
 guard links <- foreach _ in range 10 {
-    bpfman link attach xdp $prog $pair.host_link
+    bpfman link attach xdp $prog $pair.host_link --priority 50
 }
 
 # $links[0] .. $links[8] are detached explicitly mid-script;

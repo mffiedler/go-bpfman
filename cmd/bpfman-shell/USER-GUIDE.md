@@ -112,7 +112,7 @@ guard loaded <- bpfman program load file \
     --programs xdp:pass
 let prog = $loaded.programs[0]
 
-guard link <- bpfman link attach xdp --iface eth0 $prog
+guard link <- bpfman link attach xdp --iface eth0 $prog --priority 50
 ```
 
 Use `_` to discard a value when the command is only for its side effect:
@@ -214,7 +214,7 @@ Defs can return a value:
 def load_xdp(path iface) {
     guard loaded <- bpfman program load file $path --programs xdp:pass
     let prog = $loaded.programs[0]
-    guard link <- bpfman link attach xdp --iface $iface $prog
+    guard link <- bpfman link attach xdp --iface $iface $prog --priority 50
     return [$prog $link]
 }
 
@@ -338,7 +338,7 @@ guard loaded <- bpfman program load file \
 let prog = $loaded.programs[0]
 defer bpfman program unload $prog
 
-guard link <- bpfman link attach xdp --iface $pair.host_link $prog
+guard link <- bpfman link attach xdp --iface $pair.host_link $prog --priority 50
 defer bpfman link detach $link
 ```
 
@@ -476,7 +476,7 @@ guard loaded <- bpfman program load file prog.o --programs xdp:pass
 guard prog <- bpfman program get $pid
 bpfman program unload $prog
 
-guard link <- bpfman link attach xdp --iface eth0 $prog
+guard link <- bpfman link attach xdp --iface eth0 $prog --priority 50
 guard listed <- bpfman link list -o json
 bpfman link detach $link
 

@@ -53,7 +53,7 @@ defer bpfman program unload $prog
 let priorities = [500 100 800 300 900 200 700 400 600 50]
 
 guard links <- foreach prio in $priorities {
-    bpfman link attach tc $prog $pair.host_link ingress -p $prio
+    bpfman link attach tc $prog $pair.host_link ingress --priority $prio
 }
 
 foreach l in $links {

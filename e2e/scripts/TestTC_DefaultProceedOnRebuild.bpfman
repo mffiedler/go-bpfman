@@ -41,8 +41,8 @@ let mapID_incoming = $prog_incoming |> jq '[.status.maps[] | select(.name == "tc
 # Attach existing first, then incoming at the same priority. No
 # explicit --proceed-on; the default (pipe, dispatcher_return)
 # is the value under test.
-guard l_existing <- bpfman link attach tc $prog_existing $pair.host_link ingress -p 55
-guard l_incoming <- bpfman link attach tc $prog_incoming $pair.host_link ingress -p 55
+guard l_existing <- bpfman link attach tc $prog_existing $pair.host_link ingress --priority 55
+guard l_incoming <- bpfman link attach tc $prog_incoming $pair.host_link ingress --priority 55
 defer bpfman link detach $l_existing
 defer bpfman link detach $l_incoming
 

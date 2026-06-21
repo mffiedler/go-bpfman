@@ -49,10 +49,11 @@ const (
 	xdpDispatcherMagic   = 236
 	xdpDispatcherVersion = 2
 
-	// DefaultPriority is the default run priority for dispatcher slots.
-	// It aliases bpfman.DefaultAttachPriority so the dispatcher default
-	// and the attach-spec default stay a single source of truth.
-	DefaultPriority = bpfman.DefaultAttachPriority
+	// DispatcherRunPriority is the value written into the dispatcher
+	// run_prios array. It mirrors Rust bpfman's dispatcher config but
+	// does not determine chain order; user links are ordered by their
+	// stored priority and position.
+	DispatcherRunPriority = 50
 )
 
 func proceedOnOffset(dt DispatcherType) (int32, error) {
@@ -133,7 +134,7 @@ func NewXDPConfig(numProgs int) (XDPConfig, error) {
 		NumProgsEnabled:   uint8(numProgs),
 	}
 	for i := range MaxPrograms {
-		cfg.RunPrios[i] = DefaultPriority
+		cfg.RunPrios[i] = DispatcherRunPriority
 	}
 	return cfg, nil
 }
@@ -148,7 +149,7 @@ func NewTCConfig(numProgs int) (TCConfig, error) {
 		NumProgsEnabled: uint8(numProgs),
 	}
 	for i := range MaxPrograms {
-		cfg.RunPrios[i] = DefaultPriority
+		cfg.RunPrios[i] = DispatcherRunPriority
 	}
 	return cfg, nil
 }

@@ -11,7 +11,7 @@ guard loaded <- bpfman program load file testdata/bpf/xdp_pass.bpf.o --programs 
 let prog = $loaded.programs[0]
 defer bpfman program unload $prog
 
-guard link <- bpfman link attach xdp $prog $pair.host_link -p 50 --proceed-on pass
+guard link <- bpfman link attach xdp $prog $pair.host_link --priority 50 --proceed-on pass
 defer bpfman link detach $link
 
 guard got <- bpfman link get $link

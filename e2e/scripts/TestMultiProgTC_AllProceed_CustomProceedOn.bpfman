@@ -48,9 +48,9 @@ let mapID_c = $c |> jq '[.status.maps[] | select(.name == "mtcv_c_count") | .id]
 # Custom proceed-on includes OK so the chain doesn't stop on
 # TC_ACT_OK. dispatcher_return is the bpfman sentinel that always
 # needs to be in the bitmask.
-guard link_a <- bpfman link attach tc $a $pair.host_link ingress -p 50 --proceed-on ok,dispatcher_return
-guard link_b <- bpfman link attach tc $b $pair.host_link ingress -p 60 --proceed-on ok,dispatcher_return
-guard link_c <- bpfman link attach tc $c $pair.host_link ingress -p 70 --proceed-on ok,dispatcher_return
+guard link_a <- bpfman link attach tc $a $pair.host_link ingress --priority 50 --proceed-on ok,dispatcher_return
+guard link_b <- bpfman link attach tc $b $pair.host_link ingress --priority 60 --proceed-on ok,dispatcher_return
+guard link_c <- bpfman link attach tc $c $pair.host_link ingress --priority 70 --proceed-on ok,dispatcher_return
 
 let counter_filter = "fromjson | .[0].formatted.value | tonumber"
 

@@ -666,12 +666,13 @@ func parseMetadataFlag(args []runtime.Arg, i int, context, flag string) (bpfmanc
 
 // parseLinkAttachXDP parses "link attach xdp" arguments.
 //
-//	<program-id> <iface> [-p <priority>] [--proceed-on <actions>]...
+//	<program-id> <iface> --priority <priority> [--proceed-on <actions>]...
 //	[-n <netns>] [-o <format>]
 func parseLinkAttachXDP(args []runtime.Arg) (*LinkAttachCommand, error) {
 	var (
 		iface     string
 		priority  int
+		havePrio  bool
 		proceedOn []string
 		netns     string
 		progArg   runtime.Arg
@@ -694,6 +695,7 @@ func parseLinkAttachXDP(args []runtime.Arg) (*LinkAttachCommand, error) {
 				return nil, fmt.Errorf("link attach xdp: invalid priority %q: %w", driver.ArgText(args[i]), err)
 			}
 			priority = v
+			havePrio = true
 		case "--proceed-on":
 			i++
 			if i >= len(args) {
@@ -737,6 +739,9 @@ func parseLinkAttachXDP(args []runtime.Arg) (*LinkAttachCommand, error) {
 	if len(pos) < 2 {
 		return nil, fmt.Errorf("link attach xdp: requires <program-id> <iface>")
 	}
+	if !havePrio {
+		return nil, fmt.Errorf("link attach xdp: requires --priority")
+	}
 	progArg = pos[0]
 	iface = driver.ArgText(pos[1])
 
@@ -767,13 +772,14 @@ func parseLinkAttachXDP(args []runtime.Arg) (*LinkAttachCommand, error) {
 
 // parseLinkAttachTC parses "link attach tc" arguments.
 //
-//	<program-id> <iface> <direction> [-p <priority>]
+//	<program-id> <iface> <direction> --priority <priority>
 //	[--proceed-on <actions>]... [-n <netns>] [-o <format>]
 func parseLinkAttachTC(args []runtime.Arg) (*LinkAttachCommand, error) {
 	var (
 		iface     string
 		direction string
 		priority  int
+		havePrio  bool
 		proceedOn []string
 		netns     string
 		progArg   runtime.Arg
@@ -796,6 +802,7 @@ func parseLinkAttachTC(args []runtime.Arg) (*LinkAttachCommand, error) {
 				return nil, fmt.Errorf("link attach tc: invalid priority %q: %w", driver.ArgText(args[i]), err)
 			}
 			priority = v
+			havePrio = true
 		case "--proceed-on":
 			i++
 			if i >= len(args) {
@@ -839,6 +846,9 @@ func parseLinkAttachTC(args []runtime.Arg) (*LinkAttachCommand, error) {
 	if len(pos) < 3 {
 		return nil, fmt.Errorf("link attach tc: requires <program-id> <iface> <direction>")
 	}
+	if !havePrio {
+		return nil, fmt.Errorf("link attach tc: requires --priority")
+	}
 	progArg = pos[0]
 	iface = driver.ArgText(pos[1])
 	direction = driver.ArgText(pos[2])
@@ -870,13 +880,14 @@ func parseLinkAttachTC(args []runtime.Arg) (*LinkAttachCommand, error) {
 
 // parseLinkAttachTCX parses "link attach tcx" arguments.
 //
-//	<program-id> <iface> <direction> [-p <priority>] [-n <netns>]
+//	<program-id> <iface> <direction> --priority <priority> [-n <netns>]
 //	[-o <format>]
 func parseLinkAttachTCX(args []runtime.Arg) (*LinkAttachCommand, error) {
 	var (
 		iface     string
 		direction string
 		priority  int
+		havePrio  bool
 		netns     string
 		progArg   runtime.Arg
 		pos       []runtime.Arg
@@ -897,6 +908,7 @@ func parseLinkAttachTCX(args []runtime.Arg) (*LinkAttachCommand, error) {
 				return nil, fmt.Errorf("link attach tcx: invalid priority %q: %w", driver.ArgText(args[i]), err)
 			}
 			priority = v
+			havePrio = true
 		case "-n", "--netns":
 			i++
 			if i >= len(args) {
@@ -932,6 +944,9 @@ func parseLinkAttachTCX(args []runtime.Arg) (*LinkAttachCommand, error) {
 
 	if len(pos) < 3 {
 		return nil, fmt.Errorf("link attach tcx: requires <program-id> <iface> <direction>")
+	}
+	if !havePrio {
+		return nil, fmt.Errorf("link attach tcx: requires --priority")
 	}
 	progArg = pos[0]
 	iface = driver.ArgText(pos[1])
