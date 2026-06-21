@@ -20,7 +20,6 @@ type LoadImageCmd struct {
 	MetadataFlags
 	GlobalDataFlags
 
-	Example      ExampleFlag             `name:"example" help:"Show working examples and exit."`
 	ImageURL     string                  `arg:"" name:"image" help:"OCI image reference (e.g., quay.io/bpfman-bytecode/xdp_pass:latest)."`
 	Programs     []bpfmancli.ProgramSpec `name:"programs" sep:"," help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (comma-separated or repeated). For fentry/fexit, ATTACH_FUNC is required. If not specified, all programs in the image are loaded."`
 	PullPolicy   bpfman.ImagePullPolicy  `short:"p" name:"pull-policy" help:"Image pull policy (Always, IfNotPresent, Never)." default:"IfNotPresent"`

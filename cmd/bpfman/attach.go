@@ -54,7 +54,6 @@ func runAttach(cli *bpfmancli.CLI, ctx context.Context, flags *cliformat.OutputF
 type AttachXDPCmd struct {
 	cliformat.OutputFlags
 	AttachMetadataFlags
-	Example   ExampleFlag         `name:"example" help:"Show working examples and exit."`
 	ProgramID bpfmancli.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
 	Iface     string              `arg:"" name:"iface" help:"Network interface."`
 	Priority  int                 `short:"p" name:"priority" required:"" help:"Priority in chain (lower runs first; non-negative). Slot exhaustion (more than 10 attachments) is reported by the dispatcher, not by this flag."`
@@ -87,7 +86,6 @@ func (c *AttachXDPCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 type AttachTCCmd struct {
 	cliformat.OutputFlags
 	AttachMetadataFlags
-	Example   ExampleFlag         `name:"example" help:"Show working examples and exit."`
 	ProgramID bpfmancli.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
 	Iface     string              `arg:"" name:"iface" help:"Network interface."`
 	Direction bpfman.TCDirection  `arg:"" name:"direction" help:"Direction (ingress or egress)."`
@@ -121,7 +119,6 @@ func (c *AttachTCCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 type AttachTCXCmd struct {
 	cliformat.OutputFlags
 	AttachMetadataFlags
-	Example   ExampleFlag         `name:"example" help:"Show working examples and exit."`
 	ProgramID bpfmancli.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
 	Iface     string              `arg:"" name:"iface" help:"Network interface."`
 	Direction bpfman.TCDirection  `arg:"" name:"direction" help:"Direction (ingress or egress)."`
@@ -153,7 +150,6 @@ func (c *AttachTCXCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 type AttachTracepointCmd struct {
 	cliformat.OutputFlags
 	AttachMetadataFlags
-	Example    ExampleFlag         `name:"example" help:"Show working examples and exit."`
 	ProgramID  bpfmancli.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
 	Tracepoint bpfman.Tracepoint   `arg:"" name:"tracepoint" help:"Tracepoint in group/name form (e.g. sched/sched_switch)."`
 }
@@ -179,7 +175,6 @@ func (c *AttachTracepointCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error
 type AttachKprobeCmd struct {
 	cliformat.OutputFlags
 	AttachMetadataFlags
-	Example   ExampleFlag         `name:"example" help:"Show working examples and exit."`
 	ProgramID bpfmancli.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
 	FnName    string              `arg:"" name:"fn-name" help:"Kernel function name to attach to."`
 	Offset    uint64              `name:"offset" help:"Offset within the function." default:"0"`
@@ -209,7 +204,6 @@ func (c *AttachKprobeCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 type AttachUprobeCmd struct {
 	cliformat.OutputFlags
 	AttachMetadataFlags
-	Example      ExampleFlag         `name:"example" help:"Show working examples and exit."`
 	ProgramID    bpfmancli.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
 	Target       string              `arg:"" name:"target" help:"Absolute path to the target binary or library, or a bare library name (e.g. libc) resolved like the dynamic linker."`
 	FnName       string              `short:"f" name:"fn-name" help:"Function name to attach to."`
@@ -245,7 +239,6 @@ func (c *AttachUprobeCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 type AttachFentryCmd struct {
 	cliformat.OutputFlags
 	AttachMetadataFlags
-	Example   ExampleFlag         `name:"example" help:"Show working examples and exit."`
 	ProgramID bpfmancli.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
 }
 
@@ -270,7 +263,6 @@ func (c *AttachFentryCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 type AttachFexitCmd struct {
 	cliformat.OutputFlags
 	AttachMetadataFlags
-	Example   ExampleFlag         `name:"example" help:"Show working examples and exit."`
 	ProgramID bpfmancli.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
 }
 
