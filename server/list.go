@@ -362,6 +362,7 @@ func linkDetailsToProto(d bpfman.LinkDetails) *pb.LinkDetails {
 					Ifindex:   details.Ifindex,
 					Direction: details.Direction.String(),
 					Priority:  details.Priority,
+					Position:  details.Position,
 					Netns:     details.Netns,
 					Nsid:      details.Nsid,
 				},

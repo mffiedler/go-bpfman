@@ -422,6 +422,7 @@ message TCXLinkDetails {
     int32 priority = 4;
     string netns = 5;
     uint64 nsid = 6;
+    int32 position = 7;
 }
 
 /* LinkDetails is a polymorphic wrapper for type-specific link details. */

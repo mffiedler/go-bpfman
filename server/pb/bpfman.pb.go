@@ -2842,6 +2842,7 @@ type TCXLinkDetails struct {
 	Priority      int32                  `protobuf:"varint,4,opt,name=priority,proto3" json:"priority,omitempty"`
 	Netns         string                 `protobuf:"bytes,5,opt,name=netns,proto3" json:"netns,omitempty"`
 	Nsid          uint64                 `protobuf:"varint,6,opt,name=nsid,proto3" json:"nsid,omitempty"`
+	Position      int32                  `protobuf:"varint,7,opt,name=position,proto3" json:"position,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2914,6 +2915,13 @@ func (x *TCXLinkDetails) GetNetns() string {
 func (x *TCXLinkDetails) GetNsid() uint64 {
 	if x != nil {
 		return x.Nsid
+	}
+	return 0
+}
+
+func (x *TCXLinkDetails) GetPosition() int32 {
+	if x != nil {
+		return x.Position
 	}
 	return 0
 }
@@ -3645,14 +3653,15 @@ const file_bpfman_proto_rawDesc = "" +
 	"\x04nsid\x18\b \x01(\x04R\x04nsid\x12#\n" +
 	"\rdispatcher_id\x18\t \x01(\rR\fdispatcherId\x12\x1a\n" +
 	"\brevision\x18\n" +
-	" \x01(\rR\brevision\"\xac\x01\n" +
+	" \x01(\rR\brevision\"\xc8\x01\n" +
 	"\x0eTCXLinkDetails\x12\x1c\n" +
 	"\tinterface\x18\x01 \x01(\tR\tinterface\x12\x18\n" +
 	"\aifindex\x18\x02 \x01(\rR\aifindex\x12\x1c\n" +
 	"\tdirection\x18\x03 \x01(\tR\tdirection\x12\x1a\n" +
 	"\bpriority\x18\x04 \x01(\x05R\bpriority\x12\x14\n" +
 	"\x05netns\x18\x05 \x01(\tR\x05netns\x12\x12\n" +
-	"\x04nsid\x18\x06 \x01(\x04R\x04nsid\"\xc3\x03\n" +
+	"\x04nsid\x18\x06 \x01(\x04R\x04nsid\x12\x1a\n" +
+	"\bposition\x18\a \x01(\x05R\bposition\"\xc3\x03\n" +
 	"\vLinkDetails\x12B\n" +
 	"\n" +
 	"tracepoint\x18\x01 \x01(\v2 .bpfman.v1.TracepointLinkDetailsH\x00R\n" +
