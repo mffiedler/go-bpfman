@@ -27,7 +27,14 @@ GO_VERSION ?= 1.25
 GOFIX_GO_VERSION ?= go1.26.4
 GOLANGCI_LINT_VERSION ?= v2.11.2
 PROTOC_GEN_GO_VERSION ?= v1.36.11
-PROTOC_GEN_GO_GRPC_VERSION ?= v1.6.1
+PROTOC_GEN_GO_GRPC_VERSION ?= v1.6.0
+# protoc (the compiler) is pinned and downloaded into $(BIN_DIR) rather
+# than taken from the host/devshell, so generated stubs are reproducible
+# regardless of the environment's protobuf version. The value is the
+# protocolbuffers/protobuf release tag without the leading "v"; the
+# committed stubs were generated with this release (header
+# "protoc v6.32.1").
+PROTOC_VERSION ?= 32.1
 
 # ---------------------------------------------------------------------------
 # Paths.
@@ -1359,26 +1366,55 @@ clean-go-test-timeline:
 # ---------------------------------------------------------------------------
 bpfman-proto: $(BPFMAN_PB_DIR)/bpfman.pb.go $(BPFMAN_PB_DIR)/bpfman_grpc.pb.go
 
-# protoc discovers --go_out / --go-grpc_out plugins on PATH, so the
-# generated-stub rule prepends $(BIN_DIR) before invoking protoc.
-# The protoc-gen-* binaries are order-only prerequisites (after `|`)
-# so a fresh checkout that lacks them builds the plugins once, but
-# their mtime does not invalidate the committed .pb.go files.
+# protoc (downloaded into $(BIN_DIR)) discovers --go_out / --go-grpc_out
+# plugins on PATH, so the generated-stub rule prepends $(BIN_DIR) before
+# invoking it. protoc and the protoc-gen-* binaries are order-only
+# prerequisites (after `|`) so a fresh checkout that lacks them fetches
+# them once, but their mtime does not invalidate the committed .pb.go
+# files.
 $(BPFMAN_PB_DIR)/bpfman.pb.go $(BPFMAN_PB_DIR)/bpfman_grpc.pb.go: \
 		$(BPFMAN_PROTO_DIR)/bpfman.proto \
-		| $(BIN_DIR)/protoc-gen-go $(BIN_DIR)/protoc-gen-go-grpc
+		| $(BIN_DIR)/protoc $(BIN_DIR)/protoc-gen-go $(BIN_DIR)/protoc-gen-go-grpc
 	mkdir -p $(BPFMAN_PB_DIR)
 	PATH="$(abspath $(BIN_DIR)):$$PATH" \
-	protoc --go_out=$(BPFMAN_PB_DIR) --go_opt=paths=source_relative \
+	$(abspath $(BIN_DIR))/protoc --go_out=$(BPFMAN_PB_DIR) --go_opt=paths=source_relative \
 		--go-grpc_out=$(BPFMAN_PB_DIR) --go-grpc_opt=paths=source_relative \
 		--proto_path=$(BPFMAN_PROTO_DIR) \
 		$<
 
-# Vendor protoc plugins into $(BIN_DIR) so the Fedora-only build
-# path does not need them on $PATH separately. Mirrors the
-# golangci-lint pattern above. Versions are pinned via the
-# PROTOC_GEN_*_VERSION variables; bump them and flake.nix's
-# protoc-gen-go / protoc-gen-go-grpc pins together.
+# Download a pinned protoc into $(BIN_DIR). protoc is the C++ compiler,
+# not a Go module, so it is fetched as a release binary rather than
+# `go install`ed; PROTOC_VERSION pins the release. The proto file has no
+# google.protobuf imports, so the release's include/ tree is not needed.
+PROTOC_OS := linux
+ifeq ($(HOST_ARCH),x86_64)
+    PROTOC_ARCH := x86_64
+else ifeq ($(HOST_ARCH),i686)
+    PROTOC_ARCH := x86_32
+else ifeq ($(HOST_ARCH),aarch64)
+    PROTOC_ARCH := aarch_64
+else ifeq ($(HOST_ARCH),ppc64le)
+    PROTOC_ARCH := ppcle_64
+else ifeq ($(HOST_ARCH),powerpc64le)
+    PROTOC_ARCH := ppcle_64
+else ifeq ($(HOST_ARCH),s390x)
+    PROTOC_ARCH := s390_64
+else
+    $(error unsupported HOST_ARCH=$(HOST_ARCH) for protoc download)
+endif
+PROTOC_ZIP := protoc-$(PROTOC_VERSION)-$(PROTOC_OS)-$(PROTOC_ARCH).zip
+PROTOC_URL := https://github.com/protocolbuffers/protobuf/releases/download/v$(PROTOC_VERSION)/$(PROTOC_ZIP)
+
+$(BIN_DIR)/protoc: | $(BIN_DIR)
+	@printf "  DOWNLOAD protoc %s (%s)\n" "$(PROTOC_VERSION)" "$(PROTOC_ARCH)"
+	$(Q)tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
+		curl -fsSL -o "$$tmp/protoc.zip" "$(PROTOC_URL)" && \
+		unzip -q -o "$$tmp/protoc.zip" -d "$$tmp/out" && \
+		install -m 0755 "$$tmp/out/bin/protoc" "$(BIN_DIR)/protoc"
+
+# Build protoc plugins into $(BIN_DIR) from the versions pinned above so
+# the Fedora-only build path does not need them on $PATH separately.
+# Mirrors the golangci-lint pattern; bump PROTOC_GEN_*_VERSION here.
 $(BIN_DIR)/protoc-gen-go: | $(BIN_DIR)
 	GOBIN=$(abspath $(BIN_DIR)) go install \
 		google.golang.org/protobuf/cmd/protoc-gen-go@$(PROTOC_GEN_GO_VERSION)

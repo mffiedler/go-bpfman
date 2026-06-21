@@ -74,10 +74,10 @@
             llvm
             pahole
 
-            # Proto/gRPC codegen (make bpfman-proto).
-            protobuf
-            protoc-gen-go
-            protoc-gen-go-grpc
+            # Proto/gRPC codegen (make bpfman-proto) pins its own
+            # toolchain: protoc is downloaded at a fixed release
+            # (PROTOC_VERSION) and the protoc-gen-* plugins are built
+            # from Makefile-pinned versions, so none come from nixpkgs.
 
             # Lint, coverage, misc.
             checkmake
