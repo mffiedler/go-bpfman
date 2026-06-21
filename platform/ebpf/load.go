@@ -278,6 +278,19 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 		}
 	}
 
+	// Load only the requested program. cilium/ebpf's NewCollection
+	// loads and verifies every program in the spec, so an unrelated
+	// broken program elsewhere in the object (or an fentry SEC naming a
+	// function this kernel lacks) would fail this load even though the
+	// caller never asked for it. aya/Rust verify only the requested
+	// program; match that by dropping the others first. Maps are left
+	// intact -- the requested program may share them, and Rust creates
+	// the object's maps regardless of which programs load.
+	wanted := spec.ProgramName()
+	maps.DeleteFunc(collSpec.Programs, func(n string, _ *ebpf.ProgramSpec) bool {
+		return n != wanted
+	})
+
 	// Load collection - use map replacements if sharing with owner
 	var coll *ebpf.Collection
 	if len(mapReplacements) > 0 {
