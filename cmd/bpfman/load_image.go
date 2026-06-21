@@ -38,8 +38,7 @@ func (c *LoadImageCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 
 	logger := cli.Logger()
 
-	// Use NewManagerWithPuller for image loading operations
-	mgr, cleanup, err := cli.NewManagerWithPuller(ctx)
+	mgr, cleanup, err := newImageManager(ctx, cli)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
 	}
