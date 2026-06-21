@@ -604,7 +604,7 @@ func execLoadFile(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 	// `bpfman program list -o json` so users learn one path pattern.
 	val, err := runtime.ValueFromStruct(bpfman.LoadResult{Programs: result.Programs})
 	if err != nil {
-		return runtime.Value{}, nil
+		return runtime.Value{}, err
 	}
 	return val, nil
 }
@@ -1351,7 +1351,7 @@ func execLinkAttach(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manage
 
 	val, err := runtime.ValueFromStruct(link)
 	if err != nil {
-		return runtime.Value{}, nil
+		return runtime.Value{}, err
 	}
 	return val.WithKind(semantics.OriginLink), nil
 }
@@ -1604,7 +1604,7 @@ func execLoadImage(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager
 	// drops loaded programs.
 	val, err := runtime.ValueFromStruct(bpfman.LoadResult{Programs: result.Programs})
 	if err != nil {
-		return runtime.Value{}, nil
+		return runtime.Value{}, err
 	}
 	return val, nil
 }
@@ -1683,7 +1683,7 @@ func execGetProgram(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manage
 
 	val, err := runtime.ValueFromStruct(prog)
 	if err != nil {
-		return runtime.Value{}, nil
+		return runtime.Value{}, err
 	}
 	return val.WithKind(semantics.OriginProgram), nil
 }
@@ -1771,7 +1771,7 @@ func execGetLink(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, 
 
 	val, err := runtime.ValueFromStruct(link)
 	if err != nil {
-		return runtime.Value{}, nil
+		return runtime.Value{}, err
 	}
 	return val.WithKind(semantics.OriginLink), nil
 }
@@ -2115,7 +2115,7 @@ func execListPrograms(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Mana
 
 	val, err := runtime.ValueFromStruct(result)
 	if err != nil {
-		return runtime.Value{}, nil
+		return runtime.Value{}, err
 	}
 	return val, nil
 }
@@ -2288,7 +2288,7 @@ func execListLinks(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager
 
 	val, err := runtime.ValueFromStruct(bpfman.LinkListResult{Links: links})
 	if err != nil {
-		return runtime.Value{}, nil
+		return runtime.Value{}, err
 	}
 	return val, nil
 }
