@@ -5,8 +5,9 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
-	"github.com/frobware/go-bpfman/internal/cliformat"
+	"github.com/frobware/go-bpfman/cmd/bpfman/cliformat"
+	"github.com/frobware/go-bpfman/cmd/internal/args"
+	"github.com/frobware/go-bpfman/cmd/internal/runtime"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
 )
@@ -29,7 +30,7 @@ type attachResult struct {
 }
 
 // runAttach is the common attach pattern: create manager, run under lock, format output.
-func runAttach(cli *bpfmancli.CLI, ctx context.Context, flags *cliformat.OutputFlags, fn func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error)) error {
+func runAttach(cli *runtime.CLI, ctx context.Context, flags *cliformat.OutputFlags, fn func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error)) error {
 	format, err := flags.Format()
 	if err != nil {
 		return err
@@ -41,7 +42,7 @@ func runAttach(cli *bpfmancli.CLI, ctx context.Context, flags *cliformat.OutputF
 	}
 	defer cleanup()
 
-	result, err := bpfmancli.RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (attachResult, error) {
+	result, err := runtime.RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (attachResult, error) {
 		return fn(ctx, mgr, writeLock)
 	})
 	if err != nil {
@@ -55,14 +56,14 @@ func runAttach(cli *bpfmancli.CLI, ctx context.Context, flags *cliformat.OutputF
 type AttachXDPCmd struct {
 	cliformat.OutputFlags
 	AttachMetadataFlags
-	ProgramID bpfmancli.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
-	Iface     string              `arg:"" name:"iface" help:"Network interface."`
-	Priority  int                 `short:"p" name:"priority" required:"" help:"Priority in chain (lower runs first; non-negative). Slot exhaustion (more than 10 attachments) is reported by the dispatcher, not by this flag."`
-	ProceedOn []bpfman.XDPAction  `name:"proceed-on" sep:"," help:"XDP actions to proceed on (comma-separated or repeated). Values: aborted, drop, pass, tx, redirect, dispatcher_return." default:"pass,dispatcher_return"`
-	Netns     string              `short:"n" name:"netns" help:"Network namespace path."`
+	ProgramID args.ProgramID     `arg:"" name:"program-id" help:"Program ID to attach."`
+	Iface     string             `arg:"" name:"iface" help:"Network interface."`
+	Priority  int                `short:"p" name:"priority" required:"" help:"Priority in chain (lower runs first; non-negative). Slot exhaustion (more than 10 attachments) is reported by the dispatcher, not by this flag."`
+	ProceedOn []bpfman.XDPAction `name:"proceed-on" sep:"," help:"XDP actions to proceed on (comma-separated or repeated). Values: aborted, drop, pass, tx, redirect, dispatcher_return." default:"pass,dispatcher_return"`
+	Netns     string             `short:"n" name:"netns" help:"Network namespace path."`
 }
 
-func (c *AttachXDPCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
+func (c *AttachXDPCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		spec, err := bpfman.NewXDPAttachSpec(c.ProgramID.Value, c.Iface, c.Priority)
 		if err != nil {
@@ -73,7 +74,7 @@ func (c *AttachXDPCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 			spec = spec.WithNetns(c.Netns)
 		}
 
-		spec = spec.WithMetadata(bpfmancli.MetadataMap(c.Metadata))
+		spec = spec.WithMetadata(args.MetadataMap(c.Metadata))
 
 		link, err := mgr.Attach(ctx, writeLock, spec)
 		if err != nil {
@@ -87,15 +88,15 @@ func (c *AttachXDPCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 type AttachTCCmd struct {
 	cliformat.OutputFlags
 	AttachMetadataFlags
-	ProgramID bpfmancli.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
-	Iface     string              `arg:"" name:"iface" help:"Network interface."`
-	Direction bpfman.TCDirection  `arg:"" name:"direction" help:"Direction (ingress or egress)."`
-	Priority  int                 `short:"p" name:"priority" required:"" help:"Priority in chain (lower runs first; non-negative). Slot exhaustion (more than 10 attachments) is reported by the dispatcher, not by this flag."`
-	ProceedOn []bpfman.TCAction   `name:"proceed-on" sep:"," help:"TC actions to proceed on (comma-separated or repeated). Values: unspec, ok, reclassify, shot, pipe, stolen, queued, repeat, redirect, trap, dispatcher_return." default:"pipe,dispatcher_return"`
-	Netns     string              `short:"n" name:"netns" help:"Network namespace path."`
+	ProgramID args.ProgramID     `arg:"" name:"program-id" help:"Program ID to attach."`
+	Iface     string             `arg:"" name:"iface" help:"Network interface."`
+	Direction bpfman.TCDirection `arg:"" name:"direction" help:"Direction (ingress or egress)."`
+	Priority  int                `short:"p" name:"priority" required:"" help:"Priority in chain (lower runs first; non-negative). Slot exhaustion (more than 10 attachments) is reported by the dispatcher, not by this flag."`
+	ProceedOn []bpfman.TCAction  `name:"proceed-on" sep:"," help:"TC actions to proceed on (comma-separated or repeated). Values: unspec, ok, reclassify, shot, pipe, stolen, queued, repeat, redirect, trap, dispatcher_return." default:"pipe,dispatcher_return"`
+	Netns     string             `short:"n" name:"netns" help:"Network namespace path."`
 }
 
-func (c *AttachTCCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
+func (c *AttachTCCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		spec, err := bpfman.NewTCAttachSpec(c.ProgramID.Value, c.Iface, c.Direction, c.Priority)
 		if err != nil {
@@ -106,7 +107,7 @@ func (c *AttachTCCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 			spec = spec.WithNetns(c.Netns)
 		}
 
-		spec = spec.WithMetadata(bpfmancli.MetadataMap(c.Metadata))
+		spec = spec.WithMetadata(args.MetadataMap(c.Metadata))
 
 		link, err := mgr.Attach(ctx, writeLock, spec)
 		if err != nil {
@@ -120,14 +121,14 @@ func (c *AttachTCCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 type AttachTCXCmd struct {
 	cliformat.OutputFlags
 	AttachMetadataFlags
-	ProgramID bpfmancli.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
-	Iface     string              `arg:"" name:"iface" help:"Network interface."`
-	Direction bpfman.TCDirection  `arg:"" name:"direction" help:"Direction (ingress or egress)."`
-	Priority  int                 `short:"p" name:"priority" required:"" help:"Priority in chain (lower runs first; non-negative). TCX uses native kernel ordering, not a dispatcher."`
-	Netns     string              `short:"n" name:"netns" help:"Network namespace path."`
+	ProgramID args.ProgramID     `arg:"" name:"program-id" help:"Program ID to attach."`
+	Iface     string             `arg:"" name:"iface" help:"Network interface."`
+	Direction bpfman.TCDirection `arg:"" name:"direction" help:"Direction (ingress or egress)."`
+	Priority  int                `short:"p" name:"priority" required:"" help:"Priority in chain (lower runs first; non-negative). TCX uses native kernel ordering, not a dispatcher."`
+	Netns     string             `short:"n" name:"netns" help:"Network namespace path."`
 }
 
-func (c *AttachTCXCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
+func (c *AttachTCXCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		spec, err := bpfman.NewTCXAttachSpec(c.ProgramID.Value, c.Iface, c.Direction, c.Priority)
 		if err != nil {
@@ -137,7 +138,7 @@ func (c *AttachTCXCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 			spec = spec.WithNetns(c.Netns)
 		}
 
-		spec = spec.WithMetadata(bpfmancli.MetadataMap(c.Metadata))
+		spec = spec.WithMetadata(args.MetadataMap(c.Metadata))
 
 		link, err := mgr.Attach(ctx, writeLock, spec)
 		if err != nil {
@@ -151,18 +152,18 @@ func (c *AttachTCXCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 type AttachTracepointCmd struct {
 	cliformat.OutputFlags
 	AttachMetadataFlags
-	ProgramID  bpfmancli.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
-	Tracepoint bpfman.Tracepoint   `arg:"" name:"tracepoint" help:"Tracepoint in group/name form (e.g. sched/sched_switch)."`
+	ProgramID  args.ProgramID    `arg:"" name:"program-id" help:"Program ID to attach."`
+	Tracepoint bpfman.Tracepoint `arg:"" name:"tracepoint" help:"Tracepoint in group/name form (e.g. sched/sched_switch)."`
 }
 
-func (c *AttachTracepointCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
+func (c *AttachTracepointCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		spec, err := bpfman.NewTracepointAttachSpec(c.ProgramID.Value, c.Tracepoint)
 		if err != nil {
 			return attachResult{}, fmt.Errorf("invalid tracepoint spec: %w", err)
 		}
 
-		spec = spec.WithMetadata(bpfmancli.MetadataMap(c.Metadata))
+		spec = spec.WithMetadata(args.MetadataMap(c.Metadata))
 
 		link, err := mgr.Attach(ctx, writeLock, spec)
 		if err != nil {
@@ -176,12 +177,12 @@ func (c *AttachTracepointCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error
 type AttachKprobeCmd struct {
 	cliformat.OutputFlags
 	AttachMetadataFlags
-	ProgramID bpfmancli.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
-	FnName    string              `arg:"" name:"fn-name" help:"Kernel function name to attach to."`
-	Offset    uint64              `name:"offset" help:"Offset within the function." default:"0"`
+	ProgramID args.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
+	FnName    string         `arg:"" name:"fn-name" help:"Kernel function name to attach to."`
+	Offset    uint64         `name:"offset" help:"Offset within the function." default:"0"`
 }
 
-func (c *AttachKprobeCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
+func (c *AttachKprobeCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		spec, err := bpfman.NewKprobeAttachSpec(c.ProgramID.Value, c.FnName)
 		if err != nil {
@@ -191,7 +192,7 @@ func (c *AttachKprobeCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 			spec = spec.WithOffset(c.Offset)
 		}
 
-		spec = spec.WithMetadata(bpfmancli.MetadataMap(c.Metadata))
+		spec = spec.WithMetadata(args.MetadataMap(c.Metadata))
 
 		link, err := mgr.Attach(ctx, writeLock, spec)
 		if err != nil {
@@ -205,15 +206,15 @@ func (c *AttachKprobeCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 type AttachUprobeCmd struct {
 	cliformat.OutputFlags
 	AttachMetadataFlags
-	ProgramID    bpfmancli.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
-	Target       string              `arg:"" name:"target" help:"Absolute path to the target binary or library, or a bare library name (e.g. libc) resolved like the dynamic linker."`
-	FnName       string              `short:"f" name:"fn-name" help:"Function name to attach to."`
-	Offset       uint64              `name:"offset" help:"Offset within the function." default:"0"`
-	Pid          int32               `name:"pid" help:"Only trace this process ID (0 traces all processes)."`
-	ContainerPid int32               `name:"container-pid" help:"Container PID for namespace-aware uprobe attachment."`
+	ProgramID    args.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
+	Target       string         `arg:"" name:"target" help:"Absolute path to the target binary or library, or a bare library name (e.g. libc) resolved like the dynamic linker."`
+	FnName       string         `short:"f" name:"fn-name" help:"Function name to attach to."`
+	Offset       uint64         `name:"offset" help:"Offset within the function." default:"0"`
+	Pid          int32          `name:"pid" help:"Only trace this process ID (0 traces all processes)."`
+	ContainerPid int32          `name:"container-pid" help:"Container PID for namespace-aware uprobe attachment."`
 }
 
-func (c *AttachUprobeCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
+func (c *AttachUprobeCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		spec, err := bpfman.NewUprobeAttachSpec(c.ProgramID.Value, c.Target, c.Pid, c.ContainerPid)
 		if err != nil {
@@ -226,7 +227,7 @@ func (c *AttachUprobeCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 			spec = spec.WithOffset(c.Offset)
 		}
 
-		spec = spec.WithMetadata(bpfmancli.MetadataMap(c.Metadata))
+		spec = spec.WithMetadata(args.MetadataMap(c.Metadata))
 
 		link, err := mgr.Attach(ctx, writeLock, spec)
 		if err != nil {
@@ -240,17 +241,17 @@ func (c *AttachUprobeCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 type AttachFentryCmd struct {
 	cliformat.OutputFlags
 	AttachMetadataFlags
-	ProgramID bpfmancli.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
+	ProgramID args.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
 }
 
-func (c *AttachFentryCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
+func (c *AttachFentryCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		spec, err := bpfman.NewFentryAttachSpec(c.ProgramID.Value)
 		if err != nil {
 			return attachResult{}, fmt.Errorf("invalid fentry spec: %w", err)
 		}
 
-		spec = spec.WithMetadata(bpfmancli.MetadataMap(c.Metadata))
+		spec = spec.WithMetadata(args.MetadataMap(c.Metadata))
 
 		link, err := mgr.Attach(ctx, writeLock, spec)
 		if err != nil {
@@ -264,17 +265,17 @@ func (c *AttachFentryCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 type AttachFexitCmd struct {
 	cliformat.OutputFlags
 	AttachMetadataFlags
-	ProgramID bpfmancli.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
+	ProgramID args.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
 }
 
-func (c *AttachFexitCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
+func (c *AttachFexitCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		spec, err := bpfman.NewFexitAttachSpec(c.ProgramID.Value)
 		if err != nil {
 			return attachResult{}, fmt.Errorf("invalid fexit spec: %w", err)
 		}
 
-		spec = spec.WithMetadata(bpfmancli.MetadataMap(c.Metadata))
+		spec = spec.WithMetadata(args.MetadataMap(c.Metadata))
 
 		link, err := mgr.Attach(ctx, writeLock, spec)
 		if err != nil {

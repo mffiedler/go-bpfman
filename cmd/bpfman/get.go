@@ -5,8 +5,9 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
-	"github.com/frobware/go-bpfman/internal/cliformat"
+	"github.com/frobware/go-bpfman/cmd/bpfman/cliformat"
+	"github.com/frobware/go-bpfman/cmd/internal/args"
+	"github.com/frobware/go-bpfman/cmd/internal/runtime"
 )
 
 // GetCmd is a verb-noun alias path mirroring the Rust bpfman CLI
@@ -22,11 +23,11 @@ type GetCmd struct {
 // GetProgramCmd gets details of a managed program by program ID.
 type GetProgramCmd struct {
 	cliformat.OutputFlags
-	ProgramID bpfmancli.ProgramID `arg:"" name:"program-id" help:"Program ID (supports hex with 0x prefix)."`
+	ProgramID args.ProgramID `arg:"" name:"program-id" help:"Program ID (supports hex with 0x prefix)."`
 }
 
 // Run executes the get program command.
-func (c *GetProgramCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
+func (c *GetProgramCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	format, err := c.OutputFlags.Format()
 	if err != nil {
 		return err
@@ -49,11 +50,11 @@ func (c *GetProgramCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 // GetLinkCmd gets details of a link by link ID.
 type GetLinkCmd struct {
 	cliformat.OutputFlags
-	LinkID bpfmancli.LinkID `arg:"" name:"link-id" help:"Link ID."`
+	LinkID args.LinkID `arg:"" name:"link-id" help:"Link ID."`
 }
 
 // Run executes the get link command.
-func (c *GetLinkCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
+func (c *GetLinkCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	format, err := c.OutputFlags.Format()
 	if err != nil {
 		return err

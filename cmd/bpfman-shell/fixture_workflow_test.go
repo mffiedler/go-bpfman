@@ -18,7 +18,7 @@ import (
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/driver"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
+	"github.com/frobware/go-bpfman/cmd/internal/cli"
 )
 
 type fixtureWorkflowRun struct {
@@ -111,7 +111,7 @@ func runFixtureWorkflow(t *testing.T, fixture string) fixtureWorkflowRun {
 	defer lr.Close()
 
 	var outBuf, errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
+	cli := &cli.CLI{Out: &outBuf, Err: &errBuf}
 	session := runtime.NewSession()
 	// Drive poll deadlines and cadence off a fake clock so poll
 	// fixtures are deterministic regardless of host load: fake time
@@ -121,7 +121,6 @@ func runFixtureWorkflow(t *testing.T, fixture string) fixtureWorkflowRun {
 	fakeNow := time.Unix(0, 0)
 	runErr := driver.Run(ctx, driver.Config{
 		CLI:          cli,
-		Mgr:          nil,
 		LineReader:   lr,
 		Session:      session,
 		File:         mainPath,

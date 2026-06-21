@@ -15,7 +15,7 @@ import (
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/driver"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
+	"github.com/frobware/go-bpfman/cmd/internal/cli"
 )
 
 func runWholeProgramStdin(t *testing.T, script string) (string, string, error) {
@@ -28,12 +28,11 @@ func runWholeProgramStdinContext(t *testing.T, ctx context.Context, script strin
 	t.Helper()
 
 	var outBuf, errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
+	cli := &cli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := driver.NewScannerReader(strings.NewReader(script), nil)
 
 	err := driver.Run(ctx, driver.Config{
 		CLI:          cli,
-		Mgr:          nil,
 		LineReader:   lr,
 		Session:      runtime.NewSession(),
 		File:         "<stdin>",

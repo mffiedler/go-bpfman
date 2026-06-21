@@ -188,10 +188,8 @@ BPFMAN_LOCK_TIMEOUT ?=
 # honours. Declared empty so checkmake's
 # --warn-undefined-variables doesn't trip on the
 # $(if $(VAR),VAR=$(VAR)) forwarding idiom in run-e2e-scripts-go.
-# BPFMAN_DISPATCH selects bpfman-shell's backend (library or
-# external); BPFMAN_E2E_SCRIPT_TIMEOUT widens the per-script
-# deadline. The test binary carries the actual defaults.
-BPFMAN_DISPATCH ?=
+# BPFMAN_E2E_SCRIPT_TIMEOUT widens the per-script deadline. The test
+# binary carries the actual defaults.
 BPFMAN_E2E_BYTECODE_SOURCE ?=
 BPFMAN_E2E_IMAGE_REGISTRY ?=
 BPFMAN_E2E_POLICY_RULE_PREF ?=
@@ -654,10 +652,7 @@ help:
 	@printf "  %-31s %s\n" "test-e2e-scripts" "Run .bpfman e2e scripts under e2e/scripts/ via the Go test binary in e2e/scriptrunner (requires root)"
 	@printf "  %-31s %s\n" "test-e2e-scripts-file" "Run .bpfman e2e scripts in file-bytecode mode (requires root)"
 	@printf "  %-31s %s\n" "test-e2e-scripts-image" "Run .bpfman e2e scripts in image-bytecode mode (requires root)"
-	@printf "  %-31s %s\n" "test-e2e-scripts-matrix" "Run .bpfman e2e scripts under both bpfman-shell dispatch backends (requires root)"
-	@printf "  %-31s %s\n" "test-e2e-scripts-file-matrix" "Run file-bytecode .bpfman scripts under both dispatch backends (requires root)"
-	@printf "  %-31s %s\n" "test-e2e-scripts-image-matrix" "Run image-bytecode .bpfman scripts under both dispatch backends (requires root)"
-	@printf "  %-31s %s\n" "test-e2e-scripts-image-ci" "Run the CI-shaped image-bytecode script matrix (requires root)"
+	@printf "  %-31s %s\n" "test-e2e-scripts-image-ci" "Run the CI-shaped image-bytecode script suite (requires root)"
 	@printf "  %-31s %s\n" "test-e2e-published-images" "Run published-image .bpfman scripts against quay.io (requires root and network)"
 	@printf "  %-31s %s\n" "test-e2e-scripts-stress" "Run .bpfman e2e scripts with high repeat/parallel defaults (requires root)"
 	@printf "  %-31s %s\n" "test-e2e-scripts-timeline" "Run .bpfman e2e scripts and render $(E2E_SCRIPTS_TIMELINE_TRACE) (requires root)"
@@ -835,7 +830,7 @@ test-all:
 	$(Q)$(MAKE) test
 	$(Q)$(MAKE) lint-go
 	$(Q)$(MAKE) lint-make
-	$(Q)$(MAKE) test-e2e-scripts-matrix
+	$(Q)$(MAKE) test-e2e-scripts
 	$(Q)$(MAKE) test-e2e
 	$(Q)$(MAKE) test-e2e-grpc
 
@@ -982,8 +977,7 @@ endif
 # BPFMAN_E2E_SCRIPT_REPEATS turns the corpus into a stress run
 # (each script registered N times, wave-diverse dispatch);
 # BPFMAN_E2E_SCRIPT_SELECTOR selects scripts with matching #pragma
-# labels; BPFMAN_DISPATCH selects the bpfman-shell backend (library
-# vs external); BPFMAN_LOG threads through to bpfman-shell when set.
+# labels; BPFMAN_LOG threads through to bpfman-shell when set.
 # BPFMAN_LOCK_TIMEOUT is set directly in run-e2e-scripts below:
 # high-parallel stress runs can leave many short-lived bpfman
 # invocations queued behind the global writer lock, so the script
@@ -992,7 +986,6 @@ endif
 # because the value gets abspath'd at the call site.
 E2E_SCRIPTS_FORWARD_VARS := \
 	BPFMAN_CONFIG \
-	BPFMAN_DISPATCH \
 	BPFMAN_E2E_BYTECODE_SOURCE \
 	BPFMAN_E2E_IMAGE_REGISTRY \
 	BPFMAN_E2E_POLICY_RULE_PREF \
@@ -1054,24 +1047,8 @@ test-e2e-scripts-file:
 test-e2e-scripts-image:
 	$(Q)$(MAKE) test-e2e-scripts BPFMAN_E2E_BYTECODE_SOURCE=image
 
-# Run the .bpfman corpus under both bpfman-shell dispatch backends,
-# mirroring the workflow's dispatch matrix. library and external must
-# produce byte-identical results; a one-backend failure (such as an
-# image-build path that only resolves under one cwd) is invisible to a
-# single-dispatch run. Build and reload once, then run twice -- dispatch
-# is a runtime selector, so the binaries do not change between runs.
-test-e2e-scripts-matrix: build-e2e-scripts e2e-kmod-reload
-	$(Q)$(MAKE) run-e2e-scripts BPFMAN_DISPATCH=library
-	$(Q)$(MAKE) run-e2e-scripts BPFMAN_DISPATCH=external
-
-test-e2e-scripts-file-matrix:
-	$(Q)$(MAKE) test-e2e-scripts-matrix BPFMAN_E2E_BYTECODE_SOURCE=
-
-test-e2e-scripts-image-matrix:
-	$(Q)$(MAKE) test-e2e-scripts-matrix BPFMAN_E2E_BYTECODE_SOURCE=image
-
 test-e2e-scripts-image-ci:
-	$(Q)$(MAKE) test-e2e-scripts-image-matrix RACE=0 STRESS_COUNT=5
+	$(Q)$(MAKE) test-e2e-scripts-image RACE=0 STRESS_COUNT=5
 
 test-e2e-scripts-stress:
 	$(Q)$(MAKE) test-e2e-scripts \
@@ -1840,5 +1817,5 @@ bpfman-test-grpc: build-image-dev
 .PHONY: coverage clean-coverage coverage-func coverage-html coverage-open
 .PHONY: doc doc-text
 .PHONY: print-fedora-version print-go-version print-golangci-lint-version
-.PHONY: build-e2e-grpc build-e2e-scripts $(BIN_DIR)/e2e.test $(BIN_DIR)/e2e-grpc.test $(BIN_DIR)/e2e-scripts.test run-e2e-grpc run-e2e-scripts run-e2e-scripts-timeline bpfman-shell-fmt update-lowered-goldens test test-timeline test-all test-e2e test-e2e-grpc test-e2e-scripts test-e2e-scripts-file test-e2e-scripts-image test-e2e-scripts-matrix test-e2e-scripts-file-matrix test-e2e-scripts-image-matrix test-e2e-scripts-image-ci test-e2e-published-images test-e2e-scripts-stress test-e2e-scripts-timeline test-examples
+.PHONY: build-e2e-grpc build-e2e-scripts $(BIN_DIR)/e2e.test $(BIN_DIR)/e2e-grpc.test $(BIN_DIR)/e2e-scripts.test run-e2e-grpc run-e2e-scripts run-e2e-scripts-timeline bpfman-shell-fmt update-lowered-goldens test test-timeline test-all test-e2e test-e2e-grpc test-e2e-scripts test-e2e-scripts-file test-e2e-scripts-image test-e2e-scripts-image-ci test-e2e-published-images test-e2e-scripts-stress test-e2e-scripts-timeline test-examples
 .PHONY: test-bpfman-ns test-bpfman-ns-amd64 test-bpfman-ns-arm64 test-bpfman-ns-cross test-bpfman-ns-ppc64le test-bpfman-ns-s390x

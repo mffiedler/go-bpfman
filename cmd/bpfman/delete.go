@@ -5,8 +5,9 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
-	"github.com/frobware/go-bpfman/internal/cliformat"
+	"github.com/frobware/go-bpfman/cmd/bpfman/cliformat"
+	"github.com/frobware/go-bpfman/cmd/internal/args"
+	"github.com/frobware/go-bpfman/cmd/internal/runtime"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
@@ -19,9 +20,9 @@ import (
 // program is deleted.
 type ProgramDeleteCmd struct {
 	cliformat.OutputFlags
-	Recursive  bool                  `short:"r" name:"recursive" help:"Also delete programs that share maps with the target (map_owner_id dependents)."`
-	All        bool                  `name:"all" help:"Delete all managed programs."`
-	ProgramIDs []bpfmancli.ProgramID `arg:"" name:"program-id" optional:"" help:"Program IDs to delete."`
+	Recursive  bool             `short:"r" name:"recursive" help:"Also delete programs that share maps with the target (map_owner_id dependents)."`
+	All        bool             `name:"all" help:"Delete all managed programs."`
+	ProgramIDs []args.ProgramID `arg:"" name:"program-id" optional:"" help:"Program IDs to delete."`
 }
 
 // Validate ensures exactly one of --all or explicit program IDs is
@@ -37,7 +38,7 @@ func (c *ProgramDeleteCmd) Validate() error {
 }
 
 // Run executes the program delete command with cascading cleanup.
-func (c *ProgramDeleteCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
+func (c *ProgramDeleteCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
@@ -51,7 +52,7 @@ func (c *ProgramDeleteCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	return executeDeletePrograms(ctx, cli, mgr, ids, c.Recursive, c.All)
 }
 
-func programIDs(explicit []bpfmancli.ProgramID) []kernel.ProgramID {
+func programIDs(explicit []args.ProgramID) []kernel.ProgramID {
 	ids := make([]kernel.ProgramID, len(explicit))
 	for i, pid := range explicit {
 		ids[i] = pid.Value
@@ -62,14 +63,14 @@ func programIDs(explicit []bpfmancli.ProgramID) []kernel.ProgramID {
 // executeDeletePrograms is the shared implementation for deleting
 // programs with cascading cleanup. Both the CLI command and
 // bpfman-shell call this function. Locking is handled internally.
-func executeDeletePrograms(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, ids []kernel.ProgramID, recursive bool, all bool) error {
+func executeDeletePrograms(ctx context.Context, cli *runtime.CLI, mgr *manager.Manager, ids []kernel.ProgramID, recursive bool, all bool) error {
 	type result struct {
 		id  kernel.ProgramID
 		err error
 	}
 	results := make([]result, 0, len(ids))
 
-	lockErr := bpfmancli.RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
+	lockErr := runtime.RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
 		deleteResults := mgr.DeletePrograms(ctx, writeLock, ids, manager.DeleteProgramsOpts{
 			Recursive: recursive,
 			All:       all,
@@ -104,12 +105,12 @@ func executeDeletePrograms(ctx context.Context, cli *bpfmancli.CLI, mgr *manager
 // that depend on the orphaned program through map ownership.
 type LinkDeleteCmd struct {
 	cliformat.OutputFlags
-	Recursive bool               `short:"r" name:"recursive" help:"Also delete programs that share maps with orphaned programs (map_owner_id dependents)."`
-	LinkIDs   []bpfmancli.LinkID `arg:"" name:"link-id" help:"Link IDs to delete." required:""`
+	Recursive bool          `short:"r" name:"recursive" help:"Also delete programs that share maps with orphaned programs (map_owner_id dependents)."`
+	LinkIDs   []args.LinkID `arg:"" name:"link-id" help:"Link IDs to delete." required:""`
 }
 
 // Run executes the link delete command with cascading cleanup.
-func (c *LinkDeleteCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
+func (c *LinkDeleteCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
@@ -122,7 +123,7 @@ func (c *LinkDeleteCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	}
 	results := make([]result, 0, len(c.LinkIDs))
 
-	lockErr := bpfmancli.RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
+	lockErr := runtime.RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
 		linkIDs := make([]bpfman.LinkID, len(c.LinkIDs))
 		for i, lid := range c.LinkIDs {
 			linkIDs[i] = lid.Value

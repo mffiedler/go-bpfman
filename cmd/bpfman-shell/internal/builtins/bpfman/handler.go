@@ -2,13 +2,10 @@ package bpfmanbuiltin
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/driver"
 	parent "github.com/frobware/go-bpfman/cmd/bpfman-shell/internal/builtins"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
-	"github.com/frobware/go-bpfman/manager"
 )
 
 var topLevelNouns = map[string]bool{
@@ -72,14 +69,14 @@ func IsTopLevelNoun(name string) bool {
 }
 
 func Handle(c driver.Ctx) (runtime.Value, error) {
-	val, err := dispatch(c.Ctx, c.CLI, c.Mgr, c.Args)
+	val, err := dispatch(c.Ctx, c.Args)
 	if err != nil {
 		return runtime.Value{}, &driver.RuntimeError{Msg: err.Error(), Span: c.Span}
 	}
 	return val, nil
 }
 
-func dispatch(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, args []runtime.Arg) (runtime.Value, error) {
+func dispatch(ctx context.Context, args []runtime.Arg) (runtime.Value, error) {
 	var err error
 	args, err = maybeBrokerLoadFileArgs(ctx, args)
 	if err != nil {
@@ -89,22 +86,5 @@ func dispatch(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, arg
 	if err != nil {
 		return runtime.Value{}, err
 	}
-	if bpfmanDispatchMode == dispatchExternal {
-		return dispatchCommandExternal(ctx, args)
-	}
-	return dispatchCommandLibrary(ctx, cli, mgr, args)
-}
-
-func dispatchCommandLibrary(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, args []runtime.Arg) (runtime.Value, error) {
-	if mgr == nil {
-		return runtime.Value{}, fmt.Errorf("bpfman library dispatch requires a manager")
-	}
-	cmd, err := parseCommand(args)
-	if err != nil {
-		return runtime.Value{}, err
-	}
-	if cmd == nil {
-		return runtime.Value{}, fmt.Errorf("missing command after \"bpfman\"; try \"bpfman program list\"")
-	}
-	return execCommand(ctx, cli, mgr, cmd)
+	return dispatchCommandExternal(ctx, args)
 }

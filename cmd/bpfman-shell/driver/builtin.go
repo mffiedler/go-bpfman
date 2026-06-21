@@ -10,17 +10,15 @@ import (
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
-	"github.com/frobware/go-bpfman/manager"
+	"github.com/frobware/go-bpfman/cmd/internal/cli"
 )
 
 // Ctx is the dispatch context handed to every builtin handler.
 // Fat-context by design: the dependency superset across the
-// dispatched builtins is small (Ctx, CLI, Mgr, Env, Args, Pos,
-// Span) and uniform plumbing keeps each handler's wrapper to a
-// few lines. Session is reachable via Env.Session; handler-
-// internal toggles (isRequire, origin-style) need no dedicated
-// field.
+// dispatched builtins is small (Ctx, CLI, Env, Args, Pos, Span)
+// and uniform plumbing keeps each handler's wrapper to a few lines.
+// Session is reachable via Env.Session; handler-internal toggles
+// (isRequire, origin-style) need no dedicated field.
 type Ctx struct {
 	// Ctx is the cancellation/deadline context for the call.
 	// Plumbed from the dispatcher's caller; long-running
@@ -30,12 +28,7 @@ type Ctx struct {
 
 	// CLI carries the stdout/stderr writers and the
 	// PrintOut/PrintErrf helpers.
-	CLI *bpfmancli.CLI
-
-	// Mgr is the bpfman manager. The bpfman builtin family and a
-	// few assertion-policy helpers touch it; most builtins leave
-	// it nil-safe.
-	Mgr *manager.Manager
+	CLI *cli.CLI
 
 	// Env is the active shell environment. Env.Session is the
 	// canonical handle to variable bindings and defs; jobs and

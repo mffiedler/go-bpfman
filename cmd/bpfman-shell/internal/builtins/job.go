@@ -18,7 +18,7 @@ import (
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/semantics"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
+	"github.com/frobware/go-bpfman/cmd/internal/cli"
 	"github.com/frobware/go-bpfman/internal/execcancel"
 )
 
@@ -602,7 +602,7 @@ func waitForDoneIndefinitely(ctx context.Context, job *runtime.Job) {
 // scope's cleanup clears it. Output is column-aligned text so a long argv does not
 // shift the earlier columns; each row is one job in
 // registration order.
-func listJobs(cli *bpfmancli.CLI, env *runtime.Env) error {
+func listJobs(cli *cli.CLI, env *runtime.Env) error {
 	jobs := env.ActiveJobs()
 	if len(jobs) == 0 {
 		return nil

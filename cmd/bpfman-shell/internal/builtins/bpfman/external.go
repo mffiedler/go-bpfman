@@ -1,15 +1,9 @@
 // External `bpfman` dispatch: invoke the bpfman binary as a
 // subprocess, capture stdout (always JSON; the dispatcher
 // appends -o json if the caller did not), and decode into the
-// same typed Value shape the in-process library backend
-// produces for the matching (noun, verb).
-//
-// The mode toggle is BPFMAN_DISPATCH=external (also accepts
-// "exec" / "cli"). Default is library. The two backends share
-// scripts byte-for-byte: a script that runs cleanly under
-// library mode runs cleanly under external mode iff the JSON
-// contract holds for every command it invokes. Tests that
-// exercise both modes are the parity check.
+// typed Value shape for the matching (noun, verb). This keeps
+// command parsing and execution in cmd/bpfman; the shell only
+// adapts runtime arguments and decodes the CLI JSON contract.
 
 package bpfmanbuiltin
 
@@ -19,7 +13,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 
@@ -30,28 +23,6 @@ import (
 	"github.com/frobware/go-bpfman/platform"
 	"github.com/frobware/go-bpfman/platform/image/oci"
 )
-
-// dispatchMode selects between in-process library calls and
-// fork+exec of the bpfman binary.
-type dispatchMode int
-
-const (
-	dispatchLibrary dispatchMode = iota
-	dispatchExternal
-)
-
-// bpfmanDispatchMode is set once at process start from the
-// BPFMAN_DISPATCH environment variable. "external" / "exec" /
-// "cli" enable the external backend; anything else (including
-// unset) keeps the in-process library backend.
-var bpfmanDispatchMode = func() dispatchMode {
-	switch strings.ToLower(os.Getenv("BPFMAN_DISPATCH")) {
-	case "external", "exec", "cli":
-		return dispatchExternal
-	default:
-		return dispatchLibrary
-	}
-}()
 
 // dispatchCommandExternal forks the bpfman binary with the
 // command's textual args, appends -o json if absent, captures
@@ -91,6 +62,13 @@ func dispatchCommandExternal(ctx context.Context, args []runtime.Arg) (runtime.V
 		return runtime.Value{}, cancelErr
 	}
 	return decodeBpfmanResult(args, stdout.Bytes())
+}
+
+func displayName(name string) string {
+	if name == "" {
+		return "argument"
+	}
+	return "$" + name
 }
 
 // argToCLIText renders a single runtime.Arg into the textual form

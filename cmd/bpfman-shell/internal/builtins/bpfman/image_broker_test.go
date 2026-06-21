@@ -13,7 +13,10 @@ import (
 func TestLoadImageArgsFromLoadFilePreservesOptions(t *testing.T) {
 	t.Parallel()
 
-	loadFile, err := parseLoadFile([]runtime.Arg{
+	gotArgs, err := loadImageArgsFromLoadFile([]runtime.Arg{
+		word("program"),
+		word("load"),
+		word("file"),
 		word("testdata/bpf/xdp_pass.bpf.o"),
 		word("--programs"), word("xdp:pass"),
 		word("--metadata"), word("owner=e2e"),
@@ -21,12 +24,12 @@ func TestLoadImageArgsFromLoadFilePreservesOptions(t *testing.T) {
 		word("--application"), word("suite"),
 		word("--map-owner-id"), word("42"),
 		word("-o"), word("json"),
-	})
+	}, "127.0.0.1:5000/bpfman-e2e/xdp-pass:tag")
 	if err != nil {
-		t.Fatalf("parseLoadFile: %v", err)
+		t.Fatalf("loadImageArgsFromLoadFile: %v", err)
 	}
 
-	got := driver.ArgTexts(loadImageArgsFromLoadFile(loadFile, "127.0.0.1:5000/bpfman-e2e/xdp-pass:tag"))
+	got := driver.ArgTexts(gotArgs)
 	want := []string{
 		"program", "load", "image",
 		"127.0.0.1:5000/bpfman-e2e/xdp-pass:tag",

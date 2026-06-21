@@ -11,7 +11,7 @@ import (
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
+	"github.com/frobware/go-bpfman/cmd/internal/cli"
 )
 
 // ErrScriptError is the sentinel the driver returns when a
@@ -36,7 +36,7 @@ var ErrScriptError = errors.New("script error")
 // formatting; subprocess output that lacks a trailing newline
 // will appear without one, matching how the same command would
 // look when run directly on stdout/stderr.
-func makeDeferOutputFlusher(cli *bpfmancli.CLI) func(args []runtime.Arg, rc runtime.Envelope) {
+func makeDeferOutputFlusher(cli *cli.CLI) func(args []runtime.Arg, rc runtime.Envelope) {
 	return func(_ []runtime.Arg, rc runtime.Envelope) {
 		if rc.Stdout != "" {
 			_ = cli.PrintOut(rc.Stdout)
@@ -56,7 +56,7 @@ func makeDeferOutputFlusher(cli *bpfmancli.CLI) func(args []runtime.Arg, rc runt
 //
 // Positions on statements are expected to carry their own source
 // file; fallbackFile is only for fileless or synthetic spans.
-func RenderEnvelopeFailure(cli *bpfmancli.CLI, verb string, fallbackFile string, stmtLoc source.Pos, args []runtime.Arg, env runtime.Envelope) {
+func RenderEnvelopeFailure(cli *cli.CLI, verb string, fallbackFile string, stmtLoc source.Pos, args []runtime.Arg, env runtime.Envelope) {
 	file := stmtLoc.File
 	if file == "" {
 		file = fallbackFile

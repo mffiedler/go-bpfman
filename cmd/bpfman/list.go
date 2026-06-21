@@ -8,8 +8,9 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
-	"github.com/frobware/go-bpfman/internal/cliformat"
+	"github.com/frobware/go-bpfman/cmd/bpfman/cliformat"
+	"github.com/frobware/go-bpfman/cmd/internal/args"
+	"github.com/frobware/go-bpfman/cmd/internal/runtime"
 	"github.com/frobware/go-bpfman/manager"
 )
 
@@ -22,7 +23,7 @@ type ListProgramsCmd struct {
 	Type             []bpfman.ProgramType `name:"type" sep:"," help:"Filter by program type (case-insensitive, e.g., --type=xdp,kprobe)."`
 	ProgramType      []bpfman.ProgramType `name:"program-type" short:"p" sep:"," help:"Filter by program type (Rust-compatible alias for --type)."`
 	Application      string               `name:"application" help:"Filter by application metadata."`
-	MetadataSelector []bpfmancli.KeyValue `name:"metadata-selector" short:"m" help:"Filter by KEY=VALUE metadata (can be repeated)."`
+	MetadataSelector []args.KeyValue      `name:"metadata-selector" short:"m" help:"Filter by KEY=VALUE metadata (can be repeated)."`
 	All              bool                 `name:"all" short:"a" help:"Include unmanaged kernel programs (those loaded outside bpfman)."`
 	Selector         string               `name:"selector" short:"l" help:"Label selector (e.g., app=myapp,version!=v1)."`
 }
@@ -53,7 +54,7 @@ func (c *ListProgramsCmd) buildListOptions() ([]bpfman.ListOption, error) {
 	}
 
 	var selectors []labels.Selector
-	metadata := bpfmancli.MetadataMap(c.MetadataSelector)
+	metadata := args.MetadataMap(c.MetadataSelector)
 	if c.Application != "" {
 		if metadata == nil {
 			metadata = map[string]string{}
@@ -94,7 +95,7 @@ func combineSelectors(selectors ...labels.Selector) labels.Selector {
 }
 
 // Run executes the list programs command.
-func (c *ListProgramsCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
+func (c *ListProgramsCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	if err := c.Validate(); err != nil {
 		return err
 	}
@@ -139,11 +140,11 @@ func (c *ListProgramsCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 type ListLinksCmd struct {
 	cliformat.OutputFlags
 	Quiet            bool                 `short:"q" help:"Output only link IDs, one per line."`
-	ProgramID        *bpfmancli.ProgramID `name:"program-id" help:"Filter by program ID (supports hex with 0x prefix)."`
+	ProgramID        *args.ProgramID      `name:"program-id" help:"Filter by program ID (supports hex with 0x prefix)."`
 	Kind             []bpfman.LinkKind    `name:"kind" sep:"," help:"Filter by link kind (e.g., --kind=xdp,kprobe)."`
 	ProgramType      []bpfman.ProgramType `name:"program-type" short:"p" sep:"," help:"Filter by the owning program's type (e.g. xdp,kprobe)."`
 	Application      string               `name:"application" help:"Filter by the owning program's application metadata."`
-	MetadataSelector []bpfmancli.KeyValue `name:"metadata-selector" short:"m" help:"Filter by the owning program's KEY=VALUE metadata (can be repeated)."`
+	MetadataSelector []args.KeyValue      `name:"metadata-selector" short:"m" help:"Filter by the owning program's KEY=VALUE metadata (can be repeated)."`
 }
 
 func (c *ListLinksCmd) buildLinkListOptions() ([]bpfman.LinkListOption, error) {
@@ -174,7 +175,7 @@ func (c *ListLinksCmd) programScopeOptions() ([]bpfman.ListOption, bool) {
 		scoped = true
 	}
 
-	metadata := bpfmancli.MetadataMap(c.MetadataSelector)
+	metadata := args.MetadataMap(c.MetadataSelector)
 	if c.Application != "" {
 		if metadata == nil {
 			metadata = map[string]string{}
@@ -190,7 +191,7 @@ func (c *ListLinksCmd) programScopeOptions() ([]bpfman.ListOption, bool) {
 }
 
 // Run executes the list links command.
-func (c *ListLinksCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
+func (c *ListLinksCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	format, err := c.OutputFlags.Format()
 	if err != nil {
 		return err

@@ -22,7 +22,7 @@ import (
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
+	"github.com/frobware/go-bpfman/cmd/internal/cli"
 	"github.com/frobware/go-bpfman/internal/execcancel"
 )
 
@@ -119,7 +119,7 @@ func ResolveCommandPath(name string, span source.Span) error {
 // for unknown first words. span identifies the originating statement
 // so failures cite the right source location without a
 // syntax-error frame.
-func RunExecStatement(ctx context.Context, cli *bpfmancli.CLI, args []runtime.Arg, span source.Span) (runtime.Value, error) {
+func RunExecStatement(ctx context.Context, cli *cli.CLI, args []runtime.Arg, span source.Span) (runtime.Value, error) {
 	argv, exitCode, err := RunExternalInherit(ctx, cli, args)
 	if err != nil {
 		return runtime.Value{}, err
@@ -254,7 +254,7 @@ func RunExternal(ctx context.Context, args []runtime.Arg) (ExecCapture, error) {
 // spawned through exec.CommandContext with cooperative
 // cancellation: ctx cancellation SIGINTs the child's process group
 // and WaitDelay escalates to SIGKILL after a grace period.
-func RunExternalInherit(ctx context.Context, cli *bpfmancli.CLI, args []runtime.Arg) (argv []string, exitCode int, err error) {
+func RunExternalInherit(ctx context.Context, cli *cli.CLI, args []runtime.Arg) (argv []string, exitCode int, err error) {
 	if len(args) == 0 {
 		return nil, 0, fmt.Errorf("exec requires at least one argument")
 	}

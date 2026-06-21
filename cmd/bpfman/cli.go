@@ -12,10 +12,11 @@ import (
 	"github.com/alecthomas/kong"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/cmd/bpfman/cliformat"
+	"github.com/frobware/go-bpfman/cmd/internal/args"
+	"github.com/frobware/go-bpfman/cmd/internal/runtime"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/fs"
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
-	"github.com/frobware/go-bpfman/internal/cliformat"
 )
 
 type rootlessCommand interface {
@@ -23,11 +24,11 @@ type rootlessCommand interface {
 }
 
 // CLI is the root command structure for bpfman. It embeds the
-// shared bpfmancli.CLI for global flags, output writers, and
+// shared runtime.CLI for global flags, output writers, and
 // runtime services; the Kong-tagged subcommand fields here are
 // the production verb set.
 type CLI struct {
-	bpfmancli.CLI
+	runtime.CLI
 
 	kctx *kong.Context `kong:"-"`
 
@@ -153,12 +154,12 @@ func KongOptions() []kong.Option {
 			return nil
 		}),
 		kong.ShortUsageOnError(),
-		kong.TypeMapper(reflect.TypeFor[bpfmancli.ProgramID](), programIDMapper()),
-		kong.TypeMapper(reflect.TypeFor[bpfmancli.LinkID](), linkIDMapper()),
-		kong.TypeMapper(reflect.TypeFor[bpfmancli.KeyValue](), keyValueMapper()),
-		kong.TypeMapper(reflect.TypeFor[bpfmancli.GlobalData](), globalDataMapper()),
-		kong.TypeMapper(reflect.TypeFor[bpfmancli.ObjectPath](), objectPathMapper()),
-		kong.TypeMapper(reflect.TypeFor[bpfmancli.ProgramSpec](), programSpecMapper()),
+		kong.TypeMapper(reflect.TypeFor[args.ProgramID](), programIDMapper()),
+		kong.TypeMapper(reflect.TypeFor[args.LinkID](), linkIDMapper()),
+		kong.TypeMapper(reflect.TypeFor[args.KeyValue](), keyValueMapper()),
+		kong.TypeMapper(reflect.TypeFor[args.GlobalData](), globalDataMapper()),
+		kong.TypeMapper(reflect.TypeFor[args.ObjectPath](), objectPathMapper()),
+		kong.TypeMapper(reflect.TypeFor[args.ProgramSpec](), programSpecMapper()),
 		kong.TypeMapper(reflect.TypeFor[bpfman.ProgramType](), programTypeMapper()),
 		kong.TypeMapper(reflect.TypeFor[bpfman.LinkKind](), linkKindMapper()),
 		kong.TypeMapper(reflect.TypeFor[bpfman.Tracepoint](), tracepointMapper()),

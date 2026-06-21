@@ -3,18 +3,15 @@ package bpfmanbuiltin
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/driver"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/internal/registryfixture"
 )
 
@@ -40,15 +37,15 @@ func maybeBrokerLoadFileArgs(ctx context.Context, args []runtime.Arg) ([]runtime
 		return args, nil
 	}
 
-	cmd, err := parseLoadFile(args[3:])
+	bytecodePath, err := argToCLIText(args[3])
 	if err != nil {
 		return nil, err
 	}
-	ref, err := brokerBytecodeImage(ctx, cmd.Path)
+	ref, err := brokerBytecodeImage(ctx, bytecodePath)
 	if err != nil {
 		return nil, err
 	}
-	return loadImageArgsFromLoadFile(cmd, ref), nil
+	return loadImageArgsFromLoadFile(args, ref)
 }
 
 func isLoadFileArgs(args []runtime.Arg) bool {
@@ -58,49 +55,35 @@ func isLoadFileArgs(args []runtime.Arg) bool {
 		driver.ArgText(args[2]) == "file"
 }
 
-func loadImageArgsFromLoadFile(cmd *LoadFileCommand, imageRef string) []runtime.Arg {
-	var argv []string
-	argv = append(argv,
+func loadImageArgsFromLoadFile(args []runtime.Arg, imageRef string) ([]runtime.Arg, error) {
+	argv := []string{
 		"program", "load", "image",
 		imageRef,
 		"--pull-policy", e2eImageBrokerPullPolicy,
-	)
-	if len(cmd.Programs) > 0 {
-		var specs []string
-		for _, spec := range cmd.Programs {
-			specs = append(specs, renderProgramSpec(spec))
+	}
+	for i, arg := range args[4:] {
+		text, err := argToCLIText(arg)
+		if err != nil {
+			return nil, fmt.Errorf("program load file arg %d: %w", i+5, err)
 		}
-		argv = append(argv, "--programs", strings.Join(specs, ","))
-	}
-	for _, kv := range cmd.Metadata {
-		argv = append(argv, "--metadata", kv.Key+"="+kv.Value)
-	}
-	for _, gd := range cmd.GlobalData {
-		argv = append(argv, "--global", gd.Name+"=0x"+hex.EncodeToString(gd.Data))
-	}
-	if cmd.Application != "" {
-		argv = append(argv, "--application", cmd.Application)
-	}
-	if cmd.MapOwnerID != 0 {
-		argv = append(argv, "--map-owner-id", strconv.FormatUint(uint64(cmd.MapOwnerID), 10))
-	}
-	if cmd.Output.Output.IsSet {
-		argv = append(argv, "-o", cmd.Output.Output.Value)
+		argv = append(argv, text)
 	}
 
 	out := make([]runtime.Arg, 0, len(argv))
 	for _, a := range argv {
 		out = append(out, runtime.WordArg{Text: a})
 	}
-	return out
+	return out, nil
 }
 
-func renderProgramSpec(spec bpfmancli.ProgramSpec) string {
-	parts := []string{spec.Type.String(), spec.Name}
-	if spec.AttachFunc != "" {
-		parts = append(parts, spec.AttachFunc)
-	}
-	return strings.Join(parts, ":")
+func renderBrokeredImageBuildArgs(bytecode, imageRef string) []string {
+	var argv []string
+	argv = append(argv,
+		"image", "build",
+		imageRef,
+		bytecode,
+	)
+	return argv
 }
 
 func brokerBytecodeImage(ctx context.Context, bytecodePath string) (string, error) {
@@ -166,12 +149,7 @@ func imageRefForBytecode(registryHost, relBytecode string) string {
 }
 
 func buildBrokeredImage(ctx context.Context, bytecode, imageRef string) error {
-	args := []string{
-		"image", "build",
-		imageRef,
-		bytecode,
-	}
-
+	args := renderBrokeredImageBuildArgs(bytecode, imageRef)
 	cmd, cancellationErr := newBPFManCommand(ctx, args...)
 	out, err := cmd.CombinedOutput()
 	if cancelErr := cancellationErr(); cancelErr != nil {

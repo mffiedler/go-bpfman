@@ -9,7 +9,7 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
+	"github.com/frobware/go-bpfman/cmd/internal/cli"
 )
 
 // ErrSilent is returned when the error has already been
@@ -22,7 +22,7 @@ var ErrSilent = errors.New("silent error")
 // scalars as plain text, structured values as indented JSON.
 // Used by the loop's PrintResult callback and by the `print`
 // session builtin.
-func WriteValue(cli *bpfmancli.CLI, v runtime.Value) error {
+func WriteValue(cli *cli.CLI, v runtime.Value) error {
 	if v.IsNil() {
 		return cli.PrintOut("null\n")
 	}

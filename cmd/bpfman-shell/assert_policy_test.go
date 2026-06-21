@@ -13,7 +13,7 @@ import (
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/driver"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
+	"github.com/frobware/go-bpfman/cmd/internal/cli"
 )
 
 // runMatchesScript runs script against a session in which $prog is
@@ -26,9 +26,9 @@ func runMatchesScript(t *testing.T, record map[string]any, script string) (out, 
 	session.Set("prog", runtime.ValueFromMap(record))
 
 	var outBuf, errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
+	cli := &cli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := driver.NewScannerReader(strings.NewReader(script), nil)
-	err := runScript(t.Context(), cli, nil, lr, session, "", true, true)
+	err := runScript(t.Context(), cli, lr, session, "", true, true)
 	return outBuf.String(), errBuf.String(), err
 }
 
@@ -150,9 +150,9 @@ func TestAssertMatches_VarPattern(t *testing.T) {
 
 	script := `assert $prog matches { status.kernel.id: $expected_id }` + "\n"
 	var outBuf, errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
+	cli := &cli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := driver.NewScannerReader(strings.NewReader(script), nil)
-	err := runScript(t.Context(), cli, nil, lr, session, "", true, true)
+	err := runScript(t.Context(), cli, lr, session, "", true, true)
 	require.NoError(t, err)
 	assert.Empty(t, errBuf.String())
 }
@@ -186,9 +186,9 @@ func TestAssertOkWithoutCommandRejected(t *testing.T) {
 
 	session := runtime.NewSession()
 	var outBuf, errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
+	cli := &cli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := driver.NewScannerReader(strings.NewReader("assert ok\n"), nil)
-	err := runScript(t.Context(), cli, nil, lr, session, "", true, true)
+	err := runScript(t.Context(), cli, lr, session, "", true, true)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, driver.ErrScriptError)
 	assert.Contains(t, errBuf.String(), "ok requires a command")
@@ -248,9 +248,9 @@ assert $prog matches {
 	session := runtime.NewSession()
 	session.Set("prog", runtime.ValueFromMap(rec))
 	var outBuf, errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
+	cli := &cli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := driver.NewScannerReader(strings.NewReader(script), nil)
-	require.NoError(t, runScript(t.Context(), cli, nil, lr, session, "fake.bpfman", false, true))
+	require.NoError(t, runScript(t.Context(), cli, lr, session, "fake.bpfman", false, true))
 
 	errOut := errBuf.String()
 	require.Contains(t, errOut, "FAIL")
@@ -263,9 +263,9 @@ assert $prog matches {
 func runAssertPredicateScript(t *testing.T, session *runtime.Session, script string) (string, string, error) {
 	t.Helper()
 	var outBuf, errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
+	cli := &cli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := driver.NewScannerReader(strings.NewReader(script), nil)
-	err := runScript(t.Context(), cli, nil, lr, session, "", true, true)
+	err := runScript(t.Context(), cli, lr, session, "", true, true)
 	return outBuf.String(), errBuf.String(), err
 }
 

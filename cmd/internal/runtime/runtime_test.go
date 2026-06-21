@@ -1,4 +1,4 @@
-package bpfmancli
+package runtime
 
 import (
 	"context"
@@ -19,7 +19,7 @@ func TestNewStoreWaitsForRuntimeWriterLock(t *testing.T) {
 
 	dir := t.TempDir()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	cli := &CLI{LockTimeout: 10 * time.Millisecond, RuntimeDir: dir, logger: logger}
+	cli := &CLI{LockTimeout: 10 * time.Millisecond, RuntimeDir: dir}
 
 	lockPath := filepath.Join(dir, ".lock")
 	dbPath := filepath.Join(dir, "store.db")

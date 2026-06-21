@@ -232,21 +232,13 @@ jobs:
           BPFMAN_LOCK_TIMEOUT: ${{ matrix.race == 1 && '120s' || '' }}
 
   test-e2e-scripts:
-    name: E2E .bpfman scripts (${{ matrix.arch }}, RACE=${{ matrix.race }}, DISPATCH=${{ matrix.dispatch }}, SOURCE=${{ matrix.bytecode_source }})
+    name: E2E .bpfman scripts (${{ matrix.arch }}, RACE=${{ matrix.race }}, SOURCE=${{ matrix.bytecode_source }})
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
         race: [1, 0]
-        # Run every script under both bpfman-shell dispatch
-        # backends: library exercises the in-process Go API,
-        # external exercises the fork+exec path through the
-        # bpfman CLI binary (see
-        # cmd/bpfman-shell/bpfman_external.go). The two backends
-        # are required to produce byte-identical responses; a
-        # divergence on either lane is a real failure.
-        dispatch: [library, external]
         # Rerun the whole corpus with every `program load file`
         # brokered through an image build/push/pull cycle
         # (BPFMAN_E2E_BYTECODE_SOURCE=image). Image mode is heavier
@@ -323,5 +315,4 @@ jobs:
       # per-test cost, 5x stress compounds to ~10x baseline).
       - run: make ci-test-e2e-scripts RACE=${{ matrix.race }} STRESS_COUNT=${{ matrix.race == 1 && '1' || '5' }}
         env:
-          BPFMAN_DISPATCH: ${{ matrix.dispatch }}
           BPFMAN_E2E_BYTECODE_SOURCE: ${{ matrix.bytecode_source }}

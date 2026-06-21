@@ -21,10 +21,9 @@ import (
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
+	"github.com/frobware/go-bpfman/cmd/internal/cli"
 	"github.com/frobware/go-bpfman/fs"
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/internal/registryfixture"
-	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/version"
 )
 
@@ -34,7 +33,7 @@ import (
 // it reads one whole program from stdin; with --check it parses
 // without evaluating.
 type CLI struct {
-	bpfmancli.CLI
+	cli.CLI
 
 	kctx *kong.Context `kong:"-"`
 
@@ -62,10 +61,9 @@ func NewCLI() (*CLI, error) {
 	c.kctx = kong.Parse(&c, KongOptions()...)
 	c.DefaultWriters()
 
-	// Initialise logger eagerly. Skip for --check, --ast,
-	// --lowered, --symbols, and --version, which do no I/O against the
-	// manager and must be runnable without access to the system
-	// config file.
+	// Initialise logger eagerly. Skip parse-only modes and
+	// --version, which should be runnable without access to the
+	// system config file.
 	if !c.Check && !c.AST && !c.Fmt && !c.FmtWrite && !c.Lowered && !c.Symbols && !c.ListScripts && !c.Version {
 		if err := c.InitLogger(); err != nil {
 			return nil, fmt.Errorf("create logger: %w", err)
@@ -86,11 +84,11 @@ func (c *CLI) Execute(ctx context.Context) error {
 	if c.Version {
 		return c.PrintOut(version.Get().Long())
 	}
-	// Apply -C / --directory before anything path-relative
-	// runs: opening the script file, the static checker, the
-	// manager's bytecode cache, every subprocess spawned at
-	// runtime. Matches make -C / git -C semantics: change cwd
-	// once, then proceed as if the user had cd'd there manually.
+	// Apply -C / --directory before anything path-relative runs:
+	// opening the script file, the static checker, every
+	// subprocess spawned at runtime. Matches make -C / git -C
+	// semantics: change cwd once, then proceed as if the user had
+	// cd'd there manually.
 	if c.Directory != "" {
 		if err := os.Chdir(c.Directory); err != nil {
 			_ = c.PrintErrf("bpfman-shell: error: chdir %q: %v\n", c.Directory, err)
@@ -239,9 +237,9 @@ func (c *CLI) runFmt() error {
 }
 
 // Run is the CLI's top-level entry. With --check / --ast /
-// --lowered / --symbols it short-circuits to those parse-only pipelines;
-// otherwise it opens the manager, builds a script-runner
-// config, and delegates to driver.Run.
+// --lowered / --symbols it short-circuits to those parse-only
+// pipelines; otherwise it builds a script-runner config and delegates
+// to driver.Run.
 func (c *CLI) Run(ctx context.Context) error {
 	if c.ListScripts {
 		return c.runListScripts()
@@ -267,14 +265,6 @@ func (c *CLI) Run(ctx context.Context) error {
 	if c.Symbols {
 		return c.runSymbols()
 	}
-	mgr, cleanup, err := c.NewManagerWithPuller(ctx)
-	if err != nil {
-		if ctx.Err() != nil {
-			return context.Cause(ctx)
-		}
-		return fmt.Errorf("create manager: %w", err)
-	}
-	defer cleanup()
 	defer registryfixture.Close()
 
 	session := runtime.NewSession()
@@ -290,7 +280,6 @@ func (c *CLI) Run(ctx context.Context) error {
 
 	return driver.Run(ctx, driver.Config{
 		CLI:          &c.CLI,
-		Mgr:          mgr,
 		LineReader:   lr,
 		Session:      session,
 		File:         c.inputFileLabel(),
@@ -305,7 +294,7 @@ func (c *CLI) Run(ctx context.Context) error {
 // loop calls when no registered builtin matches the first
 // token. It owns the "forgot the bpfman prefix" diagnostic;
 // unknown first words fall through to external execution.
-func commandFallback(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, args []runtime.Arg, loc driver.SourceLoc, span source.Span) (bool, runtime.Value, error) {
+func commandFallback(ctx context.Context, cli *cli.CLI, args []runtime.Arg, loc driver.SourceLoc, span source.Span) (bool, runtime.Value, error) {
 	if len(args) == 0 {
 		return false, runtime.Value{}, nil
 	}
@@ -322,7 +311,7 @@ func commandFallback(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 // reflect the captured inner outcome) and the "forgot the
 // bpfman prefix" diagnostic. Unknown first words fall through
 // to external execution.
-func bindCommandFallback(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *runtime.Session, env *runtime.Env, args []runtime.Arg, loc driver.SourceLoc, span source.Span) (bool, runtime.BindResult, error) {
+func bindCommandFallback(ctx context.Context, cli *cli.CLI, session *runtime.Session, env *runtime.Env, args []runtime.Arg, loc driver.SourceLoc, span source.Span) (bool, runtime.BindResult, error) {
 	if len(args) == 0 {
 		return false, runtime.BindResult{}, nil
 	}
@@ -361,13 +350,12 @@ func bindCommandFallback(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.M
 // bpfman-side fallbacks pre-wired. The full bpfman-shell binary
 // goes through Run; tests that want to drive one whole program
 // directly over a string source call this wrapper.
-func runScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr driver.LineReader, session *runtime.Session, file string, _ bool, noCheck bool) error {
+func runScript(ctx context.Context, cli *cli.CLI, lr driver.LineReader, session *runtime.Session, file string, _ bool, noCheck bool) error {
 	if file == "" || file == "-" {
 		file = "<stdin>"
 	}
 	return driver.Loop(ctx, driver.Config{
 		CLI:          cli,
-		Mgr:          mgr,
 		LineReader:   lr,
 		Session:      session,
 		File:         file,

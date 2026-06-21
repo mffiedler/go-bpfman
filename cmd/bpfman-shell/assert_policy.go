@@ -20,7 +20,7 @@ import (
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
+	"github.com/frobware/go-bpfman/cmd/internal/cli"
 )
 
 // assertResult holds the outcome of evaluating an assertion verb.
@@ -29,7 +29,7 @@ type assertResult struct {
 	message string
 }
 
-func completeAssertResult(cli *bpfmancli.CLI, session *runtime.Session, isRequire bool, failureSpan source.Span, loc driver.SourceLoc, label string, result assertResult) error {
+func completeAssertResult(cli *cli.CLI, session *runtime.Session, isRequire bool, failureSpan source.Span, loc driver.SourceLoc, label string, result assertResult) error {
 	if result.pass {
 		return nil
 	}
@@ -43,13 +43,13 @@ func completeAssertResult(cli *bpfmancli.CLI, session *runtime.Session, isRequir
 
 // makeExecAssert returns the Env.ExecAssert callback used by
 // the lowered runtime.
-func makeExecAssert(cli *bpfmancli.CLI, session *runtime.Session) func(*ir.Assert, *runtime.Env) error {
+func makeExecAssert(cli *cli.CLI, session *runtime.Session) func(*ir.Assert, *runtime.Env) error {
 	return func(a *ir.Assert, env *runtime.Env) error {
 		return runAssertClause(cli, session, a.IsRequire, a.Span, a.Clause, env)
 	}
 }
 
-func runAssertClause(cli *bpfmancli.CLI, session *runtime.Session, isRequire bool, span source.Span, clause ir.AssertClause, env *runtime.Env) error {
+func runAssertClause(cli *cli.CLI, session *runtime.Session, isRequire bool, span source.Span, clause ir.AssertClause, env *runtime.Env) error {
 	// Lowered helper calls preserve the original assert span, so a
 	// dynamic rejection under poll still points at the assert itself.
 	if !isRequire && env.InPoll() {
@@ -81,7 +81,7 @@ func runAssertClause(cli *bpfmancli.CLI, session *runtime.Session, isRequire boo
 	}
 }
 
-func runAssertCommandClause(cli *bpfmancli.CLI, session *runtime.Session, isRequire bool, span source.Span, clause *ir.AssertCommandClause, env *runtime.Env) error {
+func runAssertCommandClause(cli *cli.CLI, session *runtime.Session, isRequire bool, span source.Span, clause *ir.AssertCommandClause, env *runtime.Env) error {
 	args, err := runtime.EvalArgs(clause.Args, env)
 	if err != nil {
 		return err
@@ -105,7 +105,7 @@ func isBareNullExpr(e ir.Expr) bool {
 	return ok && !lit.Quoted && lit.Text == "null"
 }
 
-func finishAssertVerbClause(cli *bpfmancli.CLI, session *runtime.Session, isRequire bool, span source.Span, head string, headSpan source.Span, negate bool, args []runtime.Arg, env *runtime.Env) error {
+func finishAssertVerbClause(cli *cli.CLI, session *runtime.Session, isRequire bool, span source.Span, head string, headSpan source.Span, negate bool, args []runtime.Arg, env *runtime.Env) error {
 	verbArg := runtime.WordArg{Text: head, Span: headSpan}
 	result, err := evalAssertVerb(env, verbArg, head, args)
 	if err != nil {
@@ -120,7 +120,7 @@ func finishAssertVerbClause(cli *bpfmancli.CLI, session *runtime.Session, isRequ
 }
 
 func runAssertExprCallback(
-	cli *bpfmancli.CLI,
+	cli *cli.CLI,
 	session *runtime.Session,
 	isRequire bool,
 	span source.Span,

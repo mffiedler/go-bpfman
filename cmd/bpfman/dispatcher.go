@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman/cliformat"
+	"github.com/frobware/go-bpfman/cmd/internal/runtime"
 	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
-	"github.com/frobware/go-bpfman/internal/cliformat"
 	"github.com/frobware/go-bpfman/lock"
 )
 
@@ -28,7 +28,7 @@ type ListDispatchersCmd struct {
 }
 
 // Run executes the list dispatchers command.
-func (c *ListDispatchersCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
+func (c *ListDispatchersCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	format, err := c.OutputFlags.Format()
 	if err != nil {
 		return err
@@ -71,7 +71,7 @@ type GetDispatcherCmd struct {
 }
 
 // Run executes the get dispatcher command.
-func (c *GetDispatcherCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
+func (c *GetDispatcherCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	format, err := c.OutputFlags.Format()
 	if err != nil {
 		return err
@@ -101,7 +101,7 @@ type DeleteDispatcherCmd struct {
 }
 
 // Run executes the delete dispatcher command.
-func (c *DeleteDispatcherCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
+func (c *DeleteDispatcherCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	key := dispatcher.NewKey(c.Type, c.Nsid, c.Ifindex)
 
 	mgr, cleanup, err := cli.NewManager(ctx)
@@ -110,7 +110,7 @@ func (c *DeleteDispatcherCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error
 	}
 	defer cleanup()
 
-	return bpfmancli.RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
+	return runtime.RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
 		return mgr.DeleteDispatcherSnapshot(ctx, writeLock, key)
 	})
 }

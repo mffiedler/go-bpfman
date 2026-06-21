@@ -5,8 +5,9 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
-	"github.com/frobware/go-bpfman/internal/cliformat"
+	"github.com/frobware/go-bpfman/cmd/bpfman/cliformat"
+	"github.com/frobware/go-bpfman/cmd/internal/args"
+	"github.com/frobware/go-bpfman/cmd/internal/runtime"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
 )
@@ -23,10 +24,10 @@ type LoadFileCmd struct {
 	MetadataFlags
 	GlobalDataFlags
 
-	Path        string                  `arg:"" name:"path" help:"Path to the BPF object file (.o)."`
-	Programs    []bpfmancli.ProgramSpec `name:"programs" sep:"," help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (comma-separated or repeated). For fentry/fexit, ATTACH_FUNC is required. If not specified, all programs in the object file are loaded."`
-	Application string                  `short:"a" name:"application" help:"Application name to group programs (stored as bpfman.io/application metadata)."`
-	MapOwnerID  kernel.ProgramID        `name:"map-owner-id" help:"Program ID of another program to share maps with."`
+	Path        string             `arg:"" name:"path" help:"Path to the BPF object file (.o)."`
+	Programs    []args.ProgramSpec `name:"programs" sep:"," help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (comma-separated or repeated). For fentry/fexit, ATTACH_FUNC is required. If not specified, all programs in the object file are loaded."`
+	Application string             `short:"a" name:"application" help:"Application name to group programs (stored as bpfman.io/application metadata)."`
+	MapOwnerID  kernel.ProgramID   `name:"map-owner-id" help:"Program ID of another program to share maps with."`
 }
 
 // loadFileResult captures the result of a load file operation.
@@ -35,7 +36,7 @@ type loadFileResult struct {
 }
 
 // Run executes the load file command.
-func (c *LoadFileCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
+func (c *LoadFileCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	format, err := c.OutputFlags.Format()
 	if err != nil {
 		return err
@@ -53,25 +54,25 @@ func (c *LoadFileCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 // executeLoadFileResult is the shared implementation for loading a
 // BPF program from a local object file, returning the result without
 // formatting. Both the CLI command and bpfman-shell call this function.
-func executeLoadFileResult(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, c *LoadFileCmd) (loadFileResult, error) {
+func executeLoadFileResult(ctx context.Context, cli *runtime.CLI, mgr *manager.Manager, c *LoadFileCmd) (loadFileResult, error) {
 	_ = cli // reserved for future use; load no longer takes the writer lock.
 
 	// Validate object file exists.
-	objPath, err := bpfmancli.ParseObjectPath(c.Path)
+	objPath, err := args.ParseObjectPath(c.Path)
 	if err != nil {
 		return loadFileResult{}, err
 	}
 
 	var globalData map[string][]byte
 	if len(c.GlobalData) > 0 {
-		globalData = bpfmancli.GlobalDataMap(c.GlobalData)
+		globalData = args.GlobalDataMap(c.GlobalData)
 	}
 
 	// Manager.Load decides whether the request needs the writer flock:
 	// ordinary loads stay lockless, while explicit map-owner joins and
 	// PinByName loads serialise internally.
 	req := manager.NewLoadRequest(manager.LoadSource{FilePath: objPath.Path}, loadProgramSpecs(c.Programs), manager.LoadRequestOpts{
-		UserMetadata: bpfmancli.MetadataMap(c.Metadata),
+		UserMetadata: args.MetadataMap(c.Metadata),
 		GlobalData:   globalData,
 		Application:  c.Application,
 		MapOwnerID:   c.MapOwnerID,
@@ -86,7 +87,7 @@ func executeLoadFileResult(ctx context.Context, cli *bpfmancli.CLI, mgr *manager
 // executeLoadFile is the shared implementation for loading a BPF
 // program from a local object file. The CLI command calls this
 // function; bpfman-shell uses executeLoadFileResult directly.
-func executeLoadFile(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, c *LoadFileCmd, format cliformat.OutputFormat) error {
+func executeLoadFile(ctx context.Context, cli *runtime.CLI, mgr *manager.Manager, c *LoadFileCmd, format cliformat.OutputFormat) error {
 	result, err := executeLoadFileResult(ctx, cli, mgr, c)
 	if err != nil {
 		return err

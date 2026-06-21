@@ -1,4 +1,4 @@
-package bpfmancli
+package args
 
 import (
 	"testing"

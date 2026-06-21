@@ -12,7 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
+	"github.com/frobware/go-bpfman/cmd/internal/cli"
 )
 
 // TestCancelledRun_DrainsDefersUnderCleanupContext pins the
@@ -36,7 +36,7 @@ func TestCancelledRun_DrainsDefersUnderCleanupContext(t *testing.T) {
 		cancel(fmt.Errorf("interrupted by signal: %w", context.Canceled))
 	}()
 
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: io.Discard}
+	cli := &cli.CLI{Out: io.Discard, Err: io.Discard}
 	start := time.Now()
 	err := Run(ctx, Config{
 		CLI:        cli,
@@ -71,7 +71,7 @@ func TestCancelledRun_DeferDrainIsBounded(t *testing.T) {
 		cancel(fmt.Errorf("interrupted by signal: %w", context.Canceled))
 	}()
 
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: io.Discard}
+	cli := &cli.CLI{Out: io.Discard, Err: io.Discard}
 	start := time.Now()
 	err := Run(ctx, Config{
 		CLI:        cli,

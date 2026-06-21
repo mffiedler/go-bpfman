@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
+	"github.com/frobware/go-bpfman/cmd/internal/cli"
 )
 
 func TestRunExternal_ReturnsContextDeadline(t *testing.T) {
@@ -52,7 +52,7 @@ func TestRunExternalInherit_ReturnsContextDeadline(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
 
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: io.Discard}
+	cli := &cli.CLI{Out: io.Discard, Err: io.Discard}
 	start := time.Now()
 	_, _, err := RunExternalInherit(ctx, cli, shellSleepArgs("5"))
 	elapsed := time.Since(start)

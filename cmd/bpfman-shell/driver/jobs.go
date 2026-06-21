@@ -8,7 +8,7 @@ import (
 	"syscall"
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
+	"github.com/frobware/go-bpfman/cmd/internal/cli"
 )
 
 // StrictJobLeakHandler is the script-mode policy: an unmanaged
@@ -24,7 +24,7 @@ import (
 // fall through and would print, but in practice we sent the
 // job's own SIGTERM-able signal earlier or could not have
 // spawned it in the first place.
-func StrictJobLeakHandler(cli *bpfmancli.CLI, session *runtime.Session) func(*runtime.Job) {
+func StrictJobLeakHandler(cli *cli.CLI, session *runtime.Session) func(*runtime.Job) {
 	return func(j *runtime.Job) {
 		origin := j.Origin
 		if origin == "" {

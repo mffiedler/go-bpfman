@@ -1,14 +1,20 @@
 package bpfmanbuiltin
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/semantics"
 	"github.com/frobware/go-bpfman/kernel"
 )
 
@@ -72,4 +78,108 @@ func TestDecodeBpfmanResult_ProgramListDTO(t *testing.T) {
 	require.NotNil(t, stray.Kernel)
 	assert.Equal(t, strayID, stray.Kernel.ID)
 	assert.Equal(t, "tracepoint", stray.Type)
+}
+
+func TestArgToCLIText_StructuredProgramAndLink(t *testing.T) {
+	t.Parallel()
+
+	progVal, err := runtime.ValueFromStruct(bpfman.Program{
+		Record: bpfman.ProgramRecord{ProgramID: kernel.ProgramID(42)},
+	})
+	require.NoError(t, err)
+	got, err := argToCLIText(runtime.StructuredValueArg{
+		Name:  "prog",
+		Value: progVal.WithKind(semantics.OriginProgram),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "42", got)
+
+	linkVal, err := runtime.ValueFromStruct(bpfman.Link{
+		Record: bpfman.LinkRecord{ID: bpfman.LinkID(99)},
+	})
+	require.NoError(t, err)
+	got, err = argToCLIText(runtime.StructuredValueArg{
+		Name:  "link",
+		Value: linkVal.WithKind(semantics.OriginLink),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "99", got)
+}
+
+func TestCommandSupportsOutputSkipsImageBuildAndInspect(t *testing.T) {
+	t.Parallel()
+
+	assert.False(t, commandSupportsOutput([]string{"image", "build"}))
+	assert.False(t, commandSupportsOutput([]string{"image", "inspect"}))
+	assert.True(t, commandSupportsOutput([]string{"program", "list"}))
+}
+
+func TestDispatchCommandExternalInheritsBPFMANConfig(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bpfman")
+	seen := filepath.Join(dir, "seen-config")
+	configPath := filepath.Join(dir, "no-signature-verification.toml")
+	script := `#!/bin/sh
+printf '%s' "$BPFMAN_CONFIG" > "$BPFMAN_CONFIG_SEEN"
+printf '{"programs":[]}'
+`
+	require.NoError(t, os.WriteFile(bin, []byte(script), 0o755))
+
+	t.Setenv("BPFMAN_BIN", bin)
+	t.Setenv("BPFMAN_CONFIG", configPath)
+	t.Setenv("BPFMAN_CONFIG_SEEN", seen)
+
+	_, err := dispatchCommandExternal(t.Context(), []runtime.Arg{
+		word("program"),
+		word("list"),
+	})
+	require.NoError(t, err)
+
+	got, err := os.ReadFile(seen)
+	require.NoError(t, err)
+	assert.Equal(t, configPath, string(got))
+}
+
+func TestDispatchCommandExternal_ContextCancelInterruptsChildProcessGroup(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bpfman")
+	child := filepath.Join(dir, "child.sh")
+	ready := filepath.Join(dir, "ready")
+	ack := filepath.Join(dir, "ack")
+	require.NoError(t, os.WriteFile(bin, []byte(`#!/bin/sh
+"$BPFMAN_CANCEL_CHILD" "$BPFMAN_CANCEL_ACK" "$BPFMAN_CANCEL_READY"; :
+`), 0o755))
+	require.NoError(t, os.WriteFile(child, []byte(`#!/bin/sh
+trap 'echo interrupted > "$1"; exit 0' INT
+echo ready > "$2"
+sleep 2
+`), 0o755))
+
+	t.Setenv("BPFMAN_BIN", bin)
+	t.Setenv("BPFMAN_CANCEL_CHILD", child)
+	t.Setenv("BPFMAN_CANCEL_READY", ready)
+	t.Setenv("BPFMAN_CANCEL_ACK", ack)
+
+	ctx, cancel := context.WithCancelCause(t.Context())
+	cause := errors.New("script context cancelled")
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := dispatchCommandExternal(ctx, []runtime.Arg{
+			word("program"),
+			word("list"),
+		})
+		errCh <- err
+	}()
+
+	assert.Eventually(t, func() bool {
+		_, err := os.Stat(ready)
+		return err == nil
+	}, time.Second, 20*time.Millisecond)
+	cancel(cause)
+
+	assert.Eventually(t, func() bool {
+		_, err := os.Stat(ack)
+		return err == nil
+	}, time.Second, 20*time.Millisecond)
+	assert.Equal(t, cause, <-errCh)
 }

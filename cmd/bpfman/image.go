@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/frobware/go-bpfman/cmd/internal/runtime"
 	"github.com/frobware/go-bpfman/config"
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/internal/imagebuild"
 	"github.com/frobware/go-bpfman/platform"
 	platformebpf "github.com/frobware/go-bpfman/platform/ebpf"
@@ -51,7 +51,7 @@ type ImageInspectCmd struct {
 func (c *ImageInspectCmd) AllowRootless() bool { return true }
 
 // Run executes the image build command.
-func (c *ImageBuildCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
+func (c *ImageBuildCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	plan, err := c.plan()
 	if err != nil {
 		return err
@@ -67,7 +67,7 @@ func (c *ImageBuildCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 }
 
 // Run executes the image generate-build-args command.
-func (c *ImageGenerateBuildArgsCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
+func (c *ImageGenerateBuildArgsCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	plan, err := c.plan()
 	if err != nil {
 		return err
@@ -81,7 +81,7 @@ func (c *ImageGenerateBuildArgsCmd) Run(cli *bpfmancli.CLI, ctx context.Context)
 }
 
 // Run executes the image inspect command.
-func (c *ImageInspectCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
+func (c *ImageInspectCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	inspection, err := oci.InspectBytecodeImage(ctx, c.ImageURL)
 	if err != nil {
 		return err
@@ -186,7 +186,7 @@ type ImageVerifyCmd struct {
 func (c *ImageVerifyCmd) AllowRootless() bool { return true }
 
 // Run executes the image verify command.
-func (c *ImageVerifyCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
+func (c *ImageVerifyCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	logger := cli.Logger()
 	logger.Info("verifying image signature", "image", c.ImageURL)
 

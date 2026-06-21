@@ -8,19 +8,19 @@ import (
 	"github.com/alecthomas/kong"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/cmd/bpfman/cliformat"
+	"github.com/frobware/go-bpfman/cmd/internal/args"
 	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
-	"github.com/frobware/go-bpfman/internal/cliformat"
 )
 
-// programIDMapper creates a Kong mapper for bpfmancli.ProgramID.
+// programIDMapper creates a Kong mapper for args.ProgramID.
 func programIDMapper() kong.MapperFunc {
 	return func(ctx *kong.DecodeContext, target reflect.Value) error {
 		var s string
 		if err := ctx.Scan.PopValueInto("program-id", &s); err != nil {
 			return err
 		}
-		id, err := bpfmancli.ParseProgramID(s)
+		id, err := args.ParseProgramID(s)
 		if err != nil {
 			return err
 		}
@@ -29,14 +29,14 @@ func programIDMapper() kong.MapperFunc {
 	}
 }
 
-// linkIDMapper creates a Kong mapper for bpfmancli.LinkID.
+// linkIDMapper creates a Kong mapper for args.LinkID.
 func linkIDMapper() kong.MapperFunc {
 	return func(ctx *kong.DecodeContext, target reflect.Value) error {
 		var s string
 		if err := ctx.Scan.PopValueInto("link-id", &s); err != nil {
 			return err
 		}
-		id, err := bpfmancli.ParseLinkID(s)
+		id, err := args.ParseLinkID(s)
 		if err != nil {
 			return err
 		}
@@ -45,14 +45,14 @@ func linkIDMapper() kong.MapperFunc {
 	}
 }
 
-// keyValueMapper creates a Kong mapper for bpfmancli.KeyValue.
+// keyValueMapper creates a Kong mapper for args.KeyValue.
 func keyValueMapper() kong.MapperFunc {
 	return func(ctx *kong.DecodeContext, target reflect.Value) error {
 		var s string
 		if err := ctx.Scan.PopValueInto("key=value", &s); err != nil {
 			return err
 		}
-		kv, err := bpfmancli.ParseKeyValue(s)
+		kv, err := args.ParseKeyValue(s)
 		if err != nil {
 			return err
 		}
@@ -61,14 +61,14 @@ func keyValueMapper() kong.MapperFunc {
 	}
 }
 
-// globalDataMapper creates a Kong mapper for bpfmancli.GlobalData.
+// globalDataMapper creates a Kong mapper for args.GlobalData.
 func globalDataMapper() kong.MapperFunc {
 	return func(ctx *kong.DecodeContext, target reflect.Value) error {
 		var s string
 		if err := ctx.Scan.PopValueInto("name=hex", &s); err != nil {
 			return err
 		}
-		gd, err := bpfmancli.ParseGlobalData(s)
+		gd, err := args.ParseGlobalData(s)
 		if err != nil {
 			return err
 		}
@@ -77,14 +77,14 @@ func globalDataMapper() kong.MapperFunc {
 	}
 }
 
-// objectPathMapper creates a Kong mapper for bpfmancli.ObjectPath.
+// objectPathMapper creates a Kong mapper for args.ObjectPath.
 func objectPathMapper() kong.MapperFunc {
 	return func(ctx *kong.DecodeContext, target reflect.Value) error {
 		var s string
 		if err := ctx.Scan.PopValueInto("path", &s); err != nil {
 			return err
 		}
-		op, err := bpfmancli.ParseObjectPath(s)
+		op, err := args.ParseObjectPath(s)
 		if err != nil {
 			return err
 		}
@@ -93,14 +93,14 @@ func objectPathMapper() kong.MapperFunc {
 	}
 }
 
-// programSpecMapper creates a Kong mapper for bpfmancli.ProgramSpec.
+// programSpecMapper creates a Kong mapper for args.ProgramSpec.
 func programSpecMapper() kong.MapperFunc {
 	return func(ctx *kong.DecodeContext, target reflect.Value) error {
 		var s string
 		if err := ctx.Scan.PopValueInto("type:name", &s); err != nil {
 			return err
 		}
-		ps, err := bpfmancli.ParseProgramSpec(s)
+		ps, err := args.ParseProgramSpec(s)
 		if err != nil {
 			return err
 		}

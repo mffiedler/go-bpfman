@@ -7,18 +7,18 @@ import (
 
 	"github.com/alecthomas/kong"
 
+	"github.com/frobware/go-bpfman/cmd/internal/runtime"
 	"github.com/frobware/go-bpfman/fs"
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/internal/bpfresidue"
 )
 
 // CLI is the bpfman-e2e-cleanup root. One command, one plan. The
-// shared bpfmancli.CLI is embedded for parity with the bpfman
+// shared runtime.CLI is embedded for parity with the bpfman
 // and bpfman-shell binaries: --runtime-dir points at bpfman's
 // runtime directory so the inspect.Snapshot-driven orphan scan
 // can find pinned objects under {runtime-dir}/fs.
 type CLI struct {
-	bpfmancli.CLI
+	runtime.CLI
 
 	kctx *kong.Context `kong:"-"`
 

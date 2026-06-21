@@ -11,7 +11,7 @@ import (
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/driver"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
+	"github.com/frobware/go-bpfman/cmd/internal/cli"
 )
 
 // runScriptWithCheck runs script end-to-end with the static pre-flight
@@ -22,12 +22,11 @@ func runScriptWithCheck(t *testing.T, script string, noCheck bool) (string, erro
 	t.Helper()
 
 	var outBuf, errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
+	cli := &cli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := driver.NewScannerReader(strings.NewReader(script), nil)
 
 	err := driver.Run(t.Context(), driver.Config{
 		CLI:          cli,
-		Mgr:          nil,
 		LineReader:   lr,
 		Session:      runtime.NewSession(),
 		File:         "<test>",

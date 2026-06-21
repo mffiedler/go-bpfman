@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
+	"github.com/frobware/go-bpfman/cmd/internal/args"
 )
 
 // ErrSilent is returned when the error has already been communicated
@@ -14,18 +14,18 @@ var ErrSilent = errors.New("silent error")
 
 // MetadataFlags provides metadata-related flags.
 type MetadataFlags struct {
-	Metadata []bpfmancli.KeyValue `short:"m" name:"metadata" help:"KEY=VALUE metadata to attach (can be repeated)."`
+	Metadata []args.KeyValue `short:"m" name:"metadata" help:"KEY=VALUE metadata to attach (can be repeated)."`
 }
 
 // AttachMetadataFlags carries -m/--metadata on attach commands,
 // attaching user key/value labels to the created link.
 type AttachMetadataFlags struct {
-	Metadata []bpfmancli.KeyValue `short:"m" name:"metadata" help:"KEY=VALUE link metadata (can be repeated)."`
+	Metadata []args.KeyValue `short:"m" name:"metadata" help:"KEY=VALUE link metadata (can be repeated)."`
 }
 
 // GlobalDataFlags provides global data flags.
 type GlobalDataFlags struct {
-	GlobalData []bpfmancli.GlobalData `short:"g" name:"global" help:"NAME=HEX global data (can be repeated)."`
+	GlobalData []args.GlobalData `short:"g" name:"global" help:"NAME=HEX global data (can be repeated)."`
 }
 
 // TTLFlag provides a TTL duration flag.

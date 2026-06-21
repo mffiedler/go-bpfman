@@ -1,4 +1,4 @@
-package bpfmancli
+package runtime
 
 import (
 	"context"
