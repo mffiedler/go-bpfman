@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync/atomic"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -33,6 +35,9 @@ const (
 	DefaultCSIDriverName = "csi.bpfman.io"
 	// DefaultCSIVersion is the default CSI driver version.
 	DefaultCSIVersion = "0.1.0"
+	// DefaultWriterLockTimeout is the daemon's default wait budget for
+	// acquiring the global writer lock.
+	DefaultWriterLockTimeout = 30 * time.Second
 )
 
 // RunConfig configures the server daemon.
@@ -78,7 +83,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	// This must happen at the server level since op_id is generated here.
 	logger = manager.WithOpIDHandler(logger)
 
-	opened, err := runtimestate.OpenMutable(ctx, layout, logger, 0)
+	opened, err := runtimestate.OpenMutable(ctx, layout, logger, DefaultWriterLockTimeout)
 	if err != nil {
 		return fmt.Errorf("open runtime: %w", err)
 	}
@@ -334,6 +339,11 @@ func (s *Server) rpcInterceptor() grpc.UnaryServerInterceptor {
 // round-trip.
 func withWriterLock[T any](ctx context.Context, s *Server, fn func(context.Context, lock.WriterScope) (T, error)) (T, error) {
 	var resp T
+	// The wait is bounded by the caller's RPC deadline, not a server-imposed
+	// budget: a client that sets a deadline gets it (surfaced as the parent
+	// DeadlineExceeded/Canceled below), while a deadline-less client waits for
+	// the lock as long as it takes, matching the daemon's prior behaviour and
+	// avoiding starvation timeouts under heavy mutation contention.
 	err := lock.RunWithTiming(ctx, s.layout.LockPath(), s.logger, func(ctx context.Context, writeLock lock.WriterScope) error {
 		var fnErr error
 		resp, fnErr = fn(ctx, writeLock)
@@ -341,6 +351,12 @@ func withWriterLock[T any](ctx context.Context, s *Server, fn func(context.Conte
 	})
 	if err != nil {
 		var zero T
+		if errors.Is(err, context.DeadlineExceeded) {
+			return zero, status.Error(codes.DeadlineExceeded, err.Error())
+		}
+		if errors.Is(err, context.Canceled) {
+			return zero, status.Error(codes.Canceled, err.Error())
+		}
 		return zero, err
 	}
 	return resp, nil
