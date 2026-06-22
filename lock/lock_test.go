@@ -2,13 +2,23 @@ package lock_test
 
 import (
 	"context"
+	"errors"
+	"io"
+	"log/slog"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman/lock"
 )
+
+func testLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
 
 // TestRunCreatesLockDirOnFirstTouch covers the CI regression where
 // the lockfile's parent directory does not yet exist (no daemon has
@@ -96,4 +106,140 @@ func TestRunEscapedContextDoesNotTripAfterRelease(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, ran)
+}
+
+func TestRunWithTimeoutSucceeds(t *testing.T) {
+	t.Parallel()
+
+	lockPath := filepath.Join(t.TempDir(), ".lock")
+
+	var ran bool
+	err := lock.RunWithTimeout(context.Background(), lockPath, testLogger(), time.Second, func(context.Context, lock.WriterScope) error {
+		ran = true
+		return nil
+	})
+	require.NoError(t, err)
+	require.True(t, ran)
+}
+
+func TestRunWithTimeoutReturnsCallbackError(t *testing.T) {
+	t.Parallel()
+
+	lockPath := filepath.Join(t.TempDir(), ".lock")
+	wantErr := errors.New("callback failed")
+
+	err := lock.RunWithTimeout(context.Background(), lockPath, testLogger(), time.Second, func(context.Context, lock.WriterScope) error {
+		return wantErr
+	})
+	require.ErrorIs(t, err, wantErr)
+}
+
+func TestRunWithTimeoutReturnsTypedTimeoutError(t *testing.T) {
+	t.Parallel()
+
+	synctest.Test(t, func(t *testing.T) {
+		lockPath := filepath.Join(t.TempDir(), ".lock")
+
+		held := make(chan struct{})
+		release := make(chan struct{})
+		done := make(chan error, 1)
+		go func() {
+			done <- lock.Run(context.Background(), lockPath, func(context.Context, lock.WriterScope) error {
+				close(held)
+				<-release
+				return nil
+			})
+		}()
+		<-held
+
+		const timeout = 10 * time.Millisecond
+		var ran bool
+		err := lock.RunWithTimeout(context.Background(), lockPath, testLogger(), timeout, func(context.Context, lock.WriterScope) error {
+			ran = true
+			return nil
+		})
+		require.False(t, ran)
+
+		var timeoutErr *lock.TimeoutError
+		require.ErrorAs(t, err, &timeoutErr)
+		require.Equal(t, lockPath, timeoutErr.Path)
+		require.Equal(t, timeout, timeoutErr.Timeout)
+
+		close(release)
+		require.NoError(t, <-done)
+	})
+}
+
+func TestRunWithTimeoutAcquiresAfterRelease(t *testing.T) {
+	t.Parallel()
+
+	synctest.Test(t, func(t *testing.T) {
+		lockPath := filepath.Join(t.TempDir(), ".lock")
+
+		held := make(chan struct{})
+		release := make(chan struct{})
+		holderDone := make(chan error, 1)
+		go func() {
+			holderDone <- lock.Run(context.Background(), lockPath, func(context.Context, lock.WriterScope) error {
+				close(held)
+				<-release
+				return nil
+			})
+		}()
+		<-held
+
+		waiterDone := make(chan error, 1)
+		// ran is written by the waiter goroutine and read here; the only
+		// runtime ordering between them is the flock, which the race detector
+		// does not model as a happens-before edge, so it must be atomic.
+		var ran atomic.Bool
+		go func() {
+			waiterDone <- lock.RunWithTimeout(context.Background(), lockPath, testLogger(), 2*time.Second, func(context.Context, lock.WriterScope) error {
+				ran.Store(true)
+				return nil
+			})
+		}()
+
+		synctest.Wait()
+		require.False(t, ran.Load())
+
+		close(release)
+		require.NoError(t, <-waiterDone)
+		require.True(t, ran.Load())
+		require.NoError(t, <-holderDone)
+	})
+}
+
+func TestRunWithTimeoutZeroDoesNotTranslateParentDeadline(t *testing.T) {
+	t.Parallel()
+
+	synctest.Test(t, func(t *testing.T) {
+		lockPath := filepath.Join(t.TempDir(), ".lock")
+
+		held := make(chan struct{})
+		release := make(chan struct{})
+		done := make(chan error, 1)
+		go func() {
+			done <- lock.Run(context.Background(), lockPath, func(context.Context, lock.WriterScope) error {
+				close(held)
+				<-release
+				return nil
+			})
+		}()
+		<-held
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		err := lock.RunWithTimeout(ctx, lockPath, testLogger(), 0, func(context.Context, lock.WriterScope) error {
+			return nil
+		})
+		require.ErrorIs(t, err, context.Canceled)
+
+		var timeoutErr *lock.TimeoutError
+		require.False(t, errors.As(err, &timeoutErr))
+
+		close(release)
+		require.NoError(t, <-done)
+	})
 }
