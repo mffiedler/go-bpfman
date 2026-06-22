@@ -34,7 +34,7 @@ func (c *ListDispatchersCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 		return err
 	}
 
-	mgr, cleanup, err := cli.NewManager(ctx)
+	mgr, cleanup, err := newManager(ctx, cli)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
 	}
@@ -79,7 +79,7 @@ func (c *GetDispatcherCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 
 	key := dispatcher.NewKey(c.Type, c.Nsid, c.Ifindex)
 
-	mgr, cleanup, err := cli.NewManager(ctx)
+	mgr, cleanup, err := newManager(ctx, cli)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
 	}
@@ -104,7 +104,7 @@ type DeleteDispatcherCmd struct {
 func (c *DeleteDispatcherCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	key := dispatcher.NewKey(c.Type, c.Nsid, c.Ifindex)
 
-	mgr, cleanup, err := cli.NewManager(ctx)
+	mgr, cleanup, err := newManager(ctx, cli)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
 	}

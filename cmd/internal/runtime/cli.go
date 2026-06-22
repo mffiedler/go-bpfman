@@ -4,7 +4,6 @@ package runtime
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -65,12 +64,6 @@ func RunWithLock(ctx context.Context, c *CLI, fn func(context.Context, lock.Writ
 func RunWithLockValue[T any](ctx context.Context, c *CLI, fn func(context.Context, lock.WriterScope) (T, error)) (T, error) {
 	var result T
 
-	if c.LockTimeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, c.LockTimeout)
-		defer cancel()
-	}
-
 	layout, err := c.Layout()
 	if err != nil {
 		return result, fmt.Errorf("invalid runtime directory: %w", err)
@@ -80,16 +73,13 @@ func RunWithLockValue[T any](ctx context.Context, c *CLI, fn func(context.Contex
 	if logger == nil {
 		logger = slog.Default()
 	}
-	err = lock.RunWithTiming(ctx, layout.LockPath(), logger, func(ctx context.Context, writeLock lock.WriterScope) error {
+	err = lock.RunWithTimeout(ctx, layout.LockPath(), logger, c.LockTimeout, func(ctx context.Context, writeLock lock.WriterScope) error {
 		var fnErr error
 		result, fnErr = fn(ctx, writeLock)
 		return fnErr
 	})
 
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			return result, fmt.Errorf("timed out waiting for lock %s (--lock-timeout=%v)", layout.LockPath(), c.LockTimeout)
-		}
 		return result, err
 	}
 	return result, nil

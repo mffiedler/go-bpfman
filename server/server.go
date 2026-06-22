@@ -18,15 +18,12 @@ import (
 	"github.com/frobware/go-bpfman/config"
 	driver "github.com/frobware/go-bpfman/csi"
 	"github.com/frobware/go-bpfman/fs"
-	"github.com/frobware/go-bpfman/fs/runtime"
+	"github.com/frobware/go-bpfman/internal/bpfman/runtimestate"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/ns/netns"
-	"github.com/frobware/go-bpfman/platform"
-	"github.com/frobware/go-bpfman/platform/ebpf"
 	"github.com/frobware/go-bpfman/platform/image/oci"
 	"github.com/frobware/go-bpfman/platform/image/verify"
-	"github.com/frobware/go-bpfman/platform/store/sqlite"
 	pb "github.com/frobware/go-bpfman/server/pb"
 )
 
@@ -81,27 +78,11 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	// This must happen at the server level since op_id is generated here.
 	logger = manager.WithOpIDHandler(logger)
 
-	// Open shared SQLite store
-	dbPath := layout.DBPath()
-	var st platform.Store
-	err := lock.RunWithTiming(ctx, layout.LockPath(), logger, func(ctx context.Context, writeLock lock.WriterScope) error {
-		var err error
-		st, err = sqlite.New(ctx, dbPath, logger, writeLock)
-		return err
-	})
+	opened, err := runtimestate.OpenMutable(ctx, layout, logger, 0)
 	if err != nil {
-		return fmt.Errorf("failed to open store at %s: %w", dbPath, err)
+		return fmt.Errorf("open runtime: %w", err)
 	}
-	defer st.Close()
-
-	// Create kernel adapter
-	kernel := ebpf.New(ebpf.WithLogger(logger))
-
-	// Ensure runtime directories and bpffs mount
-	ensuredRuntime, err := runtime.New(layout, runtime.RealMounter{}, logger)
-	if err != nil {
-		return fmt.Errorf("ensure runtime: %w", err)
-	}
+	defer opened.Close()
 
 	verifier, err := verify.FromSigningConfig(cfg.Config.Signing, logger)
 	if err != nil {
@@ -120,7 +101,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 
 	// Create manager for orchestrating store + kernel operations.
 	// The manager is needed by CSI for reconciled program lookups.
-	mgr, err := manager.New(ensuredRuntime, puller, st, kernel, ebpf.NewProgramDiscoverer(), logger)
+	mgr, err := manager.New(opened.FS, puller, opened.Store, opened.Kernel, opened.Discoverer, logger)
 	if err != nil {
 		return fmt.Errorf("failed to create manager: %w", err)
 	}
@@ -149,7 +130,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 			"unix://"+csiSocketPath,
 			logger,
 			driver.WithProgramFinder(mgr),
-			driver.WithKernel(kernel),
+			driver.WithKernel(opened.Kernel),
 		)
 
 		go func() {

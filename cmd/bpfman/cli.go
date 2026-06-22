@@ -17,6 +17,7 @@ import (
 	"github.com/frobware/go-bpfman/cmd/internal/runtime"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/fs"
+	"github.com/frobware/go-bpfman/lock"
 )
 
 type rootlessCommand interface {
@@ -110,11 +111,19 @@ func (c *CLI) Execute(ctx context.Context) error {
 	if err := c.kctx.Run(c); err != nil {
 		// ErrSilent means the error was already communicated (e.g., via JSON)
 		if !errors.Is(err, ErrSilent) {
-			_ = c.PrintErrf("bpfman: error: %v\n", err)
+			_ = c.PrintErrf("bpfman: error: %v\n", c.formatError(err))
 		}
 		return err
 	}
 	return nil
+}
+
+func (c *CLI) formatError(err error) error {
+	var timeout *lock.TimeoutError
+	if errors.As(err, &timeout) {
+		return fmt.Errorf("timed out waiting for lock %s (--lock-timeout=%v)", timeout.Path, timeout.Timeout)
+	}
+	return err
 }
 
 func (c *CLI) enforceRootRequirement() error {

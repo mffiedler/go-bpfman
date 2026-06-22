@@ -21,7 +21,7 @@ type DetachCmd struct {
 
 // Run executes the detach command: mutation under lock, output outside.
 func (c *DetachCmd) Run(cli *runtime.CLI, ctx context.Context) error {
-	mgr, cleanup, err := cli.NewManager(ctx)
+	mgr, cleanup, err := newManager(ctx, cli)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
 	}

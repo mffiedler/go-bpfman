@@ -293,6 +293,45 @@ func New(ctx context.Context, dbPath string, logger *slog.Logger, writeLock lock
 	}
 }
 
+// OpenExistingStore opens an existing SQLite store for read-oriented callers
+// that must not initialise, migrate, or recreate the database. The schema
+// version must already match the current code.
+func OpenExistingStore(ctx context.Context, dbPath string, logger *slog.Logger) (platform.Store, error) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	logger = logger.With("component", "store", "db", dbPath)
+
+	if _, err := os.Stat(dbPath); err != nil {
+		return nil, fmt.Errorf("stat database: %w", err)
+	}
+
+	busyTimeout, txRetryBackoffs := resolveTuning(logger)
+	db, err := sql.Open(driverName, dsn(dbPath, [][2]string{
+		{"foreign_keys", "1"},
+		{"busy_timeout", strconv.FormatInt(busyTimeout.Milliseconds(), 10)},
+	})+"&_txlock=immediate")
+	if err != nil {
+		return nil, fmt.Errorf("failed to open database: %w", err)
+	}
+
+	s := &sqliteStore{db: db, conn: db, logger: logger, txRetryBackoffs: txRetryBackoffs}
+	if err := s.checkSchemaVersion(ctx); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := s.prepareStatements(ctx); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to prepare statements for %s: %w", dbPath, err)
+	}
+
+	logger.Info("opened existing database",
+		"path", dbPath,
+		"busy_timeout", busyTimeout,
+		"tx_retry_backoffs", txRetryBackoffs)
+	return s, nil
+}
+
 func newFileStoreAttempt(
 	ctx context.Context,
 	dbPath string,
@@ -510,6 +549,17 @@ func (s *sqliteStore) migrate(ctx context.Context) error {
 		return fmt.Errorf("failed to set schema version: %w", err)
 	}
 
+	return nil
+}
+
+func (s *sqliteStore) checkSchemaVersion(ctx context.Context) error {
+	var version int
+	if err := s.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
+		return fmt.Errorf("failed to read schema version: %w", err)
+	}
+	if version != schemaVersion {
+		return fmt.Errorf("%w: have %d, want %d", errSchemaMismatch, version, schemaVersion)
+	}
 	return nil
 }
 

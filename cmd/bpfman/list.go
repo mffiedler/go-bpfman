@@ -105,7 +105,7 @@ func (c *ListProgramsCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 		return err
 	}
 
-	mgr, cleanup, err := cli.NewManager(ctx)
+	mgr, cleanup, err := newManager(ctx, cli)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
 	}
@@ -197,7 +197,7 @@ func (c *ListLinksCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 		return err
 	}
 
-	mgr, cleanup, err := cli.NewManager(ctx)
+	mgr, cleanup, err := newManager(ctx, cli)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
 	}

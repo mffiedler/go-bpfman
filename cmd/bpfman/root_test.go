@@ -1,9 +1,13 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/frobware/go-bpfman/lock"
 )
 
 //nolint:paralleltest // mutates the os.Args process global via newCLIForArgs; cannot run in parallel.
@@ -69,6 +73,21 @@ func TestNewCLIReadsConfigFromEnv(t *testing.T) {
 	}
 	if cli.Config != configPath {
 		t.Fatalf("Config = %q, want %q", cli.Config, configPath)
+	}
+}
+
+func TestFormatErrorAddsLockTimeoutHint(t *testing.T) {
+	t.Parallel()
+
+	err := fmt.Errorf("open runtime: %w", &lock.TimeoutError{
+		Path:    "/run/bpfman/.lock",
+		Timeout: 30 * time.Second,
+	})
+
+	got := (&CLI{}).formatError(err).Error()
+	want := "timed out waiting for lock /run/bpfman/.lock (--lock-timeout=30s)"
+	if got != want {
+		t.Fatalf("formatError() = %q, want %q", got, want)
 	}
 }
 

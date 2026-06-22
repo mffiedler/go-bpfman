@@ -2,15 +2,20 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
 	"github.com/alecthomas/kong"
 
-	"github.com/frobware/go-bpfman/cmd/internal/runtime"
+	cmdruntime "github.com/frobware/go-bpfman/cmd/internal/runtime"
 	"github.com/frobware/go-bpfman/e2e/residue"
 	"github.com/frobware/go-bpfman/fs"
+	"github.com/frobware/go-bpfman/inspect"
+	"github.com/frobware/go-bpfman/internal/bpfman/runtimestate"
 )
+
+var errSnapshotSetup = errors.New("snapshot setup")
 
 // CLI is the bpfman-e2e-cleanup root. One command, one plan. The
 // shared runtime.CLI is embedded for parity with the bpfman
@@ -18,7 +23,7 @@ import (
 // runtime directory so the inspect.Snapshot-driven orphan scan
 // can find pinned objects under {runtime-dir}/fs.
 type CLI struct {
-	runtime.CLI
+	cmdruntime.CLI
 
 	kctx *kong.Context `kong:"-"`
 
@@ -74,21 +79,17 @@ func (c *CLI) Execute(ctx context.Context) error {
 		}
 		plan = append(plan, wipePlan...)
 	} else {
-		// 1. inspect.Snapshot-driven orphan scan. The manager
-		// construction needs the bpfman runtime dir to exist; on a
-		// fresh box or after a full teardown there's nothing to
-		// snapshot, so we degrade to a comment line instead of
-		// failing the whole command.
-		if mgr, cleanup, err := c.NewManager(ctx); err == nil {
-			defer cleanup()
-			obs, err := mgr.Snapshot(ctx)
-			if err == nil {
-				plan = append(plan, residue.PlanFromObservation(obs)...)
-			} else {
-				fmt.Fprintf(c.Out, "# warning: snapshot bpfman state: %v\n", err)
-			}
-		} else {
+		// 1. inspect.Snapshot-driven orphan scan. Snapshot setup
+		// needs the bpfman runtime dir to exist; on a fresh box or
+		// after a full teardown there's nothing to snapshot, so we
+		// degrade to a comment line instead of failing the whole
+		// command.
+		if obs, err := c.snapshot(ctx); err == nil {
+			plan = append(plan, residue.PlanFromObservation(obs)...)
+		} else if errors.Is(err, errSnapshotSetup) {
 			fmt.Fprintf(c.Out, "# note: no bpfman runtime at %s, skipping orphan scan (%v)\n", c.RuntimeDir, err)
+		} else {
+			fmt.Fprintf(c.Out, "# warning: snapshot bpfman state: %v\n", err)
 		}
 	}
 
@@ -114,6 +115,23 @@ func (c *CLI) Execute(ctx context.Context) error {
 	plan = plan.Dedup()
 
 	return c.finish(plan)
+}
+
+func (c *CLI) snapshot(ctx context.Context) (*inspect.Observation, error) {
+	layout, err := c.Layout()
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid runtime directory: %w", errSnapshotSetup, err)
+	}
+
+	logger := c.Logger()
+
+	opened, err := runtimestate.OpenSnapshotReader(ctx, layout, logger)
+	if err != nil {
+		return nil, fmt.Errorf("%w: open runtime: %w", errSnapshotSetup, err)
+	}
+	defer opened.Close()
+
+	return opened.Snapshot(ctx)
 }
 
 // finish prints the plan in dry-run mode or applies it. Shared

@@ -39,7 +39,7 @@ func (c *ProgramDeleteCmd) Validate() error {
 
 // Run executes the program delete command with cascading cleanup.
 func (c *ProgramDeleteCmd) Run(cli *runtime.CLI, ctx context.Context) error {
-	mgr, cleanup, err := cli.NewManager(ctx)
+	mgr, cleanup, err := newManager(ctx, cli)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
 	}
@@ -111,7 +111,7 @@ type LinkDeleteCmd struct {
 
 // Run executes the link delete command with cascading cleanup.
 func (c *LinkDeleteCmd) Run(cli *runtime.CLI, ctx context.Context) error {
-	mgr, cleanup, err := cli.NewManager(ctx)
+	mgr, cleanup, err := newManager(ctx, cli)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
 	}

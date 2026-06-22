@@ -1,4 +1,4 @@
-package runtime
+package runtimestate
 
 import (
 	"context"
@@ -12,17 +12,19 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/frobware/go-bpfman/fs"
 )
 
-func TestNewStoreWaitsForRuntimeWriterLock(t *testing.T) {
+func TestOpenMutableWaitsForRuntimeWriterLock(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	cli := &CLI{LockTimeout: 10 * time.Millisecond, RuntimeDir: dir}
+	layout, err := fs.New(dir)
+	require.NoError(t, err)
 
 	lockPath := filepath.Join(dir, ".lock")
-	dbPath := filepath.Join(dir, "store.db")
 	readyPath := filepath.Join(dir, "holder.ready")
 	holder := exec.Command("flock", lockPath, "sh", "-c", `touch "$0"; sleep 1`, readyPath)
 	holder.Stdout = os.Stdout
@@ -37,12 +39,12 @@ func TestNewStoreWaitsForRuntimeWriterLock(t *testing.T) {
 		return err == nil
 	}, time.Second, time.Millisecond)
 	require.Eventually(t, func() bool {
-		store, err := cli.newStore(context.Background(), dbPath, logger)
-		if store != nil {
-			_ = store.Close()
+		opened, err := OpenMutable(context.Background(), layout, logger, 10*time.Millisecond)
+		if opened != nil {
+			_ = opened.Close()
 		}
 		return err != nil && strings.Contains(err.Error(), "timed out waiting for lock")
 	}, time.Second, time.Millisecond)
-	_, err := os.Stat(dbPath)
+	_, err = os.Stat(filepath.Join(dir, "store.db"))
 	require.True(t, os.IsNotExist(err), "database was created while runtime lock was held")
 }

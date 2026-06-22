@@ -96,6 +96,37 @@ func TestNewFileBackedStoreUnderWriterLock(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestOpenExistingStoreRequiresExistingDatabase(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "store.db")
+	store, err := sqlite.OpenExistingStore(context.Background(), dbPath, testLogger())
+	require.Error(t, err)
+	require.Nil(t, store)
+	_, statErr := os.Stat(dbPath)
+	require.True(t, os.IsNotExist(statErr), "OpenExistingStore must not create the database")
+}
+
+func TestOpenExistingStoreCurrentStore(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "store.db")
+	err := lock.Run(context.Background(), filepath.Join(dir, ".lock"), func(ctx context.Context, writeLock lock.WriterScope) error {
+		store, err := sqlite.New(ctx, dbPath, testLogger(), writeLock)
+		require.NoError(t, err)
+		return store.Close()
+	})
+	require.NoError(t, err)
+
+	store, err := sqlite.OpenExistingStore(context.Background(), dbPath, testLogger())
+	require.NoError(t, err)
+	defer store.Close()
+	programs, err := store.List(context.Background())
+	require.NoError(t, err)
+	require.Empty(t, programs)
+}
+
 func TestForeignKey_LinkRequiresProgram(t *testing.T) {
 	t.Parallel()
 

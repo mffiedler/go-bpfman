@@ -22,7 +22,7 @@ type UnloadCmd struct {
 
 // Run executes the unload command: mutation under lock, output outside.
 func (c *UnloadCmd) Run(cli *runtime.CLI, ctx context.Context) error {
-	mgr, cleanup, err := cli.NewManager(ctx)
+	mgr, cleanup, err := newManager(ctx, cli)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
 	}

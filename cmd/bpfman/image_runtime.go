@@ -19,7 +19,7 @@ func newImageManager(ctx context.Context, cli *runtime.CLI) (*manager.Manager, f
 	if err != nil {
 		return nil, nil, fmt.Errorf("create image puller: %w", err)
 	}
-	return cli.NewManagerWithImagePuller(ctx, puller)
+	return newManagerWithImagePuller(ctx, cli, puller)
 }
 
 // buildImagePuller creates an image puller with signature verification
