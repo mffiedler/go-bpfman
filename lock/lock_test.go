@@ -134,6 +134,93 @@ func TestRunWithTimeoutReturnsCallbackError(t *testing.T) {
 	require.ErrorIs(t, err, wantErr)
 }
 
+func TestRunWithTimeoutReturnsCallbackErrorAfterTimeout(t *testing.T) {
+	t.Parallel()
+
+	synctest.Test(t, func(t *testing.T) {
+		lockPath := filepath.Join(t.TempDir(), ".lock")
+		wantErr := errors.New("callback failed after timeout")
+
+		err := lock.RunWithTimeout(context.Background(), lockPath, testLogger(), 10*time.Millisecond, func(context.Context, lock.WriterScope) error {
+			time.Sleep(20 * time.Millisecond)
+			return wantErr
+		})
+		require.ErrorIs(t, err, wantErr)
+
+		var timeoutErr *lock.TimeoutError
+		require.False(t, errors.As(err, &timeoutErr))
+	})
+}
+
+// TestRunWithTimeoutDoesNotCancelCriticalSection proves the acquisition budget
+// bounds only the wait for the lock: once acquired, the critical section runs
+// under the caller's context, so the budget neither cancels it nor relabels it
+// as a lock timeout, even when the work outlives the budget.
+func TestRunWithTimeoutDoesNotCancelCriticalSection(t *testing.T) {
+	t.Parallel()
+
+	synctest.Test(t, func(t *testing.T) {
+		lockPath := filepath.Join(t.TempDir(), ".lock")
+
+		const budget = 10 * time.Millisecond
+		var ctxErrDuringWork error
+		ran := false
+		err := lock.RunWithTimeout(context.Background(), lockPath, testLogger(), budget, func(ctx context.Context, _ lock.WriterScope) error {
+			// Uncontended: acquired at once. Hold the critical section well
+			// past the acquisition budget.
+			time.Sleep(5 * budget)
+			ctxErrDuringWork = ctx.Err()
+			ran = true
+			return nil
+		})
+		require.True(t, ran)
+		require.NoError(t, err, "a slow critical section must not surface as a writer-lock timeout")
+		require.NoError(t, ctxErrDuringWork, "the acquisition budget must not cancel the critical section")
+	})
+}
+
+// TestRunWithTimeoutPanicsOnSamePathReentry proves the acquisition/work
+// context split in RunWithTimeout preserves the re-entry tripwire: the
+// callback runs under the breadcrumb-bearing work context, so a nested
+// RunWithTimeout for the same path still fails fast rather than
+// self-deadlocking on the flock.
+func TestRunWithTimeoutPanicsOnSamePathReentry(t *testing.T) {
+	t.Parallel()
+
+	lockPath := filepath.Join(t.TempDir(), ".lock")
+
+	err := lock.RunWithTimeout(context.Background(), lockPath, testLogger(), time.Second, func(ctx context.Context, _ lock.WriterScope) error {
+		require.Panics(t, func() {
+			_ = lock.RunWithTimeout(ctx, lockPath, testLogger(), time.Second, func(context.Context, lock.WriterScope) error {
+				return nil
+			})
+		})
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+// TestRunWithTimeoutAllowsNestedDifferentPath proves the tripwire stays
+// path-scoped through the split: holding one lock and acquiring a genuinely
+// different path via RunWithTimeout nests cleanly.
+func TestRunWithTimeoutAllowsNestedDifferentPath(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	outer := filepath.Join(dir, "outer.lock")
+	inner := filepath.Join(dir, "inner.lock")
+
+	var innerRan bool
+	err := lock.RunWithTimeout(context.Background(), outer, testLogger(), time.Second, func(ctx context.Context, _ lock.WriterScope) error {
+		return lock.RunWithTimeout(ctx, inner, testLogger(), time.Second, func(context.Context, lock.WriterScope) error {
+			innerRan = true
+			return nil
+		})
+	})
+	require.NoError(t, err)
+	require.True(t, innerRan)
+}
+
 func TestRunWithTimeoutReturnsTypedTimeoutError(t *testing.T) {
 	t.Parallel()
 
@@ -210,7 +297,44 @@ func TestRunWithTimeoutAcquiresAfterRelease(t *testing.T) {
 	})
 }
 
-func TestRunWithTimeoutZeroDoesNotTranslateParentDeadline(t *testing.T) {
+func TestRunWithTimeoutDoesNotTranslateParentDeadline(t *testing.T) {
+	t.Parallel()
+
+	synctest.Test(t, func(t *testing.T) {
+		lockPath := filepath.Join(t.TempDir(), ".lock")
+
+		held := make(chan struct{})
+		release := make(chan struct{})
+		done := make(chan error, 1)
+		go func() {
+			done <- lock.Run(context.Background(), lockPath, func(context.Context, lock.WriterScope) error {
+				close(held)
+				<-release
+				return nil
+			})
+		}()
+		<-held
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
+		defer cancel()
+
+		var ran bool
+		err := lock.RunWithTimeout(ctx, lockPath, testLogger(), 30*time.Second, func(context.Context, lock.WriterScope) error {
+			ran = true
+			return nil
+		})
+		require.False(t, ran)
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+
+		var timeoutErr *lock.TimeoutError
+		require.False(t, errors.As(err, &timeoutErr))
+
+		close(release)
+		require.NoError(t, <-done)
+	})
+}
+
+func TestRunWithTimeoutZeroDoesNotTranslateParentCancellation(t *testing.T) {
 	t.Parallel()
 
 	synctest.Test(t, func(t *testing.T) {

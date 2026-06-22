@@ -88,12 +88,21 @@ func (s *writerScope) DupFD() (*os.File, error) {
 // context that escapes its callback (e.g. handed to a goroutine) will not
 // falsely trip this check once the lock has been released.
 func Run(ctx context.Context, lockPath string, fn func(context.Context, WriterScope) error) error {
-	held, _ := ctx.Value(heldLocksKey{}).(*heldLocks)
+	return run(ctx, ctx, lockPath, fn)
+}
+
+// run acquires the lock under acquireCtx and executes fn under workCtx. Run
+// passes the same context for both; RunWithTimeout passes a deadline-bounded
+// acquireCtx and the original workCtx, so its timeout bounds only acquisition
+// and a slow critical section is not cancelled by the acquisition budget. The
+// re-entry breadcrumb and the context fn observes both derive from workCtx.
+func run(acquireCtx, workCtx context.Context, lockPath string, fn func(context.Context, WriterScope) error) error {
+	held, _ := workCtx.Value(heldLocksKey{}).(*heldLocks)
 	if held.holds(lockPath) {
 		panic(fmt.Sprintf("lock.Run re-entered for already-held path %q: thread the WriterScope to the callee instead of re-acquiring", lockPath))
 	}
 
-	f, err := acquireWriter(ctx, lockPath)
+	f, err := acquireWriter(acquireCtx, lockPath)
 	if err != nil {
 		return err
 	}
@@ -103,8 +112,8 @@ func Run(ctx context.Context, lockPath string, fn func(context.Context, WriterSc
 	frame.active.Store(true)
 	defer frame.active.Store(false)
 
-	ctx = context.WithValue(ctx, heldLocksKey{}, frame)
-	return fn(ctx, &writerScope{f: f})
+	workCtx = context.WithValue(workCtx, heldLocksKey{}, frame)
+	return fn(workCtx, &writerScope{f: f})
 }
 
 // heldLocks is a context-scoped stack of lock frames held in the current
@@ -136,9 +145,14 @@ func (h *heldLocks) holds(path string) bool {
 // The logger parameter is required; use Run directly if logging is not needed.
 // Logs are tagged with component=lock for selective filtering.
 func RunWithTiming(ctx context.Context, lockPath string, logger *slog.Logger, fn func(context.Context, WriterScope) error) error {
+	return runWithTiming(ctx, ctx, lockPath, logger, fn)
+}
+
+// runWithTiming is RunWithTiming with split acquisition/work contexts; see run.
+func runWithTiming(acquireCtx, workCtx context.Context, lockPath string, logger *slog.Logger, fn func(context.Context, WriterScope) error) error {
 	logger = logger.With("component", "lock")
 	start := time.Now()
-	return Run(ctx, lockPath, func(ctx context.Context, scope WriterScope) error {
+	return run(acquireCtx, workCtx, lockPath, func(ctx context.Context, scope WriterScope) error {
 		acquired := time.Now()
 		logger.DebugContext(ctx, "lock acquired", "path", lockPath, "wait_ms", acquired.Sub(start).Milliseconds())
 		defer func() {
@@ -159,8 +173,14 @@ func (e *TimeoutError) Error() string {
 	return fmt.Sprintf("timed out waiting for lock %s after %v", e.Path, e.Timeout)
 }
 
-// RunWithTimeout wraps RunWithTiming and bounds lock acquisition by
-// timeout. A zero timeout waits indefinitely.
+var errLockTimeout = errors.New("writer lock timeout")
+
+// RunWithTimeout runs fn under the writer lock, bounding only the wait to
+// acquire the lock by timeout; a zero timeout waits indefinitely. fn runs
+// under the caller's ctx, so a slow critical section is never cancelled by the
+// timeout. A *TimeoutError is returned only for a genuine failure to acquire;
+// an inherited parent deadline is returned unchanged rather than relabelled as
+// a lock timeout.
 func RunWithTimeout(
 	ctx context.Context,
 	lockPath string,
@@ -168,13 +188,25 @@ func RunWithTimeout(
 	timeout time.Duration,
 	fn func(context.Context, WriterScope) error,
 ) error {
+	acquireCtx := ctx
 	if timeout > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, timeout)
+		acquireCtx, cancel = context.WithTimeoutCause(ctx, timeout, errLockTimeout)
 		defer cancel()
 	}
-	err := RunWithTiming(ctx, lockPath, logger, fn)
-	if err != nil && timeout > 0 && errors.Is(err, context.DeadlineExceeded) {
+	// The timeout bounds acquisition only: acquireCtx drives the wait, while
+	// fn runs under the caller's ctx, so once the lock is held the budget can
+	// neither cancel nor relabel the critical section.
+	acquired := false
+	err := runWithTiming(acquireCtx, ctx, lockPath, logger, func(ctx context.Context, scope WriterScope) error {
+		acquired = true
+		return fn(ctx, scope)
+	})
+	// Translate to a TimeoutError only for a genuine failure to ACQUIRE: the
+	// deadline fired before the callback was entered (!acquired) and it was
+	// our own acquisition timeout, not an inherited parent deadline (the
+	// cause check).
+	if err != nil && !acquired && timeout > 0 && errors.Is(err, context.DeadlineExceeded) && errors.Is(context.Cause(acquireCtx), errLockTimeout) {
 		return &TimeoutError{Path: lockPath, Timeout: timeout}
 	}
 	return err
