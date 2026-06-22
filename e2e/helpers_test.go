@@ -29,7 +29,6 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/e2e/residue"
-	"github.com/frobware/go-bpfman/e2e/testbpf"
 	"github.com/frobware/go-bpfman/e2e/testnet"
 	"github.com/frobware/go-bpfman/fs"
 	fsruntime "github.com/frobware/go-bpfman/fs/runtime"
@@ -60,7 +59,7 @@ type TestEnv struct {
 	Manager     *manager.Manager
 	ImagePuller platform.ImagePuller
 	logger      *slog.Logger
-	baseDir     string // parent directory containing layout, cache, testdata
+	baseDir     string // parent directory containing layout, cache
 	closeEnv    func() error
 	// shared is true when this TestEnv is a view onto the suite-wide
 	// runtime rather than a per-test runtime; cleanup() is a no-op
@@ -117,10 +116,6 @@ func NewTestEnv(t *testing.T) *TestEnv {
 	baseDir, err := os.MkdirTemp("", fmt.Sprintf("bpfman-e2e-%d-", os.Getpid()))
 	if err != nil {
 		t.Fatalf("failed to create temp directory: %v", err)
-	}
-
-	if err := materialiseBPFFS(baseDir); err != nil {
-		t.Fatalf("materialise embedded BPF objects: %v", err)
 	}
 
 	layout, err := fs.New(baseDir)
@@ -309,16 +304,15 @@ func (e *TestEnv) LoadImage(ctx context.Context, ref platform.ImageRef, programs
 
 // LoadFile loads BPF programs from a local object file.
 //
-// Relative paths are resolved against the per-test baseDir, into
-// which the embedded testdata/bpf/ tree is materialised at
-// NewTestEnv. This lets call sites keep their historical
-// "testdata/bpf/foo.bpf.o" form regardless of cwd.
+// Relative paths are resolved against BytecodeDir, the on-disk
+// testdata/bpf/ object tree. This lets call sites keep their
+// historical "testdata/bpf/foo.bpf.o" form regardless of cwd.
 //
 // Manager.Load conditionally acquires the writer lock for explicit
 // map-owner joins and PinByName loads.
 func (e *TestEnv) LoadFile(ctx context.Context, filePath string, programs []manager.ProgramSpec, opts manager.LoadOpts) ([]bpfman.Program, error) {
 	if !filepath.IsAbs(filePath) {
-		filePath = filepath.Join(e.baseDir, filePath)
+		filePath = BytecodePath(filePath)
 	}
 	result, err := e.Manager.Load(ctx, manager.LoadSource{
 		FilePath: filePath,
@@ -327,16 +321,6 @@ func (e *TestEnv) LoadFile(ctx context.Context, filePath string, programs []mana
 		e.trackPrograms(result)
 	}
 	return result, err
-}
-
-// materialiseBPFFS writes every file in the embedded BPF
-// filesystem out under root, preserving the embed.FS layout
-// (testdata/bpf/...). Called once per TestEnv so the
-// Manager.Load file-path machinery can open real files even
-// though the binary ships its own copy. Thin wrapper around
-// the shared helper in e2e/testbpf.
-func materialiseBPFFS(root string) error {
-	return testbpf.Materialise(BpfFS, root)
 }
 
 // Unload unloads a BPF program.

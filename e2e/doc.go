@@ -140,7 +140,8 @@
 // quay.io/bpfman-bytecode/. The image puller uses the same code path
 // as production, including optional signature verification (disabled
 // in tests). Some tests use local bytecode compiled from the
-// testdata/bpf/ tree and embedded into the test binary.
+// testdata/bpf/ tree and read off disk at run time, resolved
+// relative to [BytecodeDir].
 //
 // # Stale Directory Cleanup
 //

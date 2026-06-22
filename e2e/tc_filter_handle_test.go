@@ -5,6 +5,7 @@ package e2e
 import (
 	"bytes"
 	"context"
+	"os"
 	"testing"
 
 	"github.com/cilium/ebpf"
@@ -65,7 +66,7 @@ func hasFilterNamed(filters []netlink.BpfFilter, name string) bool {
 // filter best-effort removed at test end.
 func plantForeignTCFilter(t *testing.T, ifindex int, priority uint16, progName string) int {
 	t.Helper()
-	obj, err := BpfFS.ReadFile("testdata/bpf/tc_pass.bpf.o")
+	obj, err := os.ReadFile(BytecodePath("testdata/bpf/tc_pass.bpf.o"))
 	require.NoError(t, err)
 	spec, err := ebpf.LoadCollectionSpecFromReader(bytes.NewReader(obj))
 	require.NoError(t, err)

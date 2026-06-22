@@ -16,17 +16,16 @@
 #
 # 2. **e2e binary extraction** (`buildx --output type=local`) --
 #    builds the `e2e-export` scratch stage which contains the
-#    static, self-contained e2e.test binary (BPF objects embedded,
-#    uprobe target merged) plus the BPF object tree that the shell
-#    pipeline still loads via filesystem paths. The layout mirrors
-#    the source tree:
+#    static e2e binaries plus the BPF object tree they load via
+#    filesystem paths. The layout mirrors the source tree:
 #
 #      docker buildx build \
 #        --file Dockerfile.ci \
 #        --target e2e-export \
 #        --output type=local,dest=./ci-e2e-bundle \
 #        .
-#      sudo ./ci-e2e-bundle/bin/e2e.test -test.v -test.failfast
+#      sudo BPFMAN_E2E_BYTECODE_DIR="$PWD/ci-e2e-bundle/e2e" \
+#        ./ci-e2e-bundle/bin/e2e.test -test.v -test.failfast
 #
 #    The `make ci-test-e2e` target wraps these two commands.
 #
@@ -69,16 +68,12 @@ RUN git config --system --add safe.directory '*'
 WORKDIR /src
 
 # ---------------------------------------------------------------------------
-# Stage 2: e2e-builder. Builds the static e2e test binary, the
-# static bpfman binary, and the static bpfman-shell binary.
-# e2e.test embeds every BPF object it loads (testdata/bpf/*.bpf.o
-# via go:embed) and is its own uprobe attach target (cgo'd
-# e2e_uprobe_call_malloc plus a TestMain helper-mode dispatch), so
-# the Go e2e suite is self-contained in a single artefact. The
-# .bpfman scripts under e2e/scripts/ and e2e/new/ load BPF via
-# bpfman-shell, which in turn drives the bpfman manager and reads
-# the .bpf.o tree, so both binaries plus the BPF objects are
-# exported for that pipeline.
+# Stage 2: e2e-builder. Builds the static e2e test binaries, the
+# static bpfman binary, and the static bpfman-shell binary. e2e.test
+# is still its own uprobe attach target (cgo'd
+# e2e_uprobe_call_malloc plus a TestMain helper-mode dispatch), while
+# the Go e2e suites and .bpfman scripts all load test BPF objects from
+# the exported filesystem tree.
 # Source is COPYed in (no host mount); the dockerignore excludes
 # every host-built artefact so the build is genuinely hermetic. All
 # deliverables are gathered into /ci-e2e-bundle so the export stage
@@ -123,16 +118,15 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # under /ci-e2e-bundle from the e2e-builder stage. After
 #   docker buildx build --target=e2e-export --output type=local,dest=./ci-e2e-bundle
 # the bundle contains:
-#   ./ci-e2e-bundle/bin/e2e.test                 (self-contained Go e2e test binary)
+#   ./ci-e2e-bundle/bin/e2e.test                 (Go e2e test binary)
 #   ./ci-e2e-bundle/bin/e2e-grpc.test            (parallel gRPC e2e test binary)
 #   ./ci-e2e-bundle/bin/e2e-scripts.test         (Go-driven .bpfman script runner)
 #   ./ci-e2e-bundle/bin/bpfman                   (static bpfman binary)
 #   ./ci-e2e-bundle/bin/bpfman-shell             (static bpfman-shell binary)
-#   ./ci-e2e-bundle/e2e/testdata/bpf/*.bpf.o     (BPF programs for .bpfman scripts)
-# The bundle layout matches the in-tree layout, so .bpfman scripts
-# under e2e/scripts/ and e2e/new/ that reference ../bin/e2e.test
-# resolve the same way regardless of whether they're run against
-# a local build or an extracted CI bundle.
+#   ./ci-e2e-bundle/e2e/testdata/bpf/*.bpf.o     (BPF programs for Go and script e2e)
+# The bundle layout matches the in-tree layout, so Go e2e binaries
+# can set BPFMAN_E2E_BYTECODE_DIR to the exported e2e/ directory and
+# .bpfman scripts can still resolve testdata via relative paths.
 # ---------------------------------------------------------------------------
 FROM scratch AS e2e-export
 

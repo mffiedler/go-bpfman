@@ -54,7 +54,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/frobware/go-bpfman/e2e"
-	"github.com/frobware/go-bpfman/e2e/testbpf"
 	pb "github.com/frobware/go-bpfman/server/pb"
 )
 
@@ -73,8 +72,8 @@ var (
 	// caller fanning RPCs into the daemon.
 	client pb.BpfmanClient
 
-	// testdataDir is the absolute path of the directory the
-	// embedded bpfFS was materialised into during bootstrap.
+	// testdataDir is the absolute path of the on-disk
+	// testdata/bpf directory resolved during bootstrap.
 	// Per-type specs join their .bpf.o filename to this path to
 	// produce the absolute path the daemon's Load RPC opens.
 	testdataDir string
@@ -129,14 +128,12 @@ func bootstrap() (func(), error) {
 	}
 	cleanupRoot := func() { _ = os.RemoveAll(tmpRoot) }
 
-	// Materialise mirrors the embed.FS layout: e2e.BpfFS
-	// contains "testdata/bpf/<name>.bpf.o" entries, so the
-	// daemon-visible files land at $tmpRoot/testdata/bpf/<name>.bpf.o.
-	if err := testbpf.Materialise(e2e.BpfFS, tmpRoot); err != nil {
-		cleanupRoot()
-		return nil, fmt.Errorf("materialise embedded testdata: %w", err)
-	}
-	testdataDir = filepath.Join(tmpRoot, "testdata", "bpf")
+	// The daemon opens .bpf.o files straight off the on-disk
+	// testdata tree; e2e.BytecodeDir resolves where that tree
+	// lives (BPFMAN_E2E_BYTECODE_DIR in CI, cwd locally).
+	// BytecodePath returns an absolute path so the resolution is
+	// independent of the daemon subprocess's working directory.
+	testdataDir = e2e.BytecodePath("testdata/bpf")
 
 	runtimeDir := filepath.Join(tmpRoot, "runtime")
 	cacheDir := filepath.Join(tmpRoot, "cache")

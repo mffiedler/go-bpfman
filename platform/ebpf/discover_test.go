@@ -2,25 +2,36 @@ package ebpf_test
 
 import (
 	"bytes"
-	_ "embed"
+	"fmt"
+	"os"
 	"testing"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/platform/ebpf"
 )
 
-// xdpPassObject is the compiled xdp_pass BPF object embedded at
-// build time. The Makefile rule
+// xdpPassObject is the compiled xdp_pass BPF object, read off disk
+// at package-init time. The Makefile rule
 // `platform/ebpf/xdp_pass.bpf.o: e2e/testdata/bpf/xdp_pass.bpf.c`
-// emits the object next to this test file so go:embed can pick
-// it up without reaching across packages.
-//
-//go:embed xdp_pass.bpf.o
-var xdpPassObject []byte
+// emits the object next to this test file, and `go test` runs with
+// the package directory as cwd, so the relative path resolves.
+var xdpPassObject = mustReadXDPPass()
 
-// xdpPassReader returns a fresh io.ReaderAt over the embedded
-// xdp_pass BPF object. Each call hands back a new bytes.Reader so
-// concurrent (t.Parallel) callers don't share read state.
+// mustReadXDPPass reads the compiled xdp_pass object, panicking if
+// it is absent -- a missing build artefact is a setup failure, not
+// a test condition, and the embed it replaces failed the build the
+// same way.
+func mustReadXDPPass() []byte {
+	b, err := os.ReadFile("xdp_pass.bpf.o")
+	if err != nil {
+		panic(fmt.Sprintf("read xdp_pass.bpf.o (run `make platform/ebpf/xdp_pass.bpf.o`): %v", err))
+	}
+	return b
+}
+
+// xdpPassReader returns a fresh io.ReaderAt over the xdp_pass BPF
+// object. Each call hands back a new bytes.Reader so concurrent
+// (t.Parallel) callers don't share read state.
 func xdpPassReader() *bytes.Reader {
 	return bytes.NewReader(xdpPassObject)
 }

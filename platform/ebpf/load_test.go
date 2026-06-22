@@ -2,7 +2,8 @@ package ebpf
 
 import (
 	"bytes"
-	_ "embed"
+	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -11,14 +12,26 @@ import (
 	"github.com/frobware/go-bpfman"
 )
 
-// xdpPassGlobalsObject embeds the same xdp_pass object the external
+// xdpPassGlobalsObject holds the same xdp_pass object the external
 // discover_test uses; this copy lives in the internal test package
 // so the global-data tests can reach the unexported applyGlobalData.
-//
-//go:embed xdp_pass.bpf.o
-var xdpPassGlobalsObject []byte
+// Read off disk at package-init time -- `go test` runs with the
+// package directory as cwd, where the Makefile emits the object.
+var xdpPassGlobalsObject = mustReadXDPPass()
 
-// xdpPassSpec parses the embedded xdp_pass object into a fresh
+// mustReadXDPPass reads the compiled xdp_pass object, panicking if
+// it is absent -- a missing build artefact is a setup failure, not
+// a test condition, and the embed it replaces failed the build the
+// same way.
+func mustReadXDPPass() []byte {
+	b, err := os.ReadFile("xdp_pass.bpf.o")
+	if err != nil {
+		panic(fmt.Sprintf("read xdp_pass.bpf.o (run `make platform/ebpf/xdp_pass.bpf.o`): %v", err))
+	}
+	return b
+}
+
+// xdpPassSpec parses the xdp_pass object into a fresh
 // CollectionSpec. xdp_pass.bpf.c declares two globals, config_u8
 // (1 byte) and config_u32 (4 bytes), which the global-data tests
 // target. Each call returns a new spec so t.Parallel callers do

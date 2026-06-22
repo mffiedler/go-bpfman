@@ -116,10 +116,6 @@ func buildSuiteRuntime() (*suiteRuntime, error) {
 		return nil, fmt.Errorf("create suite root %s: %w", baseDir, err)
 	}
 
-	if err := materialiseBPFFS(baseDir); err != nil {
-		return nil, fmt.Errorf("materialise embedded BPF objects under %s: %w", baseDir, err)
-	}
-
 	layout, err := fs.New(baseDir)
 	if err != nil {
 		return nil, fmt.Errorf("invalid suite layout: %w", err)

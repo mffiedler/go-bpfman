@@ -481,23 +481,22 @@ DISPATCHER_BPF_EMBEDS  := $(addprefix dispatcher/,$(notdir $(DISPATCHER_BPF_SOUR
 DISPATCHER_BPF_DEPS    := $(DISPATCHER_BPF_EMBEDS:.bpf.o=.bpf.d)
 
 # E2E testdata BPF: sources, headers, and compiled outputs all
-# live in e2e/testdata/bpf/. The embed declaration in the e2e
-# package picks up the .bpf.o tree at compile time and both
-# e2e.test and e2e-grpc.test consume it through that one path
-# (e2e/grpc imports the e2e package for BpfFS), so there is no
-# separate per-package mirror to keep in sync.
+# live in e2e/testdata/bpf/. Both e2e.test and e2e-grpc.test open
+# the .bpf.o tree off disk at run time via e2e.BytecodeDir, so the
+# build system points them at this directory (BPFMAN_E2E_BYTECODE_DIR)
+# rather than baking the objects into the binaries.
 E2E_BPF_SOURCES := $(wildcard e2e/testdata/bpf/*.bpf.c)
 E2E_BPF_OBJECTS := $(E2E_BPF_SOURCES:.bpf.c=.bpf.o)
 E2E_BPF_DEPS    := $(E2E_BPF_SOURCES:.bpf.c=.bpf.d)
 
-# platform/ebpf BPF: the package's discover_test.go embeds
-# xdp_pass.bpf.o via go:embed, so the compile rule emits the
-# object straight into platform/ebpf/ alongside the test source.
-# Source still lives under e2e/testdata/bpf/ -- the BPF program
-# is shared between the unit tests and the e2e suite, and
+# platform/ebpf BPF: the package's tests read xdp_pass.bpf.o off
+# disk relative to the package dir (go test's cwd), so the compile
+# rule emits the object straight into platform/ebpf/ alongside the
+# test source. Source still lives under e2e/testdata/bpf/ -- the BPF
+# program is shared between the unit tests and the e2e suite, and
 # duplicating the .bpf.c would create a divergence risk.
-PLATFORM_EBPF_BPF_EMBEDS := platform/ebpf/xdp_pass.bpf.o
-PLATFORM_EBPF_BPF_DEPS   := $(PLATFORM_EBPF_BPF_EMBEDS:.bpf.o=.bpf.d)
+PLATFORM_EBPF_BPF_OBJECTS := platform/ebpf/xdp_pass.bpf.o
+PLATFORM_EBPF_BPF_DEPS    := $(PLATFORM_EBPF_BPF_OBJECTS:.bpf.o=.bpf.d)
 
 # E2E kmod: leased kernel-function slots used as deterministic fentry/fexit
 # and kprobe/kretprobe targets. The plain kbuild target defaults to the conventional
@@ -757,7 +756,7 @@ $(BIN_DIR):
 # iterate on one layer at a time.
 lint: lint-go lint-make lint-hack lint-dockerfile
 
-lint-go: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS) $(BIN_DIR)/golangci-lint
+lint-go: $(DISPATCHER_BPF_EMBEDS) $(BIN_DIR)/golangci-lint
 	$(BIN_DIR)/golangci-lint run
 
 $(BIN_DIR)/golangci-lint: | $(BIN_DIR)
@@ -792,10 +791,10 @@ lint-dockerfile:
 # ---------------------------------------------------------------------------
 # Tests.
 # ---------------------------------------------------------------------------
-# platform/ebpf unit tests embed xdp_pass.bpf.o via go:embed, so
-# the embed object must exist at `go test -c` time, and the
-# dispatcher embeds are needed because dispatcher tests likewise
-# go:embed their .bpf.o files. The OCI puller tests use
+# platform/ebpf unit tests read xdp_pass.bpf.o off disk relative
+# to the package dir, so the object must exist when `go test` runs,
+# and the dispatcher embeds are needed because the dispatcher Go
+# package go:embeds its .bpf.o files at compile time. The OCI puller tests use
 # e2e/testdata/bpf/xdp_pass.bpf.o as their real bytecode fixture,
 # read at runtime: successful-pull cases extract and validate a
 # genuine ELF, and the malformed-label cases share the same fixture
@@ -803,10 +802,10 @@ lint-dockerfile:
 # the whole $(E2E_BPF_OBJECTS) set rather than that one object is a
 # deliberate choice -- the e2e corpus is one small, coherent build
 # set, and bpfman-vet already depends on it.
-test: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS) $(E2E_BPF_OBJECTS)
+test: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_OBJECTS) $(E2E_BPF_OBJECTS)
 	$(strip go test $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") $(if $(filter-out 0,$(PARALLEL)),-parallel $(PARALLEL)) ./...)
 
-test-timeline: go-test-timeline-compile $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS) $(E2E_BPF_OBJECTS)
+test-timeline: go-test-timeline-compile $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_OBJECTS) $(E2E_BPF_OBJECTS)
 	$(Q)mkdir -p $(dir $(GO_TEST_TIMELINE_EVENTS)) $(dir $(GO_TEST_TIMELINE_TRACE))
 	$(Q)rc=0; \
 	    $(strip go test $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") $(if $(filter-out 0,$(PARALLEL)),-parallel $(PARALLEL)) $(if $(TEST),-run "$(TEST)") -json ./...) > $(GO_TEST_TIMELINE_EVENTS) || rc=$$?; \
@@ -874,7 +873,7 @@ $(BIN_DIR)/e2e.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) | $(BIN_DIR)
 # count loop on top of the deterministic gate).
 test-e2e: $(BIN_DIR)/e2e.test
 	$(Q)$(MAKE) e2e-kmod-reload
-	sudo $(call forward-env,BPFMAN_E2E_ISOLATED_RUNTIME BPFMAN_E2E_POLICY_RULE_PREF BPFMAN_LOG) $(BIN_DIR)/e2e.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(filter-out 0,$(PARALLEL)),-test.parallel $(PARALLEL)) $(if $(TEST),-test.run $(TEST))
+	sudo BPFMAN_E2E_BYTECODE_DIR=$(abspath e2e) $(call forward-env,BPFMAN_E2E_ISOLATED_RUNTIME BPFMAN_E2E_POLICY_RULE_PREF BPFMAN_LOG) $(BIN_DIR)/e2e.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(filter-out 0,$(PARALLEL)),-test.parallel $(PARALLEL)) $(if $(TEST),-test.run $(TEST))
 
 # Parallel gRPC e2e: stands up a real `bpfman serve` subprocess and
 # fans goroutines through load/get/attach/detach/unload over the
@@ -893,11 +892,15 @@ test-e2e: $(BIN_DIR)/e2e.test
 
 # Where to look for the artefacts at runtime. Defaults point at
 # the in-tree build outputs; ci-test-e2e-grpc overrides them to
-# the docker-buildx extraction location. The test binary embeds
-# its testdata, so the daemon's bpfman path is the only thing
-# the build system needs to tell it about.
+# the docker-buildx extraction location. The daemon opens .bpf.o
+# files off disk, so the build system tells it both where bpfman
+# lives and where the testdata/bpf tree lives.
 E2E_GRPC_TEST_BIN     ?= $(BIN_DIR)/e2e-grpc.test
 E2E_GRPC_BPFMAN_BIN   ?= $(BIN_DIR)/bpfman
+# Directory containing the testdata/bpf object tree the daemon
+# loads from. Defaults to the source tree's e2e/ dir; ci-test-e2e-grpc
+# overrides it to the extracted bundle's e2e/ dir.
+E2E_GRPC_BYTECODE_DIR ?= $(abspath e2e)
 
 # BPFMAN_* env vars forwarded into the sudo'd e2e-grpc test
 # binary by run-e2e-grpc. Each entry is the env variable name
@@ -927,6 +930,7 @@ build-e2e-grpc: $(BIN_DIR)/e2e-grpc.test bpfman-compile
 # munging.
 run-e2e-grpc:
 	sudo BPFMAN_BIN=$(abspath $(E2E_GRPC_BPFMAN_BIN)) \
+	    BPFMAN_E2E_BYTECODE_DIR=$(E2E_GRPC_BYTECODE_DIR) \
 	    $(call forward-env,$(E2E_GRPC_FORWARD_VARS)) \
 	    $(E2E_GRPC_TEST_BIN) -test.v -test.failfast \
 	    -test.count=$(STRESS_COUNT) $(if $(TEST),-test.run $(TEST))
@@ -1001,8 +1005,8 @@ $(BIN_DIR)/e2e-scripts.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) | $(BIN
 # shell/lower/testdata is the lowerer contract; TestLanguageLoweredGolden
 # compares against it in `make test`. Run this after an intended lowerer
 # change, then review the diff. Lowering is pure, so this builds but does
-# not run the manager; the embed prerequisites are for a clean checkout.
-update-lowered-goldens: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS)
+# not run the manager; the BPF prerequisites are for a clean checkout.
+update-lowered-goldens: $(DISPATCHER_BPF_EMBEDS)
 	$(strip go test $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") ./cmd/bpfman-shell/shell/lower -run '^TestLanguageLoweredGolden$$' -update)
 
 bpfman-shell-fmt: bpfman-shell-compile
@@ -1271,7 +1275,7 @@ bpfman-goimports: $(BIN_DIR)/golangci-lint
 #   - !cgo_sqlite pass: modernc.org/sqlite branch (the default).
 #   - cgo_sqlite pass: mattn/go-sqlite3 alternate, mutually
 #     exclusive with the !cgo_sqlite branch.
-bpfman-vet: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS) $(E2E_BPF_OBJECTS)
+bpfman-vet: $(DISPATCHER_BPF_EMBEDS)
 	go vet -tags 'e2e,bpfman_ns' ./...
 	go vet -tags 'cgo_sqlite,e2e,bpfman_ns' ./...
 
@@ -1283,7 +1287,7 @@ bpfman-vet: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS) $(E2E_BPF_OBJEC
 # GOFIX_GO_VERSION for why the pin lives apart from GO_VERSION. Like
 # bpfman-fmt this mutates the tree in place; ci-check-gofix wraps it
 # with a git-diff gate.
-bpfman-gofix: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS) $(E2E_BPF_OBJECTS)
+bpfman-gofix: $(DISPATCHER_BPF_EMBEDS)
 	GOTOOLCHAIN=$(GOFIX_GO_VERSION) go fix -tags 'e2e,bpfman_ns' ./...
 	GOTOOLCHAIN=$(GOFIX_GO_VERSION) go fix -tags 'cgo_sqlite,e2e,bpfman_ns' ./...
 
@@ -1303,12 +1307,12 @@ clean-bpfman:
 # bin/bpfman; bin/bpfman-shell is intended for dev and CI.
 bpfman-shell-build: bpfman-fmt bpfman-shell-compile
 
-# Depends on the dispatcher and platform/ebpf BPF embeds because the
-# shell transitively imports both packages and their go:embed
-# directives need the .bpf.o objects present at compile time. Make
-# supplies those non-Go inputs; the Go toolchain owns Go freshness and
-# decides what actually needs recompiling.
-bpfman-shell-compile: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS) | $(BIN_DIR)
+# Depends on the dispatcher BPF embeds because the shell transitively
+# imports the dispatcher package and its go:embed directives need the
+# .bpf.o objects present at compile time. Make supplies those non-Go
+# inputs; the Go toolchain owns Go freshness and decides what actually
+# needs recompiling.
+bpfman-shell-compile: $(DISPATCHER_BPF_EMBEDS) | $(BIN_DIR)
 	$(strip go build $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(BUILD_TAGS),-tags '$(BUILD_TAGS)') $(if $(BIN_LDFLAGS),-ldflags "$(BIN_LDFLAGS)") -o $(BIN_DIR)/bpfman-shell ./cmd/bpfman-shell)
 
 clean-bpfman-shell:
@@ -1421,8 +1425,8 @@ e2e/testdata/bpf/%.bpf.o: e2e/testdata/bpf/%.bpf.c Makefile
 		-MD -MP -MF$(@:.bpf.o=.bpf.d) $< -o $@
 
 # platform/ebpf consumes the same .bpf.c sources as the e2e tests
-# but needs the compiled object next to the Go test files for
-# go:embed. Mirrors the dispatcher pattern: emit straight into the
+# but its unit tests read the compiled object next to the Go test
+# files. Mirrors the dispatcher pattern: emit straight into the
 # consuming package's directory, no intermediate cp.
 platform/ebpf/%.bpf.o: e2e/testdata/bpf/%.bpf.c Makefile
 	$(call quiet_cmd,CLANG-BPF,$@)
@@ -1432,7 +1436,7 @@ platform/ebpf/%.bpf.o: e2e/testdata/bpf/%.bpf.c Makefile
 clean-bpf:
 	$(RM) $(DISPATCHER_BPF_EMBEDS) $(DISPATCHER_BPF_DEPS) \
 	      $(E2E_BPF_OBJECTS) $(E2E_BPF_DEPS) \
-	      $(PLATFORM_EBPF_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_DEPS)
+	      $(PLATFORM_EBPF_BPF_OBJECTS) $(PLATFORM_EBPF_BPF_DEPS)
 
 -include $(DISPATCHER_BPF_DEPS) $(E2E_BPF_DEPS) $(PLATFORM_EBPF_BPF_DEPS)
 
@@ -1729,14 +1733,14 @@ ci-test: ci-image
 
 # Reproduce the workflow's e2e job locally. The `e2e-export`
 # stage produces a hermetic bundle at $(CI_E2E_BUNDLE); the
-# self-contained e2e.test binary (BPF embedded, uprobe target
-# merged) is then run on the host with sudo so it has the kernel
-# privileges the e2e suite needs.
+# e2e.test binary and its on-disk BPF object tree are then run on
+# the host with sudo so it has the kernel privileges the e2e suite
+# needs.
 ci-test-e2e:
 	$(RM) -r $(CI_E2E_BUNDLE)
 	$(OCI_BIN) buildx build --target=e2e-export --output type=local,dest=$(CI_E2E_BUNDLE) -f $(CI_DOCKERFILE) --build-arg RACE=$(RACE) --build-arg EXTRA_TAGS=$(EXTRA_TAGS) $(CI_BUILDX_CACHE) .
 	$(MAKE) e2e-kmod-reload
-	sudo $(call forward-env,BPFMAN_E2E_ISOLATED_RUNTIME) $(CI_E2E_BUNDLE)/bin/e2e.test -test.v -test.count=$(STRESS_COUNT) $(if $(filter-out 0,$(PARALLEL)),-test.parallel $(PARALLEL))
+	sudo BPFMAN_E2E_BYTECODE_DIR=$(abspath $(CI_E2E_BUNDLE)/e2e) $(call forward-env,BPFMAN_E2E_ISOLATED_RUNTIME) $(CI_E2E_BUNDLE)/bin/e2e.test -test.v -test.count=$(STRESS_COUNT) $(if $(filter-out 0,$(PARALLEL)),-test.parallel $(PARALLEL))
 
 # Reproduce the workflow's e2e-scripts job locally. The .bpfman
 # scripts under e2e/scripts/ are driven by the Go test binary
@@ -1762,20 +1766,18 @@ ci-test-e2e-scripts:
 	$(MAKE) e2e-kmod-reload
 	$(MAKE) run-e2e-scripts
 
-# Reproduce the workflow's gRPC parallel e2e job locally. The
-# bundle's e2e-grpc.test embeds its BPF objects, so we don't
-# need to extract anything back into the source tree -- the test
-# binary and bpfman live in the bundle path and we tell
-# run-e2e-grpc where to find them via the E2E_GRPC_*_BIN make
-# variables. Mirrors ci-test-e2e (which also runs e2e.test
-# directly from the bundle) rather than ci-test-e2e-scripts
-# (which has to extract because the .bpfman scripts reference
-# testdata via relative paths on disk).
+# Reproduce the workflow's gRPC parallel e2e job locally. The test
+# binary, bpfman, and BPF object tree live in the bundle path; tell
+# run-e2e-grpc where to find all three via the E2E_GRPC_* make
+# variables. Mirrors ci-test-e2e (which also runs e2e.test directly
+# from the bundle) rather than ci-test-e2e-scripts (which has to
+# extract because the .bpfman scripts reference testdata via
+# relative paths on disk).
 ci-test-e2e-grpc:
 	$(RM) -r $(CI_E2E_BUNDLE)
 	$(OCI_BIN) buildx build --target=e2e-export --output type=local,dest=$(CI_E2E_BUNDLE) -f $(CI_DOCKERFILE) --build-arg RACE=$(RACE) --build-arg EXTRA_TAGS=$(EXTRA_TAGS) $(CI_BUILDX_CACHE) .
 	$(MAKE) e2e-kmod-reload
-	$(MAKE) run-e2e-grpc E2E_GRPC_TEST_BIN=$(CI_E2E_BUNDLE)/bin/e2e-grpc.test E2E_GRPC_BPFMAN_BIN=$(CI_E2E_BUNDLE)/bin/bpfman
+	$(MAKE) run-e2e-grpc E2E_GRPC_TEST_BIN=$(CI_E2E_BUNDLE)/bin/e2e-grpc.test E2E_GRPC_BPFMAN_BIN=$(CI_E2E_BUNDLE)/bin/bpfman E2E_GRPC_BYTECODE_DIR=$(abspath $(CI_E2E_BUNDLE)/e2e)
 
 # Umbrella: run every CI pipeline locally. Cheap checks first
 # (vendor/fmt) so failures surface fast; build before tests so
