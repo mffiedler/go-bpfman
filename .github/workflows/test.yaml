@@ -37,14 +37,13 @@ jobs:
       - run: make ci-test RACE=1
 
   test-e2e:
-    name: E2E tests (${{ matrix.arch }}, RACE=${{ matrix.race }}, BPFMAN_E2E_ISOLATED_RUNTIME=${{ matrix.isolated_runtime }})
+    name: E2E tests (${{ matrix.arch }}, RACE=${{ matrix.race }})
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
         race: [1, 0]
-        isolated_runtime: [0, 1]
         include:
           - arch: amd64
             runner: ubuntu-latest
@@ -76,21 +75,20 @@ jobs:
       # repeated iteration; the RACE=1 lane still exercises every
       # test once with the race detector active, which is the
       # unique value the lane is paying for.
-      - run: make ci-test-e2e PARALLEL=1 STRESS_COUNT=${{ matrix.race == 1 && '1' || '5' }} RACE=${{ matrix.race }} BPFMAN_E2E_ISOLATED_RUNTIME=${{ matrix.isolated_runtime }}
+      - run: make ci-test-e2e PARALLEL=1 STRESS_COUNT=${{ matrix.race == 1 && '1' || '5' }} RACE=${{ matrix.race }}
 
   # Parallel-mode canary for the e2e suite. Mirrors test-e2e but
   # omits the PARALLEL=1 override so go test runs at GOMAXPROCS,
   # which exercises the suite's intra-binary parallelism (50 of 58
   # tests opt into t.Parallel()). Race detector is off here by
   # design -- race+parallelism is its own beast and the existing
-  # test-e2e matrix already gates RACE=1. BPFMAN_E2E_ISOLATED_RUNTIME=0 keeps
-  # this lane on the production-shaped shared-state path so it
-  # specifically stresses contention there (the per-test isolated
-  # mode is already covered by the serial matrix above). Blocking
-  # from day one: a regression here is treated as a real failure,
-  # not a canary warning.
+  # test-e2e matrix already gates RACE=1. The lane runs the
+  # production-shaped shared-state path (the suite default), so it
+  # specifically stresses contention there. Blocking from day one:
+  # a regression here is treated as a real failure, not a canary
+  # warning.
   test-e2e-parallel:
-    name: E2E tests parallel (${{ matrix.arch }}, RACE=0, BPFMAN_E2E_ISOLATED_RUNTIME=0)
+    name: E2E tests parallel (${{ matrix.arch }}, RACE=0)
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -120,21 +118,19 @@ jobs:
             dwarves \
             kmod \
             "linux-headers-$(uname -r)"
-      - run: make ci-test-e2e STRESS_COUNT=5 RACE=0 BPFMAN_E2E_ISOLATED_RUNTIME=0
+      - run: make ci-test-e2e STRESS_COUNT=5 RACE=0
 
   # Targeted cgo_sqlite lanes: exercise the mattn/go-sqlite3 driver
   # in place of the default pure-Go modernc.org/sqlite. The two cells
-  # we cover are the ones likely to find driver-specific bugs:
-  # BPFMAN_E2E_ISOLATED_RUNTIME=0 puts the alternate driver under the same
-  # production-shaped contention the modernc lanes already stress
-  # (one shared sqlite store, parallel goroutines), and we run both
-  # RACE=0 (locking/fsync/busy-handler semantics) and RACE=1 (cgo
-  # handle-lifetime issues the race detector can flag). We skip
-  # BPFMAN_E2E_ISOLATED_RUNTIME=1 because per-test fresh DBs serialise away
-  # most of the driver-specific surface. Both arches because arm64
-  # has been the platform turning up real bugs lately.
+  # we cover are the ones likely to find driver-specific bugs: the
+  # alternate driver runs under the same production-shaped contention
+  # the modernc lanes already stress (one shared sqlite store,
+  # parallel goroutines), and we run both RACE=0 (locking/fsync/
+  # busy-handler semantics) and RACE=1 (cgo handle-lifetime issues
+  # the race detector can flag). Both arches because arm64 has been
+  # the platform turning up real bugs lately.
   test-e2e-cgo-sqlite:
-    name: E2E tests cgo_sqlite (${{ matrix.arch }}, RACE=${{ matrix.race }}, BPFMAN_E2E_ISOLATED_RUNTIME=0)
+    name: E2E tests cgo_sqlite (${{ matrix.arch }}, RACE=${{ matrix.race }})
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -168,17 +164,16 @@ jobs:
       # STRESS_COUNT shrinks to 1 under RACE=1; see test-e2e
       # above for the rationale (race detector doubles per-test
       # cost, 5x stress compounds to ~10x baseline).
-      - run: make ci-test-e2e PARALLEL=1 STRESS_COUNT=${{ matrix.race == 1 && '1' || '5' }} RACE=${{ matrix.race }} BPFMAN_E2E_ISOLATED_RUNTIME=0 EXTRA_TAGS=cgo_sqlite
+      - run: make ci-test-e2e PARALLEL=1 STRESS_COUNT=${{ matrix.race == 1 && '1' || '5' }} RACE=${{ matrix.race }} EXTRA_TAGS=cgo_sqlite
 
   # Parallel gRPC e2e: stands up a real `bpfman serve` subprocess
   # and fans goroutines through the full
   # load/get/attach/detach/unload cycle for every program type
   # concurrently against the daemon. The matrix covers both
   # architectures and both race-detector states, mirroring the
-  # other e2e lanes. BPFMAN_E2E_ISOLATED_RUNTIME doesn't apply -- the test
-  # spawns its own daemon with its own tmp suite root regardless.
-  # STRESS_COUNT=5 catches flakes that don't repro on a single
-  # run.
+  # other e2e lanes. The test spawns its own daemon with its own
+  # tmp suite root regardless. STRESS_COUNT=5 catches flakes that
+  # don't repro on a single run.
   test-e2e-grpc:
     name: E2E tests gRPC (${{ matrix.arch }}, RACE=${{ matrix.race }})
     runs-on: ${{ matrix.runner }}
