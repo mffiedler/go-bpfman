@@ -19,6 +19,7 @@ package lock
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -145,6 +146,38 @@ func RunWithTiming(ctx context.Context, lockPath string, logger *slog.Logger, fn
 		}()
 		return fn(ctx, scope)
 	})
+}
+
+// TimeoutError reports that a writer lock was not acquired before
+// the configured timeout elapsed.
+type TimeoutError struct {
+	Path    string
+	Timeout time.Duration
+}
+
+func (e *TimeoutError) Error() string {
+	return fmt.Sprintf("timed out waiting for lock %s after %v", e.Path, e.Timeout)
+}
+
+// RunWithTimeout wraps RunWithTiming and bounds lock acquisition by
+// timeout. A zero timeout waits indefinitely.
+func RunWithTimeout(
+	ctx context.Context,
+	lockPath string,
+	logger *slog.Logger,
+	timeout time.Duration,
+	fn func(context.Context, WriterScope) error,
+) error {
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+	err := RunWithTiming(ctx, lockPath, logger, fn)
+	if err != nil && timeout > 0 && errors.Is(err, context.DeadlineExceeded) {
+		return &TimeoutError{Path: lockPath, Timeout: timeout}
+	}
+	return err
 }
 
 // acquireWriter opens the lock file and acquires exclusive lock.
