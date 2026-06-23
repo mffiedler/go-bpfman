@@ -24,7 +24,7 @@ func ScanWipe(layout fs.Layout) (Plan, error) {
 	var plan Plan
 
 	bpffsRoot := layout.BPFFS().MountPoint()
-	if mounted, err := runtime.IsMounted(runtime.DefaultMountInfoPath, bpffsRoot); err != nil {
+	if mounted, err := runtime.IsBpffsMounted(runtime.DefaultMountInfoPath, bpffsRoot); err != nil {
 		return nil, fmt.Errorf("check bpffs mount %s: %w", bpffsRoot, err)
 	} else if mounted {
 		plan = append(plan, UnmountBPFFS{Path: bpffsRoot})

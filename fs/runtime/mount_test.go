@@ -11,7 +11,7 @@ import (
 	"github.com/frobware/go-bpfman/fs/runtime"
 )
 
-func TestIsMounted(t *testing.T) {
+func TestIsBpffsMounted(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -111,6 +111,22 @@ func TestIsMounted(t *testing.T) {
 			mountPoint: "/sys/fs/bpf",
 			want:       true,
 		},
+		{
+			name: "stacked mounts - non-bpf on top of bpf",
+			mountinfo: `30 22 0:27 / /sys/fs/bpf rw,nosuid shared:9 - bpf bpf rw,mode=700
+31 22 0:28 / /sys/fs/bpf rw,nosuid shared:9 - tmpfs tmpfs rw
+`,
+			mountPoint: "/sys/fs/bpf",
+			want:       false,
+		},
+		{
+			name: "stacked mounts - bpf on top of non-bpf",
+			mountinfo: `30 22 0:27 / /sys/fs/bpf rw,nosuid shared:9 - tmpfs tmpfs rw
+31 22 0:28 / /sys/fs/bpf rw,nosuid shared:9 - bpf bpf rw,mode=700
+`,
+			mountPoint: "/sys/fs/bpf",
+			want:       true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -123,27 +139,27 @@ func TestIsMounted(t *testing.T) {
 				t.Fatalf("failed to write test file: %v", err)
 			}
 
-			got, err := runtime.IsMounted(mountInfoPath, tt.mountPoint)
+			got, err := runtime.IsBpffsMounted(mountInfoPath, tt.mountPoint)
 			if err != nil {
-				t.Fatalf("IsMounted() error = %v", err)
+				t.Fatalf("IsBpffsMounted() error = %v", err)
 			}
 			if got != tt.want {
-				t.Errorf("IsMounted() = %v, want %v", got, tt.want)
+				t.Errorf("IsBpffsMounted() = %v, want %v", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestIsMounted_FileNotFound(t *testing.T) {
+func TestIsBpffsMounted_FileNotFound(t *testing.T) {
 	t.Parallel()
 
-	_, err := runtime.IsMounted("/nonexistent/path/mountinfo", "/sys/fs/bpf")
+	_, err := runtime.IsBpffsMounted("/nonexistent/path/mountinfo", "/sys/fs/bpf")
 	if err == nil {
-		t.Error("IsMounted() expected error for nonexistent file, got nil")
+		t.Error("IsBpffsMounted() expected error for nonexistent file, got nil")
 	}
 }
 
-func TestIsMounted_LongLine(t *testing.T) {
+func TestIsBpffsMounted_LongLine(t *testing.T) {
 	t.Parallel()
 
 	// Generate a mountinfo line > 64 KiB (default scanner limit).
@@ -164,16 +180,16 @@ func TestIsMounted_LongLine(t *testing.T) {
 		t.Fatalf("failed to write test file: %v", err)
 	}
 
-	got, err := runtime.IsMounted(mountInfoPath, "/sys/fs/bpf")
+	got, err := runtime.IsBpffsMounted(mountInfoPath, "/sys/fs/bpf")
 	if err != nil {
-		t.Fatalf("IsMounted() error = %v (scanner buffer may be too small)", err)
+		t.Fatalf("IsBpffsMounted() error = %v (scanner buffer may be too small)", err)
 	}
 	if !got {
-		t.Error("IsMounted() = false, want true")
+		t.Error("IsBpffsMounted() = false, want true")
 	}
 }
 
-func TestIsMounted_EscapedMountPoint(t *testing.T) {
+func TestIsBpffsMounted_EscapedMountPoint(t *testing.T) {
 	t.Parallel()
 
 	mountinfo := "30 22 0:27 / /sys/fs/bpf\\040extra rw,nosuid shared:9 - bpf bpf rw,mode=700\n"
@@ -184,12 +200,12 @@ func TestIsMounted_EscapedMountPoint(t *testing.T) {
 		t.Fatalf("failed to write test file: %v", err)
 	}
 
-	got, err := runtime.IsMounted(mountInfoPath, "/sys/fs/bpf extra")
+	got, err := runtime.IsBpffsMounted(mountInfoPath, "/sys/fs/bpf extra")
 	if err != nil {
-		t.Fatalf("IsMounted() error = %v", err)
+		t.Fatalf("IsBpffsMounted() error = %v", err)
 	}
 	if !got {
-		t.Error("IsMounted() = false, want true")
+		t.Error("IsBpffsMounted() = false, want true")
 	}
 }
 

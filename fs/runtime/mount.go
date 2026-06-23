@@ -20,8 +20,11 @@ const (
 	defaultScanMaxLineLen = 1024 * 1024
 )
 
-// IsMounted reports whether a bpffs is mounted at mountPoint by
-// parsing mountInfoPath (e.g. /proc/self/mountinfo).
+// MountpointFsType returns the filesystem type of the mount at
+// mountPoint according to mountInfoPath (e.g. /proc/self/mountinfo),
+// and whether any mount was found there. When mounts are stacked on
+// the same mountpoint the topmost (last-listed) entry wins, matching
+// what a process at that path actually sees.
 //
 // The mountinfo format is documented in proc(5). Each line contains:
 //
@@ -38,16 +41,18 @@ const (
 // field position. This is because optional fields (like "shared:N"
 // for mount propagation) may be present between the mount options and
 // the separator.
-func IsMounted(mountInfoPath, mountPoint string) (bool, error) {
+func MountpointFsType(mountInfoPath, mountPoint string) (string, bool, error) {
 	file, err := os.Open(mountInfoPath)
 	if err != nil {
-		return false, fmt.Errorf("opening mountinfo: %w", err)
+		return "", false, fmt.Errorf("opening mountinfo: %w", err)
 	}
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 0, 64*1024), defaultScanMaxLineLen)
 
+	fsType := ""
+	found := false
 	for scanner.Scan() {
 		line := scanner.Text()
 
@@ -61,33 +66,44 @@ func IsMounted(mountInfoPath, mountPoint string) (bool, error) {
 
 		// Parse the prefix: mount_id parent_id major:minor
 		// root mount_point ...
-		prefix := before
-		fields := strings.Fields(prefix)
+		fields := strings.Fields(before)
 		if len(fields) < 5 {
 			continue
 		}
-		mntPoint := unescapeMountInfo(fields[4])
+		if unescapeMountInfo(fields[4]) != mountPoint {
+			continue
+		}
 
 		// Parse the suffix after " - ": fstype source
 		// super_options.
-		suffix := after // skip " - "
-		suffixFields := strings.Fields(suffix)
+		suffixFields := strings.Fields(after)
 		if len(suffixFields) < 1 {
 			continue
 		}
-		fsType := suffixFields[0]
 
-		// Match: bpffs at the requested path.
-		if mntPoint == mountPoint && fsType == "bpf" {
-			return true, nil
-		}
+		// Topmost mount wins: keep scanning and take the last
+		// matching entry.
+		fsType = suffixFields[0]
+		found = true
 	}
 
 	if err := scanner.Err(); err != nil {
-		return false, fmt.Errorf("reading mountinfo: %w", err)
+		return "", false, fmt.Errorf("reading mountinfo: %w", err)
 	}
 
-	return false, nil
+	return fsType, found, nil
+}
+
+// IsBpffsMounted reports whether the filesystem mounted at mountPoint
+// is a bpffs, according to mountInfoPath (e.g. /proc/self/mountinfo).
+// A bind mount of a bpffs also reports the "bpf" filesystem type, so
+// this is true for both a direct bpffs mount and a bind mount of one.
+func IsBpffsMounted(mountInfoPath, mountPoint string) (bool, error) {
+	fsType, mounted, err := MountpointFsType(mountInfoPath, mountPoint)
+	if err != nil || !mounted {
+		return false, err
+	}
+	return fsType == "bpf", nil
 }
 
 // Mount mounts a bpffs at mountPoint, creating the directory if needed.
@@ -137,7 +153,7 @@ func EnsureMounted(mountInfoPath, mountPoint string) error {
 // EnsureMountedWith is like EnsureMounted but accepts a mount function.
 // This is primarily for tests that need to simulate mount errors.
 func EnsureMountedWith(mountInfoPath, mountPoint string, mountFn func(string) error) error {
-	mounted, err := IsMounted(mountInfoPath, mountPoint)
+	mounted, err := IsBpffsMounted(mountInfoPath, mountPoint)
 	if err != nil {
 		return err
 	}
@@ -146,7 +162,7 @@ func EnsureMountedWith(mountInfoPath, mountPoint string, mountFn func(string) er
 	}
 	if err := mountFn(mountPoint); err != nil {
 		if errors.Is(err, syscall.EBUSY) {
-			mounted, recheckErr := IsMounted(mountInfoPath, mountPoint)
+			mounted, recheckErr := IsBpffsMounted(mountInfoPath, mountPoint)
 			if recheckErr == nil && mounted {
 				return nil
 			}
