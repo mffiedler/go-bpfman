@@ -43,8 +43,7 @@ type Driver struct {
 	endpoint string // CSI socket endpoint (unix:// or tcp://).
 	logger   *slog.Logger
 
-	// programFinder provides reconciled program lookups. When nil, the driver
-	// operates in simple bind-mount mode without bpfman integration.
+	// programFinder provides reconciled program lookups.
 	programFinder ProgramFinder
 
 	// kernel provides BPF map operations. When nil, map re-pinning
@@ -53,6 +52,9 @@ type Driver struct {
 
 	// csiFsRoot is the root directory for per-pod bpffs mounts.
 	csiFsRoot string
+
+	// locks serialises node operations per volume id.
+	locks *volumeLocks
 
 	server *grpc.Server
 }
@@ -91,8 +93,9 @@ func New(name, version, nodeID, endpoint string, logger *slog.Logger, opts ...Op
 		version:   version,
 		nodeID:    nodeID,
 		endpoint:  endpoint,
-		logger:    logger.With("component", "driver"),
+		logger:    logger.With("component", "csi"),
 		csiFsRoot: DefaultCSIFsRoot,
+		locks:     newVolumeLocks(),
 	}
 	for _, opt := range opts {
 		opt(d)

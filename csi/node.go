@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -13,6 +14,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	fsruntime "github.com/frobware/go-bpfman/fs/runtime"
 	"github.com/frobware/go-bpfman/platform"
 )
 
@@ -107,21 +109,91 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 		"volumeContext", volumeContext,
 		"readonly", readonly,
 		"fsGroup", fsGroup,
+		"accessMode", req.GetVolumeCapability().GetAccessMode().GetMode().String(),
 	)
 
-	if volumeID == "" {
-		return nil, status.Error(codes.InvalidArgument, "volume ID is required")
+	if err := checkVolumeID(volumeID); err != nil {
+		return nil, err
 	}
-	if targetPath == "" {
-		return nil, status.Error(codes.InvalidArgument, "target path is required")
+	if err := checkTargetPath(targetPath); err != nil {
+		return nil, err
+	}
+	if err := validateVolumeCapability(req.GetVolumeCapability()); err != nil {
+		return nil, err
 	}
 
 	programName := volumeContext[VolumeAttrProgram]
-	mapsStr := volumeContext[VolumeAttrMaps]
+	requestedMaps := parseMapNames(volumeContext[VolumeAttrMaps])
 
-	if programName == "" || mapsStr == "" {
+	if programName == "" || len(requestedMaps) == 0 {
 		return nil, status.Error(codes.InvalidArgument,
-			"csi.bpfman.io/program and csi.bpfman.io/maps are required")
+			"csi.bpfman.io/program and at least one csi.bpfman.io/maps are required")
+	}
+	if err := validateMapNames(requestedMaps); err != nil {
+		return nil, err
+	}
+
+	// Both spiffe-csi and secrets-store-csi-driver reject a publish unless
+	// the volume is read-only, so a workload pod cannot tamper with the
+	// resource it is handed. The same hardening fits here, but it is
+	// disabled: bpfman's example pods make the *container* mount read-only
+	// (volumeMounts[].readOnly), not the CSI source (volumes[].csi.readOnly),
+	// so req.Readonly is false and enforcing it would reject every current
+	// example. Enable the guard (and set csi.readOnly in the examples and
+	// e2e tests) to require it.
+	if false && !req.GetReadonly() {
+		return nil, status.Error(codes.InvalidArgument,
+			"volume must be published read-only (set csi.readOnly: true)")
+	}
+
+	// Serialise per-volume work: the CO may lose state and issue concurrent
+	// calls for the same volume, and the idempotency check below plus the
+	// mount and re-pin work are not safe to run twice at once.
+	if !d.locks.TryAcquire(volumeID) {
+		return nil, status.Errorf(codes.Aborted, "an operation is already in progress for volume %q", volumeID)
+	}
+	defer d.locks.Release(volumeID)
+
+	// NodePublishVolume MUST be idempotent: if the volume is already
+	// published at targetPath, reply OK without repeating the mount and
+	// re-pin work. Repeating it stacks a second bpffs mount on the per-pod
+	// directory and a second bind mount on the target, which leak because
+	// NodeUnpublishVolume removes only one mount per path. kubelet retries
+	// (and CO state loss) make duplicate calls routine.
+	//
+	// The spec also requires ALREADY_EXISTS when the same target is
+	// re-published with different arguments. We compare observable state --
+	// the maps at the target and the mount's read-only flag -- so the check
+	// needs no remembered request and survives a restart. It cannot see the
+	// program name or capability (those are not recorded at the target), but
+	// the CO allocates a unique target path per (pod, volume), so a different
+	// volume or program does not collide at one target; the reference drivers
+	// (spiffe-csi, secrets-store) live with the same limitation.
+	fsType, mounted, err := fsruntime.MountpointFsType(fsruntime.DefaultMountInfoPath, targetPath)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "check target path mount state: %v", err)
+	}
+	if mounted && fsType != "bpf" {
+		// Something other than our bpffs owns the target. Do not mount over
+		// it; that is not safe and is not our volume to reclaim.
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"target path %q is already mounted with filesystem %q", targetPath, fsType)
+	}
+	if mounted {
+		same, err := publishMatches(targetPath, requestedMaps, readonly)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "compare published volume at %q: %v", targetPath, err)
+		}
+		if !same {
+			return nil, status.Errorf(codes.AlreadyExists,
+				"volume %q already published at %q with different arguments", volumeID, targetPath)
+		}
+		d.logger.Info("NodePublishVolume already published; returning OK",
+			"method", "Node.NodePublishVolume",
+			"volumeID", volumeID,
+			"targetPath", targetPath,
+		)
+		return &csi.NodePublishVolumeResponse{}, nil
 	}
 
 	if d.programFinder == nil || d.kernel == nil {
@@ -162,104 +234,118 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 		"mapPinPath", mapPinPath,
 	)
 
-	// 3. Create per-pod bpffs directory
 	podBpffs := filepath.Join(d.csiFsRoot, volumeID)
-	if err := os.MkdirAll(podBpffs, 0750); err != nil {
+
+	// From here we change host state; on any failure, unwind it. The target
+	// directory is not removed -- the CO owns it -- so only the per-pod
+	// bpffs and the bind mount are ours to undo.
+	committed := false
+	defer func() {
+		if committed {
+			return
+		}
+		d.logger.Warn("NodePublishVolume failed; rolling back partial mount",
+			"volumeID", volumeID,
+			"targetPath", targetPath,
+			"podBpffs", podBpffs,
+		)
+		if err := unmountIfMounted(targetPath); err != nil {
+			d.logger.Warn("rollback: unmount target", "path", targetPath, "error", err)
+		}
+		if err := cleanupMount(podBpffs); err != nil {
+			d.logger.Warn("rollback: clean per-pod bpffs", "path", podBpffs, "error", err)
+		}
+	}()
+
+	// 3. Create and mount the per-pod bpffs. A previous attempt may have
+	// crashed after mounting it but before binding the target, in which case
+	// the target check above missed it; clean any stale mount so we rebuild
+	// rather than stacking a second bpffs on top.
+	if _, stale, err := fsruntime.MountpointFsType(fsruntime.DefaultMountInfoPath, podBpffs); err != nil {
+		return nil, status.Errorf(codes.Internal, "check per-pod mount state: %v", err)
+	} else if stale {
+		if err := cleanupMount(podBpffs); err != nil {
+			return nil, status.Errorf(codes.Internal, "clean stale per-pod bpffs %q: %v", podBpffs, err)
+		}
+	}
+	if err := os.MkdirAll(podBpffs, 0o750); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to create bpffs dir %q: %v", podBpffs, err)
 	}
-
-	// 4. Mount bpffs on the per-pod directory
 	if err := mountBpffs(podBpffs); err != nil {
-		if rmErr := os.RemoveAll(podBpffs); rmErr != nil {
-			d.logger.Warn("failed to remove pod bpffs directory during cleanup", "path", podBpffs, "error", rmErr)
-		}
 		return nil, status.Errorf(codes.Internal, "failed to mount bpffs at %q: %v", podBpffs, err)
 	}
 
-	// 5. Set group ownership on the bpffs directory if fsGroup is specified
+	// 4. Set group ownership on the bpffs directory if fsGroup is specified.
+	// We advertise VOLUME_MOUNT_GROUP, so kubelet delegates fsGroup to us and
+	// does not chown the volume itself. If we cannot apply it the pod would
+	// silently be unable to reach its maps, so fail rather than half-succeed.
 	if fsGroup >= 0 {
 		if err := unix.Chown(podBpffs, -1, fsGroup); err != nil {
-			d.logger.Warn("failed to chown bpffs directory",
-				"path", podBpffs,
-				"gid", fsGroup,
-				"error", err,
-			)
+			return nil, status.Errorf(codes.Internal, "set group ownership on %q: %v", podBpffs, err)
 		}
 	}
 
-	// 6. Re-pin each requested map
-	mapNames := strings.SplitSeq(mapsStr, ",")
-	for mapName := range mapNames {
-		mapName = strings.TrimSpace(mapName)
-		if mapName == "" {
-			continue
-		}
-
+	// 5. Re-pin each requested map into the per-pod bpffs.
+	for _, mapName := range requestedMaps {
 		srcPath := filepath.Join(mapPinPath, mapName)
 		dstPath := filepath.Join(podBpffs, mapName)
 
-		d.logger.Debug("re-pinning map",
-			"map", mapName,
-			"src", srcPath,
-			"dst", dstPath,
-		)
+		// A map the caller named but the program does not pin is a caller
+		// error, not an internal fault: report NotFound so the pod event
+		// names the bad map rather than implying a driver bug. A found
+		// program has its maps pinned, so a missing source is terminal, not
+		// a transient the caller should expect to clear.
+		if _, err := os.Stat(srcPath); err != nil {
+			if os.IsNotExist(err) {
+				return nil, status.Errorf(codes.NotFound,
+					"map %q is not published by program %q", mapName, programName)
+			}
+			return nil, status.Errorf(codes.Internal, "stat map pin %q: %v", srcPath, err)
+		}
+
+		d.logger.Debug("re-pinning map", "map", mapName, "src", srcPath, "dst", dstPath)
 
 		if err := d.kernel.RepinMap(ctx, srcPath, dstPath); err != nil {
-			// Cleanup on failure
-			unix.Unmount(podBpffs, 0)
-			if rmErr := os.RemoveAll(podBpffs); rmErr != nil {
-				d.logger.Warn("failed to remove pod bpffs directory during cleanup", "path", podBpffs, "error", rmErr)
-			}
 			return nil, status.Errorf(codes.Internal, "failed to re-pin map %q: %v", mapName, err)
 		}
 
-		// Set group ownership and permissions on the map if fsGroup is specified.
-		// This allows unprivileged containers to access the maps.
+		// Set group ownership and mode so an unprivileged container in the
+		// fsGroup can access the map. As with the directory above, a failure
+		// here leaves the pod unable to use the map it asked for, so it is
+		// fatal rather than a warning.
 		if fsGroup >= 0 {
 			if err := unix.Chown(dstPath, -1, fsGroup); err != nil {
-				d.logger.Warn("failed to chown map",
-					"path", dstPath,
-					"gid", fsGroup,
-					"error", err,
-				)
+				return nil, status.Errorf(codes.Internal, "set group ownership on map %q: %v", dstPath, err)
 			}
 			if err := os.Chmod(dstPath, mapsMode); err != nil {
-				d.logger.Warn("failed to chmod map",
-					"path", dstPath,
-					"mode", mapsMode,
-					"error", err,
-				)
+				return nil, status.Errorf(codes.Internal, "set mode on map %q: %v", dstPath, err)
 			}
 		}
 	}
 
-	// 7. Create target directory and bind-mount
-	if err := os.MkdirAll(targetPath, 0755); err != nil {
-		unix.Unmount(podBpffs, 0)
-		if rmErr := os.RemoveAll(podBpffs); rmErr != nil {
-			d.logger.Warn("failed to remove pod bpffs directory during cleanup", "path", podBpffs, "error", rmErr)
-		}
+	// 6. Create the target directory and bind-mount the per-pod bpffs onto it.
+	if err := os.MkdirAll(targetPath, 0o755); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to create target path: %v", err)
 	}
-
-	flags := uintptr(unix.MS_BIND)
-	if readonly {
-		flags |= unix.MS_RDONLY
-	}
-
-	if err := unix.Mount(podBpffs, targetPath, "", flags, ""); err != nil {
-		unix.Unmount(podBpffs, 0)
-		if rmErr := os.RemoveAll(podBpffs); rmErr != nil {
-			d.logger.Warn("failed to remove pod bpffs directory during cleanup", "path", podBpffs, "error", rmErr)
-		}
+	if err := unix.Mount(podBpffs, targetPath, "", unix.MS_BIND, ""); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to bind-mount %q to %q: %v", podBpffs, targetPath, err)
 	}
+
+	// MS_RDONLY is ignored on the initial bind; a read-only bind mount needs
+	// a second remount pass to take effect.
+	if readonly {
+		if err := unix.Mount("", targetPath, "", unix.MS_BIND|unix.MS_REMOUNT|unix.MS_RDONLY, ""); err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to remount %q read-only: %v", targetPath, err)
+		}
+	}
+
+	committed = true
 
 	d.logger.Info("NodePublishVolume succeeded",
 		"method", "Node.NodePublishVolume",
 		"volumeID", volumeID,
 		"programName", programName,
-		"maps", mapsStr,
+		"maps", requestedMaps,
 		"podBpffs", podBpffs,
 		"targetPath", targetPath,
 		"readonly", readonly,
@@ -269,12 +355,160 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 	return &csi.NodePublishVolumeResponse{}, nil
 }
 
+// publishMatches reports whether the volume already published at
+// targetPath matches the requested maps and read-only flag. It compares
+// observable state -- the map pins at the target and the mount's
+// read-only flag -- so it does not depend on remembering the original
+// request and survives a driver restart.
+func publishMatches(targetPath string, requestedMaps []string, readonly bool) (bool, error) {
+	var st unix.Statfs_t
+	if err := unix.Statfs(targetPath, &st); err != nil {
+		return false, err
+	}
+	if (st.Flags&unix.ST_RDONLY != 0) != readonly {
+		return false, nil
+	}
+
+	entries, err := os.ReadDir(targetPath)
+	if err != nil {
+		return false, err
+	}
+	published := make([]string, 0, len(entries))
+	for _, e := range entries {
+		published = append(published, e.Name())
+	}
+	return equalStringSets(published, requestedMaps), nil
+}
+
+// parseMapNames splits a comma-separated map list, trimming whitespace,
+// dropping empty entries, and de-duplicating while preserving first-seen
+// order. Duplicates would otherwise re-pin the same map twice (the second
+// pin failing) and skew the idempotency comparison against the target.
+func parseMapNames(s string) []string {
+	var names []string
+	seen := make(map[string]struct{})
+	for name := range strings.SplitSeq(s, ",") {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if _, dup := seen[name]; dup {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	return names
+}
+
+// equalStringSets reports whether a and b contain the same elements,
+// ignoring order. It sorts both slices in place.
+func equalStringSets(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	a = append([]string(nil), a...)
+	b = append([]string(nil), b...)
+	sort.Strings(a)
+	sort.Strings(b)
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func checkPathElement(kind, value string) error {
+	if strings.ContainsRune(value, '/') || value == "." || value == ".." {
+		return status.Errorf(codes.InvalidArgument, "invalid %s %q: must be a single path element", kind, value)
+	}
+	return nil
+}
+
+// checkVolumeID validates the volume id. Besides being required, it becomes
+// a directory name under csiFsRoot, so it must be a single clean path
+// element -- never a separator or traversal that could escape the root and
+// have cleanupMount unmount or remove something unrelated.
+func checkVolumeID(volumeID string) error {
+	if volumeID == "" {
+		return status.Error(codes.InvalidArgument, "volume ID is required")
+	}
+	return checkPathElement("volume ID", volumeID)
+}
+
+// checkTargetPath validates CSI's target_path contract before the driver
+// creates, mounts, unmounts, or removes it.
+func checkTargetPath(targetPath string) error {
+	if targetPath == "" {
+		return status.Error(codes.InvalidArgument, "target path is required")
+	}
+	if !filepath.IsAbs(targetPath) {
+		return status.Errorf(codes.InvalidArgument, "target path %q must be absolute", targetPath)
+	}
+	if filepath.Clean(targetPath) == string(filepath.Separator) {
+		return status.Error(codes.InvalidArgument, "target path must not be the filesystem root")
+	}
+	return nil
+}
+
+func validateMapNames(names []string) error {
+	for _, name := range names {
+		if err := checkPathElement("map name", name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateVolumeCapability rejects capabilities the driver cannot honour.
+// The driver supports only a plain bind mount of a per-pod bpffs, so it
+// rejects block volumes, a foreign fsType, and mount flags it would
+// otherwise silently ignore, and it requires an access mode. This mirrors
+// what spiffe-csi and the host-path reference driver enforce.
+func validateVolumeCapability(vc *csi.VolumeCapability) error {
+	if vc == nil {
+		return status.Error(codes.InvalidArgument, "volume capability is required")
+	}
+	if vc.GetBlock() != nil {
+		return status.Error(codes.InvalidArgument, "block volumes are not supported")
+	}
+	mount := vc.GetMount()
+	if mount == nil {
+		return status.Error(codes.InvalidArgument, "volume capability must be a mount")
+	}
+	if mount.GetFsType() != "" {
+		return status.Error(codes.InvalidArgument, "fsType is not supported")
+	}
+	if len(mount.GetMountFlags()) != 0 {
+		return status.Error(codes.InvalidArgument, "mount flags are not supported")
+	}
+	// The driver exposes maps as a node-local per-pod bind mount keyed by
+	// volume id, so it serves one target per volume: read-only is governed by
+	// the readonly flag, and it implements neither multi-node nor
+	// multi-writer (same volume, multiple targets) semantics. Accept only the
+	// single-writer single-node modes -- which is what kubelet sets for an
+	// ephemeral inline volume -- and reject the rest, including UNKNOWN,
+	// reader-only, and SINGLE_NODE_MULTI_WRITER.
+	switch mode := vc.GetAccessMode().GetMode(); mode {
+	case csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+		csi.VolumeCapability_AccessMode_SINGLE_NODE_SINGLE_WRITER:
+		return nil
+	default:
+		return status.Errorf(codes.InvalidArgument, "unsupported access mode %s", mode)
+	}
+}
+
 // bpffsMagic is the magic number for bpffs (from statfs).
 const bpffsMagic = 0xcafe4a11
 
 // mountBpffs mounts a bpffs filesystem at the given path.
 func mountBpffs(path string) error {
-	if err := unix.Mount("bpf", path, "bpf", 0, ""); err != nil {
+	// A bpffs only ever holds pinned BPF objects, so these flags are largely
+	// belt-and-braces, but they match the reference driver and keep a mount
+	// exposed into a container from carrying suid, device, or exec semantics.
+	flags := uintptr(unix.MS_NOSUID | unix.MS_NODEV | unix.MS_NOEXEC | unix.MS_RELATIME)
+	if err := unix.Mount("bpf", path, "bpf", flags, ""); err != nil {
 		return err
 	}
 
@@ -292,6 +526,28 @@ func mountBpffs(path string) error {
 	return nil
 }
 
+// unmountIfMounted unmounts path, tolerating a path that is not a
+// mountpoint or does not exist.
+func unmountIfMounted(path string) error {
+	if err := unix.Unmount(path, 0); err != nil {
+		if errors.Is(err, unix.EINVAL) || errors.Is(err, unix.ENOENT) {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+// cleanupMount unmounts path and removes its directory, tolerating a path
+// that is not mounted or does not exist. It mirrors the behaviour of
+// k8s.io/mount-utils CleanupMountPoint without taking the dependency.
+func cleanupMount(path string) error {
+	if err := unmountIfMounted(path); err != nil {
+		return err
+	}
+	return os.RemoveAll(path)
+}
+
 // NodeUnpublishVolume unmounts the volume from the target path.
 // It also cleans up the per-pod bpffs.
 func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error) {
@@ -304,47 +560,29 @@ func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 		"targetPath", targetPath,
 	)
 
-	if volumeID == "" {
-		return nil, status.Error(codes.InvalidArgument, "volume ID is required")
+	if err := checkVolumeID(volumeID); err != nil {
+		return nil, err
 	}
-	if targetPath == "" {
-		return nil, status.Error(codes.InvalidArgument, "target path is required")
-	}
-
-	// 1. Unmount the bind-mount from the container
-	if err := unix.Unmount(targetPath, 0); err != nil {
-		// Ignore "not mounted" errors for idempotency
-		if err != unix.EINVAL && err != unix.ENOENT {
-			return nil, status.Errorf(codes.Internal, "failed to unmount %q: %v", targetPath, err)
-		}
+	if err := checkTargetPath(targetPath); err != nil {
+		return nil, err
 	}
 
-	// 2. Remove the target directory
-	if err := os.RemoveAll(targetPath); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to remove target path: %v", err)
+	// Serialise against a concurrent publish/unpublish for the same volume.
+	if !d.locks.TryAcquire(volumeID) {
+		return nil, status.Errorf(codes.Aborted, "an operation is already in progress for volume %q", volumeID)
+	}
+	defer d.locks.Release(volumeID)
+
+	// Unmount the bind-mount and remove the target directory. Both are
+	// idempotent, so a repeated unpublish still returns OK.
+	if err := cleanupMount(targetPath); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to clean target path %q: %v", targetPath, err)
 	}
 
-	// 3. Clean up per-pod bpffs
+	// Tear down the per-pod bpffs (best-effort).
 	podBpffs := filepath.Join(d.csiFsRoot, volumeID)
-	if _, err := os.Stat(podBpffs); err == nil {
-		// Unmount the per-pod bpffs
-		if err := unix.Unmount(podBpffs, 0); err != nil {
-			// Ignore "not mounted" errors
-			if err != unix.EINVAL && err != unix.ENOENT {
-				d.logger.Warn("failed to unmount per-pod bpffs",
-					"path", podBpffs,
-					"error", err,
-				)
-			}
-		}
-
-		// Remove the directory
-		if err := os.RemoveAll(podBpffs); err != nil {
-			d.logger.Warn("failed to remove per-pod bpffs directory",
-				"path", podBpffs,
-				"error", err,
-			)
-		}
+	if err := cleanupMount(podBpffs); err != nil {
+		d.logger.Warn("failed to clean per-pod bpffs", "path", podBpffs, "error", err)
 	}
 
 	d.logger.Info("NodeUnpublishVolume succeeded",
