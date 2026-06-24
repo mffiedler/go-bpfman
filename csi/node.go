@@ -133,15 +133,25 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 		return nil, err
 	}
 
-	// Both spiffe-csi and secrets-store-csi-driver reject a publish unless
-	// the volume is read-only, so a workload pod cannot tamper with the
-	// resource it is handed. The same hardening fits here, but it is
-	// disabled: bpfman's example pods make the *container* mount read-only
-	// (volumeMounts[].readOnly), not the CSI source (volumes[].csi.readOnly),
-	// so req.Readonly is false and enforcing it would reject every current
-	// example. Enable the guard (and set csi.readOnly in the examples and
-	// e2e tests) to require it.
-	if false && !req.GetReadonly() {
+	// enforceReadOnly gates a hardening check that rejects any
+	// publish whose volume is not read-only so a workload pod
+	// cannot tamper with the resource it is handed. It is off
+	// because bpfman's example pods make the *container* mount
+	// read-only (volumeMounts[].readOnly), not the CSI source
+	// (volumes[].csi.readOnly), so req.Readonly is false and
+	// enforcing it would reject every current example.
+	//
+	// To enable: flip this to true and set readOnly: true on the
+	// csi volume source in the examples (and the e2e
+	// publishRequest). Those example changes, validated end to
+	// end against the bpfman-operator integration suite, live on
+	// the frobware/bpfman branch csi-examples-readonly; the
+	// rationale and rollout sequencing are tracked upstream in
+	// https://github.com/bpfman/bpfman/issues/1670. A read-only
+	// mount restricts only the map pins, not the map data, so
+	// userspace can still read and write the maps it is handed.
+	const enforceReadOnly = false
+	if enforceReadOnly && !req.GetReadonly() {
 		return nil, status.Error(codes.InvalidArgument,
 			"volume must be published read-only (set csi.readOnly: true)")
 	}
