@@ -1,23 +1,11 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestTC_IngressEgressIndependence.
 #
-# TC ingress and TC egress on the same interface are two
-# separate dispatchers keyed by direction. Three members on
-# ingress and two on egress must coexist without cross-talk;
-# detaching every egress member must tear the egress dispatcher
-# down without disturbing ingress.
+# Given: TC ingress and egress dispatchers coexisting on one interface
 #
-# The script loads one TC program and reuses it for all five
-# attaches (the dispatcher-side accounting is the test, not the
-# program identity). Priorities are 0, 100, 200 for ingress and 0,
-# 100 for egress.
+# When: the egress side is drained of its members
 #
-# Run from e2e/:
-#
-#   cd e2e
-#   sudo bpfman-shell new/TestTC_IngressEgressIndependence.bpfman
-#
-# Requires root.
+# Then: the egress dispatcher disappears without disturbing the ingress
+# members or their snapshot
 
 guard pair <- net veth-pair
 defer net release $pair

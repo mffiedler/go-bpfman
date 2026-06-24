@@ -1,30 +1,12 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestMultiProgTC_ChainStopsAtPipe_CustomProceedOn.
 #
-# Inverse of TC AllProceed_Custom and TC ChainStopsAtOK_Default
-# combined: outer programs return TC_ACT_OK and the middle
-# returns TC_ACT_PIPE, with custom proceed-on `[ok,
-# dispatcher_return]` that includes OK but excludes PIPE.
+# Given: three TC programs attached with a custom proceed-on mask that
+# excludes PIPE
 #
-#   mtcv_a (prio 50)  TC_ACT_OK   -- runs, chain continues (OK in proceed-on)
-#   mtcv_b (prio 60)  TC_ACT_PIPE -- runs, chain STOPS (PIPE excluded)
-#   mtcv_c (prio 70)  (TC_ACT_OK -- never reached)
+# When: a packet wave crosses the dispatcher chain
 #
-# Proves the WithProceedOn knob plumbs through to the TC
-# dispatcher in the inverse direction from the default: the same
-# TC_ACT_PIPE that would CONTINUE the chain under the default
-# bitmask now STOPS it under the custom bitmask. The OK that
-# would have stopped the chain under the default now continues
-# it.
-#
-# Counters end at:
-#   a = N * weight_a   (ran, returned OK)
-#   b = N * weight_b   (ran, returned PIPE)
-#   c = 0              (never ran)
-#
-# Run from e2e/:
-#   cd e2e
-#   sudo bpfman-shell new/TestMultiProgTC_ChainStopsAtPipe_CustomProceedOn.bpfman
+# Then: the chain stops at the PIPE member while the OK members ahead of
+# it continue under the custom mask
 
 import ../lib.bpfman
 

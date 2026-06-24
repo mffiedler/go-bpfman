@@ -1,27 +1,13 @@
 # -*- mode: bpfman -*-
 #
-# Rust-parity finding: loading one named program from an object must
-# not drag the object's other programs through the verifier.
+# Given: an object holding one good XDP program alongside an
+# unverifiable sibling
 #
-# multi_prog_one_bad.bpf.o holds two XDP programs:
-#   good -- trivial XDP_PASS, verifies cleanly
-#   bad  -- reads a packet byte with no data_end bounds check, so the
-#           kernel verifier rejects it at load ("invalid access to packet")
+# When: the good program is selected by name
 #
-# Asking for only `good` must succeed even though `bad` shares the
-# object. Asking for `bad`, or for the whole object, must fail -- this
-# proves `bad` is genuinely unverifiable (not merely absent) and that
-# all-or-nothing still holds when a broken program IS in the requested
-# set.
-#
-# Run from e2e/:
-#
-#   make test-e2e-scripts \
-#     TEST='TestBPFManScripts/scripts/TestLoad_NamedProgramSkipsBrokenSibling\.bpfman$'
-#
-# Requires root.
+# Then: it loads successfully, while requesting the broken sibling or
+# the whole object fails
 
-# Control: bad is genuinely rejected by the verifier when requested.
 let bad <- bpfman program load file testdata/bpf/multi_prog_one_bad.bpf.o --programs xdp:bad
 assert not $bad.ok
 

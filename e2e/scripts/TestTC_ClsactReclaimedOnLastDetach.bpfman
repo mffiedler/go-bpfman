@@ -1,21 +1,15 @@
 # -*- mode: bpfman -*-
 #pragma labels={"requires-clsact-reclaim":"true"}
-# Gated on tcpolicy.ReclaimClsactOnDetach: the runner skips this when
-# reclaim is off (the default leaves the clsact in place and tolerates it
-# at attach) and runs it when the const is flipped to true. Nothing to
-# un-skip by hand.
 #
-# bpfman creates the clsact qdisc on first TC attach and must own its
-# full lifecycle: reclaim it when the last member detaches, rather than
-# leaking it. Leaving stale clsacts behind lets them accumulate on
-# churned/reused interfaces. The qdisc is reclaimed only when both its
-# filter blocks are empty, so it survives while any member remains.
+# Given: clsact reclaim is enabled (tcpolicy.ReclaimClsactOnDetach; the
+# runner skips this script when the policy is off, nothing to un-skip by
+# hand) and bpfman owns the clsact qdisc it created on first TC attach
 #
-# Proves, against the real kernel: clsact present while members are
-# attached, retained when one of two detaches, and gone once the last
-# detaches (slot empties).
+# When: TC members are detached one at a time until the last one leaves
 #
-# Requires root and iproute2.
+# Then: clsact survives while any member remains (both filter blocks are
+# reclaimed only when empty) and is removed once the last owned member
+# detaches, rather than leaking on churned interfaces
 
 import ../lib.bpfman
 

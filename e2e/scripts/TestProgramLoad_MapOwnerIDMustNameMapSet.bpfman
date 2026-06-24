@@ -1,12 +1,13 @@
 # -*- mode: bpfman -*-
 #pragma labels={"program":"kprobe","map-owner":"true"}
-# Managed map-set contract: an explicit --map-owner-id must name an
-# existing map set. A dependent program id is not enough -- the
-# dependent joined a set but never created one -- and an absent id is
-# rejected too. Both are refused before the kernel load, and the error
-# names the offending id -- a wrapped ErrMapOwnerNotFound, surfaced as
-# gRPC InvalidArgument -- rather than copying Rust's misspelt
-# "does not exists" string or appearing as a missing-pin side effect.
+#
+# Given: a --map-owner-id naming either an absent id or a dependant that
+# never created a map set
+#
+# When: program load is attempted with each
+#
+# Then: both loads are rejected before any kernel work and the error
+# names the offending owner id
 
 import ../lib.bpfman
 

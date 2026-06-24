@@ -1,9 +1,11 @@
 # -*- mode: bpfman -*-
-# Container uprobe integration test.
 #
-# Attaches a uprobe inside a target process's mount namespace through
-# bpfman-ns, verifies the managed link has a pinned kernel bpf_link ID,
-# and proves the probe fires by checking a private counter map.
+# Given: a target process running in its own mount namespace
+#
+# When: a uprobe is attached inside that namespace through bpfman-ns
+#
+# Then: the managed link carries a pinned kernel bpf_link id and firing
+# the target advances the private counter map
 
 import ../lib.bpfman
 

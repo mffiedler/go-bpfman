@@ -1,16 +1,12 @@
 # -*- mode: bpfman -*-
-# Proves TC dispatcher rebuild updates the filter in the requested
-# network namespace. The peer-side veth exists inside $pair.ns; the
-# second attach rebuilds the dispatcher and must remove the old TC
-# filter from that namespace before leaving the new one in place.
 #
-# Traffic is asserted on both sides of the rebuild: the first
-# member counts packets before the rebuild, and both members count
-# packets through the rebuilt dispatcher afterwards, so the test
-# proves delivery rather than just filter-count stability. Pings
-# run peer -> host, so the counted packets on the peer's ingress
-# are the host's echo replies; that reply path is what the
-# host-route precheck guards.
+# Given: a TC dispatcher whose interface lives in a requested network
+# namespace
+#
+# When: a second member is attached, rebuilding the dispatcher
+#
+# Then: the old filter is replaced inside that namespace and both
+# members count traffic afterwards
 
 import ../lib.bpfman
 

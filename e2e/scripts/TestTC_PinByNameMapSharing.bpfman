@@ -1,45 +1,42 @@
 # -*- mode: bpfman -*-
 #pragma labels={"serial":"true","program":"tc","shared-map":"true"}
-# tc_stats_map is LIBBPF_PIN_BY_NAME, so concurrent runs of this
-# script would share a single kernel-global pin and stomp on each
-# other's counters.
 #
-# Translation experiment: e2e/TestTC_PinByNameMapSharing.
+# Given: two TC programs loaded from bytecode whose map is
+# LIBBPF_PIN_BY_NAME, both attached to one dispatcher
+#
+# When: traffic crosses the dispatcher
+#
+# Then: the programs keep distinct ids but share one kernel map,
+# observing the same packet counter through both pins
+#
+# tc_stats_map is LIBBPF_PIN_BY_NAME, so concurrent runs of this script
+# would share a single kernel-global pin and stomp on each other's
+# counters -- hence the serial marker.
 #
 # tc_counter_pinned.bpf.o declares its tc_stats_map with
-# LIBBPF_PIN_BY_NAME, so two separate program loads must share
-# one underlying kernel map -- the canonical "same name, same
-# pin" sharing convention aya/Rust-bpfman established. The
-# script:
+# LIBBPF_PIN_BY_NAME, so two separate program loads must share one
+# underlying kernel map -- the canonical "same name, same pin" sharing
+# convention aya/Rust-bpfman established. The script:
 #
-#   1. Loads the bytecode twice; programs must have distinct
-#      kernel IDs but their tc_stats_map entries must reference
-#      the same kernel map ID.
-#   2. Attaches both with proceed-on ok,pipe,dispatcher_return
-#      so the dispatcher executes each one.
+#   1. Loads the bytecode twice; programs must have distinct kernel IDs
+#      but their tc_stats_map entries must reference the same kernel
+#      map ID.
+#   2. Attaches both with proceed-on ok,pipe,dispatcher_return so the
+#      dispatcher executes each one.
 #   3. Sends 20 pings.
-#   4. Detaches both links to freeze the counter, then dumps
-#      each program's per-program pin and asserts the counts
-#      match exactly (writes via either pin must be visible
-#      through both).
-#   5. Asserts the shared pin path exists in bpffs while at
-#      least one program is loaded.
+#   4. Detaches both links to freeze the counter, then dumps each
+#      program's per-program pin and asserts the counts match exactly
+#      (writes via either pin must be visible through both).
+#   5. Asserts the shared pin path exists in bpffs while at least one
+#      program is loaded.
 #
-# Deliberate scope reduction from the Go test: the Go test's
-# RequireIsolatedRuntime assertion that the shared pin
-# disappears after the last user unloads is not portable to
-# parallel script execution -- other concurrently-running
-# scripts may load the same bytecode and legitimately keep the
-# shared pin alive. The existence half captures the sharing
-# semantics; the absence-after-cleanup half stays in the Go
-# test as a global property.
-#
-# Run from e2e/:
-#
-#   cd e2e
-#   sudo bpfman-shell new/TestTC_PinByNameMapSharing.bpfman
-#
-# Requires root and bpftool.
+# Deliberate scope reduction: the Go test also asserts the shared pin
+# disappears after the last user unloads. That absence-after-cleanup
+# half is not portable to parallel script execution -- other
+# concurrently-running scripts may load the same bytecode and
+# legitimately keep the shared pin alive -- so it stays in the Go test
+# as a global property. The existence half here captures the sharing
+# semantics.
 
 import ../lib.bpfman
 

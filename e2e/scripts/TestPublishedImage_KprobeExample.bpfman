@@ -1,6 +1,12 @@
 # -*- mode: bpfman -*-
 #pragma labels={"external":"true","image":"true","program":"kprobe","example":"kprobe"}
-# Load and attach the published kprobe bytecode example image.
+#
+# Given: the published kprobe bytecode example image from the registry
+#
+# When: the image is inspected, loaded, and attached
+#
+# Then: its manifest, link shape, traffic counter, and cleanup all match
+# the expected published example
 
 import ../lib.bpfman
 

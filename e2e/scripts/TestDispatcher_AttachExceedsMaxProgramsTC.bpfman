@@ -1,21 +1,11 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestDispatcher_AttachExceedsMaxPrograms
-# (TC ingress subtest). The Go test parameterises across TC ingress
-# and XDP via t.Run; the DSL has no subtest primitive, so the two
-# cases live in sibling scripts. This file covers TC ingress;
-# TestDispatcher_AttachExceedsMaxProgramsXDP covers XDP.
 #
-# The TC dispatcher has ten slots. Filling all ten then attempting
-# an eleventh attach must fail with an error message that names
-# the cause -- "no free dispatcher slots" -- so callers can
-# distinguish slot-exhaustion from other attach failures.
+# Given: a TC dispatcher with all ten ingress slots filled
 #
-# Run from e2e/:
+# When: an eleventh program is attached to the same ingress hook
 #
-#   cd e2e
-#   sudo bpfman-shell new/TestDispatcher_AttachExceedsMaxProgramsTC.bpfman
-#
-# Requires root.
+# Then: the extra attach fails with a clear no-free-slots error instead
+# of corrupting the dispatcher state
 
 guard pair <- net veth-pair
 defer net release $pair

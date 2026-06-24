@@ -1,20 +1,12 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestTC_MultiPriorityChainWithOKProceedOn.
 #
-# Mirror of TestTC_MultiPriorityChainDefaultProceedOn with one
-# knob flipped: every attach passes --proceed-on
-# ok,pipe,dispatcher_return so the chain continues past
-# TC_ACT_OK. tc_counter still returns OK on every packet, but
-# the explicit OK in proceed-on tells the dispatcher to fall
-# through to the next member rather than halting. All three
-# programs at priorities 0, 55, 100 must count packets.
+# Given: three TC programs attached at different priorities with OK
+# explicitly included in proceed-on
 #
-# Run from e2e/:
+# When: a packet wave crosses the dispatcher chain
 #
-#   cd e2e
-#   sudo bpfman-shell new/TestTC_MultiPriorityChainWithOKProceedOn.bpfman
-#
-# Requires root and bpftool.
+# Then: the OK verdict falls through to every member and all counters
+# record packets
 
 import ../lib.bpfman
 

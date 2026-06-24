@@ -1,12 +1,11 @@
 # -*- mode: bpfman -*-
-# `program list --all --type` projects fine bpfman types onto the
-# coarser kernel taxonomy for unmanaged rows.
 #
-# Loads one managed XDP program only to allocate a unique ID for the
-# bpffs pin paths, then loads representative programs directly with
-# bpftool. The bpftool-loaded programs are unmanaged, so bpfman only
-# sees the coarse kernel type: schedcls, kprobe, tracepoint, or
-# tracing.
+# Given: unmanaged kernel-only programs listed with --all
+#
+# When: a fine-grained bpfman type filter is applied
+#
+# Then: the filter maps those fine types onto the coarser kernel program
+# taxonomy for the kernel-only rows
 
 guard loaded <- bpfman program load file testdata/bpf/xdp_pass.bpf.o --programs xdp:pass -m owner=e2e
 let prog = $loaded.programs[0]

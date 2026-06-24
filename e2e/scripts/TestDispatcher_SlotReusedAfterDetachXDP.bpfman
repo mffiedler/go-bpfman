@@ -1,15 +1,12 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestDispatcher_SlotReusedAfterDetach
-# (XDP subtest). The Go test parameterises across TC ingress and
-# XDP via t.Run; the DSL has no subtest primitive, so the two
-# cases live in sibling scripts. This file covers XDP;
-# TestDispatcher_SlotReusedAfterDetachTC covers TC ingress.
 #
-# Asserts that a detached slot frees up for reuse and that the
-# reattach lands in the right position for its priority. The
-# member counts come from `bpfman dispatcher get`'s JSON output
-# via jq; the snapshot is now a typed Value so the path walker
-# can read .members directly.
+# Given: a full XDP dispatcher with ten members at distinct priorities
+#
+# When: one middle-priority member is detached and a new priority is
+# inserted into the freed gap
+#
+# Then: the member count returns to ten and the new link occupies the
+# position its priority sorts to
 #
 # Sequence:
 #   1. Attach all ten slots at priorities 100, 200, ..., 1000.
@@ -17,17 +14,10 @@
 #   3. Detach the member at priority 400 (position 3 in the sort).
 #   4. Confirm the dispatcher reports 9 members.
 #   5. Reattach at priority 350. Sorted positions become
-#      [100, 200, 300, 350, 500, 600, 700, 800, 900, 1000],
-#      so the new link sits at position 3.
+#      [100, 200, 300, 350, 500, 600, 700, 800, 900, 1000], so the new
+#      link sits at position 3.
 #   6. Confirm the dispatcher reports 10 members again and the new
 #      link's position is exactly 3.
-#
-# Run from e2e/:
-#
-#   cd e2e
-#   sudo bpfman-shell new/TestDispatcher_SlotReusedAfterDetachXDP.bpfman
-#
-# Requires root.
 
 guard pair <- net veth-pair
 defer net release $pair

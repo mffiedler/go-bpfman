@@ -1,7 +1,12 @@
 # -*- mode: bpfman -*-
 #pragma labels={"external":"true","image":"true","program":"xdp","reference":"true"}
-# Verify that published image inspection and load provenance agree for bare,
-# tagged, and digest references.
+#
+# Given: a published XDP image addressable by bare name, tag, and digest
+#
+# When: it is inspected and loaded through each reference form
+#
+# Then: image inspection and load provenance agree for every accepted
+# form
 
 import ../lib.bpfman
 

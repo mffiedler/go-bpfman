@@ -1,14 +1,12 @@
 # -*- mode: bpfman -*-
-# Proves detaching one member of a netns-scoped TC dispatcher whose
-# namespace has been deleted removes the dispatcher instead of trying
-# to rebuild it in a namespace that can no longer be entered.
 #
-# Traffic is asserted before the deletion: both members count
-# packets through the two-member dispatcher, so the test proves the
-# dispatcher it later removes was actually delivering. Pings run
-# peer -> host, so the counted packets on the peer's ingress are
-# the host's echo replies; that reply path is what the host-route
-# precheck guards.
+# Given: a TC dispatcher with members in a network namespace that is
+# then deleted
+#
+# When: one member is detached after the namespace is gone
+#
+# Then: detach removes the dispatcher instead of trying to rebuild
+# inside a namespace that no longer exists
 
 import ../lib.bpfman
 

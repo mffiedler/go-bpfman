@@ -1,27 +1,12 @@
 # -*- mode: bpfman -*-
-# Link-CRUD round-trip for TCX attaches.
 #
-# Loads tcx_counter, builds a veth pair, attaches the program to
-# the host side's ingress (TCX uses native kernel multi-prog
-# support, no dispatcher), and asserts the structural shape of the
-# resulting link record. Verifies Get and List both return matching
-# fields, and that after detach the link record is gone from both
-# the store and the listing.
+# Given: a TCX program loaded and attached to an interface
 #
-# Includes a ping phase so the link round-trip proves both CRUD
-# structure and behavioural delivery, plus a post-detach ping that
-# proves the private counter stays frozen once the link is gone.
+# When: the link is fetched, listed, exercised with traffic, then
+# detached and unloaded
 #
-# Complements TestTCX_LoadAndGet, which covers the exhaustive
-# program load/get/list/unload shape without attaching.
-#
-# Invoke from e2e/:
-#
-#   cd e2e
-#   sudo bpfman-shell scripts/TestTCX_LinkRoundTrip.bpfman
-#
-# Requires root, iproute2 and kernel 6.6+ for native TCX multi-prog
-# support.
+# Then: get/list, traffic delivery, detach absence, and after-detach
+# counter quiescence all match the expected lifecycle
 
 import ../lib.bpfman
 

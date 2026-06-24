@@ -1,7 +1,11 @@
 # -*- mode: bpfman -*-
 #pragma labels={"area":"image-build","cli":"true"}
-# Validation failures are reported before any container runtime is
-# involved.
+#
+# Given: invalid generate-build-args inputs
+#
+# When: the command validates them
+#
+# Then: validation fails before any container runtime work is attempted
 
 let missing_rc <- exec bpfman image generate-build-args \
     testdata/bpf/does-not-exist.bpf.o \

@@ -1,10 +1,14 @@
 # -*- mode: bpfman -*-
 #pragma labels={"program":"kprobe","shared-map":"true"}
-# Explicit --map-owner-id sharing must be real kernel-map sharing, not
-# just shared metadata. The control block first proves two ordinary
-# LIBBPF_PIN_NONE loads keep separate maps. The shared block then proves
-# an explicit owner/dependent pair writes one mkp_a_count map: N events
-# should produce N * (owner_weight + dependent_weight).
+#
+# Given: kprobe programs loaded both as ordinary LIBBPF_PIN_NONE copies
+# and as an explicit --map-owner-id pair
+#
+# When: each set is exercised with the same number of events
+#
+# Then: the ordinary copies keep independent counters while the
+# owner/dependant pair shares one real kernel map -- proving
+# --map-owner-id is kernel-map sharing, not just shared metadata
 
 import ../lib.bpfman
 

@@ -1,40 +1,29 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestTCX_PriorityOrdering.
 #
-# TCX uses native kernel multi-program support rather than a
-# bpfman dispatcher, so this test exercises a different code path
-# path from the TC/XDP priority-ordering pair. The kernel
-# refuses to attach the same program to the same
-# (interface, direction) twice, so each priority needs its own
-# kernel program instance -- five distinct loads of the same
+# Given: separate TCX program instances attached at deliberately
+# scrambled priorities
+#
+# When: every link is re-fetched once all attaches have committed
+#
+# Then: each link reports a stored priority and final position matching
+# the sorted priority order
+#
+# TCX uses native kernel multi-program support rather than a bpfman
+# dispatcher, so this exercises a different code path from the TC/XDP
+# priority-ordering pair. The kernel refuses to attach the same program
+# to the same (interface, direction) twice, so each priority needs its
+# own kernel program instance -- five distinct loads of the same
 # bytecode rather than five attachments of one program.
 #
-# Five scrambled priorities: 500, 100, 800, 300, 55. Sorted
-# ascending: [55, 100, 300, 500, 800], giving positions 0..4.
-# Each link's stored priority must round-trip to what was
-# requested, and its position must equal the rank of its
-# priority in the sorted order.
+# Five scrambled priorities: 500, 100, 800, 300, 55. Sorted ascending
+# [55, 100, 300, 500, 800] gives positions 0..4. Each link's stored
+# priority must round-trip to what was requested, and its position must
+# equal the rank of its priority in the sorted order.
 #
-# A re-query is required because Position on the LinkRecord
-# observed at attach time reflects the position at that moment
-# only; later inserts at lower priorities shift earlier links
-# downward. After all five attaches commit, re-fetch each link
-# so positions reflect the final sorted order.
-#
-# Retrofit notes: TCX's same-program-twice restriction means
-# load and attach are paired per priority. The bind-collect
-# body fuses load + program-unload defer + attach into one
-# foreach iteration, collecting the link record; defers
-# register against the script scope so all five unloads fire
-# at exit. The assertion loop expresses the position-rank
-# contract directly.
-#
-# Run from e2e/:
-#
-#   cd e2e
-#   sudo bpfman-shell new/TestTCX_PriorityOrdering.bpfman
-#
-# Requires root and kernel 6.6+ (TCX support).
+# A re-query is required because the position observed at attach time
+# reflects the position at that moment only; later inserts at lower
+# priorities shift earlier links downward. After all five attaches
+# commit, each link is re-fetched so positions reflect the final order.
 
 guard pair <- net veth-pair
 defer net release $pair

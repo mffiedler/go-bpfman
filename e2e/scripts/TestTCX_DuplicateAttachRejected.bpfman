@@ -1,15 +1,12 @@
 # -*- mode: bpfman -*-
-# Proves attaching the same TCX program a second time to the same
-# (interface, direction) is rejected and the first attachment
-# survives. The pre-fix behaviour silently detached the live link
-# via the stale-pin preflight and left two store records sharing
-# one pin path.
 #
-# Survival is asserted behaviourally as well as structurally: after
-# the rejected duplicate, the original attachment still counts
-# packets. Pings run peer -> host, so the counted packets on the
-# host's ingress are the peer's echo requests; the host-route
-# precheck guards the reply path that completes them.
+# Given: a TCX program already attached to an interface and direction
+#
+# When: the same program is attached again to that interface and
+# direction
+#
+# Then: the duplicate attach is rejected and the original link still
+# counts packets afterwards
 
 import ../lib.bpfman
 

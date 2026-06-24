@@ -1,23 +1,12 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestMultiProgTCX_AllProceed_DefaultProceedOn.
 #
-# Three TCX programs (mtcx_a/b/c) attach to one veth ingress at
-# distinct priorities. TCX uses native kernel multi-prog support
-# (kernel 6.6+) rather than a bpfman dispatcher, so there is no
-# --proceed-on flag; the chain-continue verdict is TC_ACT_UNSPEC,
-# hard-coded in the .bpf.o. Each program counts ICMP echo requests
-# arriving on ingress. Three waves of N pings, staggered detach
-# between waves so each program ends up with a distinct event count:
+# Given: three TCX programs attached at distinct priorities through
+# native kernel multi-program support
 #
-#     a counts waves 1+2+3   = 3 * N events
-#     b counts waves 1+2     = 2 * N events
-#     c counts wave 1        = 1 * N events
+# When: traffic runs across waves with the programs detached at
+# staggered points
 #
-# Run from e2e/:
-#   cd e2e
-#   sudo bpfman-shell new/TestMultiProgTCX_AllProceed_DefaultProceedOn.bpfman
-#
-# Requires root, bpftool, iproute2 (ip), iputils (ping).
+# Then: each counter ends with the event count for the waves it survived
 
 import ../lib.bpfman
 

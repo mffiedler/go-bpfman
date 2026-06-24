@@ -1,15 +1,12 @@
 # -*- mode: bpfman -*-
-# Proves attach-time interface lookup happens inside the requested
-# network namespace, not in bpfman's host namespace.
 #
-# The peer-side veth exists only inside $pair.ns after `net veth-pair`
-# moves it there. These attaches would fail with "no such network
-# interface" if bpfman resolved $pair.peer_link before entering
-# /var/run/netns/$pair.ns. This is the behavioural e2e coverage for
-# NetObserv-style pod-interface attaches.
+# Given: an interface that exists only inside a requested network
+# namespace
 #
-# Requires root, iproute2 and kernel 6.6+ for native TCX multi-prog
-# support.
+# When: XDP, TC, and TCX programs are attached to that interface
+#
+# Then: bpfman resolves the interface from inside the namespace and
+# returns the expected link records
 
 guard pair <- net veth-pair
 defer net release $pair

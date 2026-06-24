@@ -1,27 +1,13 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestMultiProgUprobe_LoadAttachDetachUnload.
 #
-# Three uprobe programs (mup_a/b/c) all attached to
-# bpfman_shell_uprobe_call_malloc, a cgo'd target symbol inside
-# the running bpfman-shell process. Three waves of N firings each,
-# with a staggered detach between waves so each program ends up
-# with a distinct event count:
+# Given: three uprobe programs attached to the running bpfman-shell
+# target
 #
-#     a counts waves 1+2+3   = 3 * N events
-#     b counts waves 1+2     = 2 * N events
-#     c counts wave 1        = 1 * N events
+# When: the target fires across waves with links detached at staggered
+# points
 #
-# The fixture target lives in bpfman-shell rather than e2e.test, so
-# there is no separate helper binary and no dependency on locating a
-# libc path. Between detach and the next wave we sleep briefly to let
-# the kernel's perf-link RCU deferral window close.
-#
-# Run from e2e/:
-#
-#   cd e2e
-#   sudo bpfman-shell new/TestMultiProgUprobe_LoadAttachDetachUnload.bpfman
-#
-# Requires root, bpftool.
+# Then: each private counter records only the waves during which its
+# link stayed attached
 
 import ../lib.bpfman
 

@@ -1,32 +1,21 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestXDP_DispatcherChainExecution.
 #
-# The Go test parameterises across chain lengths 1, 3, 5, 10.
-# The DSL has no subtest primitive, so this script captures the
-# full-fill case at n=10: all ten dispatcher slots occupied by
-# independent xdp_counter program instances, each with its own
-# xdp_stats_map. After 20 pings through the veth pair every
-# program's map must show non-zero rx_packets, proving the
-# dispatcher drove traffic through every member.
+# Given: all ten XDP dispatcher slots filled with independent counter
+# programs under default proceed-on
 #
-# XDP's default proceed-on is [XDP_PASS, dispatcher_return],
-# which is what xdp_counter.bpf.o returns; no --proceed-on is
-# needed for the chain to continue. Every attach uses the same
-# priority; the dispatcher's name-based tiebreak orders the slots
-# deterministically and the test does not depend on the order, only
-# on every slot receiving traffic.
+# When: a packet wave crosses the dispatcher chain
 #
-# Retrofit notes: same shape as the TC ChainExecution
-# retrofit. mapIDs and counts use compound list literals with
-# line-continuation because jq is a pure builtin and cannot be
-# a bind-collect producer.
+# Then: traffic reaches every slot and each program map records packets
 #
-# Run from e2e/:
-#
-#   cd e2e
-#   sudo bpfman-shell new/TestXDP_DispatcherChainExecution.bpfman
-#
-# Requires root and bpftool.
+# All ten dispatcher slots occupied by independent xdp_counter program
+# instances, each with its own xdp_stats_map. After 20 pings through
+# the veth pair every program's map must show non-zero rx_packets,
+# proving the dispatcher drove traffic through every member. XDP's
+# default proceed-on is [XDP_PASS, dispatcher_return], which is what
+# xdp_counter returns, so no --proceed-on is needed for the chain to
+# continue. Every attach uses the same priority; the dispatcher's
+# name-based tiebreak orders the slots deterministically, and the test
+# depends only on every slot receiving traffic, not on the order.
 
 import ../lib.bpfman
 

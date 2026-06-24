@@ -1,28 +1,24 @@
 # -*- mode: bpfman -*-
 #pragma labels={"exclusive":"true","operation":"delete","shared-map":"true"}
-# Exercises `bpfman program delete --all`, which mutates global bpfman
+#
+# Given: one map owner with several dependants sharing its map set
+#
+# When: program delete runs owner-first, recursively, and with --all
+#
+# Then: every owner-first, recursive, and --all delete preserves the
+# live shared maps and fans out without duplicate work
+#
+# Exercises bpfman program delete --all, which mutates global bpfman
 # state and cannot run beside other scripts.
-# End-to-end proof that program delete handles a one-owner /
-# many-dependant fan-out: several programs share a single owner's maps,
-# owner-first deletion preserves the map set while dependants survive,
-# and recursive/all deletes still expand across the fan-out.
 #
-# This complements TestProgramDelete_SharedMapOrdering, which is a
-# single owner/dependant pair. Fan-out exercises paths a pair cannot:
-# the multi-dependant loop, an ordering descent with more than one
-# child, and the cross-sibling dedup (an owner's recursive pass removes
-# all the dependants, so the same dependants named later in the batch
-# are skipped rather than re-deleted).
-#
-# Map sharing is single-hop, so the topology is a star: one real owner
-# (owns the maps) and N dependants pointing at it via --map-owner-id.
-#
-# Invoke from e2e/:
-#
-#   cd e2e
-#   sudo bpfman-shell scripts/TestProgramDelete_SharedMapFanOut.bpfman
-#
-# Requires root. Does not require bpftool.
+# This complements TestProgramDelete_SharedMapOrdering (a single
+# owner/dependant pair). Fan-out exercises paths a pair cannot: the
+# multi-dependant loop, an ordering descent with more than one child,
+# and the cross-sibling dedup -- an owner's recursive pass removes all
+# its dependants, so the same dependants named later in the batch are
+# skipped rather than re-deleted. Map sharing is single-hop, so the
+# topology is a star: one real owner that owns the maps and N
+# dependants pointing at it via --map-owner-id.
 
 import ../lib.bpfman
 

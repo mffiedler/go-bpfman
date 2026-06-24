@@ -1,25 +1,12 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestDispatcher_ZeroPriorityDefaultOrdering
-# (TC ingress subtest). The Go test parameterises this scenario
-# across TC ingress and XDP via t.Run; the DSL has no subtest
-# primitive, so the two cases live in sibling scripts. This file
-# covers TC ingress; TestDispatcher_ZeroPriorityDefaultOrderingXDP
-# covers XDP.
 #
-# Three programs attached at priorities 25, 0, and 75 in that
-# order. Rust bpfman stores priority 0 verbatim and sorts it
-# before positive priorities; Go must match that chain order:
+# Given: TC dispatcher members attached with priority zero alongside
+# positive priorities
 #
-#   priority 0  -> position 0
-#   priority 25 -> position 1
-#   priority 75 -> position 2
+# When: the dispatcher sorts the chain into execution order
 #
-# Run from e2e/:
-#
-#   cd e2e
-#   sudo bpfman-shell new/TestDispatcher_ZeroPriorityDefaultOrderingTC.bpfman
-#
-# Requires root.
+# Then: priority zero is stored verbatim and sorts ahead of the positive
+# priorities
 
 guard pair <- net veth-pair
 defer net release $pair

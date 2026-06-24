@@ -1,20 +1,12 @@
 # -*- mode: bpfman -*-
-# Proves detaching one member of a netns-scoped TC dispatcher whose
-# namespace has been deleted removes the dispatcher instead of
-# trying to rebuild it in a namespace that can no longer be
-# entered. Deliberate duplicate of
-# TestTC_DeletedNetnsDetachRemovesDispatcher on the isolated
-# topology, where namespace lifecycle is the whole point: endpoint
-# a's namespace is deleted out from under the dispatcher while
-# endpoint b's namespace survives until release.
 #
-# The raw `exec ip netns del` is a deliberate bypass of the shell's
-# namespace abstraction: deleting the namespace behind the
-# harness's back is the scenario under test.
+# Given: a TC dispatcher on an isolated netns-veth endpoint whose
+# namespace is deleted
 #
-# Traffic is asserted before the deletion: both members count
-# packets through the two-member dispatcher, so the test proves the
-# dispatcher it later removes was actually delivering.
+# When: one member is detached after the namespace is gone
+#
+# Then: detach removes the dispatcher while the surviving endpoint
+# namespace stays under the harness
 
 import ../lib.bpfman
 

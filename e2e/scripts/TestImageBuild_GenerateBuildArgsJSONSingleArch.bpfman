@@ -1,7 +1,12 @@
 # -*- mode: bpfman -*-
 #pragma labels={"area":"image-build","cli":"true"}
-# JSON output exposes structured build args and label data without
-# embedding JSON strings inside JSON.
+#
+# Given: a single-architecture input
+#
+# When: generate-build-args renders its JSON output
+#
+# Then: the output exposes structured build args and labels without
+# embedding JSON strings inside JSON
 
 let rc <- exec bpfman image generate-build-args \
     testdata/bpf/xdp_pass.bpf.o \

@@ -1,6 +1,12 @@
 # -*- mode: bpfman -*-
 #pragma labels={"external":"true","image":"true","program":"xdp","example":"app","serial":"true"}
-# Load and attach the XDP program from the published multi-program app image.
+#
+# Given: the published multi-program app example image from the registry
+#
+# When: the image is inspected, loaded, and attached as XDP
+#
+# Then: its manifest, link shape, traffic counter, and after-detach
+# quiescence all match the expected image behaviour
 
 import ../lib.bpfman
 

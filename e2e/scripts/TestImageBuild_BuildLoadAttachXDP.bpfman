@@ -1,12 +1,13 @@
 # -*- mode: bpfman -*-
-
 #pragma labels={"area":"image-build","cli":"true","image":"true","program":"xdp","serial":"true"}
-
-# Publish a bytecode image into the in-process e2e registry using
-# bpfman's native OCI publisher, then pull, load, attach, detach, and
-# unload it. The bpfman-e2e-registry.example.com registry alias is
-# minted by the registry builtin and resolved by the bpfman-shell
-# bpfman builtin to the anonymous loopback registry.
+#
+# Given: an XDP bytecode image published into the e2e registry through
+# bpfman's native OCI tooling
+#
+# When: the published image is pulled and driven through load, attach,
+# detach, and unload
+#
+# Then: every stage of the bpfman flow completes successfully
 
 import ../lib.bpfman
 

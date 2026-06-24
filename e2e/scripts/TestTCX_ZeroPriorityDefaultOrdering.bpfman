@@ -1,19 +1,12 @@
 # -*- mode: bpfman -*-
-# TCX counterpart to the dispatcher zero-priority tests.
 #
-# XDP, TC, and TCX all store requested priority 0 verbatim. That
-# value is real and sorts before positive priorities.
+# Given: TCX links attached with two priority-zero entries alongside
+# positive priorities
 #
-# Four TCX programs attach in this order:
+# When: the chain is sorted into execution order
 #
-#   priority 25 -> final position 2
-#   priority 0  -> stored priority 0, final position 0
-#   priority 75 -> final position 3
-#   priority 0  -> stored priority 0, final position 1
-#
-# Equal priority 0 attaches keep insertion order.
-#
-# Requires root and kernel 6.6+ (TCX support).
+# Then: zero is stored verbatim, sorts ahead of the positives, and the
+# equal-zero links keep insertion order
 
 guard pair <- net veth-pair
 defer net release $pair

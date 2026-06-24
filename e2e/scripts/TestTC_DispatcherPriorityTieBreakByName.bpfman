@@ -1,19 +1,11 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestTC_DispatcherPriorityTieBreakByName.
 #
-# Two TC programs attached at the same priority must be ordered
-# alphabetically by program name -- the secondary sort key the
-# dispatcher applies after the primary priority sort. The Go test
-# loads "beta" first and "alpha" second, both at priority 100,
-# then reads each link's position to confirm alpha precedes
-# beta even though beta was attached first.
+# Given: two same-priority TC programs attached in reverse alphabetical
+# order
 #
-# Run from e2e/:
+# When: the dispatcher sorts the chain
 #
-#   cd e2e
-#   sudo bpfman-shell new/TestTC_DispatcherPriorityTieBreakByName.bpfman
-#
-# Requires root.
+# Then: program name acts as the secondary key, so alpha precedes beta
 
 guard pair <- net veth-pair
 defer net release $pair

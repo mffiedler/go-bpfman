@@ -1,15 +1,14 @@
 # -*- mode: bpfman -*-
-# Dispatcher rebuild preserves existing link metadata.
 #
-# Attaching a second XDP program to the same interface rebuilds the
-# dispatcher and re-inserts every member row. The first program's link
-# metadata must survive that rebuild (read from the snapshot and
-# re-written) while the second member takes its own. This is the
-# real-kernel counterpart to the manager-level
-# RebuildPreservesExistingMemberMetadata tests, exercising the snapshot
-# read-carry-write path that the simple and TCX attach paths do not have.
+# Given: an XDP dispatcher whose first member already carries link
+# metadata
 #
-# Requires root and iproute2.
+# When: a second member is attached, rebuilding the dispatcher and
+# re-inserting every member row
+#
+# Then: the rebuild preserves the first member's metadata and stores the
+# new member's separately, exercising the snapshot read-carry-write path
+# the simple and TCX attach paths lack
 
 import ../lib.bpfman
 

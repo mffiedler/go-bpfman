@@ -1,34 +1,32 @@
 # -*- mode: bpfman -*-
-# Proves `bpfman link attach uprobe --pid` scopes the probe to one
-# process at the kernel level: a uprobe is file-based, so without
-# the filter every process running the target binary fires it.
 #
-# Two processes execute the same fixture symbol from the same
-# binary: this bpfman-shell process (driven by `uprobe fire`) and
-# an uprobe-fire-worker subprocess (driven by the sentinel/ack
-# wave protocol). Two counter programs attach to the symbol, both
-# with --pid scoping them to the shell process:
+# Given: two processes executing the same uprobe target, with programs
+# attached --pid-scoped to the shell process and to a worker control
 #
-#   - program A carries expected_pid=<shell> in BPF, so it counts
-#     the shell's events: the positive control proving the scoped
-#     probe still delivers (count == calls * weight exactly).
-#   - program B carries expected_pid=<worker> in BPF. The kernel
-#     filter must drop the worker's events before B ever runs, so
-#     B counts exactly zero. If the pid filter were dropped (the
-#     pre-fix behaviour: every process traced), the worker's
-#     events would reach B, match its expected_pid, and count.
+# When: both processes exercise the target
+#
+# Then: the shell-scoped program counts while the worker-scoped control
+# stays zero, proving kernel-level pid filtering
+#
+# A uprobe is file-based, so without --pid every process running the
+# target binary fires it. Two processes execute the same fixture symbol
+# from the same binary: this bpfman-shell process (driven by uprobe
+# fire) and a worker subprocess (driven by the sentinel/ack wave
+# protocol). Two counter programs attach to the symbol, both --pid
+# scoped to the shell process:
+#
+#   - program A carries expected_pid=<shell>, so it counts the shell's
+#     events: the positive control proving the scoped probe still
+#     delivers (count == calls * weight exactly).
+#   - program B carries expected_pid=<worker>. The kernel filter must
+#     drop the worker's events before B ever runs, so B counts exactly
+#     zero. Without the pid filter the worker's events would reach B,
+#     match its expected_pid, and count.
 #
 # The BPF-side expected_pid filter is strict equality, so B's zero
-# cannot be an artefact of the filter rejecting the worker -- it
-# accepts exactly the worker. Only the kernel-level pid scope can
-# keep B at zero while A counts.
-#
-# Invoke from e2e/:
-#
-#   cd e2e
-#   sudo bpfman-shell scripts/TestUprobe_PidFilterTraffic.bpfman
-#
-# Requires root.
+# cannot be an artefact of B rejecting the worker -- it accepts exactly
+# the worker. Only the kernel-level pid scope keeps B at zero while A
+# counts.
 
 import ../lib.bpfman
 

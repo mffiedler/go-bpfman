@@ -1,19 +1,10 @@
 # -*- mode: bpfman -*-
-# bpfman's TC dispatcher requires a clsact qdisc: clsact provides both
-# the ingress (ffff:fff2) and egress (ffff:fff3) attachment points and
-# bpfman owns its lifecycle. A classic `ingress` qdisc occupies the same
-# ingress slot (handle ffff:0) but offers only an ingress block -- no
-# egress datapath -- so bpfman cannot install or own its dispatcher
-# there. Attaching anyway silently mis-wires egress (the filter lands on
-# the ingress block and never sees egress traffic) while reporting
-# success.
 #
-# So when a foreign, non-clsact qdisc already occupies the ingress slot,
-# a TC attach must be refused with a clear error in BOTH directions,
-# rather than parasitising a qdisc bpfman does not own. bpfman must not
-# tear the foreign qdisc down either.
+# Given: a foreign ingress qdisc already owning the TC ingress slot
 #
-# Requires root and iproute2.
+# When: bpfman attempts to attach in either direction
+#
+# Then: the attach is refused and the foreign qdisc is left in place
 
 import ../lib.bpfman
 

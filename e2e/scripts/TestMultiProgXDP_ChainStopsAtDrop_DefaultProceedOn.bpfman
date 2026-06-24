@@ -1,29 +1,12 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestMultiProgXDP_ChainStopsAtDrop_DefaultProceedOn.
 #
-# Three XDP programs at distinct dispatcher priorities:
+# Given: three XDP programs attached where the middle member returns
+# DROP under the default proceed-on mask
 #
-#   mxdp_chain_a (prio 50)  XDP_PASS  -- runs, chain continues
-#   mxdp_chain_b (prio 60)  XDP_DROP  -- runs, chain STOPS here
-#   mxdp_chain_c (prio 70)  (XDP_PASS -- never reached)
+# When: a packet wave crosses the dispatcher chain
 #
-# Default XDP proceed-on is [XDP_PASS, dispatcher_return], so
-# XDP_DROP terminates the chain. With one wave of N pings:
-#
-#   a counter = N * weight_a   (saw all N, returned PASS)
-#   b counter = N * weight_b   (saw all N, returned DROP)
-#   c counter = 0              (never ran)
-#
-# Side effect: the packet is dropped at A's ingress, so the
-# kernel ICMP responder never sees it and userspace ping reports
-# 100% loss. The script lets that pass: `let _ <- ping ...`
-# discards the rc. The BPF counters still advance for every
-# program that ran, regardless of whether the packet completed
-# its traversal.
-#
-# Run from e2e/:
-#   cd e2e
-#   sudo bpfman-shell new/TestMultiProgXDP_ChainStopsAtDrop_DefaultProceedOn.bpfman
+# Then: the chain stops at the DROP member, later counters remain zero,
+# and ping loss is the expected verdict
 
 import ../lib.bpfman
 

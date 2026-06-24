@@ -1,24 +1,12 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestDispatcher_MultipleInterfacesIndependent
-# (TC ingress subtest). The Go test parameterises across TC ingress
-# and XDP via t.Run; the DSL has no subtest primitive, so the two
-# cases live in sibling scripts. This file covers TC ingress;
-# TestDispatcher_MultipleInterfacesIndependentXDP covers XDP.
 #
-# Two independent veth pairs (each its own host-side interface,
-# same netns), three TC ingress members attached to A and two to
-# B. Detaching everything from B must leave A's three members in
-# place and A's dispatcher snapshot intact. The (type, nsid,
-# ifindex) key distinguishes the two dispatchers; the test confirms
-# that there is no cross-talk in the slot accounting or the
-# dispatcher-teardown logic.
+# Given: TC dispatcher members attached across two independent
+# interfaces
 #
-# Run from e2e/:
+# When: one interface is drained of all its members
 #
-#   cd e2e
-#   sudo bpfman-shell new/TestDispatcher_MultipleInterfacesIndependentTC.bpfman
-#
-# Requires root.
+# Then: the drained interface loses its dispatcher while the other keeps
+# its members and snapshot intact
 
 guard pair_a <- net veth-pair
 defer net release $pair_a

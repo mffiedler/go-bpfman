@@ -1,6 +1,11 @@
 # -*- mode: bpfman -*-
-# Explicit XDP proceed-on `pass` must write exactly bit 2. The
-# dispatcher_return sentinel is not forced into explicit masks.
+#
+# Given: an XDP link attached with explicit proceed-on pass
+#
+# When: the link is stored and read back
+#
+# Then: the link records exactly action bit 2 while the dispatcher keeps
+# dispatcher-return as its sentinel bit
 
 import ../lib.bpfman
 

@@ -1,23 +1,12 @@
 # -*- mode: bpfman -*-
-# `program list --all` surfaces unmanaged kernel programs.
 #
-# Loads one bpfman-managed program, then loads a second program
-# directly with bpftool and pins it on bpffs so it stays resident in
-# the kernel without bpfman managing it. `program list` shows only the
-# managed program; `program list --all` additionally surfaces the
-# bpftool-loaded one as a kernel-only entry -- managed=false, no
-# record, the kernel observation present.
+# Given: one program managed by bpfman and another loaded directly into
+# the kernel with bpftool
 #
-# Selection is by kernel program ID throughout, so the script is safe
-# under parallel execution even though --all lists every kernel
-# program on the host.
+# When: program list runs with and without --all
 #
-# Invoke from e2e/:
-#
-#   cd e2e
-#   sudo bpfman-shell scripts/TestProgramList_All.bpfman
-#
-# Requires root and bpftool.
+# Then: the default lists only managed rows while --all also reports the
+# unmanaged kernel-only program
 
 import ../lib.bpfman
 

@@ -1,29 +1,25 @@
 # -*- mode: bpfman -*-
 #pragma labels={"exclusive":"true","operation":"delete","shared-map":"true"}
-# Exercises `bpfman program delete --all`, which mutates global bpfman
+#
+# Given: an owner/dependant pair sharing a real kernel map set
+#
+# When: program delete runs owner-first, recursively, and with --all
+#
+# Then: every delete order preserves the map set while a dependant still
+# needs it
+#
+# Exercises bpfman program delete --all, which mutates global bpfman
 # state and cannot run beside other scripts.
-# End-to-end proof that program delete preserves a shared map set when
-# an owner is removed before its dependants, and still expands recursive
-# and --all deletes across dependants.
 #
-# This is the real-kernel counterpart to manager/delete_test.go. Those
-# tests run against a fake kernel and a real SQLite store: they prove
-# the ordering logic. This script runs the real CLI -> daemon -> kernel
-# with a genuinely shared map, through the same thin CLI path a user drives.
-#
-# Setup in each block: load a counter program (the owner), then load
-# the same program again with --map-owner-id pointing at the owner (the
-# dependant). The dependant reuses the owner's pinned maps, so
-# record.handles.map_owner_id == owner. The owner program row may be
-# deleted while a dependant survives because dependants reference the
-# durable map set, not the owner row.
-#
-# Invoke from e2e/:
-#
-#   cd e2e
-#   sudo bpfman-shell scripts/TestProgramDelete_SharedMapOrdering.bpfman
-#
-# Requires root. Does not require bpftool.
+# This is the real-kernel counterpart to manager/delete_test.go: those
+# tests prove the ordering logic against a fake kernel and a real
+# SQLite store; this drives the real CLI -> daemon -> kernel with a
+# genuinely shared map. In each block, load a counter program (the
+# owner), then load the same program again with --map-owner-id pointing
+# at the owner (the dependant). The dependant reuses the owner's pinned
+# maps, so record.handles.map_owner_id == owner. The owner program row
+# may be deleted while a dependant survives, because dependants
+# reference the durable map set, not the owner row.
 
 import ../lib.bpfman
 

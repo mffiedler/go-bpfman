@@ -1,20 +1,12 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestMultiProgXDP_AllProceed_DefaultProceedOn.
 #
-# Three XDP programs (mxdp_a/b/c) attach to one veth interface at
-# distinct dispatcher priorities. Each counts ICMP echo requests
-# arriving on RX. Three waves of N pings, with a staggered detach
-# between waves so each program ends up with a distinct event count:
+# Given: three XDP programs attached at distinct priorities under
+# default proceed-on
 #
-#     a counts waves 1+2+3   = 3 * N events
-#     b counts waves 1+2     = 2 * N events
-#     c counts wave 1        = 1 * N events
+# When: traffic runs across waves with the programs detached at
+# staggered points
 #
-# Run from e2e/:
-#   cd e2e
-#   sudo bpfman-shell new/TestMultiProgXDP_AllProceed_DefaultProceedOn.bpfman
-#
-# Requires root, bpftool, iproute2 (ip), iputils (ping).
+# Then: each counter ends with the event count for the waves it survived
 
 import ../lib.bpfman
 

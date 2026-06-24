@@ -1,18 +1,15 @@
 # -*- mode: bpfman -*-
-# Shape-only round-trip test for tracepoint program load.
 #
-# Loads a tracepoint counter program with user metadata and
-# exercises the full Program record/status field set returned by
-# `bpfman program load` and `bpfman program get`, without any
-# attach, traffic, or detach activity. Mirrors TestXDP_LoadAndGet so
-# the field-by-field assertions are visible per program type.
+# Given: a tracepoint program loaded with user metadata, with no attach,
+# traffic, or detach activity
 #
-# Invoke from e2e/:
+# When: the full Program record is read back through program load and
+# program get
 #
-#   cd e2e
-#   sudo bpfman-shell new/TestTracepoint_LoadAndGet.bpfman
-#
-# Requires root.
+# Then: deterministic fields (bytecode-derived names, ID-computed bpffs
+# paths, the map ID set, zero-shaped Get stats) are asserted exactly,
+# while kernel-dependent numerics (btf_id, jited_size) are only required
+# to be positive
 
 import ../lib.bpfman
 

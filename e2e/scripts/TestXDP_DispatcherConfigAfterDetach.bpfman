@@ -1,21 +1,11 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestXDP_DispatcherConfigAfterDetach.
 #
-# Fill all ten XDP dispatcher slots from a single loaded program
-# (ten attaches of the same program), then detach members one at
-# a time, asserting that the dispatcher's reported member count
-# decrements by one at every step from 10 down to 1. The last
-# link is kept alive and reaped through the deferred cleanup so
-# the script never exercises the "dispatcher disappears after
-# last detach" case (TestDispatcher_LifecycleAfterLastDetach
-# covers that separately).
+# Given: a full XDP dispatcher with the final link deferred to cleanup
 #
-# Run from e2e/:
+# When: the dispatcher is drained one member at a time
 #
-#   cd e2e
-#   sudo bpfman-shell new/TestXDP_DispatcherConfigAfterDetach.bpfman
-#
-# Requires root.
+# Then: the member count decrements from ten to one without exercising
+# final dispatcher teardown
 
 guard pair <- net veth-pair
 defer net release $pair

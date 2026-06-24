@@ -1,28 +1,12 @@
 # -*- mode: bpfman -*-
-# Link-CRUD round-trip for uprobe attaches.
 #
-# Loads uprobe_counter, attaches the program to the running
-# bpfman-shell process's cgo'd target symbol, and asserts the
-# structural shape of the resulting link record.
-# Verifies Get and List both return matching fields, fires the
-# target exactly N times, asserts the private counter map advanced
-# by N * weight, and verifies that after detach the link record is
-# gone from both the store and the listing.
+# Given: a uprobe program loaded and attached to a user-space target
 #
-# The uprobe attachment is inode/symbol scoped, but the BPF program
-# filters on this shell's PID. Concurrent runs can attach to the same
-# bpfman-shell symbol without inflating this script's counter.
+# When: the link is fetched, listed, exercised, then detached and
+# unloaded
 #
-# Counterpart to TestUprobe_LoadAndGet (program structural shape)
-# and TestMultiProgUprobe_LoadAttachDetachUnload (plural
-# same-symbol attachments with discrete maps).
-#
-# Invoke from e2e/:
-#
-#   cd e2e
-#   sudo bpfman-shell scripts/TestUprobe_LinkRoundTrip.bpfman
-#
-# Requires root.
+# Then: get/list, traffic delivery, detach absence, and after-detach
+# counter quiescence all match the expected lifecycle
 
 import ../lib.bpfman
 

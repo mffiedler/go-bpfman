@@ -1,16 +1,12 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestMultiProgKprobe_LoadAttachDetachUnload.
 #
-# Three kprobe programs (mkp_a/b/c) all attached to one leased kmod
-# slot. Each program owns its own counter map and weight; the final
-# assertion is `events * weight` exactly per program.
+# Given: three kprobe programs attached to one leased kmod slot
 #
-# Run from e2e/:
+# When: the slot is fired once per event, then every program is detached
+# and unloaded
 #
-#   cd e2e
-#   sudo bpfman-shell new/TestMultiProgKprobe_LoadAttachDetachUnload.bpfman
-#
-# Requires root and bpftool.
+# Then: each private counter records the exact event count and no
+# program remains loaded
 
 import ../lib.bpfman
 

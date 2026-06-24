@@ -1,7 +1,12 @@
 # -*- mode: bpfman -*-
 #pragma labels={"area":"image-build","cli":"true"}
-# Multi-architecture inputs produce stable platform and build-arg
-# entries while deriving labels from the first inspected bytecode.
+#
+# Given: a multi-architecture input set
+#
+# When: generate-build-args renders its JSON output
+#
+# Then: the output carries stable platform entries, build arguments, and
+# labels derived from the inspected bytecode
 
 let rc <- exec bpfman image generate-build-args \
     linux/amd64=testdata/bpf/xdp_pass.bpf.o \

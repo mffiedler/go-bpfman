@@ -1,27 +1,12 @@
 # -*- mode: bpfman -*-
-# Link-CRUD round-trip for XDP attaches.
 #
-# Loads xdp_pass, builds a veth pair, attaches the program to the
-# host side via an XDP dispatcher, and asserts the structural shape
-# of the resulting link record. XDP links carry dispatcher_id and
-# revision because the program goes through a dispatcher rather
-# than attaching directly. Verifies Get and List both return
-# matching fields, and that after detach the link record is gone
-# from both the store and the listing.
+# Given: an XDP program loaded and attached to an interface
 #
-# Includes a ping phase so the link round-trip proves both CRUD
-# structure and behavioural delivery, plus a post-detach ping that
-# proves the private counter stays frozen once the link is gone.
+# When: the link is fetched, listed, exercised with traffic, then
+# detached and unloaded
 #
-# Complements TestXDP_LoadAndGet, which covers the exhaustive
-# program load/get/list/unload shape without attaching.
-#
-# Invoke from e2e/:
-#
-#   cd e2e
-#   sudo bpfman-shell scripts/TestXDP_LinkRoundTrip.bpfman
-#
-# Requires root.
+# Then: get/list, traffic delivery, detach absence, and after-detach
+# counter quiescence all match the expected lifecycle
 
 import ../lib.bpfman
 

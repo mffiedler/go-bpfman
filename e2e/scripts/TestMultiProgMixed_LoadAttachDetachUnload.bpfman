@@ -1,36 +1,38 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestMultiProgMixed_LoadAttachDetachUnload.
+#
+# Given: tracepoint, kprobe, and kretprobe programs from one object
+# attached to one leased kmod stimulus
+#
+# When: the stimulus is fired across waves with the programs detached at
+# staggered points
+#
+# Then: each program ends with the exact event count implied by the
+# waves it survived
 #
 # Three program types -- tracepoint, kprobe, kretprobe -- in one
 # .bpf.o, all driven by a single stimulus per wave: a write to the
-# leased kfunc slot's debugfs trigger. The kmod's trigger handler
-# both invokes the slot's noinline function (which the kprobes
-# attach to) and emits the bpfman_e2e/bpfman_e2e_ping tracepoint
-# (which the tracepoint program attaches to), so one
-# `kfunc fire $fn $n` produces N events on every attached program.
+# leased kfunc slot's debugfs trigger. The kmod's trigger handler both
+# invokes the slot's noinline function (which the kprobes attach to)
+# and emits the bpfman_e2e/bpfman_e2e_ping tracepoint (which the
+# tracepoint program attaches to), so one fire produces N events on
+# every attached program:
 #
 #   mixed_tp  (tracepoint)  -> bpfman_e2e/bpfman_e2e_ping
 #   mixed_kp  (kprobe)      -> leased bpfman_e2e_target_N entry
 #   mixed_krp (kretprobe)   -> leased bpfman_e2e_target_N return
 #
-# The tracepoint program filters on the leased slot index
-# (expected_slot = $fn.index), read from the tracepoint context.
-# The probes attach to a slot-private symbol, so the symbol itself
-# is their isolation boundary.
+# The tracepoint program filters on the leased slot index; the probes
+# attach to a slot-private symbol, so the symbol itself is their
+# isolation boundary. Three waves with staggered detach (krp first,
+# then kp) leave:
 #
-# Three waves with staggered detach (krp first, then kp) leave:
+#   tp  counts waves 1+2+3 = 3 * N
+#   kp  counts waves 1+2   = 2 * N
+#   krp counts wave 1      = 1 * N
 #
-#   tp  counts waves 1+2+3   = 3 * N
-#   kp  counts waves 1+2     = 2 * N
-#   krp counts wave 1        = 1 * N
-#
-# No waitDetachQuiescent between waves, just a brief sleep for
-# the perf-link RCU GP. Perf-link applies to the kp/krp pair;
-# tracepoint detach is synchronous-ish.
-#
-# Run from e2e/:
-#   cd e2e
-#   sudo bpfman-shell scripts/TestMultiProgMixed_LoadAttachDetachUnload.bpfman
+# Between detach and the next wave a brief sleep lets the perf-link RCU
+# grace period close; perf-link applies to the kp/krp pair, while
+# tracepoint detach is effectively synchronous.
 
 import ../lib.bpfman
 

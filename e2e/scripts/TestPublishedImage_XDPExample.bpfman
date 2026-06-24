@@ -1,6 +1,12 @@
 # -*- mode: bpfman -*-
 #pragma labels={"external":"true","image":"true","program":"xdp","example":"xdp","serial":"true"}
-# Load and attach the published XDP bytecode example image.
+#
+# Given: the published XDP bytecode example image from the registry
+#
+# When: the image is inspected, loaded, and attached
+#
+# Then: its manifest, link shape, traffic counter, and cleanup all match
+# the expected published example
 
 import ../lib.bpfman
 

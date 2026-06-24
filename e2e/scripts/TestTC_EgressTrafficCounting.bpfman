@@ -1,23 +1,11 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestTC_EgressTrafficCounting.
 #
-# Three TC programs attached on egress (where most of the
-# existing dispatcher ports attach on ingress) must each count
-# packets leaving the host-side veth. The peer namespace pings
-# the host address; the ICMP replies leave through A's egress,
-# which is where the programs are attached, and the dispatcher
-# drives the chain through every member.
+# Given: multiple TC programs attached to egress rather than the usual
+# ingress path
 #
-# Each attach is its own program instance so the counter maps
-# do not collide. Proceed-on is ok,pipe,dispatcher_return so
-# the dispatcher continues through each member.
+# When: peer-to-host ping replies leave through the egress hook
 #
-# Run from e2e/:
-#
-#   cd e2e
-#   sudo bpfman-shell new/TestTC_EgressTrafficCounting.bpfman
-#
-# Requires root and bpftool.
+# Then: every member counts the packets
 
 import ../lib.bpfman
 

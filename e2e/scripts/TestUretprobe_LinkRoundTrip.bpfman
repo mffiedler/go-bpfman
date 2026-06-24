@@ -1,29 +1,12 @@
 # -*- mode: bpfman -*-
-# Link-CRUD round-trip for uretprobe attaches.
 #
-# Loads uprobe_counter as a uretprobe program (same ELF, different
-# declared type), attaches the program to the running bpfman-shell
-# process's cgo'd target symbol, and asserts the
-# structural shape of the resulting link record. The attach command
-# is the same as uprobe; retprobe semantics come from the program
-# type declared at load, so the server returns kind=uretprobe and
-# details.retprobe=true.
+# Given: a uretprobe program loaded and attached to a user-space target
 #
-# The script fires the target exactly N times and the BPF program
-# filters on this shell's PID, so the private counter map must advance
-# by N * weight even when other uprobe tests run concurrently.
+# When: the link is fetched, listed, exercised, then detached and
+# unloaded
 #
-# Counterpart to TestUretprobe_LoadAndGet (program structural
-# shape), TestUprobe_LinkRoundTrip (the non-return variant), and
-# TestMultiProgUretprobe_LoadAttachDetachUnload (plural
-# same-symbol attachments with discrete maps).
-#
-# Invoke from e2e/:
-#
-#   cd e2e
-#   sudo bpfman-shell scripts/TestUretprobe_LinkRoundTrip.bpfman
-#
-# Requires root.
+# Then: get/list, traffic delivery, detach absence, and after-detach
+# counter quiescence all match the expected lifecycle
 
 import ../lib.bpfman
 

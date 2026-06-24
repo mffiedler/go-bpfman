@@ -1,28 +1,13 @@
 # -*- mode: bpfman -*-
-# Uprobe attach to a dotted Go symbol.
 #
-# Go symbols carry their package path, so real-world Go uprobe
-# targets (the operator's `main.getCount`, this fixture's
-# `github.com/.../fixturemode.FireUprobeTarget`) contain dots.
-# bpffs rejects any pin path component containing a dot
-# (bpf_lookup in kernel/bpf/inode.c reserves them), so a link pin
-# name derived from the function name fails with EPERM at attach
-# time. This script is the regression test: the pin name must not
-# contain the symbol.
+# Given: a uprobe attached to a dotted Go symbol in the running
+# bpfman-shell fixture, targeting a nosplit leaf so the entry fires
+# exactly once
 #
-# Attaches to the nosplit Go leaf the fixture enters once per
-# event, so the counter advances by exactly weight per event --
-# the same arithmetic as the cgo symbol. The target must be
-# nosplit: an ordinary Go function's stack-check prologue
-# re-executes the entry after stack growth, double-firing the
-# uprobe under load.
+# When: the symbol is exercised
 #
-# Invoke from e2e/:
-#
-#   cd e2e
-#   sudo bpfman-shell scripts/TestUprobe_GoSymbolTraffic.bpfman
-#
-# Requires root.
+# Then: the link pin avoids the dotted symbol name and the counter
+# advances by the exact expected count
 
 import ../lib.bpfman
 

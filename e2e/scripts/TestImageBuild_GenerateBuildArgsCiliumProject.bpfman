@@ -1,7 +1,12 @@
 # -*- mode: bpfman -*-
 #pragma labels={"area":"image-build","cli":"true"}
-# Cilium/bpf2go-style object names are classified into platform
-# build args.
+#
+# Given: Cilium/bpf2go-style object names as input
+#
+# When: generate-build-args inspects them
+#
+# Then: the CLI emits platform build arguments classified from those
+# object names
 
 guard dir <- tempdir image-build-cilium
 defer exec rm -rf $dir.path

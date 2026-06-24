@@ -1,30 +1,24 @@
 # -*- mode: bpfman -*-
-# Uprobe attach by file offset with no function name.
+#
+# Given: a uprobe attached by absolute file offset with no function name
+#
+# When: the fixture target is exercised
+#
+# Then: the offset-only attach fires the same target and advances the
+# counter exactly once per event
 #
 # Rust's fn_name is optional: with no symbol, aya attaches at the
-# absolute file offset. Go passed the empty symbol to cilium and
-# failed with ErrNoSymbol, so `--offset N` without `--fn-name` did
-# not work at all. This script is the regression test: attaching
-# at the fixture symbol's file offset -- and nothing else -- must
-# fire the probe exactly once per event.
-#
-# `uprobe target` publishes symbol_offset: the cgo fixture
-# symbol's absolute file offset in the running bpfman-shell ELF,
-# translated from the symbol's virtual address through its PT_LOAD
-# segment, which is the offset shape cilium resolves a symbol to
-# internally. Attaching at that offset is the same attach point as
-# `--fn-name $target.symbol`, reached without naming the symbol.
-#
-# A wrong offset would attach to the wrong instruction (or none),
-# so the counter would not advance by exactly weight per event --
-# the exact-equality assertion is what proves the offset is right.
-#
-# Invoke from e2e/:
-#
-#   cd e2e
-#   sudo bpfman-shell scripts/TestUprobe_OffsetOnlyTraffic.bpfman
-#
-# Requires root.
+# absolute file offset. Go passed the empty symbol to cilium and failed
+# with ErrNoSymbol, so --offset N without --fn-name did not work at
+# all; this is the regression test. uprobe target publishes
+# symbol_offset, the cgo fixture symbol's absolute file offset in the
+# running bpfman-shell ELF, translated from the symbol's virtual
+# address through its PT_LOAD segment -- the offset shape cilium
+# resolves a symbol to internally. Attaching at that offset is the same
+# attach point as --fn-name $target.symbol, reached without naming the
+# symbol. A wrong offset would attach to the wrong instruction or none,
+# so the exact-equality assertion on the counter is what proves the
+# offset is right.
 
 import ../lib.bpfman
 

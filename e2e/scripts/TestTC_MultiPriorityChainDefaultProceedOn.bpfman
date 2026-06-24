@@ -1,23 +1,12 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestTC_MultiPriorityChainDefaultProceedOn.
 #
-# Three TC programs at distinct priorities sharing one
-# dispatcher with the CLI's default proceed-on (pipe,
-# dispatcher_return -- TC_ACT_OK is deliberately not in the
-# default). tc_counter returns TC_ACT_OK on every packet, so the
-# default proceed-on halts the chain at position 0. Only the
-# lowest-priority program runs; the other two see zero packets.
+# Given: three TC programs attached at different priorities under the
+# default proceed-on mask
 #
-# The DSL port mirrors the Go test verbatim: three loads, three
-# attaches without --proceed-on, twenty pings, lower-bound check
-# on position 0 and exact-zero checks on positions 1 and 2.
+# When: a packet wave crosses the dispatcher chain
 #
-# Run from e2e/:
-#
-#   cd e2e
-#   sudo bpfman-shell new/TestTC_MultiPriorityChainDefaultProceedOn.bpfman
-#
-# Requires root and bpftool.
+# Then: TC_ACT_OK stops the chain at the first member, leaving later
+# counters at zero
 
 import ../lib.bpfman
 

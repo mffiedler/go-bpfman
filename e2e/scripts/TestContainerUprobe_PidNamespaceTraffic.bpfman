@@ -1,5 +1,15 @@
 # -*- mode: bpfman -*-
-# Container uprobe pid-namespace regression test.
+#
+# Given: a Kubernetes-shaped target with its own mount and pid
+# namespaces and a freshly mounted /proc, the split that exposed the
+# container-uprobe regression
+#
+# When: a uprobe is attached by --container-pid to the target's dotted
+# Go symbol
+#
+# Then: resolution finds the symbol inside that namespace, the dotted
+# name also exercises numeric link-id pin naming (bpffs rejects dots),
+# and the counter advances exactly once per fired wave
 #
 # This is the Kubernetes-shaped counterpart to the plain `unshare -m`
 # container uprobe tests. The existing `unshare -m` tests prove that

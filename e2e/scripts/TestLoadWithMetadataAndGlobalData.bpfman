@@ -1,25 +1,11 @@
 # -*- mode: bpfman -*-
-# .bpfman equivalent of e2e/TestLoadWithMetadataAndGlobalData.
 #
-# Verifies that user-supplied metadata and global data are stored
-# and returned verbatim through load + Get round-trip. No attach,
-# no trigger — this script exercises the management layer only.
+# Given: an XDP program loaded with both user metadata and global data
 #
-# Path conventions follow the Go e2e tests: testdata is referenced
-# relative to e2e/, so invoke from e2e/:
+# When: the program is fetched through the load/get management path
 #
-#   cd e2e
-#   sudo bpfman-shell scripts/TestLoadWithMetadataAndGlobalData.bpfman
-#
-# Requires root. Does not require bpftool.
+# Then: both pieces of user-supplied data come back verbatim
 
-# Load xdp_pass with user metadata and global data. The program
-# itself is irrelevant — we only inspect its record.
-#
-# Global data is encoded as base64 in the JSON representation
-# because the Go type is []byte. The values below round-trip as:
-#   0x42                -> "Qg=="
-#   0xDEADBEEF (4 bytes) -> "3q2+7w=="
 guard loaded <- bpfman program load file testdata/bpf/xdp_pass.bpf.o --programs xdp:pass -m owner=test-team -m environment=e2e-testing -g config_u8=0x42 -g config_u32=0xdeadbeef
 let prog = $loaded.programs[0]
 let pid = $prog.record.program_id

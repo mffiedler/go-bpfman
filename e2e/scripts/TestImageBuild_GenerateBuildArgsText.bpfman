@@ -1,7 +1,11 @@
 # -*- mode: bpfman -*-
 #pragma labels={"area":"image-build","cli":"true"}
-# The default generate-build-args output remains shell-oriented
-# KEY=VALUE lines.
+#
+# Given: generate-build-args run without a format flag
+#
+# When: it renders its default text output
+#
+# Then: the CLI keeps producing shell-oriented KEY=VALUE lines
 
 let rc <- exec bpfman image generate-build-args \
     testdata/bpf/xdp_pass.bpf.o

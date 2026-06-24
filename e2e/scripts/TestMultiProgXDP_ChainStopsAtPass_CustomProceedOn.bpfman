@@ -1,29 +1,12 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestMultiProgXDP_ChainStopsAtPass_CustomProceedOn.
 #
-# Inverse of ChainStopsAtDrop. Three XDP programs at distinct
-# priorities, with custom proceed-on `[drop, dispatcher_return]`
-# that excludes XDP_PASS:
+# Given: three XDP programs attached with a custom proceed-on mask that
+# excludes PASS
 #
-#   mxdv_a (prio 50)  XDP_DROP -- runs, chain continues (DROP in proceed-on)
-#   mxdv_b (prio 60)  XDP_PASS -- runs, chain STOPS (PASS excluded)
-#   mxdv_c (prio 70)  (XDP_DROP -- never reached)
+# When: a packet wave crosses the dispatcher chain
 #
-# This proves the WithProceedOn knob plumbs through to the
-# dispatcher: the same XDP_PASS return that would CONTINUE the
-# chain under the default bitmask now STOPS it under the custom
-# bitmask. The verdicts are the inverse of what the default
-# would treat as "continue".
-#
-# Side effect: the chain's last verdict is PASS, so the
-# dispatcher returns PASS to the kernel and the ICMP responder
-# delivers the reply. ping succeeds and `guard`s normally; ARP
-# also resolves through the chain because PASS at b lets the
-# kernel see the ARP request.
-#
-# Run from e2e/:
-#   cd e2e
-#   sudo bpfman-shell new/TestMultiProgXDP_ChainStopsAtPass_CustomProceedOn.bpfman
+# Then: the chain stops at the PASS member, earlier counters advance,
+# later counters stay zero, and ping still succeeds
 
 import ../lib.bpfman
 

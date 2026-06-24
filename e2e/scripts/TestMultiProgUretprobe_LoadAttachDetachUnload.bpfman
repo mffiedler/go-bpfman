@@ -1,32 +1,13 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestMultiProgUretprobe_LoadAttachDetachUnload.
 #
-# Three uretprobe programs (mup_a/b/c) all attached to
-# bpfman_shell_uprobe_call_malloc inside the running bpfman-shell
-# process.
-# Same .bpf.o as the uprobe variant; retprobe semantics come from
-# the program type declared at load. The bpfman link attach verb
-# is `uprobe` either way -- the kernel resolves the right hook
-# from the loaded program type.
+# Given: three uretprobe programs attached through the uprobe verb, with
+# retprobe semantics from the loaded program type
 #
-# Three waves of N firings each, staggered detach so each program
-# ends up with a distinct event count:
+# When: the target fires across waves with links detached at staggered
+# points
 #
-#     a counts waves 1+2+3   = 3 * N events
-#     b counts waves 1+2     = 2 * N events
-#     c counts wave 1        = 1 * N events
-#
-# The fixture target lives in bpfman-shell rather than e2e.test, so
-# there is no separate helper binary and no dependency on locating a
-# libc path. Between detach and the next wave we sleep briefly to let
-# the kernel's perf-link RCU deferral window close.
-#
-# Run from e2e/:
-#
-#   cd e2e
-#   sudo bpfman-shell new/TestMultiProgUretprobe_LoadAttachDetachUnload.bpfman
-#
-# Requires root, bpftool.
+# Then: each private counter records only the waves during which its
+# link stayed attached
 
 import ../lib.bpfman
 

@@ -1,15 +1,11 @@
 # -*- mode: bpfman -*-
-# Proves TC dispatcher rebuild updates the filter in the requested
-# network namespace on the isolated topology. Deliberate duplicate
-# of TestTC_NetnsDispatcherRebuild with both veth ends in owned
-# namespaces. Endpoint a's veth exists inside $pair.a.ns; the
-# second attach rebuilds the dispatcher and must remove the old TC
-# filter from that namespace before leaving the new one in place.
 #
-# Traffic is asserted on both sides of the rebuild: the first
-# member counts packets before the rebuild, and both members count
-# packets through the rebuilt dispatcher afterwards, so the test
-# proves delivery rather than just filter-count stability.
+# Given: a TC dispatcher on an isolated netns-veth endpoint
+#
+# When: a second member is attached, rebuilding the dispatcher
+#
+# Then: the filter is replaced inside the endpoint namespace and both
+# members count traffic afterwards
 
 import ../lib.bpfman
 

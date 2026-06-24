@@ -1,26 +1,12 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestMultiProgTC_ChainStopsAtOK_DefaultProceedOn.
 #
-# Three TC programs at distinct dispatcher priorities. The .bpf.o
-# bakes in the verdicts:
+# Given: three TC programs attached where the middle member returns OK
+# under the default proceed-on mask
 #
-#   mtc_chain_a (prio 50)  TC_ACT_PIPE -- runs, chain continues
-#   mtc_chain_b (prio 60)  TC_ACT_OK   -- runs, chain STOPS
-#   mtc_chain_c (prio 70)  (TC_ACT_PIPE -- never reached)
+# When: a packet wave crosses the dispatcher chain
 #
-# TC's default proceed-on is `[pipe, dispatcher_return]`. PIPE is
-# in the bitmask so a's verdict continues the chain; OK is not
-# in the bitmask so b's verdict stops it. The dispatcher returns
-# OK to the kernel, which delivers the packet, so ping succeeds.
-#
-# Counters end at:
-#   a = N * weight_a   (ran, returned PIPE)
-#   b = N * weight_b   (ran, returned OK)
-#   c = 0              (never ran)
-#
-# Run from e2e/:
-#   cd e2e
-#   sudo bpfman-shell new/TestMultiProgTC_ChainStopsAtOK_DefaultProceedOn.bpfman
+# Then: the chain stops at the OK member, later counters remain zero,
+# and ping still succeeds
 
 import ../lib.bpfman
 

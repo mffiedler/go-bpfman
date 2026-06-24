@@ -1,27 +1,22 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestTC_DispatcherFillDrainRefill.
 #
-# Four peaks and three troughs. Each peak fills the
-# dispatcher's free slots with new programs and confirms every
-# active program counts traffic across a ping burst. Each
-# trough drains a slot range and confirms the dispatcher's
-# member count tracks the operation. The drain boundary
-# shifts each oscillation so every physical slot position is
-# vacated and reused at least once.
+# Given: a TC dispatcher driven through repeated fill, partial drain,
+# and refill across shifting slot ranges
 #
-# The Go test maintains a fixed-size slot array indexed by
-# position, plus fill/drain helpers that consult the array.
-# The DSL has no indexed mutable list, no list-literal
-# syntax, and no foreach accumulator (the second entry in
-# shell/GRAMMAR-NOTES.md captures the gap and the addition
-# that would close it). So the slot bookkeeping unrolls
-# explicitly here: thirty-one separate program loads, named
-# by priority rather than by slot index, with hand-tracked
-# survivor / drain partitions at each phase. The result is
-# long but mechanical -- the slot-array invariants are
-# carried in the choice of which links get a `defer
-# bpfman link detach` (survivor) and which are detached
-# mid-script (drained at a specific trough).
+# When: each peak and trough is reached
+#
+# Then: member counts, slot reuse, and packet counters stay correct
+# throughout
+#
+# Four peaks and three troughs. Each peak fills the dispatcher's free
+# slots with new programs and confirms every active program counts
+# traffic across a ping burst. Each trough drains a slot range and
+# confirms the dispatcher's member count tracks the operation. The
+# drain boundary shifts each oscillation so every physical slot
+# position is vacated and reused at least once. Programs are named by
+# priority rather than slot index; the slot-array invariants are
+# carried in the choice of which links get a deferred detach (survivor)
+# and which are detached mid-script (drained at a specific trough).
 #
 # State trace at each phase (slot index -> priority, "_" for empty):
 #
@@ -39,18 +34,11 @@
 #   peak 3 (refill 8, priorities 62 162 262 362 462 562 662 762):
 #           62 162 262 362 462 562 662 762 525 625
 #
-# Survivor partitions (which links carry a `defer detach`):
+# Survivor partitions (which links carry a deferred detach):
 #   peak 0:  600 700 800 900            (slots 6..9 survive trough 1)
 #   peak 1:  950 850 750                (slots 0..2 survive trough 2)
 #   peak 2:  525 625                    (slots 8..9 survive trough 3)
-#   peak 3:  62 162 262 362 462 562 662 762  (all eight survive to script exit)
-#
-# Run from e2e/:
-#
-#   cd e2e
-#   sudo bpfman-shell new/TestTC_DispatcherFillDrainRefill.bpfman
-#
-# Requires root and bpftool.
+#   peak 3:  62 162 262 362 462 562 662 762  (all eight survive to exit)
 
 import ../lib.bpfman
 

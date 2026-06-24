@@ -1,40 +1,25 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestTC_DispatcherChainProceedOn.
 #
-# The Go test parameterises across nine (n, breakAt) subtests
-# exercising every meaningful combination of chain length (1, 3,
-# 5) and break position (-1, 0, 1, 2, 4). The DSL has no
-# subtest primitive, so this script captures the canonical case
-# that covers both halves of the proceed-on semantics in one
-# run: five TC ingress programs attached at ascending priorities
-# 100..500, with the middle program (priority 300) configured
-# with --proceed-on shot to exclude OK. The tc_counter program
-# always returns OK, so excluding OK from proceed-on means the
-# dispatcher stops the chain after that program.
+# Given: five TC ingress programs attached with the middle member
+# configured to stop on OK
+#
+# When: a packet wave crosses the dispatcher chain
+#
+# Then: traffic reaches only the members up to the break point and later
+# members stay at zero
+#
+# Five TC ingress programs attached at ascending priorities 100..500,
+# with the middle program (priority 300) given --proceed-on that
+# excludes OK. tc_counter always returns OK, so excluding OK from
+# proceed-on makes the dispatcher stop the chain after that program.
 #
 # Expected outcome under 20 pings:
-#   - Programs at priorities 100, 200, 300 see traffic (ran).
-#   - Programs at priorities 400, 500 see zero packets (chain
-#     stopped at position 2).
+#   - priorities 100, 200, 300 see traffic (ran).
+#   - priorities 400, 500 see zero packets (chain stopped at position 2).
 #
-# The "all proceed" no-break cases (n=1/3/5 with breakAt=-1)
-# are covered by TestTC_DispatcherChainExecution and the
-# MultiProgTC_AllProceed* ports; this script focuses on the
-# new semantics the proceed-on test introduces.
-#
-# Retrofit notes: per-iteration proceed-on values vary, so the
-# attach foreach walks (zip $priorities $proceed_ons) and
-# destructures each pair via multi-var foreach. The expected
-# counts also vary per index (three positive, two zero), so
-# the assert phase uses indexed checks rather than a single
-# uniform predicate.
-#
-# Run from e2e/:
-#
-#   cd e2e
-#   sudo bpfman-shell new/TestTC_DispatcherChainProceedOn.bpfman
-#
-# Requires root and bpftool.
+# The all-proceed no-break cases are covered by
+# TestTC_DispatcherChainExecution and the MultiProgTC_AllProceed ports;
+# this script focuses on the break semantics.
 
 import ../lib.bpfman
 

@@ -1,39 +1,12 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestDispatcher_PriorityOrderingTC.
 #
-# Attaches one TC ingress program ten times at scrambled priorities
-# and asserts that each link's stored position reflects the rank of
-# its requested priority in ascending sort order. Priority and
-# position are read straight off each link's record.details after
-# all ten attaches commit; the in-process Go test calls
-# env.GetLink and reads the same fields off TCDetails.
+# Given: ten TC ingress members attached at deliberately scrambled
+# priorities
 #
-# A re-query is required because record.details.position observed
-# at the moment of a single attach reflects the position at that
-# moment, not the final position. Earlier links shift downward as
-# higher-priority later links insert ahead of them, so positions
-# only stabilise once all ten members are in place.
+# When: every link is re-fetched once all ten attaches have committed
 #
-# The Go test additionally calls memberCount(10) via
-# env.GetDispatcherSnapshot. That assertion is implied here by ten
-# distinct positions 0..9 covering every slot; a separate test
-# exercises bpfman dispatcher get directly.
-#
-# Retrofit notes: list literal plus foreach bind-collect replace
-# the unrolled ten-line attach, defer, and re-query blocks. Links
-# are indexed by attach order; the priorities list captures the
-# deliberately scrambled order so the position-by-priority
-# property is exercised regardless of insertion sequence. The
-# assertion loop derives the expected position from each link's
-# priority via jq sort+index, replacing twenty hand-computed
-# rank lines.
-#
-# Run from e2e/:
-#
-#   cd e2e
-#   sudo bpfman-shell new/TestDispatcher_PriorityOrderingTC.bpfman
-#
-# Requires root.
+# Then: each link reports a position matching its priority rank, since
+# positions only stabilise after the full chain is in place
 
 guard pair <- net veth-pair
 defer net release $pair

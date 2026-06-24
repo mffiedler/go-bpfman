@@ -1,23 +1,12 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestTC_DefaultProceedOnRebuild.
 #
-# Two TC programs at the same priority with the default
-# proceed-on (pipe, dispatcher_return -- excludes TC_ACT_OK).
-# tc_counter.bpf.o returns TC_ACT_OK, so the dispatcher stops
-# the chain at position 0 once a program returns OK. The Rust
-# bpfman behaviour the Go implementation is matched against:
-# when two programs have the same priority and name, the
-# newly-attached (incoming) program sorts before the
-# already-attached (existing) one, taking position 0. The
-# incoming program therefore runs; the existing program sits
-# behind it and does not.
+# Given: an existing TC member and an incoming same-priority program
+# under default proceed-on
 #
-# Run from e2e/:
+# When: attaching the incoming program triggers a dispatcher rebuild
 #
-#   cd e2e
-#   sudo bpfman-shell new/TestTC_DefaultProceedOnRebuild.bpfman
-#
-# Requires root and bpftool.
+# Then: the incoming member sorts ahead of the existing one and its OK
+# verdict stops the chain at position zero
 
 import ../lib.bpfman
 

@@ -1,6 +1,11 @@
 # -*- mode: bpfman -*-
-# TC proceed-on `unspec` must be representable as dispatcher bit 0
-# and reported back as action code -1.
+#
+# Given: a TC link attached with explicit proceed-on unspec
+#
+# When: the link is stored and read back
+#
+# Then: bpfman records dispatcher bit zero and reports the link action
+# back as -1
 
 import ../lib.bpfman
 

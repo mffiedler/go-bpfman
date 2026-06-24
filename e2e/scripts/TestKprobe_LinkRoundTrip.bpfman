@@ -1,19 +1,13 @@
 # -*- mode: bpfman -*-
-# Link-CRUD round-trip for kprobe attaches: load + attach +
-# per-kind structural assertions + bpfman link get round-trip +
-# bpfman link list presence + detach + post-detach get/list
-# absence checks. Adds a deterministic trigger/counter phase
-# the other LinkRoundTrip variants do not have.
 #
-# Uses a leased kfunc slot from bpfman_e2e_targets as the
-# attach target. The slot fixture is an implementation detail
-# of how this kind gets an isolated function symbol with an
-# exact debugfs trigger; the user-facing surface is the link
-# round-trip. The four probe-style kinds
-# (fentry/fexit/kprobe/kretprobe) share this fixture; the six
-# non-probe kinds (uprobe, uretprobe, tracepoint, tc, tcx, xdp)
-# attach to public kernel symbols or netifs and live in their
-# own Test<Kind>_LinkRoundTrip.bpfman scripts without it.
+# Given: a kprobe attached to a leased kfunc slot (an isolated symbol
+# with an exact debugfs trigger)
+#
+# When: the link is fetched, listed, triggered through a counter phase
+# the other LinkRoundTrip variants omit, then detached and unloaded
+#
+# Then: get/list round-trip the link, firing the trigger advances the
+# counter, and after detach the link is absent and the counter is quiet
 
 import ../lib.bpfman
 

@@ -1,22 +1,12 @@
 # -*- mode: bpfman -*-
-# Link-CRUD and traffic round-trip for tracepoint attaches.
 #
-# Loads tracepoint_kmod_counter and attaches it to the e2e kmod's
-# bpfman_e2e/bpfman_e2e_ping tracepoint. Asserts the structural shape
-# of the resulting link record (kind=tracepoint with details.group
-# and details.name encoding the attach point). Verifies Get and
-# List both return matching fields, and that after detach the link
-# record is gone from both the store and the listing. Also fires the
-# leased slot and asserts the private counter moved exactly.
+# Given: a tracepoint program loaded and attached to a tracepoint
 #
-# Counterpart to TestTracepoint_LoadAndGet (program structural shape).
+# When: the link is fetched, listed, exercised, then detached and
+# unloaded
 #
-# Invoke from e2e/:
-#
-#   cd e2e
-#   sudo bpfman-shell scripts/TestTracepoint_LinkRoundTrip.bpfman
-#
-# Requires root.
+# Then: get/list, traffic delivery, detach absence, and after-detach
+# counter quiescence all match the expected lifecycle
 
 import ../lib.bpfman
 

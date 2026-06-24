@@ -1,10 +1,13 @@
 # -*- mode: bpfman -*-
-# Container uprobe persistence test.
 #
-# This test deliberately attaches through `exec bpfman ...` instead of
-# the in-process bpfman-shell library dispatcher. The attach command
-# exits before traffic is fired, proving the container uprobe is held by
-# its bpffs link pin rather than by the attaching process's fd table.
+# Given: a uprobe attached to a target inside its own mount namespace
+# through the external bpfman CLI, not the in-process dispatcher
+#
+# When: the attach command exits before any traffic fires
+#
+# Then: the bpffs link pin keeps the probe alive -- not the attaching
+# process fd table -- and the private counter advances on later target
+# activity
 
 import ../lib.bpfman
 

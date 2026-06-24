@@ -1,43 +1,15 @@
 # -*- mode: bpfman -*-
-# Uprobe attach by bare library name resolved through the dynamic
-# linker cache (/etc/ld.so.cache), with no pid.
 #
-# The maps tier (a pid is given, resolution reads /proc/<pid>/maps)
-# is pinned by the TestResolveUprobeTarget_TierOrder unit test. This
-# script covers the cache tier: a bare libc target with no pid skips
-# the maps tier entirely, so resolution must go through
-# /etc/ld.so.cache.
+# Given: a bare libc uprobe target with no pid, which skips the maps
+# tier (covered by the TestResolveUprobeTarget_TierOrder unit test) and
+# forces resolution through /etc/ld.so.cache
 #
-# Two levels of proof, the first portable, the second CI-strong:
+# When: the target is attached and malloc is fired
 #
-#   - Structural, every platform: the attach succeeds and the link
-#     is pinned and kernel-seen. That alone proves the real
-#     /etc/ld.so.cache parsed and resolved "libc" to an ELF the
-#     kernel could attach to -- a broken cache parser or matcher
-#     fails the attach here regardless of OS.
-#
-#   - Behavioural, where the cache and the workload agree: firing
-#     malloc advances the counter only if the libc the cache
-#     resolved is the libc this process actually calls. The script
-#     gates that assertion on a positive, distribution-agnostic
-#     condition -- the process's own mapped libc is a file the cache
-#     lists -- which is true exactly when bare-name resolution lands
-#     on the libc the workload uses. That holds on normal FHS
-#     distributions (Fedora, Ubuntu -- the CI runners), and is
-#     naturally false where the binary uses a libc the global cache
-#     does not list (a store-private layout like Nix or Guix) or
-#     maps none at all (a static binary). No distribution is named
-#     or special-cased; the test keys on the cache, not the OS.
-#
-# Invoke from e2e/:
-#
-#   cd e2e
-#   sudo bpfman-shell scripts/TestUprobe_LibraryNameCacheTraffic.bpfman
-#
-# Requires root. A host with no /etc/ld.so.cache (a non-FHS layout
-# such as NixOS, which resolves libraries from the store rather than
-# a global cache) has nothing for the cache tier to read, so the
-# script skips there; the FHS CI runners exercise it in full.
+# Then: the link attaches and is kernel-seen wherever the cache parses;
+# where the cache names the process's own mapped libc, firing malloc
+# advances the counter -- a gate that is naturally false on non-FHS
+# hosts (NixOS) with no global cache, where the script skips
 
 import ../lib.bpfman
 

@@ -1,26 +1,12 @@
 # -*- mode: bpfman -*-
-# Link-CRUD round-trip for XDP attaches on the isolated topology.
 #
-# Deliberate duplicate of TestXDP_LinkRoundTrip with both veth ends
-# in owned namespaces: that script proves the host-interface
-# (node-agent) attach path; this one proves the namespaced
-# (container-style) attach path. Loads xdp_pass, builds a
-# netns-veth-pair, attaches the program to endpoint a via an XDP
-# dispatcher inside a's namespace, and asserts the structural shape
-# of the resulting link record. Traffic is driven from endpoint b,
-# so no host policy routing is involved and no host-route precheck
-# applies: the topology is VPN-immune by construction.
+# Given: an XDP program attached on the isolated netns-veth topology
 #
-# Includes a ping phase so the link round-trip proves both CRUD
-# structure and behavioural delivery, plus a post-detach ping that
-# proves the private counter stays frozen once the link is gone.
+# When: the link is fetched, listed, exercised with traffic, then
+# detached
 #
-# Invoke from e2e/:
-#
-#   cd e2e
-#   sudo bpfman-shell scripts/TestXDP_NetnsVethPairLinkRoundTrip.bpfman
-#
-# Requires root.
+# Then: get/list, traffic delivery, detach absence, and after-detach
+# counter quiescence all hold inside the namespaced attach path
 
 import ../lib.bpfman
 

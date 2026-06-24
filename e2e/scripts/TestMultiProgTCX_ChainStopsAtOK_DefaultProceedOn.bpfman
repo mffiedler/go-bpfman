@@ -1,27 +1,12 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestMultiProgTCX_ChainStopsAtOK_DefaultProceedOn.
 #
-# Three TCX programs at distinct priorities. The .bpf.o bakes in
-# the verdicts:
+# Given: three TCX programs attached where the middle member returns OK
+# instead of TC_ACT_UNSPEC
 #
-#   mtcx_chain_a (prio 50)  TC_ACT_UNSPEC -- runs, chain continues
-#   mtcx_chain_b (prio 60)  TC_ACT_OK     -- runs, chain STOPS
-#   mtcx_chain_c (prio 70)  (TC_ACT_UNSPEC -- never reached)
+# When: traffic crosses the native TCX chain
 #
-# TCX uses native kernel multi-prog (no bpfman dispatcher, no
-# --proceed-on flag). The chain-continue verdict is TC_ACT_UNSPEC
-# (aliased TCX_NEXT). Any other verdict -- including OK -- stops
-# the chain and the kernel honours it. b's OK lets the kernel
-# deliver the packet, so ping succeeds.
-#
-# Counters end at:
-#   a = N * weight_a   (ran, returned UNSPEC)
-#   b = N * weight_b   (ran, returned OK)
-#   c = 0              (never ran)
-#
-# Run from e2e/:
-#   cd e2e
-#   sudo bpfman-shell new/TestMultiProgTCX_ChainStopsAtOK_DefaultProceedOn.bpfman
+# Then: execution stops at the OK member, later counters remain zero,
+# and ping still succeeds
 
 import ../lib.bpfman
 

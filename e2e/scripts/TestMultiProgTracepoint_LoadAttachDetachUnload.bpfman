@@ -1,29 +1,12 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestMultiProgTracepoint_LoadAttachDetachUnload.
 #
-# Three tracepoint programs (tp_a/b/c) all attached to the e2e kmod's
-# bpfman_e2e/bpfman_e2e_ping tracepoint. Three waves of N slot fires,
-# with a staggered detach between waves so each program ends up
-# with a distinct event count:
+# Given: three tracepoint programs attached to the e2e kmod tracepoint
 #
-#     a counts waves 1+2+3   = 3 * N events
-#     b counts waves 1+2     = 2 * N events
-#     c counts wave 1        = 1 * N events
+# When: the tracepoint fires across waves with links detached at
+# staggered points
 #
-# Each program owns its own counter map and weight; final assertion is
-# `events * weight` exactly per program.
-#
-# Between detach and the next wave we sleep briefly to let the
-# perf-link RCU deferral window close. The kmod tracepoint event
-# carries the leased slot index, and each BPF program filters on
-# expected_slot so concurrent script instances cannot cross-count.
-#
-# Run from e2e/:
-#
-#   cd e2e
-#   sudo bpfman-shell new/TestMultiProgTracepoint_LoadAttachDetachUnload.bpfman
-#
-# Requires root and bpftool.
+# Then: each private counter records only the waves during which its
+# link stayed attached
 
 import ../lib.bpfman
 

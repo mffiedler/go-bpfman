@@ -1,14 +1,12 @@
 # -*- mode: bpfman -*-
-# User metadata on links: persisted at attach, returned by link get,
-# and program-scoped `link list` filtering.
 #
-# The link is labelled at attach time (-m on link attach) and that
-# metadata round-trips through attach and link get. The
-# --metadata-selector / --application / --program-type filters on
-# `link list` are Rust-faithful: they match the OWNING PROGRAM (its
-# load-time metadata and type) and return that program's links. The
-# link's own attach-time labels are surfaced but are not the list
-# filter key.
+# Given: a link attached with its own user metadata whose owning program
+# also carries load-time metadata
+#
+# When: the link is fetched and link list is filtered
+#
+# Then: link get returns the link's metadata while link list matches the
+# owning program, not the link's attach labels
 
 import ../lib.bpfman
 

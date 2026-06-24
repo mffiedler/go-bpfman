@@ -1,16 +1,11 @@
 # -*- mode: bpfman -*-
-# Attaching a loaded program via a verb its type cannot drive must be
-# rejected (RUST-PARITY finding 9). The manager resolves the program
-# once and checks its loaded type against the attach verb before any
-# kernel or store work, so every mismatch below fails cleanly with no
-# link created. The probe verbs legitimately serve both the entry and
-# return variant; those are covered by the *_LinkRoundTrip scripts.
 #
-# Invoke from e2e/:
+# Given: programs already loaded with known kinds
 #
-#   cd e2e
-#   sudo go test ./scriptrunner -run \
-#     'TestBPFManScripts/scripts/TestAttach_RejectsProgramKindMismatch\.bpfman$'
+# When: each is attached through a verb its declared kind cannot drive
+#
+# Then: every mismatch is rejected before any link is created, and the
+# diagnostic names the actual program kind
 
 guard up <- bpfman program load file testdata/bpf/uprobe_counter.bpf.o --programs uprobe:uprobe_counter
 let uprobe = $up.programs[0]

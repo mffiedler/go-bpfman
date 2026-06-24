@@ -1,29 +1,11 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestDispatcher_PriorityOrderingXDP.
 #
-# XDP sibling of TestDispatcher_PriorityOrderingTC: same shape,
-# same scrambled priorities, same per-link position assertions.
-# The XDP dispatcher runs only on ingress so there is no -d
-# flag, but the priority -> position contract is identical to
-# the TC ingress path.
+# Given: ten XDP members attached at deliberately scrambled priorities
 #
-# After all ten attaches commit, each link is re-queried so its
-# stored position reflects the final sorted order; record.details
-# is now the XDPDetails Shape (kind-aware bind-shape composition
-# in shell/check.go), so a typo on .priority or .position fails
-# --check rather than slipping through to runtime.
+# When: every link is re-fetched once all ten attaches have committed
 #
-# Retrofit notes: same shape as the TC sibling. List literal
-# plus foreach bind-collect replace the ten-line attach, defer,
-# and re-query blocks; the assertion loop derives the expected
-# position from each link's priority via jq sort+index.
-#
-# Run from e2e/:
-#
-#   cd e2e
-#   sudo bpfman-shell new/TestDispatcher_PriorityOrderingXDP.bpfman
-#
-# Requires root.
+# Then: each link reports a position matching its priority rank, since
+# positions only stabilise after the full chain is in place
 
 guard pair <- net veth-pair
 defer net release $pair

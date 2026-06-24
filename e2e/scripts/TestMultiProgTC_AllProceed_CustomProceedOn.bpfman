@@ -1,24 +1,12 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestMultiProgTC_AllProceed_CustomProceedOn.
 #
-# Three TC programs (mtcv_a/b/c) attach to one veth ingress at
-# distinct dispatcher priorities. Each returns TC_ACT_OK. TC's
-# default proceed-on is `[pipe, dispatcher_return]`, so OK would
-# stop the chain. Attaching with `--proceed-on ok,dispatcher_return`
-# overrides the default to include OK, so the chain proceeds and
-# every program counts every packet. With one wave of N pings:
+# Given: three TC programs returning OK, attached with a custom
+# proceed-on mask that includes ok
 #
-#     a counts wave 1 = N events
-#     b counts wave 1 = N events
-#     c counts wave 1 = N events
+# When: a packet wave crosses the dispatcher chain
 #
-# This proves the WithProceedOn knob plumbs through to the
-# dispatcher's bitmask: the same TC_ACT_OK return that would stop
-# the chain under default proceed-on lets it continue here.
-#
-# Run from e2e/:
-#   cd e2e
-#   sudo bpfman-shell new/TestMultiProgTC_AllProceed_CustomProceedOn.bpfman
+# Then: the chain continues through every member and each counter
+# records the wave
 
 import ../lib.bpfman
 

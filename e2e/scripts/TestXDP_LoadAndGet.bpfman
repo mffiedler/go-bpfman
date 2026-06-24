@@ -1,27 +1,15 @@
 # -*- mode: bpfman -*-
-# Shape-only round-trip test for XDP program load.
 #
-# Loads an XDP pass program with user metadata and exercises the
-# full Program record/status field set returned by `bpfman program
-# load` and `bpfman program get`, without any attach, traffic, or
-# detach activity.
+# Given: an XDP pass program loaded with user metadata, with no attach,
+# traffic, or detach activity
 #
-# Shape claims are tightened where the field's value is
-# deterministic enough to assert exactly: bytecode-derived names
-# (kernel.name, maps[0].name, maps[0].map_type), bpffs paths
-# computed from the program ID, the set of map IDs, zero-shaped
-# stats on Get. Numeric fields whose value is kernel-dependent
-# but always positive (btf_id, jited_size, etc.) are claimed by
-# the exhaustive walker for coverage and asserted by outside
-# `assert > 0` lines for value content. The has_X discriminators
-# are claimed at their per-response values.
+# When: the full Program record is read back through program load and
+# program get
 #
-# Invoke from e2e/:
-#
-#   cd e2e
-#   sudo bpfman-shell new/TestXDP_LoadAndGet.bpfman
-#
-# Requires root.
+# Then: deterministic fields (bytecode-derived names, ID-computed bpffs
+# paths, the map ID set, zero-shaped Get stats) are asserted exactly,
+# while kernel-dependent numerics (btf_id, jited_size) are only required
+# to be positive
 
 import ../lib.bpfman
 

@@ -1,7 +1,11 @@
 # -*- mode: bpfman -*-
-# Proves unloading one member of a TC dispatcher immediately rebuilds
-# the dispatcher with the surviving member rather than leaving stale
-# dispatcher configuration behind.
+#
+# Given: a two-member TC dispatcher
+#
+# When: one member is unloaded rather than explicitly detached
+#
+# Then: the dispatcher rebuilds immediately around the survivor and
+# drops the unloaded link from listings
 
 import ../lib.bpfman
 

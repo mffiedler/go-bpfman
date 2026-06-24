@@ -1,27 +1,12 @@
 # -*- mode: bpfman -*-
-# Translation experiment: e2e/TestMultiProgFexit_LoadAttachDetachUnload.
 #
-# Three fexit programs (mfx_a/b/c) all attached to one leased
-# bpfman_e2e_targets function slot. One wave of N firings proves
-# all three programs run from the same hook while updating discrete
-# maps:
+# Given: three fexit programs attached to one leased kfunc slot
 #
-#     a counts N events
-#     b counts N events
-#     c counts N events
+# When: the slot is fired once per event, then every program is detached
+# and unloaded
 #
-# Each program owns its own counter map and weight; final assertion is
-# `events * weight` exactly per program.
-#
-# The leased slot keeps repeated/parallel runs from stacking dozens
-# of fexit programs onto the same host kernel function.
-#
-# Run from e2e/:
-#
-#   cd e2e
-#   sudo bpfman-shell new/TestMultiProgFexit_LoadAttachDetachUnload.bpfman
-#
-# Requires root and bpftool.
+# Then: each private counter records the exact event count and no
+# program remains loaded
 
 import ../lib.bpfman
 
