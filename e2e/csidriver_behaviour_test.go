@@ -210,6 +210,30 @@ func TestCSIDriver_PublishReadOnly(t *testing.T) {
 	require.True(t, mountHasOption(t, targetPath, "ro"), "target bind-mount should be read-only")
 }
 
+// Re-publishing an already read-only volume with identical arguments is
+// idempotent too. This exercises publishMatches' Statfs read-only check.
+func TestCSIDriver_RepublishReadOnlyWithSameArgs(t *testing.T) {
+	t.Parallel()
+
+	d, programName, csiRoot := newCSIDriver(t)
+	const volumeID = "republish-readonly-vol"
+	targetPath := filepath.Join(t.TempDir(), "target")
+	podBpffs := filepath.Join(csiRoot, volumeID)
+	t.Cleanup(func() { cleanupCSI(d, volumeID, targetPath, podBpffs) })
+
+	req := publishRequest(volumeID, targetPath, programName, "kprobe_stats_map", true, "")
+
+	_, err := d.NodePublishVolume(context.Background(), req)
+	require.NoError(t, err, "first read-only publish should succeed")
+	require.True(t, mountHasOption(t, targetPath, "ro"), "target bind-mount should be read-only")
+
+	_, err = d.NodePublishVolume(context.Background(), req)
+	require.NoError(t, err, "republish with identical read-only args should return OK")
+	require.True(t, mountHasOption(t, targetPath, "ro"), "target bind-mount should stay read-only")
+	require.Equal(t, 1, countMountpoints(t, targetPath), "read-only republish must not stack the target mount")
+	require.Equal(t, 1, countMountpoints(t, podBpffs), "read-only republish must not stack the per-pod mount")
+}
+
 // Re-publishing at the same target returns OK when the arguments match
 // and ALREADY_EXISTS when they differ (the CSI second-call contract).
 func TestCSIDriver_RepublishWithDifferentArgs(t *testing.T) {
