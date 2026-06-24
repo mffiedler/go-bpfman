@@ -412,7 +412,7 @@ func parseMapNames(s string) []string {
 }
 
 // equalStringSets reports whether a and b contain the same elements,
-// ignoring order. It sorts both slices in place.
+// ignoring order. It does not mutate its inputs.
 func equalStringSets(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
