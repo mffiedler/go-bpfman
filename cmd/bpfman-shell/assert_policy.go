@@ -86,6 +86,7 @@ func runAssertCommandClause(cli *cli.CLI, session *runtime.Session, isRequire bo
 	if err != nil {
 		return err
 	}
+
 	return finishAssertVerbClause(cli, session, isRequire, span, clause.Head, clause.HeadSpan, clause.Negate, args, env)
 }
 
@@ -111,6 +112,7 @@ func finishAssertVerbClause(cli *cli.CLI, session *runtime.Session, isRequire bo
 	if err != nil {
 		return err
 	}
+
 	if negate {
 		result.pass = !result.pass
 		result.message = negateMessage(result.message)
@@ -134,10 +136,12 @@ func runAssertExprCallback(
 	if err != nil {
 		return err
 	}
+
 	pass, err := runtime.AsBool(v)
 	if err != nil {
 		return err
 	}
+
 	label := "assert"
 	if isRequire {
 		label = "require"
@@ -152,6 +156,7 @@ func runAssertExprCallback(
 	if err != nil {
 		return err
 	}
+
 	return completeAssertResult(cli, session, isRequire, span, loc, label, assertResult{
 		pass:    false,
 		message: message,
@@ -283,14 +288,11 @@ func evalAssertVerb(env *runtime.Env, verbArg runtime.Arg, verb string, args []r
 		}
 		return assertResult{pass: result.Pass, message: result.Message}, nil
 	case "==", "!=", "<", "<=", ">", ">=":
-		return assertResult{}, syntax.SpanErrorf(verbSpan,
-			"%q goes between two values: try 'assert <left> %s <right>'", verb, verb)
+		return assertResult{}, syntax.SpanErrorf(verbSpan, "%q goes between two values: try 'assert <left> %s <right>'", verb, verb)
 	case "not-empty":
-		return assertResult{}, syntax.SpanErrorf(verbSpan,
-			"%q takes one value: try 'assert %s $name'", verb, verb)
+		return assertResult{}, syntax.SpanErrorf(verbSpan, "%q takes one value: try 'assert %s $name'", verb, verb)
 	default:
-		return assertResult{}, syntax.SpanErrorf(verbSpan,
-			"unknown assertion verb %q", verb)
+		return assertResult{}, syntax.SpanErrorf(verbSpan, "unknown assertion verb %q", verb)
 	}
 }
 
@@ -312,6 +314,7 @@ func assertOk(env *runtime.Env, verbSpan source.Span, args []runtime.Arg) (asser
 			message: fmt.Sprintf("expected command to succeed, but got: %v", err),
 		}, nil
 	}
+
 	if !br.Rc.OK() {
 		msg := br.Rc.Stderr
 		if msg == "" {
@@ -339,6 +342,7 @@ func assertFail(env *runtime.Env, verbSpan source.Span, args []runtime.Arg) (ass
 			message: "expected command to fail",
 		}, nil
 	}
+
 	if !br.Rc.OK() {
 		return assertResult{
 			pass:    true,

@@ -133,9 +133,7 @@ func TestListProgramEntries_AllSelectorExcludesUnmanaged(t *testing.T) {
 	managedID := loadManagedTracepoint(t, fix, ctx, "demo")
 	fix.Kernel.InjectKernelProgram(900, "stray_xdp", bpfman.ProgramTypeXDP)
 
-	res, err := fix.Manager.ListProgramEntries(ctx,
-		bpfman.WithIncludeUnmanaged(),
-		bpfman.MatchingLabels(map[string]string{manager.ApplicationMetadataKey: "demo"}))
+	res, err := fix.Manager.ListProgramEntries(ctx, bpfman.WithIncludeUnmanaged(), bpfman.MatchingLabels(map[string]string{manager.ApplicationMetadataKey: "demo"}))
 	require.NoError(t, err)
 	require.Len(t, res.Programs, 1, "selector excludes the unmanaged program")
 	assert.Equal(t, managedID, res.Programs[0].ProgramID)

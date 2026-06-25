@@ -14,6 +14,7 @@ func TestLower_defer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Lower: %v", err)
 	}
+
 	want := strings.Join([]string{
 		"body entry=bb0",
 		"",
@@ -41,10 +42,12 @@ func TestLower_assertAndRequire(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Lower: %v", err)
 	}
+
 	got := dumpLoweredString(t, lp)
 	if !strings.Contains(got, "Assert $x > 0") {
 		t.Errorf("expected Assert $x > 0 in dump:\n%s", got)
 	}
+
 	if !strings.Contains(got, "Require $y > 0") {
 		t.Errorf("expected Require $y > 0 in dump:\n%s", got)
 	}
@@ -59,6 +62,7 @@ func TestLower_letDestructure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Lower: %v", err)
 	}
+
 	want := strings.Join([]string{
 		"body entry=bb0",
 		"",
@@ -86,6 +90,7 @@ func TestLower_ifElse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Lower: %v", err)
 	}
+
 	got := dumpLoweredString(t, lp)
 	mustContain(t, got, "Branch cond=t0 true=bb1 false=bb2")
 	mustContain(t, got, "EnterFrame kind=if-branch")
@@ -104,6 +109,7 @@ func TestLower_foreach(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Lower: %v", err)
 	}
+
 	got := dumpLoweredString(t, lp)
 	mustContain(t, got, "ForEach list=t0 names=[x] body=bb1 exit=bb2")
 	mustContain(t, got, "ForEachContinue")
@@ -122,6 +128,7 @@ func TestLower_pollStmt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Lower: %v", err)
 	}
+
 	got := dumpLoweredString(t, lp)
 	mustContain(t, got, "BeginPoll timeout=1s every=10ms attempt=bb1 timeout=bb2 success=bb3")
 	mustContain(t, got, "EnterFrame kind=poll-attempt")
@@ -140,6 +147,7 @@ func TestLower_bindCollect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Lower: %v", err)
 	}
+
 	got := dumpLoweredString(t, lp)
 	mustContain(t, got, "ForEachCollect list=t0 names=[p] target=xs guard=false")
 	mustContain(t, got, "CollectProduce")
@@ -156,9 +164,11 @@ func TestLower_defAndReturn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Lower: %v", err)
 	}
+
 	if len(lp.Defs) != 1 {
 		t.Fatalf("expected 1 def, got %d", len(lp.Defs))
 	}
+
 	got := dumpLoweredString(t, lp)
 	mustContain(t, got, "def f(x) entry=bb0")
 	mustContain(t, got, "BindName x = t0")
@@ -181,6 +191,7 @@ func TestLower_breakContinue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Lower: %v", err)
 	}
+
 	got := dumpLoweredString(t, lp)
 	mustContain(t, got, "ExitLoop")
 	mustContain(t, got, "ForEachContinue")

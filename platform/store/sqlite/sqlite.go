@@ -60,8 +60,7 @@ func resolveTuning(logger *slog.Logger) (time.Duration, []time.Duration) {
 		if d, err := time.ParseDuration(s); err == nil && d > 0 {
 			busy = d
 		} else {
-			logger.Warn("invalid env, using default",
-				"env", envBusyTimeout, "value", s, "default", defaultBusyTimeout)
+			logger.Warn("invalid env, using default", "env", envBusyTimeout, "value", s, "default", defaultBusyTimeout)
 		}
 	}
 
@@ -69,9 +68,7 @@ func resolveTuning(logger *slog.Logger) (time.Duration, []time.Duration) {
 	if s, ok := os.LookupEnv(envTxRetryBackoffs); ok {
 		parsed, err := parseDurationList(s)
 		if err != nil {
-			logger.Warn("invalid env, using default",
-				"env", envTxRetryBackoffs, "value", s, "error", err,
-				"default", defaultTxRetryBackoffs)
+			logger.Warn("invalid env, using default", "env", envTxRetryBackoffs, "value", s, "error", err, "default", defaultTxRetryBackoffs)
 		} else {
 			backoffs = parsed
 		}
@@ -261,8 +258,7 @@ func New(ctx context.Context, dbPath string, logger *slog.Logger, writeLock lock
 		s, err := newFileStoreAttempt(ctx, dbPath, logger, busyTimeout, txRetryBackoffs)
 		if err == nil {
 			if attempt > 0 {
-				logger.InfoContext(ctx, "database opened after retry",
-					"attempts", attempt+1)
+				logger.InfoContext(ctx, "database opened after retry", "attempts", attempt+1)
 			}
 			return s, nil
 		}
@@ -275,16 +271,16 @@ func New(ctx context.Context, dbPath string, logger *slog.Logger, writeLock lock
 			if err := deleteDatabase(dbPath); err != nil {
 				return nil, fmt.Errorf("failed to delete old database: %w", err)
 			}
+
 			attempt = -1
 			continue
 		}
 		if !isBusyError(err) || attempt >= len(txRetryBackoffs) {
 			return nil, err
 		}
+
 		wait := txRetryBackoffs[attempt]
-		logger.WarnContext(ctx, "database open busy, retrying",
-			"attempt", attempt+1, "max_attempts", len(txRetryBackoffs)+1,
-			"backoff_ms", wait.Milliseconds(), "error", err)
+		logger.WarnContext(ctx, "database open busy, retrying", "attempt", attempt+1, "max_attempts", len(txRetryBackoffs)+1, "backoff_ms", wait.Milliseconds(), "error", err)
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
@@ -325,10 +321,7 @@ func OpenExistingStore(ctx context.Context, dbPath string, logger *slog.Logger) 
 		return nil, fmt.Errorf("failed to prepare statements for %s: %w", dbPath, err)
 	}
 
-	logger.Info("opened existing database",
-		"path", dbPath,
-		"busy_timeout", busyTimeout,
-		"tx_retry_backoffs", txRetryBackoffs)
+	logger.Info("opened existing database", "path", dbPath, "busy_timeout", busyTimeout, "tx_retry_backoffs", txRetryBackoffs)
 	return s, nil
 }
 
@@ -359,10 +352,7 @@ func newFileStoreAttempt(
 		return nil, fmt.Errorf("failed to prepare statements for %s: %w", dbPath, err)
 	}
 
-	logger.Info("opened database",
-		"path", dbPath,
-		"busy_timeout", busyTimeout,
-		"tx_retry_backoffs", txRetryBackoffs)
+	logger.Info("opened database", "path", dbPath, "busy_timeout", busyTimeout, "tx_retry_backoffs", txRetryBackoffs)
 	return s, nil
 }
 
@@ -372,10 +362,12 @@ func deleteDatabase(dbPath string) error {
 	if err := os.Remove(dbPath); err != nil && !os.IsNotExist(err) {
 		return err
 	}
+
 	// Remove WAL file if present
 	if err := os.Remove(dbPath + "-wal"); err != nil && !os.IsNotExist(err) {
 		return err
 	}
+
 	// Remove SHM file if present
 	if err := os.Remove(dbPath + "-shm"); err != nil && !os.IsNotExist(err) {
 		return err
@@ -518,6 +510,7 @@ func (s *sqliteStore) migrate(ctx context.Context) error {
 		if err := s.migrateV2toV3(ctx); err != nil {
 			return fmt.Errorf("migration v2->v3: %w", err)
 		}
+
 		version = 3
 	}
 
@@ -527,6 +520,7 @@ func (s *sqliteStore) migrate(ctx context.Context) error {
 		if err := s.migrateV3toV4(ctx); err != nil {
 			return fmt.Errorf("migration v3->v4: %w", err)
 		}
+
 		version = 4
 	}
 
@@ -708,18 +702,16 @@ func (s *sqliteStore) runInTx(ctx context.Context, name string, fn func(*sqliteS
 				// records and gauge how often retries
 				// actually save the caller from a
 				// surfaced SQLITE_BUSY.
-				logger.InfoContext(ctx, "tx recovered after retry",
-					"attempts", attempt+1)
+				logger.InfoContext(ctx, "tx recovered after retry", "attempts", attempt+1)
 			}
 			return nil
 		}
 		if !isBusyError(err) || attempt >= len(s.txRetryBackoffs) {
 			return err
 		}
+
 		wait := s.txRetryBackoffs[attempt]
-		logger.WarnContext(ctx, "tx busy, retrying",
-			"attempt", attempt+1, "max_attempts", len(s.txRetryBackoffs)+1,
-			"backoff_ms", wait.Milliseconds(), "error", err)
+		logger.WarnContext(ctx, "tx busy, retrying", "attempt", attempt+1, "max_attempts", len(s.txRetryBackoffs)+1, "backoff_ms", wait.Milliseconds(), "error", err)
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -732,16 +724,14 @@ func (s *sqliteStore) runTransactionAttempt(ctx context.Context, logger *slog.Lo
 	start := time.Now()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		logger.DebugContext(ctx, "tx begin failed",
-			"attempt", attempt, "wait_ms", time.Since(start).Milliseconds(), "error", err)
+		logger.DebugContext(ctx, "tx begin failed", "attempt", attempt, "wait_ms", time.Since(start).Milliseconds(), "error", err)
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
+
 	acquired := time.Now()
-	logger.DebugContext(ctx, "tx acquired",
-		"attempt", attempt, "wait_ms", acquired.Sub(start).Milliseconds())
+	logger.DebugContext(ctx, "tx acquired", "attempt", attempt, "wait_ms", acquired.Sub(start).Milliseconds())
 	defer func() {
-		logger.DebugContext(ctx, "tx closed",
-			"attempt", attempt, "held_ms", time.Since(acquired).Milliseconds())
+		logger.DebugContext(ctx, "tx closed", "attempt", attempt, "held_ms", time.Since(acquired).Milliseconds())
 	}()
 	defer tx.Rollback()
 

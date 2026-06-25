@@ -81,6 +81,7 @@ func validateBPFBytecode(path string, expectedEndian elf.Data) (*ciliumebpf.Coll
 	if err != nil {
 		return nil, fmt.Errorf("open bytecode ELF: %w", err)
 	}
+
 	if expectedEndian != 0 && f.Data != expectedEndian {
 		_ = f.Close()
 		return nil, fmt.Errorf("bytecode %s has %s endianness, expected %s", path, f.Data, expectedEndian)

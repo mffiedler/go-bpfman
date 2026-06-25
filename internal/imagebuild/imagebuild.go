@@ -198,6 +198,7 @@ func Build(source BytecodeSource, inspect Inspector) (Plan, error) {
 		if err != nil {
 			return Plan{}, err
 		}
+
 		if i == 0 {
 			plan.Labels = info
 		}
@@ -273,6 +274,7 @@ func LabelBuildArgValues(info Info) (programs string, maps string, err error) {
 	if err != nil {
 		return "", "", err
 	}
+
 	mapBytes, err := json.Marshal(info.Maps)
 	if err != nil {
 		return "", "", err

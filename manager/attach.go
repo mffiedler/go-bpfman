@@ -31,6 +31,7 @@ func (m *Manager) Attach(ctx context.Context, writeLock lock.WriterScope, spec b
 	if err != nil {
 		return bpfman.Link{}, err
 	}
+
 	if err := bpfman.ValidateAttachProgramType(spec, prog.Load.ProgramType()); err != nil {
 		return bpfman.Link{}, err
 	}

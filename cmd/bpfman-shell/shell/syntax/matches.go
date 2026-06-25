@@ -197,6 +197,7 @@ func (p *parser) parseMatchEntry(inExhaustive bool) (MatchEntry, error) {
 		if err != nil {
 			return MatchEntry{}, err
 		}
+
 		endTok := p.tokens[p.pos-1]
 		return MatchEntry{
 			Path:     pathText,
@@ -242,6 +243,7 @@ func (p *parser) parseMatchEntry(inExhaustive bool) (MatchEntry, error) {
 	if err != nil {
 		return MatchEntry{}, spanErrorf(pathTok.Span, "matches entry %q: %v", pathText, err)
 	}
+
 	return MatchEntry{Path: pathText, Pattern: pattern, Span: entrySpan}, nil
 }
 

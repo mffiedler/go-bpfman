@@ -41,6 +41,7 @@ func maybeBrokerLoadFileArgs(ctx context.Context, args []runtime.Arg) ([]runtime
 	if err != nil {
 		return nil, err
 	}
+
 	ref, err := brokerBytecodeImage(ctx, bytecodePath)
 	if err != nil {
 		return nil, err
@@ -66,6 +67,7 @@ func loadImageArgsFromLoadFile(args []runtime.Arg, imageRef string) ([]runtime.A
 		if err != nil {
 			return nil, fmt.Errorf("program load file arg %d: %w", i+5, err)
 		}
+
 		argv = append(argv, text)
 	}
 
@@ -91,6 +93,7 @@ func brokerBytecodeImage(ctx context.Context, bytecodePath string) (string, erro
 	if err != nil {
 		return "", fmt.Errorf("%s=image requires registry host: %w", e2eBytecodeSourceEnv, err)
 	}
+
 	repoRoot := os.Getenv(e2eRepoRootEnv)
 	if repoRoot == "" {
 		return "", fmt.Errorf("%s=image requires %s", e2eBytecodeSourceEnv, e2eRepoRootEnv)
@@ -99,6 +102,7 @@ func brokerBytecodeImage(ctx context.Context, bytecodePath string) (string, erro
 	if err != nil {
 		return "", err
 	}
+
 	plan, err := planBrokeredBuild(repoRoot, absBytecode)
 	if err != nil {
 		return "", err
@@ -115,6 +119,7 @@ func brokerBytecodeImage(ctx context.Context, bytecodePath string) (string, erro
 		brokeredImageCache.Unlock()
 		return "", err
 	}
+
 	brokeredImageCache.refs[key] = ref
 	brokeredImageCache.Unlock()
 	return ref, nil
@@ -134,6 +139,7 @@ func planBrokeredBuild(repoRoot, absBytecode string) (brokeredBuild, error) {
 	if err != nil {
 		return brokeredBuild{}, err
 	}
+
 	if rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return brokeredBuild{}, fmt.Errorf("bytecode path %q is outside repository root %s", absBytecode, repoRoot)
 	}
@@ -155,6 +161,7 @@ func buildBrokeredImage(ctx context.Context, bytecode, imageRef string) error {
 	if cancelErr := cancellationErr(); cancelErr != nil {
 		return cancelErr
 	}
+
 	if err != nil {
 		return fmt.Errorf("build bytecode image %s from %s: %w\n%s", imageRef, bytecode, err, strings.TrimSpace(string(out)))
 	}

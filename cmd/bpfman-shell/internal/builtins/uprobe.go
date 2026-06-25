@@ -54,6 +54,7 @@ func handleUprobeTarget(args []runtime.Arg) (runtime.Value, error) {
 	if err != nil {
 		return runtime.Value{}, fmt.Errorf("uprobe target: resolve executable path: %w", err)
 	}
+
 	symbolOffset, err := elfSymbolFileOffset(exe, fixturemode.UprobeTargetSymbol)
 	if err != nil {
 		return runtime.Value{}, fmt.Errorf("uprobe target: %w", err)
@@ -83,6 +84,7 @@ func elfSymbolFileOffset(path, symbol string) (uint64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("read symbols of %s: %w", path, err)
 	}
+
 	for _, s := range syms {
 		if s.Name != symbol {
 			continue
@@ -105,6 +107,7 @@ func handleUprobeFire(args []runtime.Arg) (runtime.Value, error) {
 	if err != nil {
 		return runtime.Value{}, fmt.Errorf("uprobe fire: N: %w", err)
 	}
+
 	if n < 0 {
 		return runtime.Value{}, fmt.Errorf("uprobe fire: N must not be negative (got %d)", n)
 	}

@@ -78,7 +78,6 @@ func RunWithLockValue[T any](ctx context.Context, c *CLI, fn func(context.Contex
 		result, fnErr = fn(ctx, writeLock)
 		return fnErr
 	})
-
 	if err != nil {
 		return result, err
 	}

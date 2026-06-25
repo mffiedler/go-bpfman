@@ -36,6 +36,7 @@ func TestHelperExitErrorIncludesHelperReason(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
+
 	got := err.Error()
 	if !strings.Contains(got, "bpfman-ns failed attaching malloc to \"/bin/bash\" in container 1234 (exit 1): specific reason") {
 		t.Fatalf("error did not include helper reason: %q", got)
@@ -59,6 +60,7 @@ func TestHelperExitErrorWithoutHelperReason(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
+
 	got := err.Error()
 	if strings.Contains(got, ": ") {
 		t.Fatalf("error should not include empty helper reason: %q", got)
@@ -74,6 +76,7 @@ func TestHelperReceiveErrorIncludesPreSendHelperReason(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
+
 	got := err.Error()
 	if !strings.Contains(got, "bpfman-ns failed attaching malloc to \"/bin/bash\" in container 1234 (exit 7): specific reason") {
 		t.Fatalf("error did not include helper reason: %q", got)
@@ -92,6 +95,7 @@ func TestHelperReceiveErrorFallsBackToReceiveError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
+
 	got := err.Error()
 	if !strings.Contains(got, "receive link fd from child: recvmsg: connection reset by peer") {
 		t.Fatalf("error did not include receive failure: %q", got)
@@ -108,6 +112,7 @@ func TestHelperReceiveErrorFallsBackWhenStderrIsOnlyChatter(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
+
 	got := err.Error()
 	if !strings.Contains(got, "receive link fd from child: recvfd: unexpected oob length") {
 		t.Fatalf("error did not fall back to receive failure: %q", got)
@@ -124,10 +129,12 @@ func commandExitError(t *testing.T, code int) error {
 	if err == nil {
 		t.Fatal("expected command to fail")
 	}
+
 	var exitErr *exec.ExitError
 	if !errors.As(err, &exitErr) {
 		t.Fatalf("expected exec.ExitError, got %T", err)
 	}
+
 	if exitErr.ExitCode() != code {
 		t.Fatalf("exit code mismatch: got %d, want %d", exitErr.ExitCode(), code)
 	}

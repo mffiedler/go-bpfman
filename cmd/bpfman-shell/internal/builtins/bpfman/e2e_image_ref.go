@@ -17,6 +17,7 @@ func resolveE2EImageRef(ref string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	suffix := strings.TrimPrefix(ref, registryfixture.RegistryAlias)
 	suffix = strings.TrimPrefix(suffix, "/")
 	if suffix == "" {
@@ -35,6 +36,7 @@ func resolveE2EImageRefsInArgs(args []runtime.Arg) ([]runtime.Arg, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		out[2] = runtime.WordArg{Text: resolved}
 	}
 	if len(out) >= 4 &&
@@ -45,6 +47,7 @@ func resolveE2EImageRefsInArgs(args []runtime.Arg) ([]runtime.Arg, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		out[3] = runtime.WordArg{Text: resolved}
 	}
 	for i := range out {
@@ -58,6 +61,7 @@ func resolveE2EImageRefsInArgs(args []runtime.Arg) ([]runtime.Arg, error) {
 			if err != nil {
 				return nil, err
 			}
+
 			out[i+1] = runtime.WordArg{Text: resolved}
 		default:
 			for _, prefix := range []string{"--tag=", "-t="} {
@@ -66,6 +70,7 @@ func resolveE2EImageRefsInArgs(args []runtime.Arg) ([]runtime.Arg, error) {
 					if err != nil {
 						return nil, err
 					}
+
 					out[i] = runtime.WordArg{Text: prefix + resolved}
 					break
 				}

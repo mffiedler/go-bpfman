@@ -26,14 +26,7 @@ import (
 // in the current namespace. Does not spawn a helper, so no lock scope needed.
 func (k *kernelAdapter) AttachUprobeLocal(ctx context.Context, progPinPath bpfman.ProgPinPath, target, fnName string, offset uint64, pid int32, retprobe bool, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
 	linkPin := linkPinPath.String()
-	k.logger.Debug("AttachUprobeLocal called",
-		"target", target,
-		"fn_name", fnName,
-		"offset", offset,
-		"pid", pid,
-		"retprobe", retprobe,
-		"prog_pin_path", progPinPath,
-		"link_pin_path", linkPin)
+	k.logger.Debug("AttachUprobeLocal called", "target", target, "fn_name", fnName, "offset", offset, "pid", pid, "retprobe", retprobe, "prog_pin_path", progPinPath, "link_pin_path", linkPin)
 
 	prog, err := ebpf.LoadPinnedProgram(progPinPath.String(), nil)
 	if err != nil {
@@ -59,16 +52,7 @@ func (k *kernelAdapter) AttachUprobeLocal(ctx context.Context, progPinPath bpfma
 // lock scope to pass fd.
 func (k *kernelAdapter) AttachUprobeContainer(ctx context.Context, scope lock.WriterScope, progPinPath bpfman.ProgPinPath, target, fnName string, offset uint64, pid int32, retprobe bool, linkPinPath bpfman.LinkPath, containerPid int32) (bpfman.AttachOutput, error) {
 	linkPin := linkPinPath.String()
-	k.logger.Debug("AttachUprobeContainer called",
-		"target", target,
-		"fn_name", fnName,
-		"offset", offset,
-		"pid", pid,
-		"retprobe", retprobe,
-		"container_pid", containerPid,
-		"prog_pin_path", progPinPath,
-		"link_pin_path", linkPin,
-		"lock_fd", scope.FD())
+	k.logger.Debug("AttachUprobeContainer called", "target", target, "fn_name", fnName, "offset", offset, "pid", pid, "retprobe", retprobe, "container_pid", containerPid, "prog_pin_path", progPinPath, "link_pin_path", linkPin, "lock_fd", scope.FD())
 
 	prog, err := ebpf.LoadPinnedProgram(progPinPath.String(), nil)
 	if err != nil {
@@ -117,11 +101,9 @@ func (k *kernelAdapter) doAttachUprobeLocal(progPinPath, target, fnName string, 
 	if err != nil {
 		return 0, nil, err
 	}
+
 	if resolved.Source != sourceAbsolutePath {
-		k.logger.Debug("resolved uprobe target",
-			"target", target,
-			"path", resolved.Path,
-			"source", resolved.Source.String())
+		k.logger.Debug("resolved uprobe target", "target", target, "path", resolved.Path, "source", resolved.Source.String())
 	}
 
 	ex, err := link.OpenExecutable(resolved.Path)
@@ -149,6 +131,7 @@ func (k *kernelAdapter) doAttachUprobeLocal(progPinPath, target, fnName string, 
 		lnk.Close()
 		return 0, nil, fmt.Errorf("get link info: %w", err)
 	}
+
 	linkID := kernel.LinkID(linkInfo.ID)
 
 	k.logger.Debug("uprobe link created", "link_id", linkID, "link_type", linkInfo.Type)
@@ -219,26 +202,13 @@ func (k *kernelAdapter) attachUprobeViaHelper(scope lock.WriterScope, progPinPat
 	if _, err := os.Stat(nsPath); err != nil {
 		altPath := fmt.Sprintf("/host/proc/%d/ns/mnt", containerPid)
 		if _, err := os.Stat(altPath); err != nil {
-			k.logger.Error("container namespace not accessible",
-				"container_pid", containerPid,
-				"tried_paths", []string{nsPath, altPath},
-				"error", err,
-				"hint", "ensure container PID is valid and /proc or /host/proc is accessible")
+			k.logger.Error("container namespace not accessible", "container_pid", containerPid, "tried_paths", []string{nsPath, altPath}, "error", err, "hint", "ensure container PID is valid and /proc or /host/proc is accessible")
 			return 0, nil, fmt.Errorf("container namespace for PID %d not accessible (tried %s and %s): %w", containerPid, nsPath, altPath, err)
 		}
 		nsPath = altPath
 	}
 
-	k.logger.Info("preparing container uprobe attachment",
-		"container_pid", containerPid,
-		"current_mnt_ns_inode", currentMntNs,
-		"target_ns_path", nsPath,
-		"target_binary", target,
-		"fn_name", fnName,
-		"offset", offset,
-		"retprobe", retprobe,
-		"prog_pin_path", progPinPath,
-		"link_pin_path", linkPinPath)
+	k.logger.Info("preparing container uprobe attachment", "container_pid", containerPid, "current_mnt_ns_inode", currentMntNs, "target_ns_path", nsPath, "target_binary", target, "fn_name", fnName, "offset", offset, "retprobe", retprobe, "prog_pin_path", progPinPath, "link_pin_path", linkPinPath)
 
 	// The child needs only the target path; the parent owns the attach.
 	// bpfman-ns mode is set via the BPFMAN_MODE env var, not argv.
@@ -270,19 +240,13 @@ func (k *kernelAdapter) attachUprobeViaHelper(scope lock.WriterScope, progPinPat
 		WriterLockEnvVar: lock.WriterLockFDEnvVar,
 	}, args...)
 
-	k.logger.Debug("executing bpfman-ns helper subprocess",
-		"executable", bpfmanPath,
-		"args", args,
-		"child_log_level", childLogLevel)
+	k.logger.Debug("executing bpfman-ns helper subprocess", "executable", bpfmanPath, "args", args, "child_log_level", childLogLevel)
 
 	var helperStderr bytes.Buffer
 	cmd.Stderr = io.MultiWriter(os.Stderr, &helperStderr)
 
 	if err := cmd.Start(); err != nil {
-		k.logger.Error("failed to start bpfman-ns helper",
-			"error", err,
-			"container_pid", containerPid,
-			"ns_path", nsPath)
+		k.logger.Error("failed to start bpfman-ns helper", "error", err, "container_pid", containerPid, "ns_path", nsPath)
 		return 0, nil, fmt.Errorf("start bpfman-ns for container %d: %w", containerPid, err)
 	}
 
@@ -293,34 +257,23 @@ func (k *kernelAdapter) attachUprobeViaHelper(scope lock.WriterScope, progPinPat
 	k.logger.Debug("waiting for target fd from child")
 	binaryFd, name, err := ns.RecvFd(parentSocket)
 	if err != nil {
-		k.logger.Error("failed to receive target fd from child",
-			"error", err,
-			"container_pid", containerPid)
+		k.logger.Error("failed to receive target fd from child", "error", err, "container_pid", containerPid)
 		cmd.Process.Kill()
 		waitErr := cmd.Wait()
 		return 0, nil, helperReceiveError(fnName, target, containerPid, err, waitErr, helperStderr.String())
 	}
+
 	defer syscall.Close(binaryFd)
-	k.logger.Debug("received target fd from child",
-		"target_fd", binaryFd,
-		"name", name)
+	k.logger.Debug("received target fd from child", "target_fd", binaryFd, "name", name)
 
 	// Wait for child to exit - exit 0 signals success
 	if err := cmd.Wait(); err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			k.logger.Error("bpfman-ns helper failed",
-				"exit_code", exitErr.ExitCode(),
-				"container_pid", containerPid,
-				"target", target,
-				"fn_name", fnName,
-				"helper_stderr", summariseHelperStderr(helperStderr.String()),
-				"ns_path", nsPath)
+			k.logger.Error("bpfman-ns helper failed", "exit_code", exitErr.ExitCode(), "container_pid", containerPid, "target", target, "fn_name", fnName, "helper_stderr", summariseHelperStderr(helperStderr.String()), "ns_path", nsPath)
 			return 0, nil, helperExitError(fnName, target, containerPid, exitErr.ExitCode(), helperStderr.String())
 		}
-		k.logger.Error("failed to wait for bpfman-ns helper",
-			"error", err,
-			"container_pid", containerPid)
+		k.logger.Error("failed to wait for bpfman-ns helper", "error", err, "container_pid", containerPid)
 		return 0, nil, fmt.Errorf("wait for bpfman-ns: %w", err)
 	}
 
@@ -329,12 +282,7 @@ func (k *kernelAdapter) attachUprobeViaHelper(scope lock.WriterScope, progPinPat
 	// so this is the same code path as a local uprobe -- and the perf-event
 	// bpf_link is created here, where Cilium's feature probe behaves.
 	procTarget := fmt.Sprintf("/proc/self/fd/%d", binaryFd)
-	k.logger.Info("attaching container uprobe in host namespace",
-		"container_pid", containerPid,
-		"proc_target", procTarget,
-		"fn_name", fnName,
-		"pid", pid,
-		"link_pin_path", linkPinPath)
+	k.logger.Info("attaching container uprobe in host namespace", "container_pid", containerPid, "proc_target", procTarget, "fn_name", fnName, "pid", pid, "link_pin_path", linkPinPath)
 	return k.doAttachUprobeLocal(progPinPath, procTarget, fnName, offset, pid, retprobe, linkPinPath)
 }
 

@@ -66,8 +66,7 @@ func (e ErrAttachKindMismatch) Error() string {
 	default:
 		which = strings.Join(accepts[:len(accepts)-1], ", ") + " or " + accepts[len(accepts)-1]
 	}
-	return fmt.Sprintf("program %d is a %s program; the %s attach accepts %s",
-		e.ProgramID, e.ActualType, e.AttachKind, which)
+	return fmt.Sprintf("program %d is a %s program; the %s attach accepts %s", e.ProgramID, e.ActualType, e.AttachKind, which)
 }
 
 // ErrTracepointNotFound is returned when an attach targets a kernel

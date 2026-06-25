@@ -42,9 +42,11 @@ print after
 	if err != nil {
 		t.Fatalf("Lower: %v", err)
 	}
+
 	if err := Exec(lp, env); err != nil {
 		t.Fatalf("Exec: %v", err)
 	}
+
 	assertCalls(t, calls, []execCall{
 		{Lane: "bind", Argv: "probe"},
 		{Lane: "bind", Argv: "probe"},
@@ -67,6 +69,7 @@ print after
 	if err == nil {
 		t.Fatal("expected require failure")
 	}
+
 	if !strings.Contains(err.Error(), "require failed: false") {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -156,10 +159,8 @@ poll timeout 50ms every 1ms {
 
 	err := runProgramWithEnv(t, src, env)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "defer failed",
-		"helper defer failure must surface as a fatal cleanup diagnostic, got %q", err.Error())
-	assert.NotContains(t, err.Error(), "poll timed out",
-		"helper defer failure must halt the poll immediately, not let it spin to the timeout")
+	assert.Contains(t, err.Error(), "defer failed", "helper defer failure must surface as a fatal cleanup diagnostic, got %q", err.Error())
+	assert.NotContains(t, err.Error(), "poll timed out", "helper defer failure must halt the poll immediately, not let it spin to the timeout")
 }
 
 func TestPoll_TimeoutUsesRetryMessage(t *testing.T) {
@@ -174,6 +175,7 @@ poll timeout 5ms every 1ms {
 	if err == nil {
 		t.Fatal("expected poll timeout")
 	}
+
 	if !strings.Contains(err.Error(), "poll timed out") {
 		t.Fatalf("unexpected timeout error: %v", err)
 	}

@@ -108,8 +108,7 @@ func buildSuiteRuntime() (*suiteRuntime, error) {
 	if baseDir == "" {
 		baseDir = fs.DefaultRoot
 		if _, err := os.Stat(e2eDaemonSocket); err == nil {
-			return nil, fmt.Errorf("refusing to run e2e against %s: bpfman-rpc daemon is live (socket present at %s); stop the daemon or set %s to a writable path elsewhere",
-				baseDir, e2eDaemonSocket, e2eSuiteRootEnv)
+			return nil, fmt.Errorf("refusing to run e2e against %s: bpfman-rpc daemon is live (socket present at %s); stop the daemon or set %s to a writable path elsewhere", baseDir, e2eDaemonSocket, e2eSuiteRootEnv)
 		}
 	}
 	if err := os.MkdirAll(baseDir, 0o755); err != nil {
@@ -125,6 +124,7 @@ func buildSuiteRuntime() (*suiteRuntime, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid image cache directory: %w", err)
 	}
+
 	imageCache, err := fs.EnsureCache(imageCacheBase)
 	if err != nil {
 		return nil, fmt.Errorf("ensure image cache: %w", err)
@@ -177,11 +177,7 @@ func buildSuiteRuntime() (*suiteRuntime, error) {
 		return nil, fmt.Errorf("snapshot suite baseline: %w", err)
 	}
 
-	logger.Info("shared e2e runtime ready",
-		"base", baseDir,
-		"bpffs", layout.BPFFSMountPoint(),
-		"baseline_programs", len(baselinePrograms),
-		"baseline_links", len(baselineLinks))
+	logger.Info("shared e2e runtime ready", "base", baseDir, "bpffs", layout.BPFFSMountPoint(), "baseline_programs", len(baselinePrograms), "baseline_links", len(baselineLinks))
 
 	return &suiteRuntime{
 		layout:           layout,
@@ -206,6 +202,7 @@ func snapshotBaseline(ctx context.Context, mgr *manager.Manager) (map[kernel.Pro
 	if err != nil {
 		return nil, nil, fmt.Errorf("list programs: %w", err)
 	}
+
 	progIDs := make(map[kernel.ProgramID]struct{}, len(progs))
 	for _, p := range progs {
 		progIDs[p.Record.ProgramID] = struct{}{}
@@ -215,6 +212,7 @@ func snapshotBaseline(ctx context.Context, mgr *manager.Manager) (map[kernel.Pro
 	if err != nil {
 		return nil, nil, fmt.Errorf("list links: %w", err)
 	}
+
 	linkIDs := make(map[bpfman.LinkID]struct{}, len(links))
 	for _, l := range links {
 		linkIDs[l.ID] = struct{}{}
@@ -248,9 +246,11 @@ func teardownSharedRuntime(rt *suiteRuntime) (leaked bool) {
 	if err := unmount(bpffsMount); err != nil {
 		fmt.Fprintf(os.Stderr, "e2e suite teardown: unmount %s: %v\n", bpffsMount, err)
 	}
+
 	if err := os.RemoveAll(rt.baseDir); err != nil {
 		fmt.Fprintf(os.Stderr, "e2e suite teardown: remove %s: %v\n", rt.baseDir, err)
 	}
+
 	return leaked
 }
 
@@ -345,6 +345,7 @@ func kernelProgramPresence(ctx context.Context, rt *suiteRuntime, id kernel.Prog
 	if _, err := rt.kernel.GetProgramByID(ctx, id); err == nil {
 		return "kernel residue too"
 	}
+
 	return "store ghost"
 }
 
@@ -362,6 +363,7 @@ func kernelLinkPresence(ctx context.Context, rt *suiteRuntime, l bpfman.LinkReco
 	if _, err := rt.kernel.GetLinkByID(ctx, *l.KernelLinkID); err == nil {
 		return "kernel residue too"
 	}
+
 	return "store ghost"
 }
 
@@ -378,6 +380,7 @@ func buildLogger() (*slog.Logger, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid BPFMAN_LOG spec: %w", err)
 		}
+
 		return l, nil
 	}
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{

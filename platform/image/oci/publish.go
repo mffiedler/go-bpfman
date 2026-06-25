@@ -67,6 +67,7 @@ func PublishBytecodeImage(ctx context.Context, tag string, plan imagebuild.Plan,
 	if err != nil {
 		return PublishedImage{}, err
 	}
+
 	remoteOpts := []remote.Option{
 		remote.WithContext(ctx),
 	}
@@ -74,6 +75,7 @@ func PublishBytecodeImage(ctx context.Context, tag string, plan imagebuild.Plan,
 	if err != nil {
 		return PublishedImage{}, err
 	}
+
 	remoteOpts = append(remoteOpts, remote.WithAuth(authenticator))
 
 	timestamp, err := imageTimestamp()
@@ -87,10 +89,12 @@ func PublishBytecodeImage(ctx context.Context, tag string, plan imagebuild.Plan,
 		if err != nil {
 			return PublishedImage{}, err
 		}
+
 		digest, err := img.Digest()
 		if err != nil {
 			return PublishedImage{}, fmt.Errorf("failed to digest image %s: %w", tag, err)
 		}
+
 		if err := remote.Write(ref, img, remoteOpts...); err != nil {
 			return PublishedImage{}, fmt.Errorf("failed to publish image %s: %w", tag, err)
 		}
@@ -101,10 +105,12 @@ func PublishBytecodeImage(ctx context.Context, tag string, plan imagebuild.Plan,
 	if err != nil {
 		return PublishedImage{}, err
 	}
+
 	digest, err := idx.Digest()
 	if err != nil {
 		return PublishedImage{}, fmt.Errorf("failed to digest image index %s: %w", tag, err)
 	}
+
 	if err := remote.WriteIndex(ref, idx, remoteOpts...); err != nil {
 		return PublishedImage{}, fmt.Errorf("failed to publish image index %s: %w", tag, err)
 	}
@@ -124,6 +130,7 @@ func parseRegistryReference(tag string) (name.Reference, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse image reference: %w", err)
 	}
+
 	if isLoopbackRegistry(ref.Context().RegistryStr()) {
 		ref, err = name.ParseReference(tag, name.Insecure)
 		if err != nil {
@@ -142,6 +149,7 @@ func imageTimestamp() (time.Time, error) {
 	if err != nil {
 		return time.Time{}, fmt.Errorf("invalid %s %q: %w", sourceDateEpochEnv, raw, err)
 	}
+
 	if seconds < 0 {
 		return time.Time{}, fmt.Errorf("invalid %s %q: timestamp must be non-negative", sourceDateEpochEnv, raw)
 	}
@@ -159,10 +167,12 @@ func bytecodeImageIndex(plan imagebuild.Plan, timestamp time.Time) (v1.ImageInde
 		if err != nil {
 			return nil, fmt.Errorf("invalid platform %q: %w", platformName, err)
 		}
+
 		img, err := bytecodeImageForBuildArg(plan, plan.BuildArgs[i], *platform, timestamp)
 		if err != nil {
 			return nil, err
 		}
+
 		adds = append(adds, mutate.IndexAddendum{
 			Add: img,
 			Descriptor: v1.Descriptor{
@@ -191,6 +201,7 @@ func bytecodeImageForBuildArg(plan imagebuild.Plan, buildArg string, platform v1
 	if err != nil {
 		return nil, err
 	}
+
 	img, err := mutate.ConfigFile(empty.Image, config)
 	if err != nil {
 		return nil, err
@@ -200,6 +211,7 @@ func bytecodeImageForBuildArg(plan imagebuild.Plan, buildArg string, platform v1
 	if err != nil {
 		return nil, err
 	}
+
 	img, err = mutate.Append(img, mutate.Addendum{
 		Layer:     layer,
 		MediaType: types.OCILayer,
@@ -207,6 +219,7 @@ func bytecodeImageForBuildArg(plan imagebuild.Plan, buildArg string, platform v1
 	if err != nil {
 		return nil, err
 	}
+
 	img = mutate.MediaType(img, types.OCIManifestSchema1)
 	img = mutate.ConfigMediaType(img, types.OCIConfigJSON)
 	img, err = mutate.CreatedAt(img, v1.Time{Time: timestamp})
@@ -242,12 +255,14 @@ func bytecodeLayer(path string, timestamp time.Time) (v1.Layer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open bytecode %s: %w", path, err)
 	}
+
 	defer file.Close()
 
 	info, err := file.Stat()
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat bytecode %s: %w", path, err)
 	}
+
 	if info.IsDir() {
 		return nil, fmt.Errorf("bytecode path %s is a directory", path)
 	}
@@ -264,13 +279,16 @@ func bytecodeLayer(path string, timestamp time.Time) (v1.Layer, error) {
 	}); err != nil {
 		return nil, fmt.Errorf("failed to write bytecode tar header: %w", err)
 	}
+
 	if _, err := io.Copy(tw, file); err != nil {
 		_ = tw.Close()
 		return nil, fmt.Errorf("failed to write bytecode layer: %w", err)
 	}
+
 	if err := tw.Close(); err != nil {
 		return nil, fmt.Errorf("failed to close bytecode tar layer: %w", err)
 	}
+
 	tarBytes := append([]byte(nil), buf.Bytes()...)
 	layer, err := tarball.LayerFromOpener(func() (io.ReadCloser, error) {
 		return io.NopCloser(bytes.NewReader(tarBytes)), nil

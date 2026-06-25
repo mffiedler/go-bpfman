@@ -35,6 +35,7 @@ func writeJSON(path string, perm os.FileMode, v any) error {
 	if err != nil {
 		return err
 	}
+
 	data = append(data, '\n')
 	return os.WriteFile(path, data, perm)
 }
@@ -56,6 +57,7 @@ func safeRemoveAll(parent, target string) error {
 	if rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 		return ErrOutsideLayout{Parent: cleanParent, Target: cleanTarget}
 	}
+
 	if err := os.RemoveAll(cleanTarget); err != nil {
 		return &PathError{Op: "remove_all", Path: cleanTarget, Err: err}
 	}

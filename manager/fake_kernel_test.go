@@ -85,6 +85,7 @@ func (d *fakeDiscoverer) DiscoverPrograms(objectPath string) ([]platform.Discove
 	if d.discoverErr != nil {
 		return nil, d.discoverErr
 	}
+
 	programs, ok := d.programs[objectPath]
 	if !ok {
 		return nil, fmt.Errorf("no programs found in object file")
@@ -102,6 +103,7 @@ func (d *fakeDiscoverer) ValidatePrograms(objectPath string, programNames []stri
 	if d.validateErr != nil {
 		return d.validateErr
 	}
+
 	programs, ok := d.programs[objectPath]
 	if !ok {
 		return fmt.Errorf("object file not found: %s", objectPath)
@@ -301,6 +303,7 @@ func createPinFileExclusive[P ~string](p P) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
+
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil {
 		return err
@@ -557,6 +560,7 @@ func (f *fakeKernel) Load(_ context.Context, spec bpfman.LoadSpec, bpffs fs.BPFF
 		f.recordOp("load", spec.ProgramName(), 0, failErr)
 		return bpfman.LoadOutput{}, failErr
 	}
+
 	if failOnNth > 0 && loadNum == failOnNth {
 		err := fmt.Errorf("injected error on load %d", loadNum)
 		f.recordOp("load", spec.ProgramName(), 0, err)
@@ -582,6 +586,7 @@ func (f *fakeKernel) Load(_ context.Context, spec bpfman.LoadSpec, bpffs fs.BPFF
 	if err := os.MkdirAll(bpffs.MountPoint(), 0755); err != nil {
 		return bpfman.LoadOutput{}, fmt.Errorf("fake kernel: mkdir pin dir: %w", err)
 	}
+
 	if err := os.WriteFile(progPinPath.String(), nil, 0644); err != nil {
 		return bpfman.LoadOutput{}, fmt.Errorf("fake kernel: create pin file: %w", err)
 	}

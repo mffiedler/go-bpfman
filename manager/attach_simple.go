@@ -64,11 +64,7 @@ func (m *Manager) simpleAttach(ctx context.Context, p attachParams) (bpfman.Link
 
 	pa := operation.Get(b, preparedKey)
 	link := operation.Get(b, linkKey)
-	m.logger.InfoContext(ctx, "attached",
-		"link_id", link.Record.ID,
-		"program_id", p.programID,
-		"target", pa.target,
-		"pin_path", link.Record.PinPath)
+	m.logger.InfoContext(ctx, "attached", "link_id", link.Record.ID, "program_id", p.programID, "target", pa.target, "pin_path", link.Record.PinPath)
 
 	return link, nil
 }
@@ -98,6 +94,7 @@ func (m *Manager) simpleAttachPlan(p attachParams) operation.Plan {
 				if err != nil {
 					return attachPlan{}, err
 				}
+
 				progPinPath := m.rt.BPFFS().ProgPinPath(p.programID)
 				return p.prepare(prog, progPinPath)
 			},
@@ -151,6 +148,7 @@ func (m *Manager) simpleAttachPlan(p attachParams) operation.Plan {
 				if err != nil {
 					return bpfman.Link{}, fmt.Errorf("save link metadata: %w", err)
 				}
+
 				finalised.Details = pa.details
 				return bpfman.Link{
 					Record: finalised,
@@ -190,6 +188,7 @@ func saveLinkNode(
 			if err != nil {
 				return bpfman.Link{}, fmt.Errorf("save link metadata: %w", err)
 			}
+
 			link := bpfman.Link{
 				Record: record,
 				Status: bpfman.LinkStatus{

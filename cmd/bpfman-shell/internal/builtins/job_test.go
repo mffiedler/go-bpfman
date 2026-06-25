@@ -511,8 +511,7 @@ func TestJobKill_GraceZeroSendsKillImmediately(t *testing.T) {
 	}
 	job.Mu.Lock()
 	defer job.Mu.Unlock()
-	assert.Equal(t, "KILL", job.Signal,
-		"--grace=0 takes the escalation path and ends on SIGKILL")
+	assert.Equal(t, "KILL", job.Signal, "--grace=0 takes the escalation path and ends on SIGKILL")
 }
 
 func TestJobKill_CustomSignalSkipsEscalation(t *testing.T) {
@@ -561,8 +560,7 @@ func TestJobKill_CustomSignalSkipsEscalation(t *testing.T) {
 	waitForJob(t, job)
 	job.Mu.Lock()
 	defer job.Mu.Unlock()
-	assert.Equal(t, "USR1", job.Signal,
-		"custom signal must not be overwritten by escalation")
+	assert.Equal(t, "USR1", job.Signal, "custom signal must not be overwritten by escalation")
 }
 
 func TestJobKill_NegativeGraceIsError(t *testing.T) {

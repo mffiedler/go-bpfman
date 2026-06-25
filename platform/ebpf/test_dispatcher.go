@@ -37,6 +37,7 @@ func (td *testDispatchers) getXDP() (*ebpf.Program, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create test XDP dispatcher config: %w", err)
 	}
+
 	spec, err := dispatcher.LoadXDPDispatcher(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("load test XDP dispatcher spec: %w", err)
@@ -72,6 +73,7 @@ func (td *testDispatchers) getTC() (*ebpf.Program, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create test TC dispatcher config: %w", err)
 	}
+
 	spec, err := dispatcher.LoadTCDispatcher(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("load test TC dispatcher spec: %w", err)

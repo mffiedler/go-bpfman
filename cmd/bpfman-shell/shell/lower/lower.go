@@ -182,8 +182,7 @@ func (l *lowerer) lowerStmt(s syntax.Stmt) error {
 		return l.lowerReturnStmt(v)
 	default:
 		sp := syntax.NodeSpan(s)
-		return fmt.Errorf("lower: statement %T at %d:%d not yet supported",
-			s, sp.Pos.Line, sp.Pos.Col)
+		return fmt.Errorf("lower: statement %T at %d:%d not yet supported", s, sp.Pos.Line, sp.Pos.Col)
 	}
 }
 
@@ -404,8 +403,7 @@ func (l *lowerer) lowerForEachStmt(s *syntax.ForEachStmt) error {
 // emission can continue without crashing.
 func (l *lowerer) lowerBreakStmt(s *syntax.BreakStmt) error {
 	if len(l.loops) == 0 {
-		return fmt.Errorf("lower: break at %d:%d outside any loop",
-			s.Pos.Line, s.Pos.Col)
+		return fmt.Errorf("lower: break at %d:%d outside any loop", s.Pos.Line, s.Pos.Col)
 	}
 	l.emit(&ir.TraceNote{Msg: "break", Span: s.Span})
 	l.emit(&ir.ExitLoop{Span: s.Span})
@@ -418,8 +416,7 @@ func (l *lowerer) lowerBreakStmt(s *syntax.BreakStmt) error {
 // block; reach-aware passes can ignore the trailing block.
 func (l *lowerer) lowerContinueStmt(s *syntax.ContinueStmt) error {
 	if len(l.loops) == 0 {
-		return fmt.Errorf("lower: continue at %d:%d outside any loop",
-			s.Pos.Line, s.Pos.Col)
+		return fmt.Errorf("lower: continue at %d:%d outside any loop", s.Pos.Line, s.Pos.Col)
 	}
 	l.emit(&ir.TraceNote{Msg: "continue", Span: s.Span})
 	l.emit(&ir.ForEachContinue{Span: s.Span})
@@ -589,8 +586,7 @@ func (l *lowerer) lowerDefStmt(s *syntax.DefStmt) error {
 // the AST reaches us with that mistake.
 func (l *lowerer) lowerReturnStmt(s *syntax.ReturnStmt) error {
 	if l.ctx.returnTo == nil {
-		return fmt.Errorf("lower: return at %d:%d outside any def",
-			s.Pos.Line, s.Pos.Col)
+		return fmt.Errorf("lower: return at %d:%d outside any def", s.Pos.Line, s.Pos.Col)
 	}
 	src := l.alloc()
 	l.emit(&ir.Eval{Dst: src, Expr: lowerIRExpr(s.Expr), Span: s.Span})
@@ -608,8 +604,7 @@ func (l *lowerer) lowerBindStmt(s *syntax.BindStmt) error {
 	case s.Collect != nil:
 		return l.lowerBindCollect(s)
 	case s.Cmd == nil:
-		return fmt.Errorf("lower: bind statement at %d:%d has no dispatch target",
-			s.Pos.Line, s.Pos.Col)
+		return fmt.Errorf("lower: bind statement at %d:%d has no dispatch target", s.Pos.Line, s.Pos.Col)
 	}
 	return l.lowerBindCmd(s)
 }
@@ -677,13 +672,11 @@ func (l *lowerer) buildGuardFailBlock(sp source.Span, last ir.Temp) *ir.BasicBlo
 func (l *lowerer) lowerBindCollect(s *syntax.BindStmt) error {
 	fe := s.Collect
 	if len(fe.Body) == 0 {
-		return fmt.Errorf("lower: bind-collect at %d:%d has empty body",
-			s.Pos.Line, s.Pos.Col)
+		return fmt.Errorf("lower: bind-collect at %d:%d has empty body", s.Pos.Line, s.Pos.Col)
 	}
 	finalCmd, ok := fe.Body[len(fe.Body)-1].(*syntax.CommandStmt)
 	if !ok {
-		return fmt.Errorf("lower: bind-collect at %d:%d body does not end in a command",
-			s.Pos.Line, s.Pos.Col)
+		return fmt.Errorf("lower: bind-collect at %d:%d body does not end in a command", s.Pos.Line, s.Pos.Col)
 	}
 
 	listTemp := l.alloc()

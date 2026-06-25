@@ -47,6 +47,7 @@ func getMntNsInode(path string) uint64 {
 	if err != nil {
 		return 0
 	}
+
 	sys, ok := stat.Sys().(*syscall.Stat_t)
 	if !ok {
 		return 0
@@ -90,49 +91,34 @@ func (cmd *NSUprobeCmd) Run() error {
 	// in ExtraFiles may vary.
 	fdStr := os.Getenv(lock.WriterLockFDEnvVar)
 	if fdStr == "" {
-		logger.Error("writer lock fd not set",
-			"env_var", lock.WriterLockFDEnvVar,
-			"hint", "bpfman-ns must be spawned with lock fd")
+		logger.Error("writer lock fd not set", "env_var", lock.WriterLockFDEnvVar, "hint", "bpfman-ns must be spawned with lock fd")
 		return fmt.Errorf("%s not set: bpfman-ns must be spawned with lock fd", lock.WriterLockFDEnvVar)
 	}
 	fd, err := strconv.Atoi(fdStr)
 	if err != nil {
-		logger.Error("invalid writer lock fd",
-			"env_var", lock.WriterLockFDEnvVar,
-			"value", fdStr,
-			"error", err)
+		logger.Error("invalid writer lock fd", "env_var", lock.WriterLockFDEnvVar, "value", fdStr, "error", err)
 		return fmt.Errorf("invalid %s=%q: %w", lock.WriterLockFDEnvVar, fdStr, err)
 	}
 
 	scope, err := lock.InheritedLockFromFD(fd)
 	if err != nil {
-		logger.Error("lock verification failed",
-			"fd", fd,
-			"error", err,
-			"hint", "parent must hold exclusive lock before spawning helper")
+		logger.Error("lock verification failed", "fd", fd, "error", err, "hint", "parent must hold exclusive lock before spawning helper")
 		return fmt.Errorf("lock verification failed: %w", err)
 	}
+
 	defer scope.Close()
 
-	logger.Debug("writer lock verified",
-		"fd", fd)
+	logger.Debug("writer lock verified", "fd", fd)
 
 	// Log our current state
 	currentMntNs := getMntNsInode("/proc/self/ns/mnt")
 
-	logger.Info("bpfman-ns uprobe handler started",
-		"pid", os.Getpid(),
-		"ppid", os.Getppid(),
-		"current_mnt_ns_inode", currentMntNs,
-		"target", cmd.Target,
-		"socket_fd", ns.SocketFD)
+	logger.Info("bpfman-ns uprobe handler started", "pid", os.Getpid(), "ppid", os.Getppid(), "current_mnt_ns_inode", currentMntNs, "target", cmd.Target, "socket_fd", ns.SocketFD)
 
 	// The socket returns the opened target-binary fd to the parent.
 	socket := os.NewFile(uintptr(ns.SocketFD), "fdpass-socket")
 	if socket == nil {
-		logger.Error("failed to get socket fd",
-			"fd", ns.SocketFD,
-			"hint", "bpfman-ns must be invoked by the daemon, not directly")
+		logger.Error("failed to get socket fd", "fd", ns.SocketFD, "hint", "bpfman-ns must be invoked by the daemon, not directly")
 		return fmt.Errorf("socket fd %d not available (bpfman-ns must be invoked by daemon)", ns.SocketFD)
 	}
 	defer socket.Close()
@@ -143,24 +129,16 @@ func (cmd *NSUprobeCmd) Run() error {
 	// inode through /proc/self/fd of the fd sent below.
 	target, err := os.Open(cmd.Target)
 	if err != nil {
-		logger.Error("failed to open target binary in container namespace",
-			"target", cmd.Target,
-			"error", err,
-			"current_mnt_ns_inode", currentMntNs,
-			"hint", "ensure the target path exists in the container's filesystem")
+		logger.Error("failed to open target binary in container namespace", "target", cmd.Target, "error", err, "current_mnt_ns_inode", currentMntNs, "hint", "ensure the target path exists in the container's filesystem")
 		return fmt.Errorf("open target binary %q in container (mnt ns inode %d): %w", cmd.Target, currentMntNs, err)
 	}
+
 	defer target.Close()
 
-	logger.Debug("opened target binary, sending fd to parent",
-		"target", cmd.Target,
-		"target_fd", int(target.Fd()),
-		"socket_fd", ns.SocketFD)
+	logger.Debug("opened target binary, sending fd to parent", "target", cmd.Target, "target_fd", int(target.Fd()), "socket_fd", ns.SocketFD)
 
 	if err := ns.SendFd(socket, ns.TargetFDName, int(target.Fd())); err != nil {
-		logger.Error("failed to send target fd to parent",
-			"target", cmd.Target,
-			"error", err)
+		logger.Error("failed to send target fd to parent", "target", cmd.Target, "error", err)
 		return fmt.Errorf("send target fd to parent: %w", err)
 	}
 
@@ -211,6 +189,7 @@ func HandleNamespaceHelperInvocation(argv []string, modeEnv string, run func(Nam
 	if err != nil {
 		return false, err
 	}
+
 	if !isHelper {
 		return false, nil
 	}
@@ -222,11 +201,7 @@ func HandleNamespaceHelperInvocation(argv []string, modeEnv string, run func(Nam
 func runNamespaceHelper(inv NamespaceHelperInvocation) error {
 	var cmd NSCmd
 
-	parser, err := kong.New(&cmd,
-		kong.Name(ns.ModeBPFManNS),
-		kong.Description("Attach an eBPF program inside a container's mount namespace."),
-		kong.UsageOnError(),
-	)
+	parser, err := kong.New(&cmd, kong.Name(ns.ModeBPFManNS), kong.Description("Attach an eBPF program inside a container's mount namespace."), kong.UsageOnError())
 	if err != nil {
 		return fmt.Errorf("create parser: %w", err)
 	}

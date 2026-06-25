@@ -40,6 +40,7 @@ func (c *DetachCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 					return nil
 				}
 			}
+
 			return err
 		})
 }

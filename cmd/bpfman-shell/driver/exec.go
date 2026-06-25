@@ -124,6 +124,7 @@ func RunExecStatement(ctx context.Context, cli *cli.CLI, args []runtime.Arg, spa
 	if err != nil {
 		return runtime.Value{}, err
 	}
+
 	if exitCode != 0 {
 		return runtime.Value{}, &ExecFailure{
 			Argv:     argv,
@@ -131,6 +132,7 @@ func RunExecStatement(ctx context.Context, cli *cli.CLI, args []runtime.Arg, spa
 			Span:     span,
 		}
 	}
+
 	return runtime.Value{}, nil
 }
 
@@ -210,6 +212,7 @@ func RunExternal(ctx context.Context, args []runtime.Arg) (ExecCapture, error) {
 	if err != nil {
 		return ExecCapture{}, err
 	}
+
 	defer func() {
 		for _, f := range tempFiles {
 			os.Remove(f)
@@ -262,6 +265,7 @@ func RunExternalInherit(ctx context.Context, cli *cli.CLI, args []runtime.Arg) (
 	if err != nil {
 		return nil, 0, err
 	}
+
 	defer func() {
 		for _, f := range tempFiles {
 			os.Remove(f)

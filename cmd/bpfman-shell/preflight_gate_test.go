@@ -62,10 +62,8 @@ func TestScriptRun_PreflightAbortsBeforeSideEffects(t *testing.T) {
 		stderr, err := runScriptWithCheck(t, script, false)
 
 		require.Error(t, err, "preflight must reject the script")
-		assert.Contains(t, stderr, "wait: expected at least 1",
-			"the arity issue on wait is what preflight caught")
-		assert.NoFileExists(t, marker,
-			"the earlier exec must not run when preflight aborts the program")
+		assert.Contains(t, stderr, "wait: expected at least 1", "the arity issue on wait is what preflight caught")
+		assert.NoFileExists(t, marker, "the earlier exec must not run when preflight aborts the program")
 	})
 
 	t.Run("preflight off lets the exec run before wait fails", func(t *testing.T) {
@@ -77,9 +75,7 @@ func TestScriptRun_PreflightAbortsBeforeSideEffects(t *testing.T) {
 		stderr, err := runScriptWithCheck(t, script, true)
 
 		require.Error(t, err, "wait still fails at runtime without preflight")
-		assert.Contains(t, stderr, "wait requires exactly one argument",
-			"without preflight the failure is the runtime arity guard")
-		assert.FileExists(t, marker,
-			"without preflight the earlier exec runs before wait fails")
+		assert.Contains(t, stderr, "wait requires exactly one argument", "without preflight the failure is the runtime arity guard")
+		assert.FileExists(t, marker, "without preflight the earlier exec runs before wait fails")
 	})
 }

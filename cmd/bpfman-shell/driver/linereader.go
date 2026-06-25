@@ -40,6 +40,7 @@ func (s *scannerReader) Readline() (string, error) {
 	if err := s.scanner.Err(); err != nil {
 		return "", err
 	}
+
 	return "", io.EOF
 }
 

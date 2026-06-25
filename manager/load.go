@@ -222,6 +222,7 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 		if err != nil {
 			return nil, fmt.Errorf("pre-check pinByName: %w", err)
 		}
+
 		if has {
 			needsLock = true
 			break
@@ -256,9 +257,11 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 		if err := m.validateExplicitMapOwners(runCtx, specs); err != nil {
 			return err
 		}
+
 		if err := m.reapDeadProgramRecords(runCtx, writeLock); err != nil {
 			m.logger.WarnContext(runCtx, "reaping dead program records before load failed (continuing)", "error", err)
 		}
+
 		var lerr error
 		loaded, lerr = m.loadBody(runCtx, specs, opts)
 		return lerr
@@ -362,6 +365,7 @@ func (m *Manager) observeDeadProgramReapSnapshot(ctx context.Context) (reapSnaps
 		if err != nil {
 			return reapSnapshot{}, fmt.Errorf("enumerate kernel programs: %w", err)
 		}
+
 		live[kp.ID] = true
 	}
 
@@ -401,19 +405,21 @@ func (m *Manager) executeReapDeadProgramRecord(ctx context.Context, id kernel.Pr
 	if err := m.removeProgramMapsPins(ctx, m.rt.BPFFS().MapPinDir(id)); err != nil {
 		m.logger.WarnContext(ctx, "reap: remove map pins", "program_id", id, "error", err)
 	}
+
 	if err := m.cleanupSharedMapPins(ctx, id); err != nil {
 		m.logger.WarnContext(ctx, "reap: cleanup shared map pins", "program_id", id, "error", err)
 	}
+
 	if err := m.store.Delete(ctx, id); err != nil {
-		m.logger.WarnContext(ctx, "reap: delete dead program record failed",
-			"program_id", id, "error", err)
+		m.logger.WarnContext(ctx, "reap: delete dead program record failed", "program_id", id, "error", err)
 		return
 	}
+
 	if err := m.removeProgramBytecodeDir(id); err != nil {
 		m.logger.WarnContext(ctx, "reap: remove bytecode dir", "program_id", id, "error", err)
 	}
-	m.logger.InfoContext(ctx, "reaped dead program record absent from kernel",
-		"program_id", id)
+
+	m.logger.InfoContext(ctx, "reaped dead program record absent from kernel", "program_id", id)
 }
 
 // planReap decides which dead program records to delete and in what
@@ -514,8 +520,7 @@ func (m *Manager) loadBody(ctx context.Context, specs []bpfman.LoadSpec, opts Lo
 		for j := len(loaded) - 1; j >= 0; j-- {
 			r := loaded[j].Record
 			if uerr := m.unload(ctx, r, nil, false); uerr != nil {
-				m.logger.Error("failed to unload during batch rollback",
-					"program_id", r.ProgramID, "error", uerr)
+				m.logger.Error("failed to unload during batch rollback", "program_id", r.ProgramID, "error", uerr)
 			}
 		}
 	}
@@ -587,9 +592,11 @@ func (m *Manager) loadBody(ctx context.Context, specs []bpfman.LoadSpec, opts Lo
 			} else if !errors.Is(err, platform.ErrRecordNotFound) {
 				return fmt.Errorf("check existing program %d: %w", it.out.Program.ID, err)
 			}
+
 			if err := tx.Save(ctx, it.out.Program.ID, it.record); err != nil {
 				return fmt.Errorf("save program %d: %w", it.out.Program.ID, err)
 			}
+
 			if len(it.out.SharedMapNames) > 0 {
 				if err := tx.SaveSharedMapPins(ctx, it.out.Program.ID, it.out.SharedMapNames); err != nil {
 					return fmt.Errorf("save shared map pins for program %d: %w", it.out.Program.ID, err)
@@ -609,6 +616,7 @@ func (m *Manager) loadBody(ctx context.Context, specs []bpfman.LoadSpec, opts Lo
 		if err != nil {
 			return fmt.Errorf("list programs for map users: %w", err)
 		}
+
 		members := inspect.MapSetMembers(records)
 		for i := range loaded {
 			loaded[i].Status.MapUsedBy = members[loaded[i].Record.ProgramID]
@@ -642,10 +650,8 @@ func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) o
 				if err != nil {
 					return bpfman.LoadOutput{}, fmt.Errorf("load program %s: %w", programName, err)
 				}
-				m.logger.InfoContext(ctx, "loaded program",
-					"name", programName,
-					"program_id", loaded.Program.ID,
-					"pin_path", loaded.PinPath)
+
+				m.logger.InfoContext(ctx, "loaded program", "name", programName, "program_id", loaded.Program.ID, "pin_path", loaded.PinPath)
 				return loaded, nil
 			},
 			operation.UndoFrom(func(b *operation.Bindings) []action.Action {
@@ -708,18 +714,14 @@ func (m *Manager) resolveBatchSource(
 			return "", nil, fmt.Errorf("image pull policy is required")
 		}
 
-		m.logger.InfoContext(ctx, "pulling OCI image",
-			"url", source.Image.URL,
-			"pull_policy", source.Image.PullPolicy)
+		m.logger.InfoContext(ctx, "pulling OCI image", "url", source.Image.URL, "pull_policy", source.Image.PullPolicy)
 
 		p, err := m.imagePuller.Pull(ctx, *source.Image)
 		if err != nil {
 			return "", nil, fmt.Errorf("pull image %s: %w", source.Image.URL, err)
 		}
 
-		m.logger.InfoContext(ctx, "pulled OCI image",
-			"url", source.Image.URL,
-			"object_path", p.ObjectPath)
+		m.logger.InfoContext(ctx, "pulled OCI image", "url", source.Image.URL, "object_path", p.ObjectPath)
 
 		return p.ObjectPath, &p, nil
 	}
@@ -750,8 +752,7 @@ func (m *Manager) resolveBatchPrograms(
 				GlobalData: globalData,
 			})
 		}
-		m.logger.InfoContext(ctx, "auto-discovered programs",
-			"count", len(result))
+		m.logger.InfoContext(ctx, "auto-discovered programs", "count", len(result))
 		return result, nil
 	}
 

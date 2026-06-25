@@ -82,6 +82,7 @@ func dispatch(ctx context.Context, args []runtime.Arg) (runtime.Value, error) {
 	if err != nil {
 		return runtime.Value{}, err
 	}
+
 	args, err = resolveE2EImageRefsInArgs(args)
 	if err != nil {
 		return runtime.Value{}, err

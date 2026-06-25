@@ -90,6 +90,7 @@ func TestValidatePrograms(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DiscoverPrograms failed: %v", err)
 	}
+
 	if len(discovered) == 0 {
 		t.Fatal("no programs discovered in test file")
 	}

@@ -146,8 +146,7 @@ func TestMatchesKernelOnly_CoarseProjection(t *testing.T) {
 		bpfman.ProgramTypeKprobe, bpfman.ProgramTypeKretprobe,
 		bpfman.ProgramTypeUprobe, bpfman.ProgramTypeUretprobe,
 	} {
-		assert.Truef(t, bpfman.ApplyListOptions(bpfman.WithTypes(pt)).MatchesKernelOnly(kprobe),
-			"%s should match a kernel-only kprobe", pt)
+		assert.Truef(t, bpfman.ApplyListOptions(bpfman.WithTypes(pt)).MatchesKernelOnly(kprobe), "%s should match a kernel-only kprobe", pt)
 	}
 
 	// a mismatching kernel type is excluded.

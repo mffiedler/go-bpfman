@@ -32,6 +32,7 @@ func evalExpr(expr ir.Expr, env *Env) (Value, error) {
 			if err != nil {
 				return Value{}, err
 			}
+
 			out = append(out, v.Raw())
 			o := v.Origin()
 			origins = append(origins, o)
@@ -51,6 +52,7 @@ func evalExpr(expr ir.Expr, env *Env) (Value, error) {
 			if err != nil {
 				return Value{}, err
 			}
+
 			fields[field.Name] = v
 		}
 		return ValueFromRecord(fields), nil
@@ -65,10 +67,12 @@ func evalExpr(expr ir.Expr, env *Env) (Value, error) {
 			if err != nil {
 				return Value{}, err
 			}
+
 			s, err := RenderCompact(v)
 			if err != nil {
 				return Value{}, syntax.SpanErrorf(irExprSpan(seg.Expr), "interpolation: %v", err)
 			}
+
 			b.WriteString(s)
 		}
 		return StringValue(b.String()), nil
@@ -81,10 +85,12 @@ func evalExpr(expr ir.Expr, env *Env) (Value, error) {
 		if err != nil {
 			return Value{}, err
 		}
+
 		lhsArg, err := evalArg(e.LHS, env)
 		if err != nil {
 			return Value{}, syntax.SpanErrorf(threadSpan, "thread: %v", err)
 		}
+
 		// '|>' is expression-position bind-dispatch with the rc
 		// envelope discarded; head resolution follows the same
 		// def-first policy as the bind RHS, defer, and bind-
@@ -112,19 +118,23 @@ func evalExpr(expr ir.Expr, env *Env) (Value, error) {
 		if err != nil {
 			return Value{}, err
 		}
+
 		rightV, err := evalExpr(e.Right, env)
 		if err != nil {
 			return Value{}, err
 		}
+
 		if isArithmeticOpText(e.Op) {
 			left, err := leftV.Scalar()
 			if err != nil {
 				return Value{}, syntax.SpanErrorf(e.Span, "binary %s: left: %v", e.Op, err)
 			}
+
 			right, err := rightV.Scalar()
 			if err != nil {
 				return Value{}, syntax.SpanErrorf(e.Span, "binary %s: right: %v", e.Op, err)
 			}
+
 			v, err := evalArithmetic(e.Op, left, right)
 			if err != nil {
 				return Value{}, syntax.SpanErrorf(e.Span, "%v", err)
@@ -137,6 +147,7 @@ func evalExpr(expr ir.Expr, env *Env) (Value, error) {
 		if err != nil {
 			return Value{}, err
 		}
+
 		switch e.Pred {
 		case "not-empty":
 			return evalNotEmpty(operand, e.Span)
@@ -148,10 +159,12 @@ func evalExpr(expr ir.Expr, env *Env) (Value, error) {
 		if err != nil {
 			return Value{}, err
 		}
+
 		leftB, err := AsBool(leftV)
 		if err != nil {
 			return Value{}, syntax.SpanErrorf(e.Span, "%s: left: %v", e.Op, err)
 		}
+
 		switch e.Op {
 		case "and":
 			if !leftB {
@@ -168,6 +181,7 @@ func evalExpr(expr ir.Expr, env *Env) (Value, error) {
 		if err != nil {
 			return Value{}, err
 		}
+
 		rightB, err := AsBool(rightV)
 		if err != nil {
 			return Value{}, syntax.SpanErrorf(e.Span, "%s: right: %v", e.Op, err)
@@ -178,6 +192,7 @@ func evalExpr(expr ir.Expr, env *Env) (Value, error) {
 		if err != nil {
 			return Value{}, err
 		}
+
 		b, err := AsBool(v)
 		if err != nil {
 			return Value{}, syntax.SpanErrorf(e.Span, "not: %v", err)
@@ -188,10 +203,12 @@ func evalExpr(expr ir.Expr, env *Env) (Value, error) {
 		if err != nil {
 			return Value{}, err
 		}
+
 		s, err := v.Scalar()
 		if err != nil {
 			return Value{}, syntax.SpanErrorf(e.Span, "negate: %v", err)
 		}
+
 		x, err := strconv.ParseFloat(s, 64)
 		if err != nil {
 			return Value{}, syntax.SpanErrorf(e.Span, "negate: operand %q is not numeric", s)
@@ -208,6 +225,7 @@ func evalExpr(expr ir.Expr, env *Env) (Value, error) {
 			if err != nil {
 				return Value{}, syntax.SpanErrorf(irExprSpan(a), "%s: %v", e.Name, err)
 			}
+
 			args = append(args, arg)
 		}
 		result, err := env.ExecBind(args, e.Span)
@@ -251,6 +269,7 @@ func evalArgs(exprs []ir.Expr, env *Env) ([]Arg, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		out = append(out, a)
 	}
 	return out, nil
@@ -306,6 +325,7 @@ func evalMatchesBlock(e *ir.MatchesBlockExpr, env *Env) (resolvedMatchesBlock, e
 			if err != nil {
 				return resolvedMatchesBlock{}, err
 			}
+
 			ent.SubBlock = &sub
 		case entry.Predicate != "":
 			// nothing to evaluate
@@ -314,6 +334,7 @@ func evalMatchesBlock(e *ir.MatchesBlockExpr, env *Env) (resolvedMatchesBlock, e
 			if err != nil {
 				return resolvedMatchesBlock{}, syntax.SpanErrorf(entry.Span, "matches entry %q: %v", entry.Path, err)
 			}
+
 			ent.Value = v
 		}
 		out.Entries = append(out.Entries, ent)

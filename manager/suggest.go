@@ -229,6 +229,7 @@ func nearestTracepoints(target string, candidates []string, limit int) []string 
 			if !ok {
 				cn = c
 			}
+
 			d = levenshtein(target, cn)
 		}
 		scores = append(scores, scored{s: c, dist: d})
@@ -278,6 +279,7 @@ func tracepointDistance(tg, tn, candidate string) int {
 	if !ok {
 		return levenshtein(tg+"/"+tn, candidate)
 	}
+
 	namePrefix := len(tn) >= tracepointNamePrefixMin && strings.HasPrefix(cn, tn)
 	switch {
 	case cg == tg && cn == tn:

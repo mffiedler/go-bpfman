@@ -44,18 +44,15 @@ func TestCSIDriver_NodePublishVolume_Idempotent(t *testing.T) {
 	// First publish establishes the mount and re-pins the map.
 	_, err := d.NodePublishVolume(ctx, req)
 	require.NoError(t, err, "first NodePublishVolume should succeed")
-	require.FileExists(t, filepath.Join(targetPath, "kprobe_stats_map"),
-		"map should be visible at the target path after the first publish")
+	require.FileExists(t, filepath.Join(targetPath, "kprobe_stats_map"), "map should be visible at the target path after the first publish")
 	require.Equal(t, 1, countMountpoints(t, podBpffs), "one bpffs mount after first publish")
 	require.Equal(t, 1, countMountpoints(t, targetPath), "one bind mount after first publish")
 
 	// Second publish with identical arguments must add no mounts.
 	_, err = d.NodePublishVolume(ctx, req)
 	require.NoError(t, err, "second NodePublishVolume with identical args should return OK")
-	require.Equal(t, 1, countMountpoints(t, podBpffs),
-		"second NodePublishVolume must not stack another bpffs mount (CSI idempotency)")
-	require.Equal(t, 1, countMountpoints(t, targetPath),
-		"second NodePublishVolume must not stack another bind mount (CSI idempotency)")
+	require.Equal(t, 1, countMountpoints(t, podBpffs), "second NodePublishVolume must not stack another bpffs mount (CSI idempotency)")
+	require.Equal(t, 1, countMountpoints(t, targetPath), "second NodePublishVolume must not stack another bind mount (CSI idempotency)")
 }
 
 // countMountpoints returns how many entries in the caller's

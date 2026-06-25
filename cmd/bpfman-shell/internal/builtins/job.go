@@ -308,9 +308,7 @@ func resolveAdapterArgs(name string, args []runtime.Arg) ([]string, []runtime.Ar
 			resolved[i] = runtime.ScalarValueArg{Text: path, Span: aa.Span}
 		case runtime.StructuredValueArg:
 			removeTempFiles(tempFiles)
-			return nil, nil, fmt.Errorf(
-				"%s: argument %d is a %s value; use a scalar path (e.g. $name.field) or the file adapter (file:$name)",
-				name, i+1, aa.Value.Kind())
+			return nil, nil, fmt.Errorf("%s: argument %d is a %s value; use a scalar path (e.g. $name.field) or the file adapter (file:$name)", name, i+1, aa.Value.Kind())
 		default:
 			resolved[i] = a
 		}
@@ -353,6 +351,7 @@ func WaitEnvelope(ctx context.Context, args []runtime.Arg) (runtime.Envelope, er
 	if err != nil {
 		return runtime.Envelope{}, err
 	}
+
 	select {
 	case <-job.Done:
 	case <-ctx.Done():
@@ -615,8 +614,7 @@ func listJobs(cli *cli.CLI, env *runtime.Env) error {
 			origin = "<stdin>"
 		}
 		argv := strings.Join(j.Args, " ")
-		fmt.Fprintf(&b, "%-7d %-8s %-12s %-22s %s\n",
-			j.PID, j.Started.Format("15:04:05"), jobStatus(j), origin, argv)
+		fmt.Fprintf(&b, "%-7d %-8s %-12s %-22s %s\n", j.PID, j.Started.Format("15:04:05"), jobStatus(j), origin, argv)
 	}
 	return cli.PrintOut(b.String())
 }

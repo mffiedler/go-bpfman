@@ -57,6 +57,7 @@ func HandleJQ(c driver.Ctx) (runtime.Value, error) {
 	if err != nil {
 		return runtime.Value{}, fmt.Errorf("jq: parse filter: %w", err)
 	}
+
 	input, err := argToJQInput(args[1])
 	if err != nil {
 		return runtime.Value{}, fmt.Errorf("jq: %w", err)

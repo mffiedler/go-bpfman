@@ -235,6 +235,7 @@ func tryAcquirePoolSlot(req poolAcquireRequest) (*poolLease, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	slices.SortStableFunc(cands, func(a, b slotCandidate) int {
 		return a.sortKey.Compare(b.sortKey)
 	})
@@ -245,6 +246,7 @@ func tryAcquirePoolSlot(req poolAcquireRequest) (*poolLease, error) {
 		if err != nil {
 			return nil, fmt.Errorf("net pool: open %s: %w", path, err)
 		}
+
 		if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 			f.Close()
 			if errors.Is(err, syscall.EWOULDBLOCK) {
@@ -252,6 +254,7 @@ func tryAcquirePoolSlot(req poolAcquireRequest) (*poolLease, error) {
 			}
 			return nil, fmt.Errorf("net pool: flock %s: %w", path, err)
 		}
+
 		// Re-read under the lock; the scan-time body is potentially
 		// stale because another process may have released and
 		// re-acquired between the scan and the flock.
@@ -260,10 +263,12 @@ func tryAcquirePoolSlot(req poolAcquireRequest) (*poolLease, error) {
 			f.Close()
 			return nil, err
 		}
+
 		if err := assertSlotClean(c.slot, prev, linkCheck, netnsCheck); err != nil {
 			f.Close()
 			return nil, err
 		}
+
 		now := time.Now().UTC()
 		fresh := provenance{
 			Origin:     req.origin,
@@ -276,6 +281,7 @@ func tryAcquirePoolSlot(req poolAcquireRequest) (*poolLease, error) {
 			f.Close()
 			return nil, fmt.Errorf("net pool: write %s: %w", path, err)
 		}
+
 		host, peer := slotAddrs(c.slot)
 		return &poolLease{
 			slot:     c.slot,
@@ -320,11 +326,13 @@ func releasePoolSlot(lease *poolLease, nsName, nsBName, linkAName string) error 
 	if prev, err := readProvenanceFromFile(lease.lockFile); err == nil {
 		final.AcquiredAt = prev.AcquiredAt
 	}
+
 	if err := writeProvenance(lease.lockFile, final); err != nil {
 		lease.lockFile.Close()
 		lease.lockFile = nil
 		return fmt.Errorf("net pool: write final provenance: %w", err)
 	}
+
 	err := lease.lockFile.Close()
 	lease.lockFile = nil
 	if err != nil {
@@ -422,6 +430,7 @@ func scanSlots(root string) ([]slotCandidate, error) {
 		if err != nil {
 			return nil, fmt.Errorf("net pool: stat %s: %w", path, err)
 		}
+
 		prev, _ := readProvenance(path)
 		key := time.Time{}
 		if prev.ReleasedAt != "" {
@@ -513,6 +522,7 @@ func readProvenance(path string) (provenance, error) {
 	if err != nil {
 		return provenance{}, fmt.Errorf("net pool: read %s: %w", path, err)
 	}
+
 	var p provenance
 	if len(body) > 0 {
 		_ = json.Unmarshal(body, &p)
@@ -528,10 +538,12 @@ func readProvenanceFromFile(f *os.File) (provenance, error) {
 	if _, err := f.Seek(0, 0); err != nil {
 		return provenance{}, err
 	}
+
 	body, err := readAll(f)
 	if err != nil {
 		return provenance{}, err
 	}
+
 	var p provenance
 	if len(body) > 0 {
 		_ = json.Unmarshal(body, &p)
@@ -547,6 +559,7 @@ func readAll(f *os.File) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	buf := make([]byte, info.Size())
 	_, err = f.ReadAt(buf, 0)
 	if err != nil && !errors.Is(err, fs.ErrClosed) {
@@ -563,9 +576,11 @@ func writeProvenance(f *os.File, p provenance) error {
 	if err := f.Truncate(0); err != nil {
 		return err
 	}
+
 	if _, err := f.Seek(0, 0); err != nil {
 		return err
 	}
+
 	enc := json.NewEncoder(f)
 	return enc.Encode(p)
 }

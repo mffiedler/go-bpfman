@@ -73,10 +73,12 @@ func (c *CLI) Execute(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("resolve layout: %w", err)
 		}
+
 		wipePlan, err := residue.ScanWipe(layout)
 		if err != nil {
 			return fmt.Errorf("scan runtime dir for wipe: %w", err)
 		}
+
 		plan = append(plan, wipePlan...)
 	} else {
 		// 1. inspect.Snapshot-driven orphan scan. Snapshot setup
@@ -98,6 +100,7 @@ func (c *CLI) Execute(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("scan TC dispatcher residue: %w", err)
 	}
+
 	plan = append(plan, tcPlan...)
 
 	// 3. test ifaces, netns, and the bpf_link pins attached to
@@ -110,6 +113,7 @@ func (c *CLI) Execute(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("scan e2e residue: %w", err)
 	}
+
 	plan = append(plan, e2ePlan...)
 
 	plan = plan.Dedup()
@@ -129,6 +133,7 @@ func (c *CLI) snapshot(ctx context.Context) (*inspect.Observation, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: open runtime: %w", errSnapshotSetup, err)
 	}
+
 	defer opened.Close()
 
 	return opened.Snapshot(ctx)

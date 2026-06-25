@@ -60,8 +60,7 @@ func TestBpfmanCommandResultContract(t *testing.T) {
 			require.NotNil(t, v.Origin(), "decoded value must retain its origin type")
 
 			external := semantics.ShapeFromType(reflect.TypeOf(v.Origin()))
-			assert.Equal(t, static, external,
-				"static checker shape and external decoder type disagree for %q", tc.name)
+			assert.Equal(t, static, external, "static checker shape and external decoder type disagree for %q", tc.name)
 		})
 	}
 }

@@ -36,6 +36,7 @@ func TestSchemaVersionMismatchRecreatesDatabase(t *testing.T) {
 		if err != nil {
 			return err
 		}
+
 		defer store.Close()
 		return nil
 	}))
@@ -55,6 +56,7 @@ func TestSchemaVersionMismatchRecreatesDatabase(t *testing.T) {
 		if err != nil {
 			return err
 		}
+
 		defer store.Close()
 		return nil
 	}))

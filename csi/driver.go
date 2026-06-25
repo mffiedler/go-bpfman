@@ -126,10 +126,7 @@ func (d *Driver) Run() error {
 	csi.RegisterIdentityServer(d.server, d)
 	csi.RegisterNodeServer(d.server, d)
 
-	d.logger.Info("gRPC server listening",
-		"scheme", scheme,
-		"address", addr,
-	)
+	d.logger.Info("gRPC server listening", "scheme", scheme, "address", addr)
 
 	return d.server.Serve(listener)
 }

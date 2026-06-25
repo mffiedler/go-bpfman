@@ -229,6 +229,7 @@ func TestApplyMarkersOverridesRoundedElapsedIntervals(t *testing.T) {
 	if err := os.WriteFile(path, []byte(markers), 0o600); err != nil {
 		t.Fatalf("write markers: %v", err)
 	}
+
 	if err := applyMarkers(tl, path); err != nil {
 		t.Fatalf("applyMarkers: %v", err)
 	}

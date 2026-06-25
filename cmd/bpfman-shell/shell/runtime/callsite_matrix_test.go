@@ -256,6 +256,7 @@ func assertSyntaxErrorFile(t *testing.T, err error, want string) {
 	if !errors.As(err, &se) {
 		t.Fatalf("expected SyntaxError, got %T", err)
 	}
+
 	assert.Equal(t, want, se.Span.Pos.File)
 }
 
@@ -266,5 +267,6 @@ func assertSyntaxErrorSpan(t *testing.T, err error, want source.Span) {
 	if !errors.As(err, &se) {
 		t.Fatalf("expected SyntaxError, got %T", err)
 	}
+
 	assert.Equal(t, want, se.Span)
 }

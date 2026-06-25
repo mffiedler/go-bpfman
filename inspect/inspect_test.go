@@ -104,6 +104,7 @@ func testBPFFS(t *testing.T) fs.BPFFS {
 	if err != nil {
 		t.Fatalf("failed to create layout: %v", err)
 	}
+
 	return layout.BPFFS()
 }
 

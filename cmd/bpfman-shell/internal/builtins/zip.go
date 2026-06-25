@@ -63,10 +63,12 @@ func HandleZip(c driver.Ctx) (runtime.Value, error) {
 	if err != nil {
 		return runtime.Value{}, err
 	}
+
 	b, err := zipArgAsList(args[1], 1)
 	if err != nil {
 		return runtime.Value{}, err
 	}
+
 	if len(a) != len(b) {
 		return runtime.Value{}, fmt.Errorf("zip: length mismatch (arg 0 has %d, arg 1 has %d)", len(a), len(b))
 	}

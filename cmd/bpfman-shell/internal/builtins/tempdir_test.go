@@ -35,8 +35,7 @@ func TestHandleTempdir_CreatesUniqueDirectory(t *testing.T) {
 	info, err := os.Stat(p)
 	require.NoError(t, err)
 	assert.True(t, info.IsDir(), "tempdir result must be a directory")
-	assert.True(t, strings.HasPrefix(filepath.Base(p), "bpfman-test."),
-		"tempdir result %q must start with the requested prefix", p)
+	assert.True(t, strings.HasPrefix(filepath.Base(p), "bpfman-test."), "tempdir result %q must start with the requested prefix", p)
 }
 
 func TestHandleTempdir_DistinctInvocationsAreUnique(t *testing.T) {

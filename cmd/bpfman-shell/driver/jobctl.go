@@ -56,6 +56,7 @@ func NewFgJob() FgJob {
 	if err != nil {
 		return FgJob{ttyFD: -1}
 	}
+
 	return FgJob{ttyFD: fd, shellPgid: pgid}
 }
 

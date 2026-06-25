@@ -20,6 +20,7 @@ func traceValue(env *Env, sp source.Span, prefix string, v Value) {
 	if err != nil {
 		rendered = fmt.Sprintf("<unrenderable %s>", v.Kind())
 	}
+
 	traceRendered(env, sp.Pos, prefix+rendered)
 }
 

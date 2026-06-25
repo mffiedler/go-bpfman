@@ -58,6 +58,7 @@ func Get[T any](b *Bindings, key Key[T]) T {
 	if !ok {
 		panic(fmt.Sprintf("operation.Get: key %q not bound", key.name))
 	}
+
 	val, ok2 := v.(T)
 	if !ok2 {
 		panic(fmt.Sprintf("operation.Get: key %q has type %T, not %T", key.name, v, val))

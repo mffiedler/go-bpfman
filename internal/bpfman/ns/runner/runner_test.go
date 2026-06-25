@@ -18,6 +18,7 @@ func TestDetectNamespaceHelperInvocation_NotHelper(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if ok {
 		t.Fatalf("expected ok=false, got true (inv=%+v)", inv)
 	}
@@ -33,6 +34,7 @@ func TestDetectNamespaceHelperInvocation_ModeEnvVar(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if !ok {
 		t.Fatalf("expected ok=true, got false")
 	}
@@ -55,6 +57,7 @@ func TestDetectNamespaceHelperInvocation_ModeEnvVar_BpfmanRpc(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if ok {
 		t.Fatalf("expected ok=false for BPFMAN_MODE=bpfman-rpc, got true (inv=%+v)", inv)
 	}
@@ -83,6 +86,7 @@ func TestDetectNamespaceHelperInvocation_EmptyArgv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if ok {
 		t.Fatalf("expected ok=false for empty argv, got true (inv=%+v)", inv)
 	}
@@ -105,9 +109,11 @@ func TestHandleNamespaceHelperInvocation_NotHelper_DoesNotRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if handled {
 		t.Fatalf("expected handled=false, got true")
 	}
+
 	if ran {
 		t.Fatalf("runner should not have been called")
 	}
@@ -131,6 +137,7 @@ func TestHandleNamespaceHelperInvocation_Helper_RunsAndReturnsHandled(t *testing
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if !handled {
 		t.Fatalf("expected handled=true, got false")
 	}
@@ -157,6 +164,7 @@ func TestHandleNamespaceHelperInvocation_Helper_PropagatesRunnerError(t *testing
 	if !handled {
 		t.Fatalf("expected handled=true, got false")
 	}
+
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("error mismatch:\nwant: %v\ngot:  %v", wantErr, err)
 	}
@@ -178,6 +186,7 @@ func TestHandleNamespaceHelperInvocation_UnknownMode_ReturnsError(t *testing.T) 
 	if handled {
 		t.Fatalf("expected handled=false for unknown mode")
 	}
+
 	if err == nil {
 		t.Fatalf("expected error for unknown BPFMAN_MODE")
 	}

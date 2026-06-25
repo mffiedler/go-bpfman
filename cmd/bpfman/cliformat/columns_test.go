@@ -93,6 +93,7 @@ func TestColumnSpec_ExtractValue(t *testing.T) {
 			if !ok {
 				t.Fatalf("column %q not found in registry", tt.columnName)
 			}
+
 			col := ColumnSpec{Name: info.Name, Extract: info.Extract}
 			got := col.ExtractValue(prog)
 			if got != tt.want {

@@ -41,6 +41,7 @@ func TestPublishBytecodeImagePublishesSingleArchImage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseRegistryReference returned error: %v", err)
 	}
+
 	if published.Reference != ref {
 		t.Fatalf("published Reference = %q, want %q", published.Reference, ref)
 	}
@@ -54,10 +55,12 @@ func TestPublishBytecodeImagePublishesSingleArchImage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("remote.Image returned error: %v", err)
 	}
+
 	digest, err := img.Digest()
 	if err != nil {
 		t.Fatalf("Digest returned error: %v", err)
 	}
+
 	if published.Digest != digest.String() {
 		t.Fatalf("published Digest = %q, want image digest %q", published.Digest, digest.String())
 	}
@@ -65,6 +68,7 @@ func TestPublishBytecodeImagePublishesSingleArchImage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MediaType returned error: %v", err)
 	}
+
 	if mt != types.OCIManifestSchema1 {
 		t.Fatalf("image media type = %s, want %s", mt, types.OCIManifestSchema1)
 	}
@@ -73,6 +77,7 @@ func TestPublishBytecodeImagePublishesSingleArchImage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ConfigFile returned error: %v", err)
 	}
+
 	if config.Config.Labels[LabelPrograms] != `{"pass":"xdp"}` {
 		t.Fatalf("%s label = %q", LabelPrograms, config.Config.Labels[LabelPrograms])
 	}
@@ -119,14 +124,17 @@ func TestPublishBytecodeImageHonorsSourceDateEpoch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseRegistryReference returned error: %v", err)
 	}
+
 	img, err := remote.Image(parsed)
 	if err != nil {
 		t.Fatalf("remote.Image returned error: %v", err)
 	}
+
 	config, err := img.ConfigFile()
 	if err != nil {
 		t.Fatalf("ConfigFile returned error: %v", err)
 	}
+
 	if !config.Created.Time.Equal(wantTimestamp) {
 		t.Fatalf("config Created = %s, want %s", config.Created.Time, wantTimestamp)
 	}
@@ -172,6 +180,7 @@ func TestInspectBytecodeImageInspectsSingleArchImage(t *testing.T) {
 	if _, err := PublishBytecodeImage(context.Background(), ref, plan); err != nil {
 		t.Fatalf("PublishBytecodeImage returned error: %v", err)
 	}
+
 	inspection, err := InspectBytecodeImage(context.Background(), ref)
 	if err != nil {
 		t.Fatalf("InspectBytecodeImage returned error: %v", err)
@@ -228,6 +237,7 @@ func TestPublishBytecodeImagePublishesMultiArchIndex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseRegistryReference returned error: %v", err)
 	}
+
 	if published.Reference != ref {
 		t.Fatalf("published Reference = %q, want %q", published.Reference, ref)
 	}
@@ -241,6 +251,7 @@ func TestPublishBytecodeImagePublishesMultiArchIndex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("remote.Get returned error: %v", err)
 	}
+
 	if published.Digest != desc.Digest.String() {
 		t.Fatalf("published Digest = %q, want index digest %q", published.Digest, desc.Digest.String())
 	}
@@ -251,10 +262,12 @@ func TestPublishBytecodeImagePublishesMultiArchIndex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ImageIndex returned error: %v", err)
 	}
+
 	manifest, err := idx.IndexManifest()
 	if err != nil {
 		t.Fatalf("IndexManifest returned error: %v", err)
 	}
+
 	if len(manifest.Manifests) != 2 {
 		t.Fatalf("index manifests = %d, want 2", len(manifest.Manifests))
 	}
@@ -269,6 +282,7 @@ func TestPublishBytecodeImagePublishesMultiArchIndex(t *testing.T) {
 		if err != nil {
 			t.Fatalf("index image %d returned error: %v", i, err)
 		}
+
 		_, gotContent := readSingleLayerFile(t, img)
 		if gotContent != wantContent {
 			t.Fatalf("index image %d layer content = %q, want %q", i, gotContent, wantContent)
@@ -299,6 +313,7 @@ func TestInspectBytecodeImageInspectsMultiArchIndex(t *testing.T) {
 	if _, err := PublishBytecodeImage(context.Background(), ref, plan); err != nil {
 		t.Fatalf("PublishBytecodeImage returned error: %v", err)
 	}
+
 	inspection, err := InspectBytecodeImage(context.Background(), ref)
 	if err != nil {
 		t.Fatalf("InspectBytecodeImage returned error: %v", err)
@@ -365,6 +380,7 @@ func readSingleLayerFileAndHeader(t *testing.T, img v1.Image) (*tar.Header, stri
 	if err != nil {
 		t.Fatalf("Layers returned error: %v", err)
 	}
+
 	if len(layers) != 1 {
 		t.Fatalf("layers = %d, want 1", len(layers))
 	}
@@ -372,21 +388,25 @@ func readSingleLayerFileAndHeader(t *testing.T, img v1.Image) (*tar.Header, stri
 	if err != nil {
 		t.Fatalf("Compressed returned error: %v", err)
 	}
+
 	defer rc.Close()
 	gz, err := gzip.NewReader(rc)
 	if err != nil {
 		t.Fatalf("gzip.NewReader returned error: %v", err)
 	}
+
 	defer gz.Close()
 	tr := tar.NewReader(gz)
 	header, err := tr.Next()
 	if err != nil {
 		t.Fatalf("tar.Next returned error: %v", err)
 	}
+
 	bytes, err := io.ReadAll(tr)
 	if err != nil {
 		t.Fatalf("ReadAll returned error: %v", err)
 	}
+
 	if _, err := tr.Next(); err != io.EOF {
 		t.Fatalf("second tar.Next error = %v, want EOF", err)
 	}

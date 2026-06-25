@@ -917,8 +917,7 @@ func TestCheck_UnknownShortBindHeadDoesNotSuggestDistantDef(t *testing.T) {
 }
 let route <- ip route get 198.51.100.2`
 	issues := checkSource(t, src)
-	assert.Empty(t, issues,
-		"short external command names must not pick up distant def suggestions")
+	assert.Empty(t, issues, "short external command names must not pick up distant def suggestions")
 }
 
 func TestCheck_WaitWithoutJobReported(t *testing.T) {
@@ -1605,8 +1604,7 @@ print "${4 * $x}"`
 	// arithmetic must not flag $x as non-numeric: x's outer
 	// shape (Scalar with literal RHS "5") was restored.
 	for _, iss := range issues {
-		assert.NotContains(t, iss.Msg, "x is",
-			"foreach must restore x's outer shape on exit")
+		assert.NotContains(t, iss.Msg, "x is", "foreach must restore x's outer shape on exit")
 	}
 }
 

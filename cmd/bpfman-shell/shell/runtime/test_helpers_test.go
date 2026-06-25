@@ -38,6 +38,7 @@ func execParsedProgram(t *testing.T, prog *syntax.Program, env *Env) error {
 	if err != nil {
 		return err
 	}
+
 	return Exec(lp, env)
 }
 

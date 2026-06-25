@@ -133,9 +133,7 @@ func TestDispatch_Matrix_Sites_x_HeadKinds(t *testing.T) {
 					RenderDeferFailure: func(source.Pos, []Arg, Envelope) {},
 				}
 				require.NoError(t, runProgramWithEnv(t, src, env))
-				assert.Contains(t, commandCalls, "sentinel",
-					"site=%s head=%s: def body must run; recorded=%v",
-					site.name, head.name, commandCalls)
+				assert.Contains(t, commandCalls, "sentinel", "site=%s head=%s: def body must run; recorded=%v", site.name, head.name, commandCalls)
 				// The head name must not have reached
 				// ExecBind / ExecCommand as a top-level
 				// dispatch -- if it did, the def-lookup
@@ -177,8 +175,7 @@ func TestDispatch_Matrix_UnknownNameAllSitesPassPreflight(t *testing.T) {
 			issues := checkSource(t, src)
 			for _, i := range issues {
 				if strings.Contains(i.Msg, "conditional") {
-					t.Fatalf("site=%s: unknown name must not trip the conditional hint (got %q)",
-						site.name, i.Msg)
+					t.Fatalf("site=%s: unknown name must not trip the conditional hint (got %q)", site.name, i.Msg)
 				}
 			}
 			// Runtime: the unknown head must reach the
@@ -215,8 +212,7 @@ func TestDispatch_Matrix_UnknownNameAllSitesPassPreflight(t *testing.T) {
 				}
 				assert.True(t, found, "site=%s: unknown head %q must reach ExecBind", site.name, head)
 			} else {
-				assert.Contains(t, commandCalls, head,
-					"site=%s: unknown head must reach ExecCommand", site.name)
+				assert.Contains(t, commandCalls, head, "site=%s: unknown head must reach ExecCommand", site.name)
 			}
 		})
 	}
@@ -261,13 +257,9 @@ func TestDispatch_Matrix_LoweredLane_Sites_x_HeadKinds(t *testing.T) {
 				require.NoError(t, err)
 
 				out := dumpLoweredString(t, lp)
-				assert.Contains(t, out, site.dumpVerb,
-					"site=%s head=%s: expected %s in lowered dump\n%s",
-					site.name, head.name, site.dumpVerb, out)
+				assert.Contains(t, out, site.dumpVerb, "site=%s head=%s: expected %s in lowered dump\n%s", site.name, head.name, site.dumpVerb, out)
 				pat := regexp.MustCompile(`(?m)^  ` + regexp.QuoteMeta(site.dumpVerb) + ` .* lane=` + regexp.QuoteMeta(head.wantLane) + `$`)
-				assert.Regexp(t, pat, out,
-					"site=%s head=%s: expected %s line with lane=%s in lowered dump\n%s",
-					site.name, head.name, site.dumpVerb, head.wantLane, out)
+				assert.Regexp(t, pat, out, "site=%s head=%s: expected %s line with lane=%s in lowered dump\n%s", site.name, head.name, site.dumpVerb, head.wantLane, out)
 			})
 		}
 	}

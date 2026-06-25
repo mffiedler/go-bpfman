@@ -141,6 +141,7 @@ func (c *CLI) runCheck() error {
 	if err != nil {
 		return err
 	}
+
 	defer reader.Close()
 
 	file := c.inputFileLabel()
@@ -157,6 +158,7 @@ func (c *CLI) runAST() error {
 	if err != nil {
 		return err
 	}
+
 	defer reader.Close()
 
 	file := c.inputFileLabel()
@@ -174,6 +176,7 @@ func (c *CLI) runLowered() error {
 	if err != nil {
 		return err
 	}
+
 	defer reader.Close()
 
 	file := c.inputFileLabel()
@@ -190,6 +193,7 @@ func (c *CLI) runSymbols() error {
 	if err != nil {
 		return err
 	}
+
 	defer reader.Close()
 
 	file := c.inputFileLabel()
@@ -213,10 +217,12 @@ func (c *CLI) runFmt() error {
 			return err
 		}
 		defer reader.Close()
+
 		formatted, hadIssue := driver.FormatInputString(reader, c.Err, c.inputFileLabel())
 		if hadIssue {
 			return driver.ErrSilent
 		}
+
 		if err := os.WriteFile(script, []byte(formatted), 0o644); err != nil {
 			return fmt.Errorf("write formatted script: %w", err)
 		}
@@ -227,6 +233,7 @@ func (c *CLI) runFmt() error {
 	if err != nil {
 		return err
 	}
+
 	defer reader.Close()
 
 	file := c.inputFileLabel()
@@ -276,6 +283,7 @@ func (c *CLI) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
 	defer lr.Close()
 
 	return driver.Run(ctx, driver.Config{
@@ -388,6 +396,7 @@ func (c *CLI) runListScripts() error {
 		if err != nil {
 			return fmt.Errorf("parse --selector=%q: %w", c.Selector, err)
 		}
+
 		selector = parsed
 	}
 
@@ -395,6 +404,7 @@ func (c *CLI) runListScripts() error {
 	if err != nil {
 		return err
 	}
+
 	if len(paths) == 0 {
 		return fmt.Errorf("--list-scripts requires at least one script file or directory")
 	}
@@ -404,6 +414,7 @@ func (c *CLI) runListScripts() error {
 		if err != nil {
 			return err
 		}
+
 		if selector.Matches(mode.Labels) {
 			if err := c.PrintOutf("%s\n", path); err != nil {
 				return err
@@ -420,6 +431,7 @@ func expandScriptPaths(inputs []string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		if !info.IsDir() {
 			paths = append(paths, input)
 			continue
@@ -428,6 +440,7 @@ func expandScriptPaths(inputs []string) ([]string, error) {
 			if err != nil {
 				return err
 			}
+
 			if d.IsDir() || filepath.Ext(path) != ".bpfman" {
 				return nil
 			}

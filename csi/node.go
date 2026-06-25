@@ -36,27 +36,20 @@ const (
 
 // NodeGetInfo returns information about this node.
 func (d *Driver) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
-	d.logger.Debug("NodeGetInfo",
-		"method", "Node.NodeGetInfo",
-	)
+	d.logger.Debug("NodeGetInfo", "method", "Node.NodeGetInfo")
 
 	resp := &csi.NodeGetInfoResponse{
 		NodeId: d.nodeID,
 	}
 
-	d.logger.Info("NodeGetInfo response",
-		"method", "Node.NodeGetInfo",
-		"nodeID", resp.NodeId,
-	)
+	d.logger.Info("NodeGetInfo response", "method", "Node.NodeGetInfo", "nodeID", resp.NodeId)
 
 	return resp, nil
 }
 
 // NodeGetCapabilities returns the capabilities of this node plugin.
 func (d *Driver) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetCapabilitiesRequest) (*csi.NodeGetCapabilitiesResponse, error) {
-	d.logger.Debug("NodeGetCapabilities",
-		"method", "Node.NodeGetCapabilities",
-	)
+	d.logger.Debug("NodeGetCapabilities", "method", "Node.NodeGetCapabilities")
 
 	resp := &csi.NodeGetCapabilitiesResponse{
 		Capabilities: []*csi.NodeServiceCapability{
@@ -70,10 +63,7 @@ func (d *Driver) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetCapabi
 		},
 	}
 
-	d.logger.Info("NodeGetCapabilities response",
-		"method", "Node.NodeGetCapabilities",
-		"capabilities", len(resp.Capabilities),
-	)
+	d.logger.Info("NodeGetCapabilities response", "method", "Node.NodeGetCapabilities", "capabilities", len(resp.Capabilities))
 
 	return resp, nil
 }
@@ -102,15 +92,7 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 		}
 	}
 
-	d.logger.Info("NodePublishVolume request",
-		"method", "Node.NodePublishVolume",
-		"volumeID", volumeID,
-		"targetPath", targetPath,
-		"volumeContext", volumeContext,
-		"readonly", readonly,
-		"fsGroup", fsGroup,
-		"accessMode", req.GetVolumeCapability().GetAccessMode().GetMode().String(),
-	)
+	d.logger.Info("NodePublishVolume request", "method", "Node.NodePublishVolume", "volumeID", volumeID, "targetPath", targetPath, "volumeContext", volumeContext, "readonly", readonly, "fsGroup", fsGroup, "accessMode", req.GetVolumeCapability().GetAccessMode().GetMode().String())
 
 	if err := checkVolumeID(volumeID); err != nil {
 		return nil, err
@@ -126,8 +108,7 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 	requestedMaps := parseMapNames(volumeContext[VolumeAttrMaps])
 
 	if programName == "" || len(requestedMaps) == 0 {
-		return nil, status.Error(codes.InvalidArgument,
-			"csi.bpfman.io/program and at least one csi.bpfman.io/maps are required")
+		return nil, status.Error(codes.InvalidArgument, "csi.bpfman.io/program and at least one csi.bpfman.io/maps are required")
 	}
 	if err := validateMapNames(requestedMaps); err != nil {
 		return nil, err
@@ -152,8 +133,7 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 	// userspace can still read and write the maps it is handed.
 	const enforceReadOnly = false
 	if enforceReadOnly && !req.GetReadonly() {
-		return nil, status.Error(codes.InvalidArgument,
-			"volume must be published read-only (set csi.readOnly: true)")
+		return nil, status.Error(codes.InvalidArgument, "volume must be published read-only (set csi.readOnly: true)")
 	}
 
 	// Serialise per-volume work: the CO may lose state and issue concurrent
@@ -186,8 +166,7 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 	if mounted && fsType != "bpf" {
 		// Something other than our bpffs owns the target. Do not mount over
 		// it; that is not safe and is not our volume to reclaim.
-		return nil, status.Errorf(codes.FailedPrecondition,
-			"target path %q is already mounted with filesystem %q", targetPath, fsType)
+		return nil, status.Errorf(codes.FailedPrecondition, "target path %q is already mounted with filesystem %q", targetPath, fsType)
 	}
 	if mounted {
 		same, err := publishMatches(targetPath, requestedMaps, readonly)
@@ -195,20 +174,14 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 			return nil, status.Errorf(codes.Internal, "compare published volume at %q: %v", targetPath, err)
 		}
 		if !same {
-			return nil, status.Errorf(codes.AlreadyExists,
-				"volume %q already published at %q with different arguments", volumeID, targetPath)
+			return nil, status.Errorf(codes.AlreadyExists, "volume %q already published at %q with different arguments", volumeID, targetPath)
 		}
-		d.logger.Info("NodePublishVolume already published; returning OK",
-			"method", "Node.NodePublishVolume",
-			"volumeID", volumeID,
-			"targetPath", targetPath,
-		)
+		d.logger.Info("NodePublishVolume already published; returning OK", "method", "Node.NodePublishVolume", "volumeID", volumeID, "targetPath", targetPath)
 		return &csi.NodePublishVolumeResponse{}, nil
 	}
 
 	if d.programFinder == nil || d.kernel == nil {
-		return nil, status.Error(codes.FailedPrecondition,
-			"bpfman integration not configured; programFinder and kernel required")
+		return nil, status.Error(codes.FailedPrecondition, "bpfman integration not configured; programFinder and kernel required")
 	}
 
 	// 1. Find program by metadata (reconciled with kernel state)
@@ -219,16 +192,10 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 		// driver may ask before the operator has loaded the program.
 		switch {
 		case errors.Is(err, platform.ErrRecordNotFound):
-			d.logger.Warn("program not yet loaded",
-				"programName", programName,
-				"error", err,
-			)
+			d.logger.Warn("program not yet loaded", "programName", programName, "error", err)
 			return nil, status.Errorf(codes.NotFound, "program %q not found", programName)
 		default:
-			d.logger.Error("failed to find program",
-				"programName", programName,
-				"error", err,
-			)
+			d.logger.Error("failed to find program", "programName", programName, "error", err)
 			return nil, status.Errorf(codes.Internal, "failed to find program %q: %v", programName, err)
 		}
 	}
@@ -239,10 +206,7 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 		return nil, status.Errorf(codes.Internal, "program %q has no map pin path", programName)
 	}
 
-	d.logger.Info("found program",
-		"programName", programName,
-		"mapPinPath", mapPinPath,
-	)
+	d.logger.Info("found program", "programName", programName, "mapPinPath", mapPinPath)
 
 	podBpffs := filepath.Join(d.csiFsRoot, volumeID)
 
@@ -254,11 +218,7 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 		if committed {
 			return
 		}
-		d.logger.Warn("NodePublishVolume failed; rolling back partial mount",
-			"volumeID", volumeID,
-			"targetPath", targetPath,
-			"podBpffs", podBpffs,
-		)
+		d.logger.Warn("NodePublishVolume failed; rolling back partial mount", "volumeID", volumeID, "targetPath", targetPath, "podBpffs", podBpffs)
 		if err := unmountIfMounted(targetPath); err != nil {
 			d.logger.Warn("rollback: unmount target", "path", targetPath, "error", err)
 		}
@@ -307,8 +267,7 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 		// a transient the caller should expect to clear.
 		if _, err := os.Stat(srcPath); err != nil {
 			if os.IsNotExist(err) {
-				return nil, status.Errorf(codes.NotFound,
-					"map %q is not published by program %q", mapName, programName)
+				return nil, status.Errorf(codes.NotFound, "map %q is not published by program %q", mapName, programName)
 			}
 			return nil, status.Errorf(codes.Internal, "stat map pin %q: %v", srcPath, err)
 		}
@@ -351,16 +310,7 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 
 	committed = true
 
-	d.logger.Info("NodePublishVolume succeeded",
-		"method", "Node.NodePublishVolume",
-		"volumeID", volumeID,
-		"programName", programName,
-		"maps", requestedMaps,
-		"podBpffs", podBpffs,
-		"targetPath", targetPath,
-		"readonly", readonly,
-		"fsGroup", fsGroup,
-	)
+	d.logger.Info("NodePublishVolume succeeded", "method", "Node.NodePublishVolume", "volumeID", volumeID, "programName", programName, "maps", requestedMaps, "podBpffs", podBpffs, "targetPath", targetPath, "readonly", readonly, "fsGroup", fsGroup)
 
 	return &csi.NodePublishVolumeResponse{}, nil
 }
@@ -564,11 +514,7 @@ func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 	volumeID := req.GetVolumeId()
 	targetPath := req.GetTargetPath()
 
-	d.logger.Info("NodeUnpublishVolume request",
-		"method", "Node.NodeUnpublishVolume",
-		"volumeID", volumeID,
-		"targetPath", targetPath,
-	)
+	d.logger.Info("NodeUnpublishVolume request", "method", "Node.NodeUnpublishVolume", "volumeID", volumeID, "targetPath", targetPath)
 
 	if err := checkVolumeID(volumeID); err != nil {
 		return nil, err
@@ -595,47 +541,31 @@ func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 		d.logger.Warn("failed to clean per-pod bpffs", "path", podBpffs, "error", err)
 	}
 
-	d.logger.Info("NodeUnpublishVolume succeeded",
-		"method", "Node.NodeUnpublishVolume",
-		"volumeID", volumeID,
-		"targetPath", targetPath,
-	)
+	d.logger.Info("NodeUnpublishVolume succeeded", "method", "Node.NodeUnpublishVolume", "volumeID", volumeID, "targetPath", targetPath)
 
 	return &csi.NodeUnpublishVolumeResponse{}, nil
 }
 
 // NodeStageVolume is called before NodePublishVolume if staging is advertised.
 func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRequest) (*csi.NodeStageVolumeResponse, error) {
-	d.logger.Warn("NodeStageVolume called but not implemented",
-		"method", "Node.NodeStageVolume",
-		"volumeID", req.GetVolumeId(),
-	)
+	d.logger.Warn("NodeStageVolume called but not implemented", "method", "Node.NodeStageVolume", "volumeID", req.GetVolumeId())
 	return nil, status.Error(codes.Unimplemented, "NodeStageVolume not supported")
 }
 
 // NodeUnstageVolume is the counterpart to NodeStageVolume.
 func (d *Driver) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstageVolumeRequest) (*csi.NodeUnstageVolumeResponse, error) {
-	d.logger.Warn("NodeUnstageVolume called but not implemented",
-		"method", "Node.NodeUnstageVolume",
-		"volumeID", req.GetVolumeId(),
-	)
+	d.logger.Warn("NodeUnstageVolume called but not implemented", "method", "Node.NodeUnstageVolume", "volumeID", req.GetVolumeId())
 	return nil, status.Error(codes.Unimplemented, "NodeUnstageVolume not supported")
 }
 
 // NodeGetVolumeStats returns statistics about a volume.
 func (d *Driver) NodeGetVolumeStats(ctx context.Context, req *csi.NodeGetVolumeStatsRequest) (*csi.NodeGetVolumeStatsResponse, error) {
-	d.logger.Warn("NodeGetVolumeStats called but not implemented",
-		"method", "Node.NodeGetVolumeStats",
-		"volumeID", req.GetVolumeId(),
-	)
+	d.logger.Warn("NodeGetVolumeStats called but not implemented", "method", "Node.NodeGetVolumeStats", "volumeID", req.GetVolumeId())
 	return nil, status.Error(codes.Unimplemented, "NodeGetVolumeStats not supported")
 }
 
 // NodeExpandVolume expands a volume on the node.
 func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolumeRequest) (*csi.NodeExpandVolumeResponse, error) {
-	d.logger.Warn("NodeExpandVolume called but not implemented",
-		"method", "Node.NodeExpandVolume",
-		"volumeID", req.GetVolumeId(),
-	)
+	d.logger.Warn("NodeExpandVolume called but not implemented", "method", "Node.NodeExpandVolume", "volumeID", req.GetVolumeId())
 	return nil, status.Error(codes.Unimplemented, "NodeExpandVolume not supported")
 }

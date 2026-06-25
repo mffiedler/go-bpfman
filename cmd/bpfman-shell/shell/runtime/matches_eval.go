@@ -53,10 +53,12 @@ func evalMatchesExprDetails(expr *ir.MatchesExpr, env *Env) (MatchesResult, erro
 	if err != nil {
 		return MatchesResult{}, err
 	}
+
 	block, err := evalMatchesBlock(expr.Block, env)
 	if err != nil {
 		return MatchesResult{}, err
 	}
+
 	return evalMatchesTarget(target, matchesTargetName(expr.Target), block)
 }
 
@@ -72,16 +74,19 @@ func FindFailedMatchesExpr(expr ir.Expr, env *Env) (MatchesResult, bool, error) 
 		if err != nil {
 			return MatchesResult{}, false, err
 		}
+
 		return result, !result.Matched, nil
 	case *ir.LogicalExpr:
 		leftV, err := EvalExpr(e.Left, env)
 		if err != nil {
 			return MatchesResult{}, false, err
 		}
+
 		leftB, err := AsBool(leftV)
 		if err != nil {
 			return MatchesResult{}, false, err
 		}
+
 		switch e.Op {
 		case "and":
 			if !leftB {
@@ -91,10 +96,12 @@ func FindFailedMatchesExpr(expr ir.Expr, env *Env) (MatchesResult, bool, error) 
 			if err != nil {
 				return MatchesResult{}, false, err
 			}
+
 			rightB, err := AsBool(rightV)
 			if err != nil {
 				return MatchesResult{}, false, err
 			}
+
 			if !rightB {
 				return FindFailedMatchesExpr(e.Right, env)
 			}
@@ -107,14 +114,17 @@ func FindFailedMatchesExpr(expr ir.Expr, env *Env) (MatchesResult, bool, error) 
 			if err != nil {
 				return MatchesResult{}, false, err
 			}
+
 			rightB, err := AsBool(rightV)
 			if err != nil {
 				return MatchesResult{}, false, err
 			}
+
 			if !rightB {
 				if result, ok, err := FindFailedMatchesExpr(e.Left, env); err != nil || ok {
 					return result, ok, err
 				}
+
 				return FindFailedMatchesExpr(e.Right, env)
 			}
 			return MatchesResult{}, false, nil
@@ -202,6 +212,7 @@ func matchesTargetDisplay(v Value) string {
 		if err != nil {
 			return v.Kind().String()
 		}
+
 		return s
 	}
 }
@@ -363,6 +374,7 @@ func matchesValueEqual(actual, expected Value) bool {
 	if errA != nil || errE != nil {
 		return reflect.DeepEqual(actual.Raw(), expected.Raw())
 	}
+
 	return a == e
 }
 
@@ -379,12 +391,14 @@ func matchesValueDisplay(v Value) string {
 		if s, err := RenderCompact(v); err == nil {
 			return s
 		}
+
 		return v.Kind().String()
 	}
 	s, err := v.Scalar()
 	if err != nil {
 		return v.Kind().String()
 	}
+
 	return fmt.Sprintf("%q", s)
 }
 

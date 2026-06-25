@@ -84,6 +84,7 @@ func (r targetResolver) resolve(target string, pid int32) (targetResolution, err
 		if err != nil {
 			return targetResolution{}, fmt.Errorf("resolve target %q: read %s: %w", target, mapsPath, err)
 		}
+
 		if path, ok := libFromMaps(data, target); ok {
 			return targetResolution{Path: path, Source: sourceProcMaps}, nil
 		}
@@ -95,10 +96,12 @@ func (r targetResolver) resolve(target string, pid int32) (targetResolution, err
 	if err != nil {
 		return targetResolution{}, fmt.Errorf("resolve target %q: read %s: %w", target, r.cachePath, err)
 	}
+
 	entries, err := parseLdSoCache(data)
 	if err != nil {
 		return targetResolution{}, fmt.Errorf("resolve target %q: parse %s: %w", target, r.cachePath, err)
 	}
+
 	path, ok := resolveLibName(entries, target)
 	if !ok {
 		return targetResolution{}, fmt.Errorf("resolve target %q: not found in %s (pass an absolute path)", target, r.cachePath)
@@ -186,10 +189,12 @@ func parseLdSoCache(data []byte) ([]ldCacheEntry, error) {
 		if err != nil {
 			return nil, fmt.Errorf("entry %d key: %w", i, err)
 		}
+
 		value, err := readString(binary.NativeEndian.Uint32(entry[8:]))
 		if err != nil {
 			return nil, fmt.Errorf("entry %d value: %w", i, err)
 		}
+
 		entries = append(entries, ldCacheEntry{key: key, value: value})
 	}
 	return entries, nil

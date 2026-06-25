@@ -27,6 +27,7 @@ func OpenScriptReader(path string) (LineReader, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open script: %w", err)
 	}
+
 	return NewScannerReader(f, f), nil
 }
 
@@ -93,6 +94,7 @@ func preflightCheck(errOut io.Writer, file, src string) bool {
 			emitFrame(se.Span, se.Msg)
 			return
 		}
+
 		emitFrame(source.Span{
 			Pos: source.Pos{File: file, Line: 1, Col: 1},
 			End: source.Pos{File: file, Line: 1, Col: 2},
@@ -104,6 +106,7 @@ func preflightCheck(errOut io.Writer, file, src string) bool {
 		reportSyntaxErr(err)
 		return hadIssues
 	}
+
 	issues := check.Check(prog)
 	for _, issue := range issues {
 		emitFrame(issue.Span, issue.Msg)
@@ -124,5 +127,6 @@ func CheckInput(r LineReader, errOut io.Writer, file string) bool {
 		fmt.Fprintf(errOut, "%s: %v\n", file, err)
 		return true
 	}
+
 	return PreflightCheck(errOut, file, src)
 }

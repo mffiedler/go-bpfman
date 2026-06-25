@@ -118,6 +118,7 @@ func ValueFromJSON(b []byte) (Value, error) {
 	if err := dec.Decode(&v); err != nil {
 		return Value{}, fmt.Errorf("decode JSON: %w", err)
 	}
+
 	// A second Decode is the only way to reject every form of
 	// trailing data at the top level. dec.More() looks right
 	// for the common cases but treats ']' and '}' as natural
@@ -134,6 +135,7 @@ func ValueFromJSON(b []byte) (Value, error) {
 		}
 		return Value{}, fmt.Errorf("decode JSON: trailing data after value: %w", err)
 	}
+
 	// Preserve the IsNull / IsNil distinction at the JSON
 	// boundary: a top-level `null` decodes to a nil interface,
 	// but that should surface as the explicit-null carrier
@@ -157,10 +159,12 @@ func ValueFromStruct(s any) (Value, error) {
 	if err != nil {
 		return Value{}, fmt.Errorf("marshal struct: %w", err)
 	}
+
 	v, err := ValueFromJSON(b)
 	if err != nil {
 		return Value{}, err
 	}
+
 	v.origin = s
 	return v, nil
 }
@@ -229,6 +233,7 @@ func (v Value) stepValue(varName, traversed string, step syntax.PathStep) (Value
 		if !ok {
 			return Value{}, traversed, fmt.Errorf("cannot index non-array in variable %s", traversed)
 		}
+
 		if step.Index < 0 || step.Index >= len(arr) {
 			return Value{}, traversed, fmt.Errorf("index %d out of range for variable %s (length %d)", step.Index, traversed, len(arr))
 		}
@@ -240,6 +245,7 @@ func (v Value) stepValue(varName, traversed string, step syntax.PathStep) (Value
 		if !exists {
 			return Value{}, traversed, fmt.Errorf("field %s not found in variable %s: %w", step.Field, traversed, ErrFieldMissing)
 		}
+
 		return field, appendFieldPath(varName, traversed, step.Field), nil
 	}
 
@@ -250,10 +256,12 @@ func (v Value) stepValue(varName, traversed string, step syntax.PathStep) (Value
 		}
 		return Value{}, traversed, fmt.Errorf("cannot access field %s on non-object in variable %s", step.Field, traversed)
 	}
+
 	raw, exists := m[step.Field]
 	if !exists {
 		return Value{}, traversed, fmt.Errorf("field %s not found in variable %s: %w", step.Field, traversed, ErrFieldMissing)
 	}
+
 	out := Value{v: raw}
 	if raw == nil {
 		out.kind = semantics.OriginNull
@@ -282,6 +290,7 @@ func (v Value) lookupPath(varName, path string) (Value, string, error) {
 	if err != nil {
 		return Value{}, varName, err
 	}
+
 	current := v
 	traversed := varName
 	for _, step := range steps {
@@ -412,6 +421,7 @@ func (v Value) LookupValue(varName, path string) (Value, error) {
 	if err != nil {
 		return Value{}, err
 	}
+
 	return out, nil
 }
 
@@ -430,6 +440,7 @@ func (v Value) LookupPresence(varName, path string) (Presence, error) {
 		}
 		return Presence{}, err
 	}
+
 	if current.IsNil() || current.IsNull() {
 		return Presence{value: current, state: presenceNull}, nil
 	}
@@ -490,6 +501,7 @@ func RenderValue(v Value) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("render value: %w", err)
 		}
+
 		return append(b, '\n'), nil
 	}
 }

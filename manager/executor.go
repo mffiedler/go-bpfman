@@ -160,11 +160,11 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 		}); err != nil {
 			return nil, err
 		}
+
 		for _, mapName := range orphaned {
 			path := e.bpffs.SharedMapPin(mapName)
 			if rmErr := e.bpffs.RemoveSharedMapPin(path); rmErr != nil {
-				e.logger.Warn("failed to remove orphaned shared map pin",
-					"path", path, "error", rmErr)
+				e.logger.Warn("failed to remove orphaned shared map pin", "path", path, "error", rmErr)
 			}
 		}
 		return nil, nil

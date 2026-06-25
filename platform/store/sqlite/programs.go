@@ -28,6 +28,7 @@ func (s *sqliteStore) Get(ctx context.Context, programID kernel.ProgramID) (bpfm
 		s.logger.Debug("sql", "stmt", "GetProgram", "args", []any{programID}, "duration_ms", msec(time.Since(start)), "error", err)
 		return bpfman.ProgramRecord{}, err
 	}
+
 	s.logger.Debug("sql", "stmt", "GetProgram", "args", []any{programID}, "duration_ms", msec(time.Since(start)), "rows", 1)
 
 	prog.ProgramID = programID
@@ -107,6 +108,7 @@ func buildProgramRecord(sp *scannedProgram) (bpfman.ProgramRecord, error) {
 	if err != nil {
 		return bpfman.ProgramRecord{}, fmt.Errorf("invalid created_at timestamp %q: %w", sp.createdAtStr, err)
 	}
+
 	// updated_at is nullable in the schema and nil in the
 	// in-memory record when the program has never been updated
 	// since creation. The pointer encoding keeps "never updated"
@@ -117,6 +119,7 @@ func buildProgramRecord(sp *scannedProgram) (bpfman.ProgramRecord, error) {
 		if err != nil {
 			return bpfman.ProgramRecord{}, fmt.Errorf("invalid updated_at timestamp %q: %w", sp.updatedAtStr.String, err)
 		}
+
 		updatedAt = &t
 	}
 
@@ -182,6 +185,7 @@ func (s *sqliteStore) scanProgram(row *sql.Row, programID kernel.ProgramID) (bpf
 	if err != nil {
 		return bpfman.ProgramRecord{}, err
 	}
+
 	sp.programID = programID
 	return buildProgramRecord(&sp)
 }
@@ -206,6 +210,7 @@ func (s *sqliteStore) Save(ctx context.Context, programID kernel.ProgramID, meta
 		if err != nil {
 			return fmt.Errorf("failed to marshal global_data: %w", err)
 		}
+
 		globalDataJSON = sql.NullString{String: string(data), Valid: true}
 	}
 	if metadata.Load.HasImageSource() {
@@ -222,6 +227,7 @@ func (s *sqliteStore) Save(ctx context.Context, programID kernel.ProgramID, meta
 		if err != nil {
 			return fmt.Errorf("failed to marshal image_source: %w", err)
 		}
+
 		imageSourceJSON = sql.NullString{String: string(data), Valid: true}
 	}
 
@@ -232,6 +238,7 @@ func (s *sqliteStore) Save(ctx context.Context, programID kernel.ProgramID, meta
 		if err != nil {
 			return fmt.Errorf("failed to marshal metadata: %w", err)
 		}
+
 		metadataJSON = string(data)
 	}
 
@@ -243,6 +250,7 @@ func (s *sqliteStore) Save(ctx context.Context, programID kernel.ProgramID, meta
 		if err != nil {
 			return err
 		}
+
 		// Save also updates existing records. Only the first save for a
 		// self-owned program creates its map set; a reused kernel id with
 		// a surviving map set still attempts the insert and fails closed.
@@ -307,6 +315,7 @@ func (s *sqliteStore) Save(ctx context.Context, programID kernel.ProgramID, meta
 		s.logger.Debug("sql", "stmt", "SaveProgram", "args", []any{programID, metadata.Meta.Name, "(columns)"}, "duration_ms", msec(time.Since(start)), "error", err)
 		return fmt.Errorf("failed to insert program: %w", err)
 	}
+
 	rows, _ := result.RowsAffected()
 	s.logger.Debug("sql", "stmt", "SaveProgram", "args", []any{programID, metadata.Meta.Name, "(columns)"}, "duration_ms", msec(time.Since(start)), "rows_affected", rows)
 
@@ -322,10 +331,12 @@ func (s *sqliteStore) Delete(ctx context.Context, programID kernel.ProgramID) er
 		s.logger.Debug("sql", "stmt", "DeleteProgram", "args", []any{programID}, "duration_ms", msec(time.Since(start)), "error", err)
 		return err
 	}
+
 	rows, err := result.RowsAffected()
 	if err != nil {
 		return err
 	}
+
 	s.logger.Debug("sql", "stmt", "DeleteProgram", "args", []any{programID}, "duration_ms", msec(time.Since(start)), "rows_affected", rows)
 	if rows == 0 {
 		return fmt.Errorf("program %d: %w", programID, platform.ErrRecordNotFound)
@@ -341,6 +352,7 @@ func (s *sqliteStore) programRecordExists(ctx context.Context, programID kernel.
 		s.logger.Debug("sql", "stmt", "ProgramRecordExists", "args", []any{programID}, "duration_ms", msec(time.Since(start)), "error", err)
 		return false, err
 	}
+
 	s.logger.Debug("sql", "stmt", "ProgramRecordExists", "args", []any{programID}, "duration_ms", msec(time.Since(start)), "exists", exists)
 	return exists, nil
 }
@@ -370,6 +382,7 @@ func (s *sqliteStore) insertSelfOwnedMapSet(ctx context.Context, programID kerne
 		}
 		return fmt.Errorf("create map set %d: %w", programID, err)
 	}
+
 	s.logger.Debug("sql", "stmt", "InsertMapSet", "args", []any{programID, metadata.Handles.MapsDir.String()}, "duration_ms", msec(time.Since(start)), "rows_affected", 1)
 	return nil
 }
@@ -382,6 +395,7 @@ func (s *sqliteStore) CountMapSets(ctx context.Context) (int, error) {
 		s.logger.Debug("sql", "stmt", "CountMapSets", "duration_ms", msec(time.Since(start)), "error", err)
 		return 0, err
 	}
+
 	s.logger.Debug("sql", "stmt", "CountMapSets", "duration_ms", msec(time.Since(start)), "count", count)
 	return count, nil
 }
@@ -394,6 +408,7 @@ func (s *sqliteStore) CountMapSetUsers(ctx context.Context, mapSetID kernel.Prog
 		s.logger.Debug("sql", "stmt", "CountMapSetUsers", "args", []any{mapSetID}, "duration_ms", msec(time.Since(start)), "error", err)
 		return 0, err
 	}
+
 	s.logger.Debug("sql", "stmt", "CountMapSetUsers", "args", []any{mapSetID}, "duration_ms", msec(time.Since(start)), "count", count)
 	return count, nil
 }
@@ -405,6 +420,7 @@ func (s *sqliteStore) ListMapSetUsers(ctx context.Context, mapSetID kernel.Progr
 		s.logger.Debug("sql", "stmt", "ListMapSetUsers", "args", []any{mapSetID}, "duration_ms", msec(time.Since(start)), "error", err)
 		return nil, err
 	}
+
 	defer rows.Close()
 
 	var users []kernel.ProgramID
@@ -413,12 +429,14 @@ func (s *sqliteStore) ListMapSetUsers(ctx context.Context, mapSetID kernel.Progr
 		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
+
 		users = append(users, id)
 	}
 	if err := rows.Err(); err != nil {
 		s.logger.Debug("sql", "stmt", "ListMapSetUsers", "args", []any{mapSetID}, "duration_ms", msec(time.Since(start)), "error", err)
 		return nil, err
 	}
+
 	s.logger.Debug("sql", "stmt", "ListMapSetUsers", "args", []any{mapSetID}, "duration_ms", msec(time.Since(start)), "count", len(users))
 	return users, nil
 }
@@ -431,6 +449,7 @@ func (s *sqliteStore) MapSetExists(ctx context.Context, mapSetID kernel.ProgramI
 		s.logger.Debug("sql", "stmt", "MapSetExists", "args", []any{mapSetID}, "duration_ms", msec(time.Since(start)), "error", err)
 		return false, err
 	}
+
 	s.logger.Debug("sql", "stmt", "MapSetExists", "args", []any{mapSetID}, "duration_ms", msec(time.Since(start)), "exists", exists)
 	return exists, nil
 }
@@ -442,10 +461,12 @@ func (s *sqliteStore) DeleteMapSet(ctx context.Context, mapSetID kernel.ProgramI
 		s.logger.Debug("sql", "stmt", "DeleteMapSet", "args", []any{mapSetID}, "duration_ms", msec(time.Since(start)), "error", err)
 		return err
 	}
+
 	rows, err := result.RowsAffected()
 	if err != nil {
 		return err
 	}
+
 	s.logger.Debug("sql", "stmt", "DeleteMapSet", "args", []any{mapSetID}, "duration_ms", msec(time.Since(start)), "rows_affected", rows)
 	if rows == 0 {
 		return fmt.Errorf("map set %d: %w", mapSetID, platform.ErrRecordNotFound)
@@ -462,6 +483,7 @@ func (s *sqliteStore) List(ctx context.Context) (map[kernel.ProgramID]bpfman.Pro
 		s.logger.Debug("sql", "stmt", "ListPrograms", "duration_ms", msec(time.Since(start)), "error", err)
 		return nil, err
 	}
+
 	defer rows.Close()
 
 	result := make(map[kernel.ProgramID]bpfman.ProgramRecord)
@@ -470,6 +492,7 @@ func (s *sqliteStore) List(ctx context.Context) (map[kernel.ProgramID]bpfman.Pro
 		if err != nil {
 			return nil, err
 		}
+
 		prog.ProgramID = programID
 		result[programID] = prog
 	}
@@ -509,6 +532,7 @@ func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (kernel.ProgramID, bpf
 	if err != nil {
 		return 0, bpfman.ProgramRecord{}, err
 	}
+
 	sp.programID = programID
 	prog, err := buildProgramRecord(&sp)
 	if err != nil {

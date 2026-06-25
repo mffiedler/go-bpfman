@@ -621,6 +621,7 @@ func lowerTestExpr(t *testing.T, expr syntax.Expr) ir.Expr {
 	if err != nil {
 		t.Fatalf("Lower: %v", err)
 	}
+
 	assertInstr, ok := lp.Body.Instrs[1].(*ir.Assert)
 	if !ok {
 		t.Fatalf("body[1] = %T, want *ir.Assert", lp.Body.Instrs[1])

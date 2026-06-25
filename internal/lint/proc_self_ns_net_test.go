@@ -124,6 +124,7 @@ func TestNoDirectProcSelfNsNetReads(t *testing.T) {
 			if err != nil {
 				return true
 			}
+
 			if val != target {
 				return true
 			}
@@ -186,6 +187,7 @@ func moduleRoot(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
 	}
+
 	dir := cwd
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {

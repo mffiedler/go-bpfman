@@ -19,15 +19,11 @@ func New(layout fs.Layout, mounter Mounter, logger *slog.Logger) (fs.Runtime, er
 	}
 	setupLogger := logger.With("component", "setup")
 
-	setupLogger.Debug("ensuring runtime directories",
-		"base", layout.Base(),
-		"fs", layout.BPFFSMountPoint(),
-		"db", layout.DBPath())
+	setupLogger.Debug("ensuring runtime directories", "base", layout.Base(), "fs", layout.BPFFSMountPoint(), "db", layout.DBPath())
 
 	for _, dir := range layout.RuntimeDirs() {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			setupLogger.Error("failed to create directory",
-				"dir", dir, "error", err)
+			setupLogger.Error("failed to create directory", "dir", dir, "error", err)
 			return fs.Runtime{}, fmt.Errorf("create directory %s: %w", dir, err)
 		}
 	}

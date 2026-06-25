@@ -63,10 +63,12 @@ func captureLoweredRuntime(t *testing.T, src string, opts runtimeCaptureOpts) ru
 		if err != nil {
 			return err
 		}
+
 		pass, err := AsBool(v)
 		if err != nil {
 			return err
 		}
+
 		if !pass {
 			if a.IsRequire {
 				return &RequireFailure{Span: a.Span, Expr: fmt.Sprintf("%v", v.Raw())}
@@ -97,6 +99,7 @@ func captureLoweredRuntime(t *testing.T, src string, opts runtimeCaptureOpts) ru
 	if err != nil {
 		t.Fatalf("Lower: %v", err)
 	}
+
 	runErr := Exec(lp, env)
 
 	cap := runtimeCapture{

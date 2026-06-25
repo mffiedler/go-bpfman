@@ -68,8 +68,7 @@ func TestXDP_DispatcherConfigAfterDetach(t *testing.T) {
 
 		snap, err = env.GetDispatcherSnapshot(ctx, dispKey)
 		require.NoError(t, err, "dispatcher should still exist after detach %d", i)
-		assert.Len(t, snap.Members, 9-i,
-			"should have %d programs after detaching %d", 9-i, i+1)
+		assert.Len(t, snap.Members, 9-i, "should have %d programs after detaching %d", 9-i, i+1)
 	}
 }
 
@@ -182,10 +181,8 @@ func TestXDP_DispatcherChainExecution(t *testing.T) {
 			for i, prog := range progs {
 				statsPath := filepath.Join(prog.mapPinPath, "xdp_stats_map")
 				packets := readXDPStatsMap(t, statsPath)
-				t.Logf("program %d (kernel_id=%d): %d packets",
-					i, prog.kernelID, packets)
-				assert.Greater(t, packets, uint64(0),
-					"program %d should have counted packets", i)
+				t.Logf("program %d (kernel_id=%d): %d packets", i, prog.kernelID, packets)
+				assert.Greater(t, packets, uint64(0), "program %d should have counted packets", i)
 			}
 		})
 	}

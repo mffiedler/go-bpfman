@@ -216,8 +216,7 @@ func newXDPHarness(t *testing.T) dispatcherTestHarness {
 			linkPin := env.Layout.BPFFS().DispatcherLinkPath(
 				dispatcher.DispatcherTypeXDP, iface.Nsid, uint32(iface.Ifindex))
 			_, err := os.Stat(linkPin.String())
-			assert.True(t, os.IsNotExist(err),
-				"XDP link pin should not exist: %s", linkPin)
+			assert.True(t, os.IsNotExist(err), "XDP link pin should not exist: %s", linkPin)
 		},
 	}
 }
@@ -268,8 +267,7 @@ func testPriorityOrdering(t *testing.T, h dispatcherTestHarness) {
 		}
 	})
 
-	require.Equal(t, 10, h.memberCount(t),
-		"all 10 slots should be occupied")
+	require.Equal(t, 10, h.memberCount(t), "all 10 slots should be occupied")
 
 	// Positions reflect priority ascending. Build the expected
 	// position for each link by sorting priorities.
@@ -285,14 +283,10 @@ func testPriorityOrdering(t *testing.T, h dispatcherTestHarness) {
 	for i, link := range links {
 		pos := h.linkPosition(t, link.ID)
 		expected := rankByPriority[priorities[i]]
-		assert.Equal(t, expected, pos,
-			"link %d (priority %d): position should be %d, got %d",
-			i, priorities[i], expected, pos)
+		assert.Equal(t, expected, pos, "link %d (priority %d): position should be %d, got %d", i, priorities[i], expected, pos)
 
 		prio := h.linkPriority(t, link.ID)
-		assert.Equal(t, int32(priorities[i]), prio,
-			"link %d: stored priority should match requested priority %d, got %d",
-			i, priorities[i], prio)
+		assert.Equal(t, int32(priorities[i]), prio, "link %d: stored priority should match requested priority %d, got %d", i, priorities[i], prio)
 	}
 }
 
@@ -392,8 +386,7 @@ func TestTCX_PriorityOrdering(t *testing.T) {
 		})
 	}
 	for _, d := range dumps {
-		t.Logf("tcx-link dump: index=%d link_id=%d priority=%d ifindex=%d direction=%s nsid=%d netns=%q position=%d",
-			d.index, d.linkID, d.priority, d.ifindex, d.direction, d.nsid, d.netns, d.position)
+		t.Logf("tcx-link dump: index=%d link_id=%d priority=%d ifindex=%d direction=%s nsid=%d netns=%q position=%d", d.index, d.linkID, d.priority, d.ifindex, d.direction, d.nsid, d.netns, d.position)
 	}
 
 	for i, entry := range entries {
@@ -403,13 +396,9 @@ func TestTCX_PriorityOrdering(t *testing.T) {
 		require.True(t, ok, "expected TCXDetails, got %T", details)
 
 		expected := rankByPriority[priorities[i]]
-		assert.Equal(t, expected, tcxDetails.Position,
-			"link %d (priority %d): position should be %d, got %d",
-			i, priorities[i], expected, tcxDetails.Position)
+		assert.Equal(t, expected, tcxDetails.Position, "link %d (priority %d): position should be %d, got %d", i, priorities[i], expected, tcxDetails.Position)
 
-		assert.Equal(t, int32(priorities[i]), tcxDetails.Priority,
-			"link %d: stored priority should match requested priority %d, got %d",
-			i, priorities[i], tcxDetails.Priority)
+		assert.Equal(t, int32(priorities[i]), tcxDetails.Priority, "link %d: stored priority should match requested priority %d, got %d", i, priorities[i], tcxDetails.Priority)
 	}
 }
 
@@ -442,23 +431,17 @@ func testZeroPriorityOrdering(t *testing.T, h dispatcherTestHarness) {
 	})
 
 	// The stored priority is the raw requested priority.
-	assert.Equal(t, int32(25), h.linkPriority(t, link25.ID),
-		"priority=25 should be stored as 25")
-	assert.Equal(t, int32(0), h.linkPriority(t, link0.ID),
-		"priority=0 should be stored as 0")
-	assert.Equal(t, int32(75), h.linkPriority(t, link75.ID),
-		"priority=75 should be stored as 75")
+	assert.Equal(t, int32(25), h.linkPriority(t, link25.ID), "priority=25 should be stored as 25")
+	assert.Equal(t, int32(0), h.linkPriority(t, link0.ID), "priority=0 should be stored as 0")
+	assert.Equal(t, int32(75), h.linkPriority(t, link75.ID), "priority=75 should be stored as 75")
 
 	// The ordering follows Rust's raw priority sort:
 	// position 0: priority 0
 	// position 1: priority 25
 	// position 2: priority 75
-	assert.Equal(t, int32(0), h.linkPosition(t, link0.ID),
-		"priority=0 should be at position 0")
-	assert.Equal(t, int32(1), h.linkPosition(t, link25.ID),
-		"priority=25 should be at position 1")
-	assert.Equal(t, int32(2), h.linkPosition(t, link75.ID),
-		"priority=75 should be at position 2")
+	assert.Equal(t, int32(0), h.linkPosition(t, link0.ID), "priority=0 should be at position 0")
+	assert.Equal(t, int32(1), h.linkPosition(t, link25.ID), "priority=25 should be at position 1")
+	assert.Equal(t, int32(2), h.linkPosition(t, link75.ID), "priority=75 should be at position 2")
 }
 
 // TestDispatcher_AttachExceedsMaxPrograms verifies that attempting to
@@ -517,15 +500,13 @@ func testSlotReusedAfterDetach(t *testing.T, h dispatcherTestHarness) {
 		links = append(links, link)
 	}
 
-	require.Equal(t, dispatcher.MaxPrograms, h.memberCount(t),
-		"all 10 slots should be occupied")
+	require.Equal(t, dispatcher.MaxPrograms, h.memberCount(t), "all 10 slots should be occupied")
 
 	// Detach the 4th attachment (priority 400).
 	err := h.env.Detach(context.Background(), links[3].ID)
 	require.NoError(t, err, "detach link at priority 400")
 
-	assert.Equal(t, dispatcher.MaxPrograms-1, h.memberCount(t),
-		"should have 9 programs after detach")
+	assert.Equal(t, dispatcher.MaxPrograms-1, h.memberCount(t), "should have 9 programs after detach")
 
 	// Re-attach at priority 350. This should slot between
 	// priorities 300 (position 2) and 500 (position 4), landing
@@ -542,15 +523,13 @@ func testSlotReusedAfterDetach(t *testing.T, h dispatcherTestHarness) {
 		h.env.Detach(context.Background(), newLink.ID)
 	})
 
-	require.Equal(t, 10, h.memberCount(t),
-		"all 10 slots should be occupied again")
+	require.Equal(t, 10, h.memberCount(t), "all 10 slots should be occupied again")
 
 	newPos := h.linkPosition(t, newLink.ID)
 
 	// Sorted: [100,200,300,350,500,600,700,800,900,1000]
 	// The new link at priority 350 should have position 3.
-	assert.Equal(t, int32(3), newPos,
-		"reattached link (priority 350) should have position 3")
+	assert.Equal(t, int32(3), newPos, "reattached link (priority 350) should have position 3")
 }
 
 // TestDispatcher_LifecycleAfterLastDetach verifies that removing the
@@ -588,8 +567,7 @@ func testLifecycleAfterLastDetach(t *testing.T, h dispatcherTestHarness) {
 	require.NoError(t, err)
 
 	_, err = h.env.GetDispatcherSnapshot(context.Background(), dispKey)
-	require.ErrorIs(t, err, platform.ErrRecordNotFound,
-		"dispatcher should be absent from store after last detach")
+	require.ErrorIs(t, err, platform.ErrRecordNotFound, "dispatcher should be absent from store after last detach")
 
 	h.verifyAttachAbsent(t)
 
@@ -602,8 +580,7 @@ func testLifecycleAfterLastDetach(t *testing.T, h dispatcherTestHarness) {
 
 	snap2, err := h.env.GetDispatcherSnapshot(context.Background(), dispKey)
 	require.NoError(t, err, "dispatcher should exist after second attach")
-	assert.NotEqual(t, snap1.Runtime.ProgramID, snap2.Runtime.ProgramID,
-		"second dispatcher should have a different program ID")
+	assert.NotEqual(t, snap1.Runtime.ProgramID, snap2.Runtime.ProgramID, "second dispatcher should have a different program ID")
 
 	h.verifyAttachPresent(t)
 	require.Len(t, snap2.Members, 1, "should have 1 program after reattach")
@@ -667,13 +644,11 @@ func testMultipleInterfacesIndependent(t *testing.T, h dispatcherTestHarness) {
 
 	// B's dispatcher should be gone.
 	_, err = h.env.GetDispatcherSnapshot(context.Background(), keyB)
-	require.ErrorIs(t, err, platform.ErrRecordNotFound,
-		"interface B dispatcher should be absent after detaching all links")
+	require.ErrorIs(t, err, platform.ErrRecordNotFound, "interface B dispatcher should be absent after detaching all links")
 
 	// A's dispatcher should still exist with 3 members.
 	snapAAfter, err := h.env.GetDispatcherSnapshot(context.Background(), keyA)
 	require.NoError(t, err, "interface A dispatcher should still exist")
 
-	assert.Len(t, snapAAfter.Members, len(snapA.Members),
-		"A's program count should be unchanged")
+	assert.Len(t, snapAAfter.Members, len(snapA.Members), "A's program count should be unchanged")
 }

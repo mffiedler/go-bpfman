@@ -66,8 +66,7 @@ func (k *kernelAdapter) AttachXDP(ctx context.Context, progPinPath bpfman.ProgPi
 			lnk.Close()
 			if linkPin != "" {
 				if err := os.Remove(linkPin); err != nil && !os.IsNotExist(err) {
-					k.logger.Warn("failed to remove pinned link during cleanup",
-						"path", linkPin, "error", err)
+					k.logger.Warn("failed to remove pinned link during cleanup", "path", linkPin, "error", err)
 				}
 			}
 		}
@@ -121,9 +120,7 @@ func (k *kernelAdapter) UpdateXDPDispatcherLink(ctx context.Context, linkPinPath
 		return fmt.Errorf("update XDP link to new dispatcher: %w", err)
 	}
 
-	k.logger.Debug("updated XDP dispatcher link",
-		"link_pin", linkPinPath,
-		"new_prog_pin", newProgPinPath)
+	k.logger.Debug("updated XDP dispatcher link", "link_pin", linkPinPath, "new_prog_pin", newProgPinPath)
 	return nil
 }
 
@@ -152,6 +149,7 @@ func (k *kernelAdapter) LoadAndPinXDPDispatcher(ctx context.Context, cfg dispatc
 	if err != nil {
 		return 0, fmt.Errorf("get dispatcher program info: %w", err)
 	}
+
 	progID, ok := progInfo.ID()
 	if !ok {
 		return 0, fmt.Errorf("failed to get dispatcher program ID from kernel")
@@ -161,10 +159,7 @@ func (k *kernelAdapter) LoadAndPinXDPDispatcher(ctx context.Context, cfg dispatc
 		return 0, fmt.Errorf("pin dispatcher program to %s: %w", progPinPath, err)
 	}
 
-	k.logger.Debug("loaded and pinned XDP dispatcher",
-		"program_id", progID,
-		"prog_pin_path", progPinPath,
-		"num_progs", cfg.NumProgsEnabled)
+	k.logger.Debug("loaded and pinned XDP dispatcher", "program_id", progID, "prog_pin_path", progPinPath, "num_progs", cfg.NumProgsEnabled)
 	return kernel.ProgramID(progID), nil
 }
 
@@ -182,32 +177,25 @@ func (k *kernelAdapter) CreateXDPLink(ctx context.Context, progPinPath bpfman.Pr
 	if err != nil {
 		return nil, fmt.Errorf("get program info: %w", err)
 	}
+
 	progID, ok := progInfo.ID()
 	if !ok {
 		return nil, fmt.Errorf("failed to get program ID from kernel")
 	}
 
 	if netnsPath != "" {
-		k.logger.Debug("entering network namespace for XDP link creation",
-			"netns", netnsPath, "ifindex", ifindex)
+		k.logger.Debug("entering network namespace for XDP link creation", "netns", netnsPath, "ifindex", ifindex)
 	}
 
 	var result *platform.XDPDispatcherResult
 	err = netns.Run(netnsPath, func() error {
-		k.logger.Debug("creating XDP link",
-			"ifindex", ifindex,
-			"prog_pin_path", progPinPath,
-			"link_pin_path", linkPinPath,
-			"netns", netnsPath)
+		k.logger.Debug("creating XDP link", "ifindex", ifindex, "prog_pin_path", progPinPath, "link_pin_path", linkPinPath, "netns", netnsPath)
 		lnk, err := attachXDPWithRetry(link.XDPOptions{
 			Program:   prog,
 			Interface: ifindex,
 		})
 		if err != nil {
-			k.logger.Debug("XDP link creation failed",
-				"ifindex", ifindex,
-				"error", err,
-				"is_ebusy", errors.Is(err, syscall.EBUSY))
+			k.logger.Debug("XDP link creation failed", "ifindex", ifindex, "error", err, "is_ebusy", errors.Is(err, syscall.EBUSY))
 			if errors.Is(err, syscall.EBUSY) {
 				return fmt.Errorf("attach XDP to ifindex %d: interface already has an XDP program attached: %w", ifindex, err)
 			}
@@ -249,6 +237,7 @@ func (k *kernelAdapter) AttachXDPExtension(ctx context.Context, spec dispatcher.
 	if err := spec.Validate(); err != nil {
 		return bpfman.AttachOutput{}, fmt.Errorf("invalid spec: %w", err)
 	}
+
 	linkPin := spec.LinkPinPath.String()
 
 	// Load the pinned dispatcher to use as attach target.
@@ -270,6 +259,7 @@ func (k *kernelAdapter) AttachXDPExtension(ctx context.Context, spec dispatcher.
 	if err != nil {
 		return bpfman.AttachOutput{}, fmt.Errorf("slot name for position %d: %w", spec.Position, err)
 	}
+
 	lnk, err := link.AttachFreplace(dispatcherProg, slotName, extensionProg)
 	if err != nil {
 		return bpfman.AttachOutput{}, fmt.Errorf("attach freplace to %s: %w", slotName, err)
@@ -281,8 +271,7 @@ func (k *kernelAdapter) AttachXDPExtension(ctx context.Context, spec dispatcher.
 			lnk.Close()
 			if linkPin != "" {
 				if err := os.Remove(linkPin); err != nil && !os.IsNotExist(err) {
-					k.logger.Warn("failed to remove pinned extension link during cleanup",
-						"path", linkPin, "error", err)
+					k.logger.Warn("failed to remove pinned extension link during cleanup", "path", linkPin, "error", err)
 				}
 			}
 		}

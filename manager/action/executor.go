@@ -35,10 +35,12 @@ func Produce[T any](ctx context.Context, exec Executor, a Action) (T, error) {
 		var zero T
 		return zero, err
 	}
+
 	if result == nil {
 		var zero T
 		return zero, nil
 	}
+
 	typed, ok := result.(T)
 	if !ok {
 		var zero T

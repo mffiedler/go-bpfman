@@ -146,6 +146,7 @@ func (rt Bytecode) PublishBytecode(id kernel.ProgramID, srcPath string, prov Pro
 	if err := os.MkdirAll(programs, dirMode); err != nil {
 		return &PathError{Op: "publish", Path: programs, Err: err}
 	}
+
 	if err := os.MkdirAll(staging, dirMode); err != nil {
 		return &PathError{Op: "publish", Path: staging, Err: err}
 	}
@@ -171,6 +172,7 @@ func (rt Bytecode) PublishBytecode(id kernel.ProgramID, srcPath string, prov Pro
 	if err := copyFile(srcPath, bytecodeDst, fileMode); err != nil {
 		return &PathError{Op: "publish", Path: tmpDir, Err: err}
 	}
+
 	if err := writeJSON(provDst, fileMode, prov); err != nil {
 		return &PathError{Op: "publish", Path: tmpDir, Err: err}
 	}
@@ -287,6 +289,7 @@ func (rt Bytecode) ScanProgramDirs() ([]ProgramDirEntry, error) {
 			pde.ProgramID = kernel.ProgramID(id)
 			pde.Numeric = true
 		}
+
 		result = append(result, pde)
 	}
 	return result, nil

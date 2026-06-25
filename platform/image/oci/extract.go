@@ -100,12 +100,14 @@ func extractGzippedELF(gzPath, destDir string, logger *slog.Logger) (string, err
 	if err != nil {
 		return "", err
 	}
+
 	defer f.Close()
 
 	gzr, err := gzip.NewReader(f)
 	if err != nil {
 		return "", fmt.Errorf("failed to create gzip reader: %w", err)
 	}
+
 	defer gzr.Close()
 
 	// Read decompressed content
@@ -125,6 +127,7 @@ func extractGzippedELF(gzPath, destDir string, logger *slog.Logger) (string, err
 		}
 		return "", copyErr
 	}
+
 	if closeErr != nil {
 		if rmErr := os.Remove(destPath); rmErr != nil && !os.IsNotExist(rmErr) {
 			logger.Warn("failed to remove file during cleanup", "path", destPath, "error", rmErr)
@@ -150,12 +153,14 @@ func extractFromTarGz(archivePath, destDir string, logger *slog.Logger) (string,
 	if err != nil {
 		return "", err
 	}
+
 	defer f.Close()
 
 	gzr, err := gzip.NewReader(f)
 	if err != nil {
 		return "", fmt.Errorf("failed to create gzip reader: %w", err)
 	}
+
 	defer gzr.Close()
 
 	return extractFromTarReader(tar.NewReader(gzr), destDir, logger)
@@ -167,6 +172,7 @@ func extractFromTar(archivePath, destDir string, logger *slog.Logger) (string, e
 	if err != nil {
 		return "", err
 	}
+
 	defer f.Close()
 
 	return extractFromTarReader(tar.NewReader(f), destDir, logger)
@@ -218,6 +224,7 @@ func extractFromTarReader(tr *tar.Reader, destDir string, logger *slog.Logger) (
 			}
 			return "", fmt.Errorf("failed to extract file: %w", copyErr)
 		}
+
 		if closeErr != nil {
 			if rmErr := os.Remove(destPath); rmErr != nil && !os.IsNotExist(rmErr) {
 				logger.Warn("failed to remove file during cleanup", "path", destPath, "error", rmErr)
@@ -247,6 +254,7 @@ func validateELF(path string, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("invalid ELF file: %w", err)
 	}
+
 	defer f.Close()
 
 	// Check machine type is BPF
@@ -280,6 +288,7 @@ func isELFFile(path string) bool {
 	if err != nil {
 		return false
 	}
+
 	defer f.Close()
 
 	var magic [4]byte
@@ -296,6 +305,7 @@ func isGzipFile(path string) bool {
 	if err != nil {
 		return false
 	}
+
 	defer f.Close()
 
 	var magic [2]byte
@@ -312,6 +322,7 @@ func isTarFile(path string) bool {
 	if err != nil {
 		return false
 	}
+
 	defer f.Close()
 
 	// Check for ustar magic at offset 257
@@ -319,6 +330,7 @@ func isTarFile(path string) bool {
 	if _, err := f.Seek(257, io.SeekStart); err != nil {
 		return false
 	}
+
 	if _, err := io.ReadFull(f, magic[:]); err != nil {
 		return false
 	}

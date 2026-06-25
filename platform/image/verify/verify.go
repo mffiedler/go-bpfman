@@ -107,6 +107,7 @@ func FromSigningConfig(cfg config.SigningConfig, logger *slog.Logger) (platform.
 	if err != nil {
 		return nil, err
 	}
+
 	if cfg.AllowUnsigned && len(identities) > 0 && logger != nil {
 		logger.Warn("trusted signing identities configured but unsigned images are still allowed")
 	}
@@ -177,9 +178,7 @@ func (v *cosignVerifier) Verify(ctx context.Context, req platform.SignatureVerif
 		Identities:         v.identities,
 	}
 
-	logger.Debug("calling cosign.VerifyImageSignatures",
-		"identities", len(v.identities),
-	)
+	logger.Debug("calling cosign.VerifyImageSignatures", "identities", len(v.identities))
 	signatures, bundleVerified, err := cosign.VerifyImageSignatures(ctx, ref, co)
 	if err != nil {
 		logger.Debug("VerifyImageSignatures returned error", "error", err)
@@ -195,10 +194,7 @@ func (v *cosignVerifier) Verify(ctx context.Context, req platform.SignatureVerif
 		return platform.SignatureVerification{}, fmt.Errorf("signature verification failed for %s: %w", imageRef, err)
 	}
 
-	logger.Info("image signature verified",
-		"signatures", len(signatures),
-		"bundle_verified", bundleVerified,
-	)
+	logger.Info("image signature verified", "signatures", len(signatures), "bundle_verified", bundleVerified)
 
 	return platform.SignatureVerification{
 		Status: platform.SignatureVerificationVerified,

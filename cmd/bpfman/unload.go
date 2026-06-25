@@ -41,6 +41,7 @@ func (c *UnloadCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 					return nil
 				}
 			}
+
 			return err
 		})
 }

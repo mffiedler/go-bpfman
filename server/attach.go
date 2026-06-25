@@ -89,6 +89,7 @@ func attachManagerError(programID kernel.ProgramID, kind string, err error) erro
 	if errors.As(err, &notFound) || errors.Is(err, platform.ErrRecordNotFound) {
 		return status.Errorf(codes.NotFound, "program with ID %d not found", programID)
 	}
+
 	var mismatch bpfman.ErrAttachKindMismatch
 	if errors.As(err, &mismatch) {
 		return status.Errorf(codes.FailedPrecondition, "%v", err)
@@ -230,6 +231,7 @@ func (s *Server) attachKprobe(ctx context.Context, writeLock lock.WriterScope, p
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid kprobe attach spec: %v", err)
 	}
+
 	if info.Offset != 0 {
 		spec = spec.WithOffset(info.Offset)
 	}
@@ -247,14 +249,7 @@ func (s *Server) attachKprobe(ctx context.Context, writeLock lock.WriterScope, p
 
 // attachUprobe handles uprobe/uretprobe attachment via the manager.
 func (s *Server) attachUprobe(ctx context.Context, writeLock lock.WriterScope, programID kernel.ProgramID, info *pb.UprobeAttachInfo) (*pb.AttachResponse, error) {
-	s.logger.DebugContext(ctx, "attachUprobe request",
-		"program_id", programID,
-		"target", info.Target,
-		"fn_name", info.GetFnName(),
-		"offset", info.Offset,
-		"pid", info.GetPid(),
-		"container_pid", info.GetContainerPid(),
-		"container_pid_ptr", info.ContainerPid)
+	s.logger.DebugContext(ctx, "attachUprobe request", "program_id", programID, "target", info.Target, "fn_name", info.GetFnName(), "offset", info.Offset, "pid", info.GetPid(), "container_pid", info.GetContainerPid(), "container_pid_ptr", info.ContainerPid)
 
 	if info.Target == "" {
 		return nil, status.Error(codes.InvalidArgument, "target is required for uprobe attachment")
@@ -265,6 +260,7 @@ func (s *Server) attachUprobe(ctx context.Context, writeLock lock.WriterScope, p
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid uprobe attach spec: %v", err)
 	}
+
 	if info.GetFnName() != "" {
 		spec = spec.WithFnName(info.GetFnName())
 	}

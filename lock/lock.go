@@ -72,6 +72,7 @@ func (s *writerScope) DupFD() (*os.File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("dup lock fd: %w", err)
 	}
+
 	return os.NewFile(uintptr(dup), "bpfman-writer-lock"), nil
 }
 
@@ -106,6 +107,7 @@ func run(acquireCtx, workCtx context.Context, lockPath string, fn func(context.C
 	if err != nil {
 		return err
 	}
+
 	defer f.Close()
 
 	frame := &heldLocks{path: lockPath, parent: held}
@@ -220,6 +222,7 @@ func acquireWriter(ctx context.Context, path string) (*os.File, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("ensure lock dir: %w", err)
 	}
+
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("open lock file: %w", err)

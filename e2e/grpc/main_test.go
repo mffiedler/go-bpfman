@@ -111,6 +111,7 @@ func TestMain(m *testing.M) {
 		runCleanup()
 		os.Exit(1)
 	}
+
 	code := m.Run()
 	runCleanup()
 	os.Exit(code)
@@ -126,6 +127,7 @@ func bootstrap() (func(), error) {
 	if err != nil {
 		return nil, fmt.Errorf("tmp root: %w", err)
 	}
+
 	cleanupRoot := func() { _ = os.RemoveAll(tmpRoot) }
 
 	// The daemon opens .bpf.o files straight off the on-disk
@@ -157,6 +159,7 @@ func bootstrap() (func(), error) {
 		cleanupRoot()
 		return nil, fmt.Errorf("open daemon log %s: %w", daemonLogPath, err)
 	}
+
 	fmt.Fprintf(os.Stderr, "daemon log: %s\n", daemonLogPath)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -212,13 +215,12 @@ func bootstrap() (func(), error) {
 		return nil, fmt.Errorf("wait for socket: %w", err)
 	}
 
-	conn, err := grpc.NewClient("unix:"+socketPath,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
+	conn, err := grpc.NewClient("unix:"+socketPath, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		cleanupDaemon()
 		return nil, fmt.Errorf("dial: %w", err)
 	}
+
 	client = pb.NewBpfmanClient(conn)
 
 	return func() {

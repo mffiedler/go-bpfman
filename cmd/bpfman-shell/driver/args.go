@@ -62,14 +62,17 @@ func WriteValueToTemp(v runtime.Value) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	f, err := os.CreateTemp("", "bpfman-driver-")
 	if err != nil {
 		return "", fmt.Errorf("create temp file: %w", err)
 	}
+
 	defer f.Close()
 	if _, err := f.Write(data); err != nil {
 		os.Remove(f.Name())
 		return "", fmt.Errorf("write temp file: %w", err)
 	}
+
 	return f.Name(), nil
 }

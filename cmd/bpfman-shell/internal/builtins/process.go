@@ -64,6 +64,7 @@ func handleProcessChildren(args []runtime.Arg) (runtime.Value, error) {
 	if err != nil {
 		return runtime.Value{}, fmt.Errorf("process children: pid: %w", err)
 	}
+
 	if pid <= 0 {
 		return runtime.Value{}, fmt.Errorf("process children: pid must be positive (got %d)", pid)
 	}

@@ -115,6 +115,7 @@ func (c *CLI) Execute(ctx context.Context) error {
 		}
 		return err
 	}
+
 	return nil
 }
 
@@ -123,6 +124,7 @@ func (c *CLI) formatError(err error) error {
 	if errors.As(err, &timeout) {
 		return fmt.Errorf("timed out waiting for lock %s (--lock-timeout=%v)", timeout.Path, timeout.Timeout)
 	}
+
 	return err
 }
 

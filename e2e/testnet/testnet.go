@@ -203,17 +203,13 @@ func assertSlotClean(idx uint32, prev slotProvenance) error {
 	if prev.linkAName != "" {
 		if lnk, err := netlink.LinkByName(prev.linkAName); err == nil {
 			attrs := lnk.Attrs()
-			return fmt.Errorf("pair index %d: root-ns interface %q (ifindex %d) from previous tenant test=%q still exists (released %s ago); cleanup did not delete it",
-				idx, attrs.Name, attrs.Index, prev.testName,
-				time.Since(prev.releasedAt))
+			return fmt.Errorf("pair index %d: root-ns interface %q (ifindex %d) from previous tenant test=%q still exists (released %s ago); cleanup did not delete it", idx, attrs.Name, attrs.Index, prev.testName, time.Since(prev.releasedAt))
 		}
 	}
 	if prev.nsName != "" {
 		if h, err := netns.GetFromName(prev.nsName); err == nil {
 			h.Close()
-			return fmt.Errorf("pair index %d: netns %q from previous tenant test=%q still exists (released %s ago); cleanup did not delete it",
-				idx, prev.nsName, prev.testName,
-				time.Since(prev.releasedAt))
+			return fmt.Errorf("pair index %d: netns %q from previous tenant test=%q still exists (released %s ago); cleanup did not delete it", idx, prev.nsName, prev.testName, time.Since(prev.releasedAt))
 		}
 	}
 	return nil
@@ -467,6 +463,7 @@ func NewTestVethPair(t *testing.T, opts ...VethOption) TestVethPair {
 	if err != nil {
 		t.Fatalf("failed to find interface %s: %v", nameB, err)
 	}
+
 	if err := netlink.LinkSetTxQLen(linkB, 1000); err != nil {
 		t.Fatalf("failed to set txqlen on %s: %v", nameB, err)
 	}
@@ -476,10 +473,12 @@ func NewTestVethPair(t *testing.T, opts ...VethOption) TestVethPair {
 	if err != nil {
 		t.Fatalf("failed to get ns handle for %s: %v", nsName, err)
 	}
+
 	if err := netlink.LinkSetNsFd(linkB, int(nsHandleForMove)); err != nil {
 		nsHandleForMove.Close()
 		t.Fatalf("failed to move %s to namespace %s: %v", nameB, nsName, err)
 	}
+
 	nsHandleForMove.Close()
 
 	// Configure A in root namespace with a peer route to B.
@@ -597,6 +596,7 @@ func NewTestVethPair(t *testing.T, opts ...VethOption) TestVethPair {
 	if err := netlink.AddrAdd(linkA, addrA); err != nil {
 		t.Fatalf("failed to add address to %s: %v", nameA, err)
 	}
+
 	if err := netlink.LinkSetUp(linkA); err != nil {
 		t.Fatalf("failed to bring up %s: %v", nameA, err)
 	}
@@ -606,6 +606,7 @@ func NewTestVethPair(t *testing.T, opts ...VethOption) TestVethPair {
 	if err != nil {
 		t.Fatalf("failed to get ns handle for config: %v", err)
 	}
+
 	nlh, err := netlink.NewHandleAt(nsHandleForConfig)
 	nsHandleForConfig.Close()
 	if err != nil {
@@ -628,6 +629,7 @@ func NewTestVethPair(t *testing.T, opts ...VethOption) TestVethPair {
 	if err := nlh.AddrAdd(nsLinkB, addrB); err != nil {
 		t.Fatalf("failed to add address to %s: %v", nameB, err)
 	}
+
 	if err := nlh.LinkSetUp(nsLinkB); err != nil {
 		t.Fatalf("failed to bring up %s: %v", nameB, err)
 	}
@@ -637,6 +639,7 @@ func NewTestVethPair(t *testing.T, opts ...VethOption) TestVethPair {
 	if err != nil {
 		t.Fatalf("failed to find lo in namespace: %v", err)
 	}
+
 	if err := nlh.LinkSetUp(lo); err != nil {
 		t.Fatalf("failed to bring up lo in namespace: %v", err)
 	}
@@ -659,10 +662,8 @@ func NewTestVethPair(t *testing.T, opts ...VethOption) TestVethPair {
 		linkARefresh, _ := netlink.LinkByName(nameA)
 		aMac := linkARefresh.Attrs().HardwareAddr.String()
 		aIdx := linkARefresh.Attrs().Index
-		arpOut, _ := exec.Command("ip", "netns", "exec", nsName,
-			"ip", "neigh", "show", "dev", nameB, pingTarget).CombinedOutput()
-		t.Logf("post-warmup: A=%s ifindex=%d MAC=%s, B's ARP: %s",
-			nameA, aIdx, aMac, strings.TrimSpace(string(arpOut)))
+		arpOut, _ := exec.Command("ip", "netns", "exec", nsName, "ip", "neigh", "show", "dev", nameB, pingTarget).CombinedOutput()
+		t.Logf("post-warmup: A=%s ifindex=%d MAC=%s, B's ARP: %s", nameA, aIdx, aMac, strings.TrimSpace(string(arpOut)))
 	}
 
 	if cfg.startIPMonitor {
@@ -699,6 +700,7 @@ func NewTestVethPair(t *testing.T, opts ...VethOption) TestVethPair {
 	if err != nil {
 		t.Fatalf("get root nsid: %v", err)
 	}
+
 	bNsid, err := bpfnetns.NSID("/var/run/netns/" + nsName)
 	if err != nil {
 		t.Fatalf("get nsid for test netns %s: %v", nsName, err)
@@ -792,11 +794,10 @@ func (v TestVethPair) ping(t *testing.T, count int, mode pingMode) {
 	if err != nil {
 		t.Fatalf("pre-ping: cannot find %s: %v", v.A.Name, err)
 	}
-	t.Logf("pre-ping: A=%s ifindex=%d MAC=%s (expected ifindex=%d)",
-		v.A.Name, linkA.Attrs().Index, linkA.Attrs().HardwareAddr, v.A.Ifindex)
+
+	t.Logf("pre-ping: A=%s ifindex=%d MAC=%s (expected ifindex=%d)", v.A.Name, linkA.Attrs().Index, linkA.Attrs().HardwareAddr, v.A.Ifindex)
 	if linkA.Attrs().Index != v.A.Ifindex {
-		t.Errorf("IFINDEX CHANGED: was %d at creation, now %d -- interface was recreated!",
-			v.A.Ifindex, linkA.Attrs().Index)
+		t.Errorf("IFINDEX CHANGED: was %d at creation, now %d -- interface was recreated!", v.A.Ifindex, linkA.Attrs().Index)
 	}
 
 	if mode == pingDefensive {
@@ -807,8 +808,7 @@ func (v TestVethPair) ping(t *testing.T, count int, mode pingMode) {
 		waitConnectivity(t, v.Netns, v.PingTarget, 30*time.Second)
 	}
 
-	cmd := exec.CommandContext(ctx, "ip", "netns", "exec", v.Netns,
-		"ping", "-c", strconv.Itoa(count), "-i", "0.1", "-W", "1", v.PingTarget)
+	cmd := exec.CommandContext(ctx, "ip", "netns", "exec", v.Netns, "ping", "-c", strconv.Itoa(count), "-i", "0.1", "-W", "1", v.PingTarget)
 	out, err := cmd.CombinedOutput()
 	if err != nil && mode != pingExpectDrop {
 		v.dumpNetworkState(t, "ping-failure")

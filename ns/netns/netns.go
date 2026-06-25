@@ -143,6 +143,7 @@ func Run(path string, fn func() error) error {
 		safeUnlock = true // thread did not move
 		return fmt.Errorf("open current netns: %w", err)
 	}
+
 	defer originalNS.Close()
 
 	// Open target namespace
@@ -151,6 +152,7 @@ func Run(path string, fn func() error) error {
 		safeUnlock = true // thread did not move
 		return fmt.Errorf("open target netns %s: %w", path, err)
 	}
+
 	defer targetNS.Close()
 
 	// Switch to target namespace

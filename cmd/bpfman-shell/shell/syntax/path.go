@@ -37,6 +37,7 @@ func ParsePath(path string) ([]PathStep, error) {
 			if err != nil {
 				return nil, fmt.Errorf("invalid index in path %q: %w", path, err)
 			}
+
 			steps = append(steps, PathStep{Index: n, IsIndex: true})
 			i += j + 1
 			continue

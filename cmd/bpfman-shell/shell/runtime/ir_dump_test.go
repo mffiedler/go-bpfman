@@ -246,5 +246,6 @@ func dumpLoweredString(t *testing.T, lp *ir.Program) string {
 	if err := ir.Dump(&buf, lp); err != nil {
 		t.Fatalf("ir.Dump: %v", err)
 	}
+
 	return buf.String()
 }

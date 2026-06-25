@@ -25,6 +25,7 @@ func (d *DispatcherType) UnmarshalText(b []byte) error {
 	if err != nil {
 		return err
 	}
+
 	*d = parsed
 	return nil
 }

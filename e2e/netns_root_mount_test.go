@@ -29,6 +29,7 @@ func setupRootNetnsMount() error {
 	if err := os.MkdirAll("/run/netns", 0o755); err != nil {
 		return fmt.Errorf("mkdir /run/netns: %w", err)
 	}
+
 	target := "/run/netns/" + testnet.RootNetns
 	// Match iproute2's `ip netns add` behaviour: create the
 	// target with mode 0 and O_RDONLY. SELinux on Fedora can
@@ -42,6 +43,7 @@ func setupRootNetnsMount() error {
 	if err == nil {
 		f.Close()
 	}
+
 	// If something is already mounted there, unmount first; we
 	// can't tell from a stale empty file vs a stale bind-mount
 	// without checking, so just attempt unmount and ignore the
@@ -50,6 +52,7 @@ func setupRootNetnsMount() error {
 	if err := unix.Mount("/proc/self/ns/net", target, "none", unix.MS_BIND, ""); err != nil {
 		return fmt.Errorf("bind-mount /proc/self/ns/net -> %s: %w", target, err)
 	}
+
 	return nil
 }
 
@@ -61,9 +64,11 @@ func teardownRootNetnsMount() error {
 	if err := unix.Unmount(target, 0); err != nil && !os.IsNotExist(err) {
 		// Non-fatal; just continue to remove the file.
 	}
+
 	if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove %s: %w", target, err)
 	}
+
 	return nil
 }
 

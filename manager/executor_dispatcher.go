@@ -138,12 +138,7 @@ func (e *executor) rebuildXDPDispatcher(
 
 	dispProgPinPath := e.bpffs.DispatcherProgPath(dispType, nsid, ops.ifindex, revision)
 
-	e.logger.InfoContext(ctx, "rebuilding XDP dispatcher",
-		"nsid", nsid,
-		"ifindex", ops.ifindex,
-		"revision", revision,
-		"num_extensions", len(allSlots),
-		"first_attach", firstAttach)
+	e.logger.InfoContext(ctx, "rebuilding XDP dispatcher", "nsid", nsid, "ifindex", ops.ifindex, "revision", revision, "num_extensions", len(allSlots), "first_attach", firstAttach)
 
 	// Load new dispatcher with .rodata config.
 	dispatcherID, err := e.kernel.LoadAndPinXDPDispatcher(ctx, cfg, dispProgPinPath)
@@ -154,8 +149,7 @@ func (e *executor) rebuildXDPDispatcher(
 	// Track cleanup for rollback on failure.
 	cleanupNewDispatcher := func() {
 		if rbErr := e.kernel.RemovePin(ctx, dispProgPinPath); rbErr != nil {
-			e.logger.ErrorContext(ctx, "rollback: remove new dispatcher pin failed",
-				"path", dispProgPinPath, "error", rbErr)
+			e.logger.ErrorContext(ctx, "rollback: remove new dispatcher pin failed", "path", dispProgPinPath, "error", rbErr)
 		}
 	}
 
@@ -171,8 +165,7 @@ func (e *executor) rebuildXDPDispatcher(
 		for _, ext := range attached {
 			if ext.pinPath != "" {
 				if rbErr := e.kernel.DetachLink(ctx, ext.pinPath); rbErr != nil {
-					e.logger.ErrorContext(ctx, "rollback: detach extension link failed",
-						"path", ext.pinPath, "error", rbErr)
+					e.logger.ErrorContext(ctx, "rollback: detach extension link failed", "path", ext.pinPath, "error", rbErr)
 				}
 			}
 		}
@@ -213,25 +206,11 @@ func (e *executor) rebuildXDPDispatcher(
 	for _, ext := range attached {
 		info, infoErr := e.kernel.ExtensionLinkInfo(ctx, ext.pinPath)
 		if infoErr != nil {
-			e.logger.WarnContext(ctx, "verify: extension link info failed",
-				"type", dispType.String(),
-				"ifindex", ops.ifindex,
-				"revision", revision,
-				"position", ext.position,
-				"path", ext.pinPath,
-				"error", infoErr)
+			e.logger.WarnContext(ctx, "verify: extension link info failed", "type", dispType.String(), "ifindex", ops.ifindex, "revision", revision, "position", ext.position, "path", ext.pinPath, "error", infoErr)
 			continue
 		}
-		e.logger.InfoContext(ctx, "verify: extension link",
-			"type", dispType.String(),
-			"ifindex", ops.ifindex,
-			"revision", revision,
-			"position", ext.position,
-			"kernel_link_id", uint64(info.KernelLinkID),
-			"target_prog_id", uint64(info.TargetProgID),
-			"target_btf_id", info.TargetBtfID,
-			"attach_type", info.AttachType,
-			"matches_dispatcher", uint64(info.TargetProgID) == uint64(dispatcherID))
+
+		e.logger.InfoContext(ctx, "verify: extension link", "type", dispType.String(), "ifindex", ops.ifindex, "revision", revision, "position", ext.position, "kernel_link_id", uint64(info.KernelLinkID), "target_prog_id", uint64(info.TargetProgID), "target_btf_id", info.TargetBtfID, "attach_type", info.AttachType, "matches_dispatcher", uint64(info.TargetProgID) == uint64(dispatcherID))
 	}
 
 	// Atomic swap: create link (first-attach) or update existing link.
@@ -285,20 +264,15 @@ func (e *executor) rebuildXDPDispatcher(
 
 	completed, err := e.store.ReplaceDispatcherSnapshot(ctx, newSnap)
 	if err != nil {
-		e.logger.ErrorContext(ctx, "persist failed, rolling back XDP dispatcher",
-			"ifindex", ops.ifindex, "error", err)
+		e.logger.ErrorContext(ctx, "persist failed, rolling back XDP dispatcher", "ifindex", ops.ifindex, "error", err)
 		if firstAttach {
 			if rbErr := e.kernel.DetachLink(ctx, dispLinkPinPath); rbErr != nil {
-				e.logger.ErrorContext(ctx, "rollback: detach dispatcher link failed",
-					"path", dispLinkPinPath, "error", rbErr)
+				e.logger.ErrorContext(ctx, "rollback: detach dispatcher link failed", "path", dispLinkPinPath, "error", rbErr)
 			}
 		} else {
 			oldDispProgPinPath := e.bpffs.DispatcherProgPath(dispType, nsid, ops.ifindex, snap.Revision)
 			if rbErr := e.kernel.UpdateXDPDispatcherLink(ctx, dispLinkPinPath, oldDispProgPinPath); rbErr != nil {
-				e.logger.ErrorContext(ctx, "rollback: restore XDP dispatcher link failed",
-					"link_path", dispLinkPinPath,
-					"old_dispatcher_path", oldDispProgPinPath,
-					"error", rbErr)
+				e.logger.ErrorContext(ctx, "rollback: restore XDP dispatcher link failed", "link_path", dispLinkPinPath, "old_dispatcher_path", oldDispProgPinPath, "error", rbErr)
 			}
 		}
 		cleanupExtensions()
@@ -310,8 +284,7 @@ func (e *executor) rebuildXDPDispatcher(
 	if !firstAttach {
 		oldRevDir := e.bpffs.DispatcherRevisionDir(dispType, nsid, ops.ifindex, snap.Revision)
 		if err := e.Execute(ctx, action.RemoveDispatcherRevDir{Path: oldRevDir}); err != nil {
-			e.logger.WarnContext(ctx, "failed to remove old revision directory",
-				"path", oldRevDir, "error", err)
+			e.logger.WarnContext(ctx, "failed to remove old revision directory", "path", oldRevDir, "error", err)
 		}
 	}
 
@@ -321,13 +294,7 @@ func (e *executor) rebuildXDPDispatcher(
 	}
 	newExt := attached[newSlotPosition]
 
-	e.logger.InfoContext(ctx, "rebuilt XDP dispatcher",
-		"nsid", nsid,
-		"ifindex", ops.ifindex,
-		"revision", revision,
-		"dispatcher_id", dispatcherID,
-		"num_extensions", len(allSlots),
-		"new_position", newSlotPosition)
+	e.logger.InfoContext(ctx, "rebuilt XDP dispatcher", "nsid", nsid, "ifindex", ops.ifindex, "revision", revision, "dispatcher_id", dispatcherID, "num_extensions", len(allSlots), "new_position", newSlotPosition)
 
 	proceedOnActions, err := dispatcher.ProceedOnActions(dispType, newSlot.ProceedOn)
 	if err != nil {
@@ -455,14 +422,7 @@ func (e *executor) rebuildTCDispatcher(
 
 	dispProgPinPath := e.bpffs.DispatcherProgPath(dispType, nsid, ops.ifindex, revision)
 
-	e.logger.InfoContext(ctx, "rebuilding TC dispatcher",
-		"nsid", nsid,
-		"ifindex", ops.ifindex,
-		"ifname", ops.ifname,
-		"direction", ops.direction,
-		"revision", revision,
-		"num_extensions", len(allSlots),
-		"first_attach", firstAttach)
+	e.logger.InfoContext(ctx, "rebuilding TC dispatcher", "nsid", nsid, "ifindex", ops.ifindex, "ifname", ops.ifname, "direction", ops.direction, "revision", revision, "num_extensions", len(allSlots), "first_attach", firstAttach)
 
 	// Load new dispatcher with .rodata config.
 	dispatcherID, err := e.kernel.LoadAndPinTCDispatcher(ctx, cfg, dispProgPinPath)
@@ -472,8 +432,7 @@ func (e *executor) rebuildTCDispatcher(
 
 	cleanupNewDispatcher := func() {
 		if rbErr := e.kernel.RemovePin(ctx, dispProgPinPath); rbErr != nil {
-			e.logger.ErrorContext(ctx, "rollback: remove new TC dispatcher pin failed",
-				"path", dispProgPinPath, "error", rbErr)
+			e.logger.ErrorContext(ctx, "rollback: remove new TC dispatcher pin failed", "path", dispProgPinPath, "error", rbErr)
 		}
 	}
 
@@ -489,8 +448,7 @@ func (e *executor) rebuildTCDispatcher(
 		for _, ext := range attached {
 			if ext.pinPath != "" {
 				if rbErr := e.kernel.DetachLink(ctx, ext.pinPath); rbErr != nil {
-					e.logger.ErrorContext(ctx, "rollback: detach TC extension link failed",
-						"path", ext.pinPath, "error", rbErr)
+					e.logger.ErrorContext(ctx, "rollback: detach TC extension link failed", "path", ext.pinPath, "error", rbErr)
 				}
 			}
 		}
@@ -530,25 +488,11 @@ func (e *executor) rebuildTCDispatcher(
 	for _, ext := range attached {
 		info, infoErr := e.kernel.ExtensionLinkInfo(ctx, ext.pinPath)
 		if infoErr != nil {
-			e.logger.WarnContext(ctx, "verify: extension link info failed",
-				"type", dispType.String(),
-				"ifindex", ops.ifindex,
-				"revision", revision,
-				"position", ext.position,
-				"path", ext.pinPath,
-				"error", infoErr)
+			e.logger.WarnContext(ctx, "verify: extension link info failed", "type", dispType.String(), "ifindex", ops.ifindex, "revision", revision, "position", ext.position, "path", ext.pinPath, "error", infoErr)
 			continue
 		}
-		e.logger.InfoContext(ctx, "verify: extension link",
-			"type", dispType.String(),
-			"ifindex", ops.ifindex,
-			"revision", revision,
-			"position", ext.position,
-			"kernel_link_id", uint64(info.KernelLinkID),
-			"target_prog_id", uint64(info.TargetProgID),
-			"target_btf_id", info.TargetBtfID,
-			"attach_type", info.AttachType,
-			"matches_dispatcher", uint64(info.TargetProgID) == uint64(dispatcherID))
+
+		e.logger.InfoContext(ctx, "verify: extension link", "type", dispType.String(), "ifindex", ops.ifindex, "revision", revision, "position", ext.position, "kernel_link_id", uint64(info.KernelLinkID), "target_prog_id", uint64(info.TargetProgID), "target_btf_id", info.TargetBtfID, "attach_type", info.AttachType, "matches_dispatcher", uint64(info.TargetProgID) == uint64(dispatcherID))
 	}
 
 	// Atomic swap: create filter (first-attach) or swap (add new, remove old).
@@ -571,22 +515,15 @@ func (e *executor) rebuildTCDispatcher(
 		return extensionResult{}, fmt.Errorf("create TC filter: %w", err)
 	}
 
-	e.logger.InfoContext(ctx, "TC filter swap: new filter created",
-		"new_handle", fmt.Sprintf("%x", result.Handle),
-		"new_priority", result.Priority,
-		"new_dispatcher_id", result.DispatcherID,
-		"old_handle", fmt.Sprintf("%x", oldHandle),
-		"handles_match", result.Handle == oldHandle)
+	e.logger.InfoContext(ctx, "TC filter swap: new filter created", "new_handle", fmt.Sprintf("%x", result.Handle), "new_priority", result.Priority, "new_dispatcher_id", result.DispatcherID, "old_handle", fmt.Sprintf("%x", oldHandle), "handles_match", result.Handle == oldHandle)
 
 	// Remove old filter after new one is in place.
 	if !firstAttach && oldHandle != 0 {
 		parent := dispatcher.TCParentHandle(dispType)
 		if err := e.kernel.DetachTCFilter(ctx, int(ops.ifindex), ops.ifname, parent, oldPriority, oldHandle, ops.netnsPath); err != nil {
-			e.logger.WarnContext(ctx, "failed to remove old TC filter",
-				"handle", fmt.Sprintf("%x", oldHandle), "error", err)
+			e.logger.WarnContext(ctx, "failed to remove old TC filter", "handle", fmt.Sprintf("%x", oldHandle), "error", err)
 		} else {
-			e.logger.InfoContext(ctx, "TC filter swap: removed old filter",
-				"removed_handle", fmt.Sprintf("%x", oldHandle))
+			e.logger.InfoContext(ctx, "TC filter swap: removed old filter", "removed_handle", fmt.Sprintf("%x", oldHandle))
 		}
 	}
 
@@ -619,23 +556,16 @@ func (e *executor) rebuildTCDispatcher(
 
 	completed, err := e.store.ReplaceDispatcherSnapshot(ctx, newSnap)
 	if err != nil {
-		e.logger.ErrorContext(ctx, "persist failed, rolling back TC dispatcher",
-			"ifindex", ops.ifindex, "error", err)
+		e.logger.ErrorContext(ctx, "persist failed, rolling back TC dispatcher", "ifindex", ops.ifindex, "error", err)
 		parent := dispatcher.TCParentHandle(dispType)
 		if rbErr := e.kernel.DetachTCFilter(ctx, int(ops.ifindex), ops.ifname, parent, result.Priority, result.Handle, ops.netnsPath); rbErr != nil {
-			e.logger.ErrorContext(ctx, "rollback: remove new TC filter failed",
-				"handle", fmt.Sprintf("%x", result.Handle),
-				"priority", result.Priority,
-				"error", rbErr)
+			e.logger.ErrorContext(ctx, "rollback: remove new TC filter failed", "handle", fmt.Sprintf("%x", result.Handle), "priority", result.Priority, "error", rbErr)
 		}
+
 		if !firstAttach && oldHandle != 0 {
 			oldDispProgPinPath := e.bpffs.DispatcherProgPath(dispType, nsid, ops.ifindex, snap.Revision)
 			if _, rbErr := e.kernel.CreateTCFilter(ctx, oldDispProgPinPath, int(ops.ifindex), ops.ifname, ops.direction, ops.netnsPath, oldHandle); rbErr != nil {
-				e.logger.ErrorContext(ctx, "rollback: restore old TC filter failed",
-					"path", oldDispProgPinPath,
-					"old_priority", oldPriority,
-					"old_handle", fmt.Sprintf("%x", oldHandle),
-					"error", rbErr)
+				e.logger.ErrorContext(ctx, "rollback: restore old TC filter failed", "path", oldDispProgPinPath, "old_priority", oldPriority, "old_handle", fmt.Sprintf("%x", oldHandle), "error", rbErr)
 			}
 		}
 		cleanupExtensions()
@@ -647,8 +577,7 @@ func (e *executor) rebuildTCDispatcher(
 	if !firstAttach {
 		oldRevDir := e.bpffs.DispatcherRevisionDir(dispType, nsid, ops.ifindex, snap.Revision)
 		if err := e.Execute(ctx, action.RemoveDispatcherRevDir{Path: oldRevDir}); err != nil {
-			e.logger.WarnContext(ctx, "failed to remove old TC revision directory",
-				"path", oldRevDir, "error", err)
+			e.logger.WarnContext(ctx, "failed to remove old TC revision directory", "path", oldRevDir, "error", err)
 		}
 	}
 
@@ -657,15 +586,7 @@ func (e *executor) rebuildTCDispatcher(
 	}
 	newExt := attached[newSlotPosition]
 
-	e.logger.InfoContext(ctx, "rebuilt TC dispatcher",
-		"nsid", nsid,
-		"ifindex", ops.ifindex,
-		"ifname", ops.ifname,
-		"direction", ops.direction,
-		"revision", revision,
-		"dispatcher_id", dispatcherID,
-		"num_extensions", len(allSlots),
-		"new_position", newSlotPosition)
+	e.logger.InfoContext(ctx, "rebuilt TC dispatcher", "nsid", nsid, "ifindex", ops.ifindex, "ifname", ops.ifname, "direction", ops.direction, "revision", revision, "dispatcher_id", dispatcherID, "num_extensions", len(allSlots), "new_position", newSlotPosition)
 
 	proceedOnActions, err := dispatcher.ProceedOnActions(dispType, newSlot.ProceedOn)
 	if err != nil {
@@ -725,6 +646,7 @@ func (e *executor) removeDispatcherIfEmpty(ctx context.Context, key dispatcher.K
 	if err != nil {
 		return fmt.Errorf("get dispatcher snapshot: %w", err)
 	}
+
 	if len(snap.Members) != 0 {
 		return nil
 	}
@@ -778,12 +700,7 @@ func (e *executor) rebuildDispatcherForDetach(ctx context.Context, key dispatche
 	revision := snap.Revision + 1
 	progPinPath := e.bpffs.DispatcherProgPath(key.Type, key.Nsid, key.Ifindex, revision)
 
-	e.logger.InfoContext(ctx, "rebuilding dispatcher for detach",
-		"type", key.Type,
-		"nsid", key.Nsid,
-		"ifindex", key.Ifindex,
-		"revision", revision,
-		"remaining", len(rebuildSlots))
+	e.logger.InfoContext(ctx, "rebuilding dispatcher for detach", "type", key.Type, "nsid", key.Nsid, "ifindex", key.Ifindex, "revision", revision, "remaining", len(rebuildSlots))
 
 	if key.Type == dispatcher.DispatcherTypeXDP {
 		return e.rebuildXDPForDetach(ctx, snap, rebuildSlots, revision, progPinPath)
@@ -816,9 +733,7 @@ func (e *executor) rebuildXDPForDetach(
 
 	cleanupNewRevision := func() {
 		if rbErr := e.removeDispatcherRevisionDir(ctx, key, revision); rbErr != nil {
-			e.logger.ErrorContext(ctx, "rollback: remove XDP detach-rebuild revision failed",
-				"path", e.bpffs.DispatcherRevisionDir(key.Type, key.Nsid, key.Ifindex, revision),
-				"error", rbErr)
+			e.logger.ErrorContext(ctx, "rollback: remove XDP detach-rebuild revision failed", "path", e.bpffs.DispatcherRevisionDir(key.Type, key.Nsid, key.Ifindex, revision), "error", rbErr)
 		}
 	}
 
@@ -832,8 +747,7 @@ func (e *executor) rebuildXDPForDetach(
 		for _, ext := range attached {
 			if ext.pinPath != "" {
 				if rbErr := e.kernel.DetachLink(ctx, ext.pinPath); rbErr != nil {
-					e.logger.ErrorContext(ctx, "rollback: detach XDP detach-rebuild extension failed",
-						"path", ext.pinPath, "error", rbErr)
+					e.logger.ErrorContext(ctx, "rollback: detach XDP detach-rebuild extension failed", "path", ext.pinPath, "error", rbErr)
 				}
 			}
 		}
@@ -859,25 +773,11 @@ func (e *executor) rebuildXDPForDetach(
 	for i, ext := range attached {
 		info, infoErr := e.kernel.ExtensionLinkInfo(ctx, ext.pinPath)
 		if infoErr != nil {
-			e.logger.WarnContext(ctx, "verify: extension link info failed (detach rebuild)",
-				"type", key.Type.String(),
-				"ifindex", key.Ifindex,
-				"revision", revision,
-				"position", i,
-				"path", ext.pinPath,
-				"error", infoErr)
+			e.logger.WarnContext(ctx, "verify: extension link info failed (detach rebuild)", "type", key.Type.String(), "ifindex", key.Ifindex, "revision", revision, "position", i, "path", ext.pinPath, "error", infoErr)
 			continue
 		}
-		e.logger.InfoContext(ctx, "verify: extension link (detach rebuild)",
-			"type", key.Type.String(),
-			"ifindex", key.Ifindex,
-			"revision", revision,
-			"position", i,
-			"kernel_link_id", uint64(info.KernelLinkID),
-			"target_prog_id", uint64(info.TargetProgID),
-			"target_btf_id", info.TargetBtfID,
-			"attach_type", info.AttachType,
-			"matches_dispatcher", uint64(info.TargetProgID) == uint64(dispatcherID))
+
+		e.logger.InfoContext(ctx, "verify: extension link (detach rebuild)", "type", key.Type.String(), "ifindex", key.Ifindex, "revision", revision, "position", i, "kernel_link_id", uint64(info.KernelLinkID), "target_prog_id", uint64(info.TargetProgID), "target_btf_id", info.TargetBtfID, "attach_type", info.AttachType, "matches_dispatcher", uint64(info.TargetProgID) == uint64(dispatcherID))
 	}
 
 	// Swap link.
@@ -917,10 +817,7 @@ func (e *executor) rebuildXDPForDetach(
 	if _, err := e.store.ReplaceDispatcherSnapshot(ctx, newSnap); err != nil {
 		oldProgPinPath := e.bpffs.DispatcherProgPath(key.Type, key.Nsid, key.Ifindex, snap.Revision)
 		if rbErr := e.kernel.UpdateXDPDispatcherLink(ctx, linkPinPath, oldProgPinPath); rbErr != nil {
-			e.logger.ErrorContext(ctx, "rollback: restore XDP detach-rebuild dispatcher link failed",
-				"link_path", linkPinPath,
-				"old_dispatcher_path", oldProgPinPath,
-				"error", rbErr)
+			e.logger.ErrorContext(ctx, "rollback: restore XDP detach-rebuild dispatcher link failed", "link_path", linkPinPath, "old_dispatcher_path", oldProgPinPath, "error", rbErr)
 		}
 		cleanupExtensions()
 		cleanupNewRevision()
@@ -930,8 +827,7 @@ func (e *executor) rebuildXDPForDetach(
 	// Clean up old revision.
 	oldRevDir := e.bpffs.DispatcherRevisionDir(key.Type, key.Nsid, key.Ifindex, snap.Revision)
 	if err := e.Execute(ctx, action.RemoveDispatcherRevDir{Path: oldRevDir}); err != nil {
-		e.logger.WarnContext(ctx, "failed to remove old revision directory",
-			"path", oldRevDir, "error", err)
+		e.logger.WarnContext(ctx, "failed to remove old revision directory", "path", oldRevDir, "error", err)
 	}
 
 	return nil
@@ -963,9 +859,7 @@ func (e *executor) rebuildTCForDetach(
 
 	cleanupNewRevision := func() {
 		if rbErr := e.removeDispatcherRevisionDir(ctx, key, revision); rbErr != nil {
-			e.logger.ErrorContext(ctx, "rollback: remove TC detach-rebuild revision failed",
-				"path", e.bpffs.DispatcherRevisionDir(key.Type, key.Nsid, key.Ifindex, revision),
-				"error", rbErr)
+			e.logger.ErrorContext(ctx, "rollback: remove TC detach-rebuild revision failed", "path", e.bpffs.DispatcherRevisionDir(key.Type, key.Nsid, key.Ifindex, revision), "error", rbErr)
 		}
 	}
 
@@ -979,8 +873,7 @@ func (e *executor) rebuildTCForDetach(
 		for _, ext := range attached {
 			if ext.pinPath != "" {
 				if rbErr := e.kernel.DetachLink(ctx, ext.pinPath); rbErr != nil {
-					e.logger.ErrorContext(ctx, "rollback: detach TC detach-rebuild extension failed",
-						"path", ext.pinPath, "error", rbErr)
+					e.logger.ErrorContext(ctx, "rollback: detach TC detach-rebuild extension failed", "path", ext.pinPath, "error", rbErr)
 				}
 			}
 		}
@@ -1006,25 +899,11 @@ func (e *executor) rebuildTCForDetach(
 	for i, ext := range attached {
 		info, infoErr := e.kernel.ExtensionLinkInfo(ctx, ext.pinPath)
 		if infoErr != nil {
-			e.logger.WarnContext(ctx, "verify: extension link info failed (detach rebuild)",
-				"type", key.Type.String(),
-				"ifindex", key.Ifindex,
-				"revision", revision,
-				"position", i,
-				"path", ext.pinPath,
-				"error", infoErr)
+			e.logger.WarnContext(ctx, "verify: extension link info failed (detach rebuild)", "type", key.Type.String(), "ifindex", key.Ifindex, "revision", revision, "position", i, "path", ext.pinPath, "error", infoErr)
 			continue
 		}
-		e.logger.InfoContext(ctx, "verify: extension link (detach rebuild)",
-			"type", key.Type.String(),
-			"ifindex", key.Ifindex,
-			"revision", revision,
-			"position", i,
-			"kernel_link_id", uint64(info.KernelLinkID),
-			"target_prog_id", uint64(info.TargetProgID),
-			"target_btf_id", info.TargetBtfID,
-			"attach_type", info.AttachType,
-			"matches_dispatcher", uint64(info.TargetProgID) == uint64(dispatcherID))
+
+		e.logger.InfoContext(ctx, "verify: extension link (detach rebuild)", "type", key.Type.String(), "ifindex", key.Ifindex, "revision", revision, "position", i, "kernel_link_id", uint64(info.KernelLinkID), "target_prog_id", uint64(info.TargetProgID), "target_btf_id", info.TargetBtfID, "attach_type", info.AttachType, "matches_dispatcher", uint64(info.TargetProgID) == uint64(dispatcherID))
 	}
 
 	// Record old handle before swap, from the exact handle persisted
@@ -1058,8 +937,7 @@ func (e *executor) rebuildTCForDetach(
 	if oldHandle != 0 {
 		parent := dispatcher.TCParentHandle(dispType)
 		if err := e.kernel.DetachTCFilter(ctx, int(key.Ifindex), snapInterfaceName(snap), parent, oldPriority, oldHandle, snap.Runtime.NetnsPath); err != nil {
-			e.logger.WarnContext(ctx, "failed to remove old TC filter after detach rebuild",
-				"handle", fmt.Sprintf("%x", oldHandle), "error", err)
+			e.logger.WarnContext(ctx, "failed to remove old TC filter after detach rebuild", "handle", fmt.Sprintf("%x", oldHandle), "error", err)
 		}
 	}
 
@@ -1093,19 +971,13 @@ func (e *executor) rebuildTCForDetach(
 	if _, err := e.store.ReplaceDispatcherSnapshot(ctx, newSnap); err != nil {
 		parent := dispatcher.TCParentHandle(dispType)
 		if rbErr := e.kernel.DetachTCFilter(ctx, int(key.Ifindex), snapInterfaceName(snap), parent, result.Priority, result.Handle, snap.Runtime.NetnsPath); rbErr != nil {
-			e.logger.ErrorContext(ctx, "rollback: remove TC detach-rebuild filter failed",
-				"handle", fmt.Sprintf("%x", result.Handle),
-				"priority", result.Priority,
-				"error", rbErr)
+			e.logger.ErrorContext(ctx, "rollback: remove TC detach-rebuild filter failed", "handle", fmt.Sprintf("%x", result.Handle), "priority", result.Priority, "error", rbErr)
 		}
+
 		if oldHandle != 0 {
 			oldProgPinPath := e.bpffs.DispatcherProgPath(key.Type, key.Nsid, key.Ifindex, snap.Revision)
 			if _, rbErr := e.kernel.CreateTCFilter(ctx, oldProgPinPath, int(key.Ifindex), snapInterfaceName(snap), direction, snap.Runtime.NetnsPath, oldHandle); rbErr != nil {
-				e.logger.ErrorContext(ctx, "rollback: restore TC detach-rebuild filter failed",
-					"path", oldProgPinPath,
-					"old_priority", oldPriority,
-					"old_handle", fmt.Sprintf("%x", oldHandle),
-					"error", rbErr)
+				e.logger.ErrorContext(ctx, "rollback: restore TC detach-rebuild filter failed", "path", oldProgPinPath, "old_priority", oldPriority, "old_handle", fmt.Sprintf("%x", oldHandle), "error", rbErr)
 			}
 		}
 		cleanupExtensions()
@@ -1116,8 +988,7 @@ func (e *executor) rebuildTCForDetach(
 	// Clean up old revision.
 	oldRevDir := e.bpffs.DispatcherRevisionDir(key.Type, key.Nsid, key.Ifindex, snap.Revision)
 	if err := e.Execute(ctx, action.RemoveDispatcherRevDir{Path: oldRevDir}); err != nil {
-		e.logger.WarnContext(ctx, "failed to remove old TC revision directory",
-			"path", oldRevDir, "error", err)
+		e.logger.WarnContext(ctx, "failed to remove old TC revision directory", "path", oldRevDir, "error", err)
 	}
 
 	return nil
@@ -1172,12 +1043,7 @@ func snapInterfaceName(snap platform.DispatcherSnapshot) string {
 // them differently.
 func (e *executor) removeEmptyDispatcher(ctx context.Context, snap platform.DispatcherSnapshot) error {
 	key := snap.Key
-	e.logger.DebugContext(ctx, "removing empty dispatcher",
-		"type", key.Type,
-		"nsid", key.Nsid,
-		"ifindex", key.Ifindex,
-		"program_id", snap.Runtime.ProgramID,
-		"kernel_link_id", snap.Runtime.KernelLinkID)
+	e.logger.DebugContext(ctx, "removing empty dispatcher", "type", key.Type, "nsid", key.Nsid, "ifindex", key.Ifindex, "program_id", snap.Runtime.ProgramID, "kernel_link_id", snap.Runtime.KernelLinkID)
 
 	// Point of no return.
 	if isTCDispatcherType(key.Type) {
@@ -1197,23 +1063,13 @@ func (e *executor) removeEmptyDispatcher(ctx context.Context, snap platform.Disp
 	// coherency/audit/GC.
 	var errs []error
 	if err := e.removeDispatcherProgPin(ctx, key, snap.Revision); err != nil {
-		e.logger.WarnContext(ctx, "failed to remove orphaned dispatcher program pin",
-			"type", key.Type,
-			"nsid", key.Nsid,
-			"ifindex", key.Ifindex,
-			"revision", snap.Revision,
-			"path", e.bpffs.DispatcherProgPath(key.Type, key.Nsid, key.Ifindex, snap.Revision),
-			"error", err)
+		e.logger.WarnContext(ctx, "failed to remove orphaned dispatcher program pin", "type", key.Type, "nsid", key.Nsid, "ifindex", key.Ifindex, "revision", snap.Revision, "path", e.bpffs.DispatcherProgPath(key.Type, key.Nsid, key.Ifindex, snap.Revision), "error", err)
 	}
+
 	if err := e.removeDispatcherRevisionDir(ctx, key, snap.Revision); err != nil {
-		e.logger.WarnContext(ctx, "failed to remove orphaned dispatcher revision directory",
-			"type", key.Type,
-			"nsid", key.Nsid,
-			"ifindex", key.Ifindex,
-			"revision", snap.Revision,
-			"path", e.bpffs.DispatcherRevisionDir(key.Type, key.Nsid, key.Ifindex, snap.Revision),
-			"error", err)
+		e.logger.WarnContext(ctx, "failed to remove orphaned dispatcher revision directory", "type", key.Type, "nsid", key.Nsid, "ifindex", key.Ifindex, "revision", snap.Revision, "path", e.bpffs.DispatcherRevisionDir(key.Type, key.Nsid, key.Ifindex, snap.Revision), "error", err)
 	}
+
 	if err := e.deleteDispatcherSnapshot(ctx, key); err != nil {
 		errs = append(errs, fmt.Errorf("delete dispatcher snapshot: %w", err))
 	}

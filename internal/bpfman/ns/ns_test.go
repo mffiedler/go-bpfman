@@ -198,8 +198,7 @@ func runHelper(t *testing.T, extraEnv []string) helperResult {
 			strings.Contains(errOut, "EINVAL") {
 			t.Skipf("setns not supported (QEMU user-mode cannot perform namespace operations):\n%s", errOut)
 		}
-		t.Fatalf("subprocess failed: %v\nstderr:\n%s\nstdout:\n%s",
-			err, errOut, stdout.String())
+		t.Fatalf("subprocess failed: %v\nstderr:\n%s\nstdout:\n%s", err, errOut, stdout.String())
 	}
 
 	return parseHelperOutput(t, stdout.String(), stderr.String())
@@ -211,8 +210,7 @@ func parseHelperOutput(t *testing.T, stdout, stderr string) helperResult {
 	const marker = "BPFMANNS_OK inode="
 	_, after, ok := strings.Cut(stdout, marker)
 	if !ok {
-		t.Fatalf("subprocess did not report\nstdout:\n%s\nstderr:\n%s",
-			stdout, stderr)
+		t.Fatalf("subprocess did not report\nstdout:\n%s\nstderr:\n%s", stdout, stderr)
 	}
 
 	line := after

@@ -193,6 +193,7 @@ func (c ImageCache) LoadMetadata(cacheKey string, dest any) error {
 	if err != nil {
 		return &PathError{Op: "load_metadata", Path: path, Err: err}
 	}
+
 	if err := json.Unmarshal(data, dest); err != nil {
 		return &PathError{Op: "load_metadata", Path: path, Err: err}
 	}

@@ -49,6 +49,7 @@ func (c *ProgramDeleteCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
 	return executeDeletePrograms(ctx, cli, mgr, ids, c.Recursive, c.All)
 }
 

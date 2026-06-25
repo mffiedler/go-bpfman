@@ -231,6 +231,7 @@ func (s *sqliteStore) GetDispatcherSnapshot(ctx context.Context, key dispatcher.
 	if err != nil {
 		return platform.DispatcherSnapshot{}, fmt.Errorf("get dispatcher snapshot members: %w", err)
 	}
+
 	defer rows.Close()
 
 	for rows.Next() {
@@ -254,16 +255,19 @@ func (s *sqliteStore) GetDispatcherSnapshot(ctx context.Context, key dispatcher.
 		if err != nil {
 			return platform.DispatcherSnapshot{}, fmt.Errorf("scan dispatcher member metadata: %w", err)
 		}
+
 		m.Metadata = meta
 
 		var actions []int32
 		if err := json.Unmarshal([]byte(proceedOnJSON), &actions); err != nil {
 			return platform.DispatcherSnapshot{}, fmt.Errorf("unmarshal proceed_on: %w", err)
 		}
+
 		bitmask, err := dispatcher.ProceedOnMask(key.Type, actions...)
 		if err != nil {
 			return platform.DispatcherSnapshot{}, fmt.Errorf("decode proceed_on for dispatcher member: %w", err)
 		}
+
 		m.ProceedOn = bitmask
 
 		snap.Members = append(snap.Members, m)
@@ -287,6 +291,7 @@ func (s *sqliteStore) ListDispatcherSummaries(ctx context.Context) ([]platform.D
 		s.logger.Debug("sql", "stmt", "ListDispatcherSummaries", "duration_ms", msec(time.Since(start)), "error", err)
 		return nil, fmt.Errorf("list dispatcher summaries: %w", err)
 	}
+
 	defer rows.Close()
 
 	var result []platform.DispatcherSummary
@@ -303,10 +308,12 @@ func (s *sqliteStore) ListDispatcherSummaries(ctx context.Context) ([]platform.D
 			s.logger.Debug("sql", "stmt", "ListDispatcherSummaries", "duration_ms", msec(time.Since(start)), "error", err)
 			return nil, fmt.Errorf("scan dispatcher summary: %w", err)
 		}
+
 		parsed, err := dispatcher.ParseDispatcherType(dispTypeStr)
 		if err != nil {
 			return nil, fmt.Errorf("invalid dispatcher type in DB: %w", err)
 		}
+
 		summary.Key.Type = parsed
 		summary.Runtime = scanDispatcherRuntime(programID, nullLinkID, priority, filterHandle, netnsPath)
 		result = append(result, summary)
@@ -402,6 +409,7 @@ func (s *sqliteStore) replaceDispatcherSnapshot(ctx context.Context, snap platfo
 		if err != nil {
 			return platform.DispatcherSnapshot{}, fmt.Errorf("marshal extension link metadata: %w", err)
 		}
+
 		var record bpfman.LinkRecord
 		if spec.ExistingLinkID != nil {
 			record, err = s.scanLinkRecord(s.stmtInsertExtLinkWithID.QueryRowContext(ctx,
@@ -413,6 +421,7 @@ func (s *sqliteStore) replaceDispatcherSnapshot(ctx context.Context, snap platfo
 		if err != nil {
 			return platform.DispatcherSnapshot{}, fmt.Errorf("insert extension link: %w", err)
 		}
+
 		m := platform.DispatcherMember{
 			ProgramID:    spec.ProgramID,
 			ProgramName:  spec.ProgramName,
@@ -450,8 +459,7 @@ func (s *sqliteStore) replaceDispatcherSnapshot(ctx context.Context, snap platfo
 		completed.Members = append(completed.Members, m)
 	}
 
-	s.logger.Debug("sql", "stmt", "ReplaceDispatcherSnapshot", "args", []any{snap.Key, snap.Revision},
-		"duration_ms", msec(time.Since(start)), "members", len(snap.Members))
+	s.logger.Debug("sql", "stmt", "ReplaceDispatcherSnapshot", "args", []any{snap.Key, snap.Revision}, "duration_ms", msec(time.Since(start)), "members", len(snap.Members))
 	return completed, nil
 }
 

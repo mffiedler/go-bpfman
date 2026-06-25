@@ -117,6 +117,7 @@ certificate_oidc_issuer = "https://accounts.google.com"
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
+
 	if len(cfg.Signing.TrustedIdentities) != 2 {
 		t.Fatalf("len(TrustedIdentities) = %d, want 2", len(cfg.Signing.TrustedIdentities))
 	}
@@ -129,6 +130,7 @@ func TestConfigLoadMissingDefaultFileReturnsDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
+
 	if cfg.Signing.AllowUnsigned != DefaultConfig().Signing.AllowUnsigned {
 		t.Fatalf("AllowUnsigned = %v, want default", cfg.Signing.AllowUnsigned)
 	}
@@ -167,6 +169,7 @@ func TestSigningConfigTrustedSigningIdentitiesExactValuesStayExact(t *testing.T)
 	if err != nil {
 		t.Fatalf("TrustedSigningIdentities returned error: %v", err)
 	}
+
 	identity := identities[0]
 	if identity.Subject != "signer@example.com" {
 		t.Fatalf("Subject = %q", identity.Subject)
@@ -197,6 +200,7 @@ func TestSigningConfigTrustedSigningIdentitiesAcceptsRegexps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TrustedSigningIdentities returned error: %v", err)
 	}
+
 	identity := identities[0]
 	wantSubject := `^(?:.*@example\.com)$`
 	if identity.SubjectRegexp != wantSubject {
@@ -227,6 +231,7 @@ func TestSigningConfigTrustedSigningIdentitiesReturnsMultipleEntries(t *testing.
 	if err != nil {
 		t.Fatalf("TrustedSigningIdentities returned error: %v", err)
 	}
+
 	if len(identities) != 2 {
 		t.Fatalf("len(identities) = %d, want 2", len(identities))
 	}

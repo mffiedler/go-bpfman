@@ -25,6 +25,7 @@ func newCredentialStore(logger *slog.Logger) (credentials.Store, error) {
 		if _, err := os.Stat(path); err != nil {
 			continue
 		}
+
 		logger.Debug("found registry credentials", "path", path)
 		return credentials.NewStore(path, credentials.StoreOptions{})
 	}
@@ -91,6 +92,7 @@ func registryCredentialsFound(ctx context.Context, registry string, logger *slog
 	if err != nil {
 		return false
 	}
+
 	cred, err := store.Get(ctx, registry)
 	if err != nil {
 		return false
@@ -106,10 +108,12 @@ func credentialStoreForGoContainerRegistry(ctx context.Context, ref name.Referen
 	if err != nil {
 		return gcrAuthn.Anonymous, false, nil
 	}
+
 	cred, err := store.Get(ctx, ref.Context().RegistryStr())
 	if err != nil {
 		return nil, true, fmt.Errorf("failed to resolve registry credentials: %w", err)
 	}
+
 	if cred == orasAuth.EmptyCredential {
 		return gcrAuthn.Anonymous, false, nil
 	}

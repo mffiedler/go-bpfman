@@ -85,6 +85,7 @@ func handlePrint(c driver.Ctx) (runtime.Value, error) {
 		if err != nil {
 			return runtime.Value{}, err
 		}
+
 		s, err := runtime.RenderCompact(v)
 		if err != nil {
 			return runtime.Value{}, fmt.Errorf("print: argument %d: %v", i+1, err)

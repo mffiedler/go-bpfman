@@ -290,6 +290,7 @@ func (s *Scanner) countLinkFiles(dir string) int {
 	if err != nil {
 		return 0
 	}
+
 	count := 0
 	for _, e := range entries {
 		if strings.HasPrefix(e.Name(), "link_") {
@@ -421,10 +422,12 @@ func parseDispatcherDirName(name string) (nsid uint64, ifindex, revision uint32,
 	if err != nil {
 		return 0, 0, 0, false
 	}
+
 	parsedIfindex, err := strconv.ParseUint(parts[1], 10, 32)
 	if err != nil {
 		return 0, 0, 0, false
 	}
+
 	parsedRevision, err := strconv.ParseUint(parts[2], 10, 32)
 	if err != nil {
 		return 0, 0, 0, false
@@ -445,6 +448,7 @@ func parseDispatcherLinkName(name string) (nsid uint64, ifindex uint32, ok bool)
 	if err != nil {
 		return 0, 0, false
 	}
+
 	parsedIfindex, err := strconv.ParseUint(parts[1], 10, 32)
 	if err != nil {
 		return 0, 0, false

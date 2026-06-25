@@ -59,6 +59,7 @@ func TestNewCLIReadsConfigFromEnv(t *testing.T) {
 	if err := os.WriteFile(configPath, nil, 0o644); err != nil {
 		t.Fatalf("write test config: %v", err)
 	}
+
 	t.Setenv("BPFMAN_CONFIG", configPath)
 
 	oldArgs := os.Args
@@ -71,6 +72,7 @@ func TestNewCLIReadsConfigFromEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCLI: %v", err)
 	}
+
 	if cli.Config != configPath {
 		t.Fatalf("Config = %q, want %q", cli.Config, configPath)
 	}
@@ -98,6 +100,7 @@ func newCLIForArgs(t *testing.T, args []string) *CLI {
 	if err := os.WriteFile(configPath, nil, 0o644); err != nil {
 		t.Fatalf("write test config: %v", err)
 	}
+
 	args = append([]string{args[0], "--config", configPath}, args[1:]...)
 
 	oldArgs := os.Args
@@ -110,5 +113,6 @@ func newCLIForArgs(t *testing.T, args []string) *CLI {
 	if err != nil {
 		t.Fatalf("NewCLI(%v): %v", args, err)
 	}
+
 	return cli
 }

@@ -283,6 +283,7 @@ func mustArgInt(args []Arg, idx int) int {
 	if err != nil {
 		panic(err)
 	}
+
 	return n
 }
 

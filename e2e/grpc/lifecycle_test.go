@@ -73,8 +73,7 @@ func TestParallel_GRPC(t *testing.T) {
 		t.Skip("requires root (bpfman load)")
 	}
 	if _, err := os.Stat(kmodTargetsRoot); err != nil {
-		t.Skipf("bpfman_e2e_targets kmod not available at %s: %v (load the module first)",
-			kmodTargetsRoot, err)
+		t.Skipf("bpfman_e2e_targets kmod not available at %s: %v (load the module first)", kmodTargetsRoot, err)
 	}
 
 	specs := []typeSpec{
@@ -112,13 +111,11 @@ func TestParallel_GRPC(t *testing.T) {
 	t.Cleanup(func() {
 		elapsed := time.Since(started)
 		var totalLifecycles int64
-		t.Logf("gRPC parallel summary (%d goroutines/type x %d iterations/goroutine; one lifecycle = Load->Attach->Detach->Unload round-trip, ~%d RPCs):",
-			n, iters, rpcsPerLifecycle)
+		t.Logf("gRPC parallel summary (%d goroutines/type x %d iterations/goroutine; one lifecycle = Load->Attach->Detach->Unload round-trip, ~%d RPCs):", n, iters, rpcsPerLifecycle)
 		for _, spec := range specs {
 			count := counts[spec.name].Load()
 			totalLifecycles += count
-			t.Logf("  %-10s %4d lifecycles  ~%6d rpcs",
-				spec.name, count, count*int64(rpcsPerLifecycle))
+			t.Logf("  %-10s %4d lifecycles  ~%6d rpcs", spec.name, count, count*int64(rpcsPerLifecycle))
 		}
 		totalRPCs := totalLifecycles * int64(rpcsPerLifecycle)
 		totalFlockWrites := totalLifecycles * int64(flockWritesPerLifecycle)
@@ -132,15 +129,10 @@ func TestParallel_GRPC(t *testing.T) {
 			loadRate = float64(totalLoads) / secs
 			readRate = float64(totalReads) / secs
 		}
-		t.Logf("  %-10s %4d lifecycles  ~%6d rpcs  (%s wall, ~%.1f rpcs/s)",
-			"total", totalLifecycles, totalRPCs,
-			elapsed.Round(time.Millisecond), rate)
-		t.Logf("    flock writes (Attach/Detach/Unload):  %6d ops  ~%6.1f/s",
-			totalFlockWrites, flockRate)
-		t.Logf("    Loads (manager-gated):                %6d ops  ~%6.1f/s",
-			totalLoads, loadRate)
-		t.Logf("    reads (Get/GetLink/ListLinks):        %6d ops  ~%6.1f/s",
-			totalReads, readRate)
+		t.Logf("  %-10s %4d lifecycles  ~%6d rpcs  (%s wall, ~%.1f rpcs/s)", "total", totalLifecycles, totalRPCs, elapsed.Round(time.Millisecond), rate)
+		t.Logf("    flock writes (Attach/Detach/Unload):  %6d ops  ~%6.1f/s", totalFlockWrites, flockRate)
+		t.Logf("    Loads (manager-gated):                %6d ops  ~%6.1f/s", totalLoads, loadRate)
+		t.Logf("    reads (Get/GetLink/ListLinks):        %6d ops  ~%6.1f/s", totalReads, readRate)
 	})
 
 	for _, spec := range specs {
@@ -173,6 +165,7 @@ func TestGRPC_MultiProgramLoadDoesNotFabricateMapOwnership(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
+
 	if got := len(loadResp.Programs); got != 2 {
 		t.Fatalf("Load: want 2 programs, got %d", got)
 	}
@@ -193,6 +186,7 @@ func TestGRPC_MultiProgramLoadDoesNotFabricateMapOwnership(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Get %d: %v", id, err)
 		}
+
 		if getResp.Info.GetMapOwnerId() != 0 || getResp.Info.MapOwnerId != nil {
 			t.Fatalf("Get program %d: persisted fabricated map owner %d", id, getResp.Info.GetMapOwnerId())
 		}
@@ -240,8 +234,7 @@ func runParallelLifecycles(t *testing.T, spec typeSpec, counter *atomic.Int64) {
 	total := int64(n * iters)
 	progressEvery := envDuration("BPFMAN_GRPC_PROGRESS_INTERVAL", defaultProgressInterval)
 
-	t.Logf("starting %s gRPC lifecycles: %d goroutines x %d iterations = %d lifecycles (~%d RPCs)",
-		spec.name, n, iters, total, total*int64(rpcsPerLifecycle))
+	t.Logf("starting %s gRPC lifecycles: %d goroutines x %d iterations = %d lifecycles (~%d RPCs)", spec.name, n, iters, total, total*int64(rpcsPerLifecycle))
 
 	var wg sync.WaitGroup
 	errCh := make(chan error, n*iters)
@@ -263,10 +256,7 @@ func runParallelLifecycles(t *testing.T, spec typeSpec, counter *atomic.Int64) {
 				if elapsed > 0 {
 					rate = float64(done) / elapsed.Seconds()
 				}
-				t.Logf("progress %s: %d/%d lifecycles complete (~%d/%d RPCs, %s elapsed, %.1f lifecycles/s)",
-					spec.name, done, total,
-					done*int64(rpcsPerLifecycle), total*int64(rpcsPerLifecycle),
-					elapsed.Round(time.Second), rate)
+				t.Logf("progress %s: %d/%d lifecycles complete (~%d/%d RPCs, %s elapsed, %.1f lifecycles/s)", spec.name, done, total, done*int64(rpcsPerLifecycle), total*int64(rpcsPerLifecycle), elapsed.Round(time.Second), rate)
 			case <-progressDone:
 				return
 			}
@@ -308,6 +298,7 @@ func envDuration(name string, def time.Duration) time.Duration {
 	if err == nil && d > 0 {
 		return d
 	}
+
 	n, err := strconv.Atoi(s)
 	if err == nil && n > 0 {
 		return time.Duration(n) * time.Second
@@ -353,6 +344,7 @@ func runOneLifecycle(t *testing.T, spec typeSpec, buildAttach func() *pb.AttachI
 	if err != nil {
 		return fmt.Errorf("Load: %w", err)
 	}
+
 	if len(loadResp.Programs) != 1 {
 		return fmt.Errorf("Load: want 1 program, got %d", len(loadResp.Programs))
 	}
@@ -365,6 +357,7 @@ func runOneLifecycle(t *testing.T, spec typeSpec, buildAttach func() *pb.AttachI
 	if err != nil {
 		return fmt.Errorf("Get %d: %w", progID, err)
 	}
+
 	if getResp.KernelInfo == nil || getResp.KernelInfo.Id != progID {
 		return fmt.Errorf("Get %d: id mismatch", progID)
 	}
@@ -379,6 +372,7 @@ func runOneLifecycle(t *testing.T, spec typeSpec, buildAttach func() *pb.AttachI
 	if err != nil {
 		return fmt.Errorf("Attach %d: %w", progID, err)
 	}
+
 	linkID := attachResp.LinkId
 	if linkID == 0 {
 		return fmt.Errorf("Attach %d: returned zero bpfman link id", progID)
@@ -390,6 +384,7 @@ func runOneLifecycle(t *testing.T, spec typeSpec, buildAttach func() *pb.AttachI
 	if err != nil {
 		return fmt.Errorf("GetLink %d: %w", linkID, err)
 	}
+
 	if getLinkResp.Link == nil || getLinkResp.Link.Summary == nil {
 		return fmt.Errorf("GetLink %d: missing link summary", linkID)
 	}
@@ -397,14 +392,14 @@ func runOneLifecycle(t *testing.T, spec typeSpec, buildAttach func() *pb.AttachI
 		return fmt.Errorf("GetLink %d: missing captured kernel link id", linkID)
 	}
 	if getLinkResp.Link.Summary.KernelProgramId != progID {
-		return fmt.Errorf("GetLink %d: program id mismatch: got %d want %d",
-			linkID, getLinkResp.Link.Summary.KernelProgramId, progID)
+		return fmt.Errorf("GetLink %d: program id mismatch: got %d want %d", linkID, getLinkResp.Link.Summary.KernelProgramId, progID)
 	}
 
 	listResp, err := client.ListLinks(ctx, &pb.ListLinksRequest{ProgramId: &progID})
 	if err != nil {
 		return fmt.Errorf("ListLinks for program %d: %w", progID, err)
 	}
+
 	found := false
 	for _, l := range listResp.Links {
 		if l.Summary != nil && l.Summary.KernelProgramId == progID {
@@ -419,6 +414,7 @@ func runOneLifecycle(t *testing.T, spec typeSpec, buildAttach func() *pb.AttachI
 	if _, err := client.Detach(ctx, &pb.DetachRequest{LinkId: linkID}); err != nil {
 		return fmt.Errorf("Detach %d: %w", linkID, err)
 	}
+
 	if _, err := client.GetLink(ctx, &pb.GetLinkRequest{KernelLinkId: linkID}); err == nil {
 		return fmt.Errorf("post-Detach: GetLink %d still succeeds", linkID)
 	}
@@ -426,6 +422,7 @@ func runOneLifecycle(t *testing.T, spec typeSpec, buildAttach func() *pb.AttachI
 	if _, err := client.Unload(ctx, &pb.UnloadRequest{Id: progID}); err != nil {
 		return fmt.Errorf("Unload %d: %w", progID, err)
 	}
+
 	if _, err := client.Get(ctx, &pb.GetRequest{Id: progID}); err == nil {
 		return fmt.Errorf("post-Unload: Get %d still succeeds", progID)
 	}

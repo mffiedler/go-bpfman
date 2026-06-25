@@ -41,5 +41,6 @@ func BytecodePath(name string) string {
 		// behind a panic here.
 		return filepath.Join(BytecodeDir(), name)
 	}
+
 	return abs
 }

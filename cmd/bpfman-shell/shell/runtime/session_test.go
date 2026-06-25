@@ -612,10 +612,7 @@ func TestSessionFrames_PopRootPanics(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
-	assert.PanicsWithValue(t,
-		"shell.Session.PopFrame: cannot pop root frame",
-		func() { s.PopFrame() },
-	)
+	assert.PanicsWithValue(t, "shell.Session.PopFrame: cannot pop root frame", func() { s.PopFrame() })
 }
 
 func TestSessionFrames_WithFramePopsOnSuccess(t *testing.T) {

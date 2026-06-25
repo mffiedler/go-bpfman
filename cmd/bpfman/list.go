@@ -69,6 +69,7 @@ func (c *ListProgramsCmd) buildListOptions() ([]bpfman.ListOption, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid label selector: %w", err)
 		}
+
 		selectors = append(selectors, sel)
 	}
 	if len(selectors) > 0 {
@@ -89,6 +90,7 @@ func combineSelectors(selectors ...labels.Selector) labels.Selector {
 		if !selectable {
 			return labels.Nothing()
 		}
+
 		combined = combined.Add(requirements...)
 	}
 	return combined

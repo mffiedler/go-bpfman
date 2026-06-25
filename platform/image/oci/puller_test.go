@@ -169,6 +169,7 @@ func TestPullerPullIndexSelectsForcedHostPlatform(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InspectBytecodeImage returned error: %v", err)
 	}
+
 	arm64Digest := ""
 	for _, manifest := range inspection.Manifests {
 		if manifest.Platform == "linux/arm64" {
@@ -188,6 +189,7 @@ func TestPullerPullIndexSelectsForcedHostPlatform(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Pull returned error: %v", err)
 	}
+
 	if pulled.Digest != arm64Digest {
 		t.Fatalf("Digest = %q, want arm64 child digest %q", pulled.Digest, arm64Digest)
 	}
@@ -248,10 +250,12 @@ func TestPullerPassesExplicitAuthToVerifier(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewImageCache returned error: %v", err)
 	}
+
 	ensured, err := fs.EnsureCache(cache)
 	if err != nil {
 		t.Fatalf("EnsureCache returned error: %v", err)
 	}
+
 	verifier := &capturingVerifier{}
 	puller, err := NewPuller(ensured, WithVerifier(verifier))
 	if err != nil {
@@ -270,6 +274,7 @@ func TestPullerPassesExplicitAuthToVerifier(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Pull returned error: %v", err)
 	}
+
 	if verifier.request.ImageRef != ref+"@"+pulled.Digest {
 		t.Fatalf("verifier image ref = %q, want %q", verifier.request.ImageRef, ref+"@"+pulled.Digest)
 	}
@@ -310,10 +315,12 @@ func newTestPuller(t *testing.T) platform.ImagePuller {
 	if err != nil {
 		t.Fatalf("NewImageCache returned error: %v", err)
 	}
+
 	ensured, err := fs.EnsureCache(cache)
 	if err != nil {
 		t.Fatalf("EnsureCache returned error: %v", err)
 	}
+
 	puller, err := NewPuller(ensured)
 	if err != nil {
 		t.Fatalf("NewPuller returned error: %v", err)
@@ -366,6 +373,7 @@ func writeTestImage(t *testing.T, ref string, labels map[string]string, bytecode
 	if err != nil {
 		t.Fatalf("parseRegistryReference returned error: %v", err)
 	}
+
 	if err := remote.Write(parsed, img); err != nil {
 		t.Fatalf("remote.Write returned error: %v", err)
 	}

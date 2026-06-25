@@ -25,6 +25,7 @@ func TestNoSignReportsVerificationDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Verify returned error: %v", err)
 	}
+
 	if result.Status != platform.SignatureVerificationDisabled {
 		t.Fatalf("Status = %q, want %q", result.Status, platform.SignatureVerificationDisabled)
 	}
@@ -57,12 +58,14 @@ func TestFromSigningConfigReturnsNoSignWhenVerificationDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FromSigningConfig returned error: %v", err)
 	}
+
 	result, err := verifier.Verify(context.Background(), platform.SignatureVerificationRequest{
 		ImageRef: "example.test/x:latest",
 	})
 	if err != nil {
 		t.Fatalf("Verify returned error: %v", err)
 	}
+
 	if result.Status != platform.SignatureVerificationDisabled {
 		t.Fatalf("Status = %q, want %q", result.Status, platform.SignatureVerificationDisabled)
 	}
@@ -79,10 +82,12 @@ func TestFromSigningConfigDefaultsToAnyIdentityWhenUnsignedForbidden(t *testing.
 	if err != nil {
 		t.Fatalf("FromSigningConfig returned error: %v", err)
 	}
+
 	cosignVerifier, ok := verifier.(*cosignVerifier)
 	if !ok {
 		t.Fatalf("verifier has type %T, want *cosignVerifier", verifier)
 	}
+
 	if cosignVerifier.allowUnsigned {
 		t.Fatal("allowUnsigned = true, want false")
 	}
@@ -109,6 +114,7 @@ func TestFromSigningConfigWarnsWhenUnsignedForbiddenWithoutTrustedIdentity(t *te
 	if _, err := FromSigningConfig(cfg, logger); err != nil {
 		t.Fatalf("FromSigningConfig returned error: %v", err)
 	}
+
 	if !strings.Contains(logs.String(), "accepting any valid signer") {
 		t.Fatalf("logs = %q, want any-signer warning", logs.String())
 	}
@@ -135,10 +141,12 @@ func TestFromSigningConfigAppliesTrustedIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FromSigningConfig returned error: %v", err)
 	}
+
 	cosignVerifier, ok := verifier.(*cosignVerifier)
 	if !ok {
 		t.Fatalf("verifier has type %T, want *cosignVerifier", verifier)
 	}
+
 	if cosignVerifier.allowUnsigned {
 		t.Fatal("allowUnsigned = true, want false")
 	}
@@ -183,6 +191,7 @@ func TestRegistryClientOptsDoNotConflictWithDefaultKeychain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTag returned error: %v", err)
 	}
+
 	opts := registryClientOpts(&platform.ImageAuth{Username: "u", Password: "p"})
 	_, err = cosignremote.Signatures(ref, opts...)
 	if err != nil && strings.Contains(err.Error(), "not both") {

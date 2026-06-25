@@ -19,6 +19,7 @@ func newImageManager(ctx context.Context, cli *runtime.CLI) (*manager.Manager, f
 	if err != nil {
 		return nil, nil, fmt.Errorf("create image puller: %w", err)
 	}
+
 	return newManagerWithImagePuller(ctx, cli, puller)
 }
 
@@ -41,9 +42,5 @@ func buildImagePuller(cli *runtime.CLI) (platform.ImagePuller, error) {
 		return nil, fmt.Errorf("configure signature verifier: %w", err)
 	}
 
-	return oci.NewPuller(
-		cache,
-		oci.WithLogger(logger),
-		oci.WithVerifier(verifier),
-	)
+	return oci.NewPuller(cache, oci.WithLogger(logger), oci.WithVerifier(verifier))
 }

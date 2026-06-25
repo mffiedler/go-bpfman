@@ -48,8 +48,7 @@ func TestLinkLifecycle_CreatePendingThenFinalise(t *testing.T) {
 	assert.Nil(t, pending.KernelLinkID, "pending link has no kernel link id yet")
 	require.NotNil(t, pending.PinPath, "pending link must record its pin path at creation")
 	wantPin := filepath.Join(testLinksDir, strconv.FormatUint(uint64(pending.ID), 10))
-	assert.Equal(t, wantPin, pending.PinPath.String(),
-		"pin path must be the numeric link id under the links dir")
+	assert.Equal(t, wantPin, pending.PinPath.String(), "pin path must be the numeric link id under the links dir")
 
 	// The pending row is durable and visible to readers between the
 	// two phases: GetLink returns it with the pin path recorded and

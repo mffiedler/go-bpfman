@@ -379,8 +379,7 @@ func TestLinkRegistry_MetadataRoundTrip(t *testing.T) {
 
 	got, err := store.GetLink(ctx, record.ID)
 	require.NoError(t, err, "GetLink failed")
-	assert.Equal(t, want, got.Metadata,
-		"metadata must round-trip through GetLink within the link's own transaction")
+	assert.Equal(t, want, got.Metadata, "metadata must round-trip through GetLink within the link's own transaction")
 
 	// scanLinkRecords backs both list read paths; assert metadata survives each.
 	listed, err := store.ListLinks(ctx)
@@ -473,8 +472,7 @@ func TestLinkRegistry_UpsertUpdatesPinPath(t *testing.T) {
 	record, err := store.GetLink(ctx, completed.Members[0].LinkID)
 	require.NoError(t, err, "GetLink failed")
 	require.NotNil(t, record.PinPath, "pin path should not be nil")
-	assert.Equal(t, "/new/rev/link_1", record.PinPath.String(),
-		"pin path should be updated to new value")
+	assert.Equal(t, "/new/rev/link_1", record.PinPath.String(), "pin path should be updated to new value")
 
 	// Verify detail record has new position and revision.
 	xdp, ok := record.Details.(bpfman.XDPDetails)
@@ -526,8 +524,7 @@ func TestLinkRegistry_IDsAreNeverReusedAfterDelete(t *testing.T) {
 	second := createEphemeralLink(t, ctx, store, kernel.ProgramID(42), ptr(kernel.LinkID(101)),
 		bpfman.TracepointDetails{Group: "syscalls", Name: "sys_exit_openat"})
 
-	assert.Greater(t, second.ID, first.ID,
-		"links.id is AUTOINCREMENT and must not reuse deleted bpfman handles")
+	assert.Greater(t, second.ID, first.ID, "links.id is AUTOINCREMENT and must not reuse deleted bpfman handles")
 }
 
 func TestLinkRegistry_IDsStartInDiagnosticRange(t *testing.T) {
@@ -543,8 +540,7 @@ func TestLinkRegistry_IDsStartInDiagnosticRange(t *testing.T) {
 	record := createEphemeralLink(t, ctx, store, kernel.ProgramID(42), ptr(kernel.LinkID(100)),
 		bpfman.TracepointDetails{Group: "syscalls", Name: "sys_enter_openat"})
 
-	assert.Equal(t, bpfman.LinkID(2_123_456_789), record.ID,
-		"bpfman link handles should be visually distinct from small kernel link IDs")
+	assert.Equal(t, bpfman.LinkID(2_123_456_789), record.ID, "bpfman link handles should be visually distinct from small kernel link IDs")
 }
 
 func TestLinkRegistry_KernelLinkIDPartialUniqueIndex(t *testing.T) {
@@ -702,8 +698,7 @@ func TestMapOwnership_MapSetSurvivesDeletingOwner(t *testing.T) {
 
 	err = store.DeleteMapSet(ctx, ownerID)
 	require.Error(t, err, "expected FK constraint violation while dependent uses map set")
-	assert.Contains(t, err.Error(), "FOREIGN KEY constraint failed",
-		"expected FK constraint error, got: %v", err)
+	assert.Contains(t, err.Error(), "FOREIGN KEY constraint failed", "expected FK constraint error, got: %v", err)
 
 	require.NoError(t, store.Delete(ctx, kernel.ProgramID(101)), "Delete dependent failed")
 	require.NoError(t, store.DeleteMapSet(ctx, ownerID), "Delete map set failed after users removed")
@@ -859,15 +854,13 @@ func TestListTCXLinksByInterface_OrderByPriority(t *testing.T) {
 	// Verify order: priorities should be 100, 200, 300, 500
 	expectedPriorities := []int32{100, 200, 300, 500}
 	for i, link := range links {
-		assert.Equal(t, expectedPriorities[i], link.Priority,
-			"link at position %d has wrong priority", i)
+		assert.Equal(t, expectedPriorities[i], link.Priority, "link at position %d has wrong priority", i)
 	}
 
 	// Verify the correct kernel link IDs are in order
 	expectedKernelLinkIDs := []kernel.LinkID{1002, 1004, 1001, 1003}
 	for i, link := range links {
-		assert.Equal(t, expectedKernelLinkIDs[i], link.KernelLinkID,
-			"link at position %d has wrong kernel_link_id", i)
+		assert.Equal(t, expectedKernelLinkIDs[i], link.KernelLinkID, "link at position %d has wrong kernel_link_id", i)
 	}
 }
 
@@ -1645,6 +1638,7 @@ func TestRunInTransaction_DuplicatePinPathRollsBack(t *testing.T) {
 		if _, err := tx.CreateLink(ctx, bpfman.NewPinnedLinkSpec(4002, ptr(kernel.LinkID(21)), details, pin)); err != nil {
 			return err
 		}
+
 		_, err := tx.CreateLink(ctx, bpfman.NewPinnedLinkSpec(4002, ptr(kernel.LinkID(22)), details, pin))
 		require.Error(t, err, "duplicate pin inside the transaction must fail")
 		return err

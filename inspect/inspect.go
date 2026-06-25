@@ -335,6 +335,7 @@ func Snapshot(
 			obs.Meta.ProgramEnumErrors++
 			continue
 		}
+
 		kernelProgs[kp.ID] = kp
 	}
 
@@ -344,6 +345,7 @@ func Snapshot(
 			obs.Meta.LinkEnumErrors++
 			continue
 		}
+
 		kernelLinks[kl.ID] = kl
 	}
 
@@ -368,6 +370,7 @@ func Snapshot(
 			obs.Meta.Errors = append(obs.Meta.Errors, err)
 			continue
 		}
+
 		fsProgPins[pin.ProgramID] = pin.Path
 	}
 
@@ -376,6 +379,7 @@ func Snapshot(
 			obs.Meta.Errors = append(obs.Meta.Errors, err)
 			continue
 		}
+
 		fsMapDirs[dir.ProgramID] = dir.Path
 	}
 
@@ -384,6 +388,7 @@ func Snapshot(
 			obs.Meta.Errors = append(obs.Meta.Errors, err)
 			continue
 		}
+
 		key := dispatcherKey(dir.DispType, dir.Nsid, dir.Ifindex)
 		d := dir // copy
 		fsDispDirs[key] = &d
@@ -394,6 +399,7 @@ func Snapshot(
 			obs.Meta.Errors = append(obs.Meta.Errors, err)
 			continue
 		}
+
 		key := dispatcherKey(pin.DispType, pin.Nsid, pin.Ifindex)
 		fsDispLinks[key] = pin.Path
 	}

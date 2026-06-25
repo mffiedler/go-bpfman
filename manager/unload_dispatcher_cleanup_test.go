@@ -72,15 +72,12 @@ func TestUnload_MapsPinsFailure_IsNonFatalAndStillCleansEmptyDispatcher(t *testi
 	// mapsDir drifts from what production passes to kernel.Unload:
 	// without this check, a path mismatch would silently no-op and
 	// leave the test passing trivially.
-	require.Equal(t, 1, fix.Kernel.UnloadFailureCount(mapsDir),
-		"fault injection must have fired exactly once on the maps directory")
+	require.Equal(t, 1, fix.Kernel.UnloadFailureCount(mapsDir), "fault injection must have fired exactly once on the maps directory")
 
 	// The contract: dispatcher removal runs before hygiene can fail.
 	summaries, err = fix.Store.ListDispatcherSummaries(ctx)
 	require.NoError(t, err)
-	assert.Empty(t, summaries,
-		"dispatcher must be cleaned up after the program's last link is detached, "+
-			"even when post-detach hygiene fails")
+	assert.Empty(t, summaries, "dispatcher must be cleaned up after the program's last link is detached, "+"even when post-detach hygiene fails")
 
 	programs, err := fix.Store.List(ctx)
 	require.NoError(t, err)
@@ -219,8 +216,7 @@ func TestUnload_PreDetachFailure_LeavesDispatcherInPlace(t *testing.T) {
 	// Point of no return not crossed: dispatcher row stays.
 	summaries, err = fix.Store.ListDispatcherSummaries(ctx)
 	require.NoError(t, err)
-	assert.Len(t, summaries, 1,
-		"dispatcher must remain when kernel detach failed; coherency repairs")
+	assert.Len(t, summaries, 1, "dispatcher must remain when kernel detach failed; coherency repairs")
 }
 
 // TestDetach_DispatcherRevisionDirFailure_IsNonFatal pins the same

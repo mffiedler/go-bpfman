@@ -41,6 +41,7 @@ func (f *fakeExecutor) Execute(_ context.Context, a action.Action) error {
 	if !ok {
 		return fmt.Errorf("unexpected action type: %T", a)
 	}
+
 	label := rp.Path.String()
 	f.executed = append(f.executed, label)
 	if err, ok := f.errs[label]; ok {

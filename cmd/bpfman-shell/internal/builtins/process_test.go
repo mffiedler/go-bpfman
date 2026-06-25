@@ -102,8 +102,7 @@ func TestProcessChildren_ReturnsTheForkedWorkerPid(t *testing.T) {
 
 	// The returned pid names a live process whose parent really is
 	// the launcher.
-	assert.Equal(t, cmd.Process.Pid, ppidOf(t, worker),
-		"returned pid must be a direct child of the launcher")
+	assert.Equal(t, cmd.Process.Pid, ppidOf(t, worker), "returned pid must be a direct child of the launcher")
 }
 
 // TestProcessChildren_AggregatesAcrossThreads pins the process-level
@@ -253,8 +252,7 @@ func TestProcChildren_AggregatesAndSorts(t *testing.T) {
 	}
 	children, err := procChildren(fs, "/proc", 100)
 	require.NoError(t, err)
-	assert.Equal(t, []int{105, 203, 301}, children,
-		"children from every task, ascending")
+	assert.Equal(t, []int{105, 203, 301}, children, "children from every task, ascending")
 }
 
 func TestProcChildren_VanishedTaskIsSkipped(t *testing.T) {

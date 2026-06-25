@@ -42,6 +42,7 @@ func runUnlinkatFireWorker(args []string) error {
 	if err != nil {
 		return fmt.Errorf("unlinkat-fire-worker: invalid N %q: %w", args[2], err)
 	}
+
 	k, err := strconv.Atoi(args[3])
 	if err != nil {
 		return fmt.Errorf("unlinkat-fire-worker: invalid K %q: %w", args[3], err)
@@ -66,6 +67,7 @@ func runUnlinkatFireWorker(args []string) error {
 			if err != nil {
 				return fmt.Errorf("unlinkat-fire-worker: open wave=%d i=%d: %w", wave, i, err)
 			}
+
 			syscall.Close(fd)
 			if err := unix.Unlinkat(unix.AT_FDCWD, path, 0); err != nil {
 				return fmt.Errorf("unlinkat-fire-worker: unlinkat wave=%d i=%d: %w", wave, i, err)
@@ -75,6 +77,7 @@ func runUnlinkatFireWorker(args []string) error {
 		if err != nil {
 			return fmt.Errorf("unlinkat-fire-worker: create ack %s: %w", ack, err)
 		}
+
 		f.Close()
 	}
 	return nil

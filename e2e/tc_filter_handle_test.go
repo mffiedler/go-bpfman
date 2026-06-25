@@ -145,11 +145,9 @@ func TestTC_DetachDeletesOwnFilterNotForeign(t *testing.T) {
 	// freplace extension in a slot, not the filter target).
 	before := listIngressBPFFilters(t, veth.A.Ifindex, 50)
 	for _, id := range foreignIDs {
-		require.True(t, hasFilterWithProgID(before, id),
-			"foreign filter (prog %d) should be present before detach", id)
+		require.True(t, hasFilterWithProgID(before, id), "foreign filter (prog %d) should be present before detach", id)
 	}
-	require.True(t, hasFilterNamed(before, "tc_dispatcher"),
-		"dispatcher filter should be present before detach")
+	require.True(t, hasFilterNamed(before, "tc_dispatcher"), "dispatcher filter should be present before detach")
 
 	// Detach the bpfman dispatcher. Only bpfman's own filter must go;
 	// both foreign filters must remain.
@@ -157,11 +155,9 @@ func TestTC_DetachDeletesOwnFilterNotForeign(t *testing.T) {
 
 	after := listIngressBPFFilters(t, veth.A.Ifindex, 50)
 	for _, id := range foreignIDs {
-		assert.True(t, hasFilterWithProgID(after, id),
-			"foreign filter (prog %d) must survive bpfman detach (deleting it by priority-only lookup is the bug)", id)
+		assert.True(t, hasFilterWithProgID(after, id), "foreign filter (prog %d) must survive bpfman detach (deleting it by priority-only lookup is the bug)", id)
 	}
-	assert.False(t, hasFilterNamed(after, "tc_dispatcher"),
-		"bpfman's own dispatcher filter must be removed (leaving it orphaned is the bug)")
+	assert.False(t, hasFilterNamed(after, "tc_dispatcher"), "bpfman's own dispatcher filter must be removed (leaving it orphaned is the bug)")
 }
 
 // TestTC_RebuildSwapPreservesForeignFilter exercises the second site
@@ -206,8 +202,6 @@ func TestTC_RebuildSwapPreservesForeignFilter(t *testing.T) {
 	attachNew(200)
 
 	filters := listIngressBPFFilters(t, veth.A.Ifindex, 50)
-	assert.True(t, hasFilterWithProgID(filters, foreignID),
-		"foreign filter must survive the dispatcher rebuild swap")
-	assert.True(t, hasFilterNamed(filters, "tc_dispatcher"),
-		"bpfman's dispatcher filter must remain after the swap")
+	assert.True(t, hasFilterWithProgID(filters, foreignID), "foreign filter must survive the dispatcher rebuild swap")
+	assert.True(t, hasFilterNamed(filters, "tc_dispatcher"), "bpfman's dispatcher filter must remain after the swap")
 }

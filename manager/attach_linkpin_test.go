@@ -55,10 +55,8 @@ func requireNumericLinkPin(t *testing.T, fix *testFixture, link bpfman.Link) {
 	t.Helper()
 	require.NotNil(t, link.Record.PinPath, "attached link should record a pin path")
 	pin := link.Record.PinPath.String()
-	assert.Equal(t, fix.Layout.BPFFS().Links(), filepath.Dir(pin),
-		"link pin should live directly in the flat links dir")
-	assert.Equal(t, strconv.FormatUint(uint64(link.Record.ID), 10), filepath.Base(pin),
-		"link pin name should be the decimal bpfman link id")
+	assert.Equal(t, fix.Layout.BPFFS().Links(), filepath.Dir(pin), "link pin should live directly in the flat links dir")
+	assert.Equal(t, strconv.FormatUint(uint64(link.Record.ID), 10), filepath.Base(pin), "link pin name should be the decimal bpfman link id")
 }
 
 func TestAttach_LinkPinPathIsNumericLinkID(t *testing.T) {
@@ -137,10 +135,8 @@ func TestAttach_DistinctLinksGetDistinctNumericPins(t *testing.T) {
 		links = append(links, link)
 	}
 
-	assert.Less(t, links[0].Record.ID, links[1].Record.ID,
-		"link ids should be allocated in increasing order")
-	assert.NotEqual(t, links[0].Record.PinPath.String(), links[1].Record.PinPath.String(),
-		"each link should get its own pin")
+	assert.Less(t, links[0].Record.ID, links[1].Record.ID, "link ids should be allocated in increasing order")
+	assert.NotEqual(t, links[0].Record.PinPath.String(), links[1].Record.PinPath.String(), "each link should get its own pin")
 	for _, l := range links {
 		requireNumericLinkPin(t, fix, l)
 	}
@@ -232,8 +228,7 @@ func TestAttach_DetachRemovesNumericPinRow(t *testing.T) {
 	require.Error(t, err, "detached link should be gone from the store")
 
 	second := attachUprobe(t, fix, "uprobe_prog2", "free")
-	assert.Greater(t, second.Record.ID, first.Record.ID,
-		"link ids must not be reused after delete")
+	assert.Greater(t, second.Record.ID, first.Record.ID, "link ids must not be reused after delete")
 	requireNumericLinkPin(t, fix, second)
 	if base := filepath.Base(second.Record.PinPath.String()); strings.Contains(base, ".") {
 		t.Fatalf("pin name %q contains a dot", base)

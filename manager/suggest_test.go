@@ -88,8 +88,7 @@ func TestLevenshtein_TriangleInequality(t *testing.T) {
 				ac := levenshtein(a, c)
 				ab := levenshtein(a, b)
 				bc := levenshtein(b, c)
-				assert.LessOrEqual(t, ac, ab+bc,
-					"triangle inequality broken for %q, %q, %q: %d > %d + %d", a, b, c, ac, ab, bc)
+				assert.LessOrEqual(t, ac, ab+bc, "triangle inequality broken for %q, %q, %q: %d > %d + %d", a, b, c, ac, ab, bc)
 			}
 		}
 	}
@@ -291,8 +290,7 @@ func TestNearestTracepoints(t *testing.T) {
 		got := nearestTracepoints("sched/sched", candidates, 3)
 		require.NotEmpty(t, got)
 		for _, s := range got {
-			assert.True(t, strings.HasPrefix(s, "sched/sched_"),
-				"expected only sched/sched_* entries, got %q", s)
+			assert.True(t, strings.HasPrefix(s, "sched/sched_"), "expected only sched/sched_* entries, got %q", s)
 		}
 	})
 
@@ -305,8 +303,7 @@ func TestNearestTracepoints(t *testing.T) {
 		got := nearestTracepoints("foo/sched", candidates, 3)
 		require.NotEmpty(t, got)
 		for _, s := range got {
-			assert.True(t, strings.HasPrefix(s, "sched/sched_"),
-				"expected only sched/sched_* entries, got %q", s)
+			assert.True(t, strings.HasPrefix(s, "sched/sched_"), "expected only sched/sched_* entries, got %q", s)
 		}
 	})
 

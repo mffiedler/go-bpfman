@@ -20,10 +20,12 @@ func programIDMapper() kong.MapperFunc {
 		if err := ctx.Scan.PopValueInto("program-id", &s); err != nil {
 			return err
 		}
+
 		id, err := args.ParseProgramID(s)
 		if err != nil {
 			return err
 		}
+
 		target.Set(reflect.ValueOf(id))
 		return nil
 	}
@@ -36,10 +38,12 @@ func linkIDMapper() kong.MapperFunc {
 		if err := ctx.Scan.PopValueInto("link-id", &s); err != nil {
 			return err
 		}
+
 		id, err := args.ParseLinkID(s)
 		if err != nil {
 			return err
 		}
+
 		target.Set(reflect.ValueOf(id))
 		return nil
 	}
@@ -52,10 +56,12 @@ func keyValueMapper() kong.MapperFunc {
 		if err := ctx.Scan.PopValueInto("key=value", &s); err != nil {
 			return err
 		}
+
 		kv, err := args.ParseKeyValue(s)
 		if err != nil {
 			return err
 		}
+
 		target.Set(reflect.ValueOf(kv))
 		return nil
 	}
@@ -68,10 +74,12 @@ func globalDataMapper() kong.MapperFunc {
 		if err := ctx.Scan.PopValueInto("name=hex", &s); err != nil {
 			return err
 		}
+
 		gd, err := args.ParseGlobalData(s)
 		if err != nil {
 			return err
 		}
+
 		target.Set(reflect.ValueOf(gd))
 		return nil
 	}
@@ -84,10 +92,12 @@ func objectPathMapper() kong.MapperFunc {
 		if err := ctx.Scan.PopValueInto("path", &s); err != nil {
 			return err
 		}
+
 		op, err := args.ParseObjectPath(s)
 		if err != nil {
 			return err
 		}
+
 		target.Set(reflect.ValueOf(op))
 		return nil
 	}
@@ -100,10 +110,12 @@ func programSpecMapper() kong.MapperFunc {
 		if err := ctx.Scan.PopValueInto("type:name", &s); err != nil {
 			return err
 		}
+
 		ps, err := args.ParseProgramSpec(s)
 		if err != nil {
 			return err
 		}
+
 		target.Set(reflect.ValueOf(ps))
 		return nil
 	}
@@ -116,10 +128,12 @@ func programTypeMapper() kong.MapperFunc {
 		if err := ctx.Scan.PopValueInto("program-type", &s); err != nil {
 			return err
 		}
+
 		pt, err := bpfman.ParseProgramType(strings.ToLower(strings.TrimSpace(s)))
 		if err != nil {
 			return err
 		}
+
 		target.Set(reflect.ValueOf(pt))
 		return nil
 	}
@@ -132,10 +146,12 @@ func linkKindMapper() kong.MapperFunc {
 		if err := ctx.Scan.PopValueInto("link-kind", &s); err != nil {
 			return err
 		}
+
 		kind, err := bpfman.ParseLinkKind(strings.ToLower(strings.TrimSpace(s)))
 		if err != nil {
 			return err
 		}
+
 		target.Set(reflect.ValueOf(kind))
 		return nil
 	}
@@ -148,10 +164,12 @@ func dispatcherTypeMapper() kong.MapperFunc {
 		if err := ctx.Scan.PopValueInto("dispatcher-type", &s); err != nil {
 			return err
 		}
+
 		typ, err := dispatcher.ParseDispatcherType(strings.ToLower(strings.TrimSpace(s)))
 		if err != nil {
 			return err
 		}
+
 		target.Set(reflect.ValueOf(typ))
 		return nil
 	}
@@ -164,10 +182,12 @@ func tracepointMapper() kong.MapperFunc {
 		if err := ctx.Scan.PopValueInto("group/name", &s); err != nil {
 			return err
 		}
+
 		tp, err := bpfman.ParseTracepoint(s)
 		if err != nil {
 			return err
 		}
+
 		target.Set(reflect.ValueOf(tp))
 		return nil
 	}
@@ -180,10 +200,12 @@ func tcDirectionMapper() kong.MapperFunc {
 		if err := ctx.Scan.PopValueInto("direction", &s); err != nil {
 			return err
 		}
+
 		dir, err := bpfman.ParseTCDirection(s)
 		if err != nil {
 			return err
 		}
+
 		target.Set(reflect.ValueOf(dir))
 		return nil
 	}
@@ -196,10 +218,12 @@ func xdpActionMapper() kong.MapperFunc {
 		if err := ctx.Scan.PopValueInto("xdp-action", &s); err != nil {
 			return err
 		}
+
 		action, err := bpfman.ParseXDPAction(s)
 		if err != nil {
 			return err
 		}
+
 		target.Set(reflect.ValueOf(action))
 		return nil
 	}
@@ -212,10 +236,12 @@ func tcActionMapper() kong.MapperFunc {
 		if err := ctx.Scan.PopValueInto("tc-action", &s); err != nil {
 			return err
 		}
+
 		action, err := bpfman.ParseTCAction(s)
 		if err != nil {
 			return err
 		}
+
 		target.Set(reflect.ValueOf(action))
 		return nil
 	}
@@ -228,10 +254,12 @@ func imagePullPolicyMapper() kong.MapperFunc {
 		if err := ctx.Scan.PopValueInto("policy", &s); err != nil {
 			return err
 		}
+
 		pp, err := bpfman.ParseImagePullPolicy(s)
 		if err != nil {
 			return err
 		}
+
 		target.Set(reflect.ValueOf(pp))
 		return nil
 	}
@@ -244,6 +272,7 @@ func outputValueMapper() kong.MapperFunc {
 		if err := ctx.Scan.PopValueInto("format", &s); err != nil {
 			return err
 		}
+
 		current := target.Interface().(cliformat.OutputValue)
 		if current.IsSet {
 			return fmt.Errorf("only one output format may be specified")

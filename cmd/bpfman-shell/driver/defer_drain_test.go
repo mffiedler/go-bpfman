@@ -81,6 +81,5 @@ func TestCancelledRun_DeferDrainIsBounded(t *testing.T) {
 	elapsed := time.Since(start)
 
 	require.Error(t, err)
-	require.Less(t, elapsed, 5*time.Second,
-		"a blocking defer must be cut off by the drain budget, not waited out")
+	require.Less(t, elapsed, 5*time.Second, "a blocking defer must be cut off by the drain budget, not waited out")
 }

@@ -114,10 +114,12 @@ func parseLetRHSExprForFormat(t *testing.T, src string) Expr {
 	if err != nil {
 		t.Fatalf("parse expression %q: %v", src, err)
 	}
+
 	let, ok := prog.Stmts[0].(*LetStmt)
 	if !ok {
 		t.Fatalf("statement = %T, want *LetStmt", prog.Stmts[0])
 	}
+
 	return let.RHS
 }
 
@@ -147,6 +149,7 @@ func TestFormatExprSource_MatchesRoundTripsThroughParser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tokenise reformatted source %q: %v", src, err)
 	}
+
 	if _, err := Parse(tokens); err != nil {
 		t.Fatalf("reparse reformatted source %q: %v", src, err)
 	}
@@ -171,9 +174,11 @@ func TestFormatExprSource_CompoundPureCallArgsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tokenise reformatted source %q: %v", src, err)
 	}
+
 	if _, err := Parse(tokens); err != nil {
 		t.Fatalf("reparse reformatted source %q: %v", src, err)
 	}
+
 	if want := `jq "." ($x + 1)`; FormatExprSource(expr) != want {
 		t.Fatalf("FormatExprSource() = %q, want %q", FormatExprSource(expr), want)
 	}
@@ -192,6 +197,7 @@ func TestFormatExprSource_QuotedDollarRoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tokenise reformatted quoted literal %q: %v", got, err)
 	}
+
 	if len(tokens) != 1 || tokens[0].Kind != TokenQuoted || tokens[0].Text != expr.Text {
 		t.Fatalf("tokenised literal = %#v, want one quoted token with text %q", tokens, expr.Text)
 	}
@@ -215,6 +221,7 @@ func TestFormatExprSource_IndexedVarRefRoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tokenise reformatted source %q: %v", src, err)
 	}
+
 	if _, err := Parse(tokens); err != nil {
 		t.Fatalf("parse reformatted source %q: %v", src, err)
 	}

@@ -24,6 +24,7 @@ func (s *Server) PullBytecode(ctx context.Context, req *pb.PullBytecodeRequest) 
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid pull policy: %v", err)
 	}
+
 	ref := platform.ImageRef{URL: req.Image.Url, PullPolicy: pullPolicy, Auth: protoImageAuth(req.Image)}
 
 	_, err = s.mgr.PullBytecode(ctx, ref)

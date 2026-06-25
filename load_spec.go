@@ -263,6 +263,7 @@ func (s *LoadSpec) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &js); err != nil {
 		return err
 	}
+
 	s.objectPath = js.ObjectPath
 	s.programName = js.ProgramName
 	s.programType = js.ProgramType

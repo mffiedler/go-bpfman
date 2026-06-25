@@ -116,6 +116,7 @@ func TestBPFManScripts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("glob %s: %v", absSub, err)
 	}
+
 	if len(matches) == 0 {
 		t.Fatalf("no .bpfman scripts found under %s/", absSub)
 	}
@@ -205,6 +206,7 @@ func TestBPFManScripts(t *testing.T) {
 				if err := emitScriptTimelineMarker("script_start", t.Name()); err != nil {
 					t.Fatalf("write script timeline start marker: %v", err)
 				}
+
 				defer func() {
 					if err := emitScriptTimelineMarker("script_end", t.Name()); err != nil {
 						t.Errorf("write script timeline end marker: %v", err)
@@ -293,6 +295,7 @@ func emitScriptTimelineMarker(action, testName string) error {
 	if err != nil {
 		return err
 	}
+
 	defer func() { _ = f.Close() }()
 
 	if err := json.NewEncoder(f).Encode(scriptTimelineMarker{
@@ -303,6 +306,7 @@ func emitScriptTimelineMarker(action, testName string) error {
 	}); err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -315,6 +319,7 @@ func scriptTimeout() time.Duration {
 	if err != nil || d <= 0 {
 		return bpfmanShellTimeoutDefault
 	}
+
 	return d
 }
 
@@ -327,6 +332,7 @@ func scriptRepeats() int {
 	if err != nil || n < 1 {
 		return bpfmanShellRepeatsDefault
 	}
+
 	return n
 }
 
@@ -340,6 +346,7 @@ func readScriptMetadata(path string) scriptMetadata {
 	if err != nil {
 		return scriptMetadata{err: err}
 	}
+
 	return scriptMetadata{mode: mode}
 }
 
@@ -349,10 +356,12 @@ func scriptLabelSelector(t *testing.T) k8slabels.Selector {
 	if !ok {
 		raw = bpfmanShellSelectorDefaultRaw
 	}
+
 	selector, err := k8slabels.Parse(raw)
 	if err != nil {
 		t.Fatalf("parse %s=%q: %v", bpfmanShellSelectorEnv, raw, err)
 	}
+
 	return selector
 }
 

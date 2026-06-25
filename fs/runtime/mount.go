@@ -157,6 +157,7 @@ func EnsureMountedWith(mountInfoPath, mountPoint string, mountFn func(string) er
 	if err != nil {
 		return err
 	}
+
 	if mounted {
 		return nil
 	}

@@ -201,9 +201,7 @@ func dumpInstr(b *strings.Builder, i Instr, labels map[*BasicBlock]string, ctx d
 	case *Fail:
 		fmt.Fprintf(b, "Fail msg=%q", v.Msg)
 	case *BeginPoll:
-		fmt.Fprintf(b, "BeginPoll timeout=%s every=%s attempt=%s timeout=%s success=%s",
-			v.Timeout, v.Every,
-			labels[v.Attempt], labels[v.OnTimeout], labels[v.OnSuccess])
+		fmt.Fprintf(b, "BeginPoll timeout=%s every=%s attempt=%s timeout=%s success=%s", v.Timeout, v.Every, labels[v.Attempt], labels[v.OnTimeout], labels[v.OnSuccess])
 	case *RetryPoll:
 		if v.Message != nil {
 			fmt.Fprintf(b, "RetryPoll message=t%d", *v.Message)
@@ -217,9 +215,7 @@ func dumpInstr(b *strings.Builder, i Instr, labels map[*BasicBlock]string, ctx d
 		}
 		fmt.Fprintf(b, "%s %s", verb, dumpAssertClause(v.Clause))
 	case *ForEach:
-		fmt.Fprintf(b, "ForEach list=t%d names=[%s] body=%s exit=%s",
-			v.List, strings.Join(v.Names, " "),
-			labels[v.Body], labels[v.Exit])
+		fmt.Fprintf(b, "ForEach list=t%d names=[%s] body=%s exit=%s", v.List, strings.Join(v.Names, " "), labels[v.Body], labels[v.Exit])
 	case *ForEachContinue:
 		b.WriteString("ForEachContinue")
 	case *ForEachCollect:
@@ -227,16 +223,13 @@ func dumpInstr(b *strings.Builder, i Instr, labels map[*BasicBlock]string, ctx d
 		if target == "" {
 			target = "_"
 		}
-		fmt.Fprintf(b, "ForEachCollect list=t%d names=[%s] target=%s guard=%t body=%s exit=%s",
-			v.List, strings.Join(v.Names, " "), target, v.Guard,
-			labels[v.Body], labels[v.Exit])
+		fmt.Fprintf(b, "ForEachCollect list=t%d names=[%s] target=%s guard=%t body=%s exit=%s", v.List, strings.Join(v.Names, " "), target, v.Guard, labels[v.Body], labels[v.Exit])
 	case *CollectProduce:
 		fmt.Fprintf(b, "CollectProduce t%d", v.Result)
 	case *ExitLoop:
 		b.WriteString("ExitLoop")
 	case *RegisterDef:
-		fmt.Fprintf(b, "RegisterDef name=%s params=[%s]",
-			v.Def.Name, ParamList(v.Def.Params))
+		fmt.Fprintf(b, "RegisterDef name=%s params=[%s]", v.Def.Name, ParamList(v.Def.Params))
 	default:
 		fmt.Fprintf(b, "<unknown %T>", i)
 	}

@@ -20,9 +20,7 @@ func TestSortRebuildSlots_ByPriority(t *testing.T) {
 		{ProgramName: "mid", Priority: 50},
 	}
 	sortRebuildSlots(slots)
-	assert.Equal(t,
-		[]string{"low", "mid", "high"},
-		[]string{slots[0].ProgramName, slots[1].ProgramName, slots[2].ProgramName})
+	assert.Equal(t, []string{"low", "mid", "high"}, []string{slots[0].ProgramName, slots[1].ProgramName, slots[2].ProgramName})
 }
 
 func TestSortRebuildSlots_ZeroPrioritySortsFirst(t *testing.T) {
@@ -34,9 +32,7 @@ func TestSortRebuildSlots_ZeroPrioritySortsFirst(t *testing.T) {
 		{ProgramName: "high", Priority: 75},
 	}
 	sortRebuildSlots(slots)
-	assert.Equal(t,
-		[]string{"zero", "mid", "high"},
-		[]string{slots[0].ProgramName, slots[1].ProgramName, slots[2].ProgramName})
+	assert.Equal(t, []string{"zero", "mid", "high"}, []string{slots[0].ProgramName, slots[1].ProgramName, slots[2].ProgramName})
 }
 
 func TestSortRebuildSlots_NameTiebreakAtEqualPriority(t *testing.T) {
@@ -48,7 +44,5 @@ func TestSortRebuildSlots_NameTiebreakAtEqualPriority(t *testing.T) {
 		{ProgramName: "bravo", Priority: 50},
 	}
 	sortRebuildSlots(slots)
-	assert.Equal(t,
-		[]string{"alpha", "bravo", "charlie"},
-		[]string{slots[0].ProgramName, slots[1].ProgramName, slots[2].ProgramName})
+	assert.Equal(t, []string{"alpha", "bravo", "charlie"}, []string{slots[0].ProgramName, slots[1].ProgramName, slots[2].ProgramName})
 }

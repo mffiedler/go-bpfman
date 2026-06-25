@@ -70,6 +70,7 @@ func acquireKfuncSlot(req kfuncAcquireRequest) (*runtime.Kfunc, *kfuncLease, err
 	if err != nil {
 		return nil, nil, err
 	}
+
 	slices.SortStableFunc(cands, func(a, b kfuncCandidate) int {
 		return a.sortKey.Compare(b.sortKey)
 	})
@@ -80,6 +81,7 @@ func acquireKfuncSlot(req kfuncAcquireRequest) (*runtime.Kfunc, *kfuncLease, err
 		if err != nil {
 			return nil, nil, fmt.Errorf("kfunc pool: open %s: %w", path, err)
 		}
+
 		if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 			f.Close()
 			if errors.Is(err, syscall.EWOULDBLOCK) {
@@ -93,6 +95,7 @@ func acquireKfuncSlot(req kfuncAcquireRequest) (*runtime.Kfunc, *kfuncLease, err
 			f.Close()
 			return nil, nil, err
 		}
+
 		now := time.Now().UTC()
 		fresh := kfuncProvenance{
 			Origin:     req.origin,
@@ -126,11 +129,13 @@ func releaseKfuncSlot(lease *kfuncLease, kf *runtime.Kfunc) error {
 	if prev, err := readKfuncProvenanceFromFile(lease.lockFile); err == nil {
 		final.AcquiredAt = prev.AcquiredAt
 	}
+
 	if err := writeKfuncProvenance(lease.lockFile, final); err != nil {
 		lease.lockFile.Close()
 		lease.lockFile = nil
 		return fmt.Errorf("kfunc pool: write final provenance: %w", err)
 	}
+
 	err := lease.lockFile.Close()
 	lease.lockFile = nil
 	if err != nil {
@@ -176,6 +181,7 @@ func scanKfuncSlots(root string) ([]kfuncCandidate, error) {
 		if err != nil {
 			return nil, fmt.Errorf("kfunc pool: stat %s: %w", path, err)
 		}
+
 		prev, _ := readKfuncProvenance(path)
 		key := time.Time{}
 		if prev.ReleasedAt != "" {
@@ -219,6 +225,7 @@ func readKfuncProvenance(path string) (kfuncProvenance, error) {
 	if err != nil {
 		return kfuncProvenance{}, fmt.Errorf("kfunc pool: read %s: %w", path, err)
 	}
+
 	var p kfuncProvenance
 	if len(body) > 0 {
 		_ = json.Unmarshal(body, &p)
@@ -230,10 +237,12 @@ func readKfuncProvenanceFromFile(f *os.File) (kfuncProvenance, error) {
 	if _, err := f.Seek(0, 0); err != nil {
 		return kfuncProvenance{}, err
 	}
+
 	body, err := readAll(f)
 	if err != nil {
 		return kfuncProvenance{}, err
 	}
+
 	var p kfuncProvenance
 	if len(body) > 0 {
 		_ = json.Unmarshal(body, &p)
@@ -245,9 +254,11 @@ func writeKfuncProvenance(f *os.File, p kfuncProvenance) error {
 	if err := f.Truncate(0); err != nil {
 		return err
 	}
+
 	if _, err := f.Seek(0, 0); err != nil {
 		return err
 	}
+
 	enc := json.NewEncoder(f)
 	return enc.Encode(p)
 }

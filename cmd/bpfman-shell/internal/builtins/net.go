@@ -718,6 +718,7 @@ func NetExecEnvelope(ctx context.Context, args []runtime.Arg) (runtime.Envelope,
 	if err != nil {
 		return runtime.Envelope{}, fmt.Errorf("net exec: %w", err)
 	}
+
 	prefix := []runtime.Arg{
 		runtime.WordArg{Text: "ip"},
 		runtime.WordArg{Text: "netns"},
@@ -751,10 +752,12 @@ func handleNetStart(ctx context.Context, env *runtime.Env, origin string, args [
 	if err != nil {
 		return runtime.Value{}, fmt.Errorf("net start: %w", err)
 	}
+
 	tempFiles, resolved, err := resolveAdapterArgs("net start", args[1:])
 	if err != nil {
 		return runtime.Value{}, err
 	}
+
 	argv := append([]string{"ip", "netns", "exec", nsName}, driver.ArgTexts(resolved)...)
 	job, err := spawnJob(ctx, env, spawnSpec{
 		Argv:      argv,

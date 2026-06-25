@@ -81,6 +81,7 @@ func executeLoadFileResult(ctx context.Context, cli *runtime.CLI, mgr *manager.M
 	if loadErr != nil {
 		return loadFileResult{}, fmt.Errorf("failed to load programs: %w", loadErr)
 	}
+
 	return loadFileResult{Programs: loaded}, nil
 }
 

@@ -39,6 +39,7 @@ func acquireSuiteLock() {
 		fmt.Fprintf(os.Stderr, "scriptrunner: open suite lock %s: %v\n", e2eSuiteLockPath, err)
 		os.Exit(1)
 	}
+
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		fmt.Fprintf(os.Stderr,
 			"scriptrunner: another bpfman e2e test binary holds %s -- refusing to start.\n"+
@@ -48,6 +49,7 @@ func acquireSuiteLock() {
 		f.Close()
 		os.Exit(1)
 	}
+
 	suiteLock = f
 }
 
@@ -74,6 +76,7 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "scriptrunner: configure script environment: %v\n", err)
 		os.Exit(1)
 	}
+
 	rc := m.Run()
 	if closeSharedRegistry != nil {
 		closeSharedRegistry()
@@ -87,6 +90,7 @@ func configureScriptEnvironment() error {
 		if err != nil {
 			return err
 		}
+
 		closeSharedRegistry = closeFn
 		if err := os.Setenv(registryfixture.RegistryEnv, host); err != nil {
 			closeFn()

@@ -129,6 +129,7 @@ func TestExec_ThreadAndPureCall(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Lower: %v", err)
 		}
+
 		if err := Exec(lp, env); err != nil {
 			t.Fatalf("Exec: %v", err)
 		}
@@ -356,10 +357,12 @@ func TestExec_BindCollectGuardFailureArgs(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected guard failure")
 	}
+
 	var gf *GuardFailure
 	if !errors.As(err, &gf) {
 		t.Fatalf("expected GuardFailure, got %T", err)
 	}
+
 	args := renderArgv(gf.Args)
 	if !strings.HasPrefix(args, "probe ") {
 		t.Fatalf("guard args lost the producer head: %q", args)
@@ -462,8 +465,7 @@ func TestExec_DeferFailuresAcrossScopes(t *testing.T) {
 	schedule := map[string]int{"probe_a": 1, "probe_b": 1}
 	env := runScriptWithSchedule(t, src, schedule)
 	if env.Session.DeferFailures() != 2 {
-		t.Errorf("expected 2 defer failures (program + def), got %d",
-			env.Session.DeferFailures())
+		t.Errorf("expected 2 defer failures (program + def), got %d", env.Session.DeferFailures())
 	}
 }
 
@@ -512,6 +514,7 @@ func runForBindings(t *testing.T, src string) *Env {
 		if err != nil {
 			return err
 		}
+
 		pass, err := AsBool(v)
 		if err != nil {
 			return err
@@ -535,6 +538,7 @@ func runForBindings(t *testing.T, src string) *Env {
 	if err != nil {
 		t.Fatalf("Lower: %v", err)
 	}
+
 	if err := Exec(lp, env); err != nil {
 		t.Fatalf("Exec: %v", err)
 	}
@@ -568,6 +572,7 @@ func runScriptWithSchedule(t *testing.T, src string, schedule map[string]int) *E
 	if err != nil {
 		t.Fatalf("Lower: %v", err)
 	}
+
 	if err := Exec(lp, env); err != nil {
 		t.Fatalf("Exec: %v", err)
 	}
@@ -592,6 +597,7 @@ func runScriptError(t *testing.T, src string, schedule map[string]int) error {
 				if err != nil {
 					return err
 				}
+
 				pass, err := AsBool(val)
 				if err != nil {
 					return err
@@ -668,6 +674,7 @@ func runAssertCounted(t *testing.T, src string) (int, []execCall) {
 	if err != nil {
 		t.Fatalf("Lower: %v", err)
 	}
+
 	if err := Exec(lp, env); err != nil {
 		t.Fatalf("Exec: %v", err)
 	}
@@ -683,6 +690,7 @@ func runOnLowered(t *testing.T, src string) []execCall {
 	if err != nil {
 		t.Fatalf("Lower: %v", err)
 	}
+
 	env, calls := recordingEnv(t)
 	if err := Exec(lp, env); err != nil {
 		t.Fatalf("Exec: %v", err)
@@ -750,9 +758,11 @@ func TestExecInScope_PreservesInheritedDeferScope(t *testing.T) {
 			if lowErr != nil {
 				return lowErr
 			}
+
 			if execErr := execInScope(lp, env); execErr != nil {
 				return execErr
 			}
+
 			if env.defers == nil {
 				t.Fatalf("after execInScope(%q): env.defers was cleared; caller's scope lost", src)
 			}
@@ -811,9 +821,11 @@ func TestExecInScope_DefCallPreservesOuterDeferScope(t *testing.T) {
 		if lowErr != nil {
 			return lowErr
 		}
+
 		if execErr := execInScope(lp, env); execErr != nil {
 			return execErr
 		}
+
 		if env.defers == nil {
 			t.Fatalf("after execInScope: env.defers cleared; caller's scope lost")
 		}

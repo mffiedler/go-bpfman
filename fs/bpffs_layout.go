@@ -248,6 +248,7 @@ func (b BPFFS) SafeRemove(path string) error {
 	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 		return ErrOutsideLayout{Parent: cleanParent, Target: cleanPath}
 	}
+
 	if err := os.Remove(cleanPath); err != nil && !os.IsNotExist(err) {
 		return &PathError{Op: "remove", Path: cleanPath, Err: err}
 	}

@@ -74,8 +74,5 @@ let got = "hello" |> bad
 `
 	err := runScriptError(t, src, map[string]int{"fail-command": 1})
 	require.Error(t, err, "guard failure inside the def must escape the thread expression")
-	assert.True(t,
-		strings.Contains(err.Error(), "fail-command") ||
-			strings.Contains(strings.ToLower(err.Error()), "guard"),
-		"error must mention the failing command or guard, got %q", err.Error())
+	assert.True(t, strings.Contains(err.Error(), "fail-command") || strings.Contains(strings.ToLower(err.Error()), "guard"), "error must mention the failing command or guard, got %q", err.Error())
 }

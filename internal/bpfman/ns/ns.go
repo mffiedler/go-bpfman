@@ -118,9 +118,7 @@ func CommandWithOptions(containerPid int32, name string, opts CommandOptions, ar
 		if _, err := os.Stat(nsPath); err != nil {
 			altPath := fmt.Sprintf("/host/proc/%d/ns/mnt", containerPid)
 			if _, err := os.Stat(altPath); err == nil {
-				logger.Debug("using /host/proc namespace path",
-					"original", nsPath,
-					"actual", altPath)
+				logger.Debug("using /host/proc namespace path", "original", nsPath, "actual", altPath)
 				nsPath = altPath
 			}
 		}
@@ -142,13 +140,7 @@ func CommandWithOptions(containerPid int32, name string, opts CommandOptions, ar
 		}
 	}
 
-	logger.Debug("creating namespace command",
-		"container_pid", containerPid,
-		"ns_path", nsPath,
-		"target_ns_inode", nsInode,
-		"current_ns_inode", currentNsInode,
-		"executable", name,
-		"args", args)
+	logger.Debug("creating namespace command", "container_pid", containerPid, "ns_path", nsPath, "target_ns_inode", nsInode, "current_ns_inode", currentNsInode, "executable", name, "args", args)
 
 	cmd := exec.Command(name, args...)
 
@@ -171,8 +163,7 @@ func CommandWithOptions(containerPid int32, name string, opts CommandOptions, ar
 	// Pass any extra files (they become fd 3, 4, 5, ...)
 	if len(opts.ExtraFiles) > 0 {
 		cmd.ExtraFiles = opts.ExtraFiles
-		logger.Debug("passing extra files to child",
-			"count", len(opts.ExtraFiles))
+		logger.Debug("passing extra files to child", "count", len(opts.ExtraFiles))
 	}
 
 	// Pass writer lock fd if provided.
@@ -188,14 +179,10 @@ func CommandWithOptions(containerPid int32, name string, opts CommandOptions, ar
 		}
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%d", envVar, lockFdInChild))
 
-		logger.Debug("passing writer lock fd to child",
-			"env_var", envVar,
-			"fd_in_child", lockFdInChild)
+		logger.Debug("passing writer lock fd to child", "env_var", envVar, "fd_in_child", lockFdInChild)
 	}
 
-	logger.Debug("command environment configured",
-		"MntNsEnvVar", nsPath,
-		"LogLevelEnvVar", logLevel)
+	logger.Debug("command environment configured", "MntNsEnvVar", nsPath, "LogLevelEnvVar", logLevel)
 
 	return cmd
 }
@@ -228,12 +215,7 @@ func CommandWithNsPathAndLogger(nsPath string, logger *slog.Logger, logLevel Log
 		}
 	}
 
-	logger.Debug("creating namespace command with explicit path",
-		"ns_path", nsPath,
-		"ns_inode", nsInode,
-		"executable", name,
-		"args", args,
-		"log_level", logLevel)
+	logger.Debug("creating namespace command with explicit path", "ns_path", nsPath, "ns_inode", nsInode, "executable", name, "args", args, "log_level", logLevel)
 
 	cmd := exec.Command(name, args...)
 	cmd.Env = append(os.Environ(),
@@ -250,6 +232,7 @@ func GetCurrentMntNsInode() (uint64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("stat /proc/self/ns/mnt: %w", err)
 	}
+
 	sys, ok := stat.Sys().(*syscall.Stat_t)
 	if !ok {
 		return 0, fmt.Errorf("unexpected stat type")

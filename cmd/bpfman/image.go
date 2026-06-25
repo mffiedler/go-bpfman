@@ -63,6 +63,7 @@ func (c *ImageBuildCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
 	return cli.PrintOutf("published: %s\n", published.PinnedReference)
 }
 
@@ -77,6 +78,7 @@ func (c *ImageGenerateBuildArgsCmd) Run(cli *runtime.CLI, ctx context.Context) e
 	if err != nil {
 		return err
 	}
+
 	return cli.PrintOut(output)
 }
 
@@ -86,10 +88,12 @@ func (c *ImageInspectCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
 	output, err := json.MarshalIndent(inspection, "", "  ")
 	if err != nil {
 		return err
 	}
+
 	return cli.PrintOut(string(output) + "\n")
 }
 
@@ -106,6 +110,7 @@ func planImageBuild(bytecode []string, ciliumProject string) (imagebuild.Plan, e
 	if err != nil {
 		return imagebuild.Plan{}, err
 	}
+
 	return imagebuild.Build(source, platformebpf.InspectBytecode)
 }
 
@@ -128,6 +133,7 @@ func positionalBytecodeSource(bytecode []string) (imagebuild.BytecodeSource, err
 		if err != nil {
 			return imagebuild.BytecodeSource{}, err
 		}
+
 		if ok {
 			if _, exists := seenPlatforms[input.Platform]; exists {
 				return imagebuild.BytecodeSource{}, fmt.Errorf("platform %s specified more than once", input.Platform)
@@ -236,9 +242,7 @@ func (c *ImageVerifyCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	// For verify command, always enable verification (that's the point)
 	cfg.Signing.VerifyEnabled = true
 
-	logger.Debug("signing configuration",
-		"allow_unsigned", cfg.Signing.AllowUnsigned,
-	)
+	logger.Debug("signing configuration", "allow_unsigned", cfg.Signing.AllowUnsigned)
 
 	verifier, err := verify.FromSigningConfig(cfg.Signing, logger)
 	if err != nil {

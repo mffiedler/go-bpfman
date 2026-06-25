@@ -130,10 +130,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 	// that recorded type), or a real type clash surfaces later as a
 	// cryptic verifier error instead of this clean one.
 	if secInferredType.Valid() && !declaredTypeMatchesSection(programType, secInferredType) {
-		return bpfman.LoadOutput{}, fmt.Errorf(
-			"program type mismatch: caller specified %s but ELF section %q implies %s; "+
-				"recompile the .bpf.o with the matching SEC or pass the matching ProgramType",
-			programType, progSpec.SectionName, secInferredType)
+		return bpfman.LoadOutput{}, fmt.Errorf("program type mismatch: caller specified %s but ELF section %q implies %s; "+"recompile the .bpf.o with the matching SEC or pass the matching ProgramType", programType, progSpec.SectionName, secInferredType)
 	}
 
 	// For fentry/fexit/lsm and other tracing programs that
@@ -167,6 +164,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 		if err != nil {
 			return bpfman.LoadOutput{}, fmt.Errorf("get test dispatcher for %s: %w", programType, err)
 		}
+
 		progSpec.Type = ebpf.Extension
 		progSpec.AttachTarget = testProg
 		progSpec.AttachTo = "prog0"
@@ -183,9 +181,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 		ownerMapsDir = bpffs.MapPinDir(mapOwnerID)
 		mapReplacements = make(map[string]*ebpf.Map)
 
-		k.logger.Debug("loading shared maps from owner program",
-			"map_owner_id", mapOwnerID,
-			"owner_maps_dir", ownerMapsDir)
+		k.logger.Debug("loading shared maps from owner program", "map_owner_id", mapOwnerID, "owner_maps_dir", ownerMapsDir)
 
 		// Load pinned maps from owner's directory.
 		// We iterate over collSpec.Maps to get the exact ELF map names.
@@ -203,6 +199,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 				}
 				return bpfman.LoadOutput{}, fmt.Errorf("load shared map %q from owner %d: %w", name, mapOwnerID, err)
 			}
+
 			mapReplacements[name] = m
 			k.logger.Debug("loaded shared map from owner", "name", name, "path", mapPath)
 		}
@@ -319,10 +316,12 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 	if err != nil {
 		return bpfman.LoadOutput{}, fmt.Errorf("failed to get program info: %w", err)
 	}
+
 	progID, ok := info.ID()
 	if !ok {
 		return bpfman.LoadOutput{}, fmt.Errorf("failed to get program ID from kernel")
 	}
+
 	programID := kernel.ProgramID(progID)
 
 	// Track pinned paths for rollback on failure.
@@ -350,10 +349,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 	if mapOwnerID != 0 {
 		// Use owner's maps directory - maps are already pinned there
 		mapsDir = ownerMapsDir
-		k.logger.Debug("using shared maps from owner",
-			"program_id", programID,
-			"map_owner_id", mapOwnerID,
-			"maps_dir", mapsDir)
+		k.logger.Debug("using shared maps from owner", "program_id", programID, "map_owner_id", mapOwnerID, "maps_dir", mapsDir)
 	} else {
 		// Create our own maps directory using bpffs convention
 		mapsDir = bpffs.MapPinDir(programID)
@@ -412,6 +408,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 		}
 		return bpfman.LoadOutput{}, fmt.Errorf("failed to get map IDs from kernel")
 	}
+
 	_ = ebpfMapIDs // MapIDs now accessed via kernel.Program
 
 	// Collect PinByName map names for reference counting.

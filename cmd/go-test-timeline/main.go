@@ -104,12 +104,14 @@ func main() {
 	if err != nil {
 		exitf("%v", err)
 	}
+
 	defer closeInput()
 
 	tl, err := parseTimeline(in, title)
 	if err != nil {
 		exitf("%v", err)
 	}
+
 	if markersPath != "" {
 		if err := applyMarkers(tl, markersPath); err != nil {
 			exitf("%v", err)
@@ -121,6 +123,7 @@ func main() {
 	if err != nil {
 		exitf("%v", err)
 	}
+
 	defer closeOutput()
 
 	if err := renderTrace(out, tl); err != nil {
@@ -171,6 +174,7 @@ func parseTimeline(r io.Reader, title string) (*timeline, error) {
 		if err != nil {
 			return nil, fmt.Errorf("decode test event: %w", err)
 		}
+
 		if ev.Test == "" {
 			continue
 		}
@@ -257,6 +261,7 @@ func applyMarkers(tl *timeline, path string) error {
 	if err != nil {
 		return fmt.Errorf("open markers %q: %w", path, err)
 	}
+
 	defer func() { _ = f.Close() }()
 
 	type markerPair struct {
@@ -274,6 +279,7 @@ func applyMarkers(tl *timeline, path string) error {
 		if err != nil {
 			return fmt.Errorf("decode marker event: %w", err)
 		}
+
 		if ev.Test == "" {
 			continue
 		}

@@ -12,6 +12,7 @@ func TestFromNameAndShortNameRoundTrip(t *testing.T) {
 		if !ok || sig != e.sig {
 			t.Errorf("FromName(%q) = (%v, %v), want (%v, true)", e.name, sig, ok, e.sig)
 		}
+
 		if got := ShortName(e.sig); got != e.name {
 			t.Errorf("ShortName(%v) = %q, want %q", e.sig, got, e.name)
 		}
@@ -26,6 +27,7 @@ func TestFromNameNormalisation(t *testing.T) {
 		if !ok || sig != syscall.SIGUSR1 {
 			t.Errorf("FromName(%q) = (%v, %v), want (SIGUSR1, true)", in, sig, ok)
 		}
+
 		if !KnownName(in) {
 			t.Errorf("KnownName(%q) = false, want true", in)
 		}
@@ -38,6 +40,7 @@ func TestUnknownName(t *testing.T) {
 		if sig, ok := FromName(in); ok {
 			t.Errorf("FromName(%q) = (%v, true), want not ok", in, sig)
 		}
+
 		if KnownName(in) {
 			t.Errorf("KnownName(%q) = true, want false", in)
 		}

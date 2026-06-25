@@ -28,6 +28,7 @@ func TestImageBuildBytecodeSourceAcceptsSinglePositional(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bytecodeSource returned error: %v", err)
 	}
+
 	plan, err := imagebuild.Build(source, func(path string, _ elf.Data) (imagebuild.Info, error) {
 		if path != "xdp_pass.bpf.o" {
 			t.Fatalf("path = %q, want xdp_pass.bpf.o", path)
@@ -37,6 +38,7 @@ func TestImageBuildBytecodeSourceAcceptsSinglePositional(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Build returned error: %v", err)
 	}
+
 	assertStringSliceEqual(t, plan.BuildArgs, []string{"BYTECODE_FILE=xdp_pass.bpf.o"})
 }
 
@@ -64,12 +66,14 @@ func TestBytecodeSourceAcceptsPlatformMappedInputs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bytecodeSource returned error: %v", err)
 	}
+
 	plan, err := imagebuild.Build(source, func(path string, _ elf.Data) (imagebuild.Info, error) {
 		return imagebuild.Info{}, nil
 	})
 	if err != nil {
 		t.Fatalf("Build returned error: %v", err)
 	}
+
 	assertStringSliceEqual(t, plan.Platforms, []string{"linux/amd64", "linux/s390x"})
 	assertStringSliceEqual(t, plan.BuildArgs, []string{
 		"BC_AMD64_EL=bpf_x86_bpfel.o",
@@ -151,6 +155,7 @@ func TestImageVerifyRegistryAuthReturnsCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatalf("registryAuthFromFlag returned error: %v", err)
 	}
+
 	if auth == nil {
 		t.Fatal("registryAuthFromFlag returned nil auth")
 	}

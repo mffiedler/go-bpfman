@@ -46,29 +46,35 @@ func scanLinkPins(ctx context.Context, scanner *fs.Scanner) (linkPinIndex, error
 			// the tree -- the snapshot is best-effort.
 			return nil
 		}
+
 		if d.IsDir() {
 			return nil
 		}
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+
 		lnk, lerr := link.LoadPinnedLink(path, nil)
 		if lerr != nil {
 			return nil
 		}
+
 		info, ierr := lnk.Info()
 		lnk.Close()
 		if ierr != nil {
 			return nil
 		}
+
 		id := kernel.LinkID(info.ID)
 		if _, seen := idx[id]; !seen {
 			idx[id] = path
 		}
+
 		return nil
 	})
 	if err != nil && !errors.Is(err, iofs.ErrNotExist) {
 		return idx, err
 	}
+
 	return idx, nil
 }

@@ -48,6 +48,7 @@ func (a *XDPAction) UnmarshalText(b []byte) error {
 	if err != nil {
 		return err
 	}
+
 	*a = parsed
 	return nil
 }
@@ -69,6 +70,7 @@ func ParseXDPActions(actions []string) ([]XDPAction, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		result = append(result, action)
 	}
 	return result, nil

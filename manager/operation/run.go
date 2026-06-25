@@ -78,8 +78,7 @@ func interpret(
 
 		case flavourTry:
 			if err := n.execFn(ctx, exec, bindings); err != nil {
-				logger.DebugContext(ctx, "try node failed (non-fatal)",
-					"label", n.label, "target", n.target, "error", err)
+				logger.DebugContext(ctx, "try node failed (non-fatal)", "label", n.label, "target", n.target, "error", err)
 			}
 			logger.DebugContext(ctx, "step", "label", n.label, "target", n.target, "ms", time.Since(stepStart).Milliseconds())
 		}
@@ -112,8 +111,7 @@ func executeRollback(
 	for i := len(undos) - 1; i >= 0; i-- {
 		for _, a := range undos[i] {
 			if err := exec.Execute(ctx, a); err != nil {
-				logger.Log(ctx, slog.LevelError, "rollback failed",
-					"action", a, "error", err)
+				logger.Log(ctx, slog.LevelError, "rollback failed", "action", a, "error", err)
 			}
 		}
 	}

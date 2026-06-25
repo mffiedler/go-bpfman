@@ -74,6 +74,7 @@ func (m *Manager) unload(ctx context.Context, record bpfman.ProgramRecord, links
 	if err != nil {
 		return fmt.Errorf("detach links for program %d: %w", programID, err)
 	}
+
 	if err := m.unloadKernelProgram(ctx, progPinPath); err != nil {
 		return fmt.Errorf("unload program %d: %w", programID, err)
 	}
@@ -157,12 +158,14 @@ func (m *Manager) gcMapSetIfUnused(ctx context.Context, mapSetID kernel.ProgramI
 	if err != nil {
 		return fmt.Errorf("count map set users for %d: %w", mapSetID, err)
 	}
+
 	if users > 0 {
 		return nil
 	}
 	if err := m.removeProgramMapsPins(ctx, mapsDir); err != nil {
 		return fmt.Errorf("remove map set pins %s: %w", mapsDir, err)
 	}
+
 	if err := m.store.DeleteMapSet(ctx, mapSetID); err != nil {
 		return fmt.Errorf("delete map set %d: %w", mapSetID, err)
 	}
@@ -195,6 +198,7 @@ func (m *Manager) detachAllLinks(ctx context.Context, links []bpfman.LinkRecord)
 		if err != nil {
 			return rebuiltDispatchers, fmt.Errorf("extract dispatcher key for link %d: %w", link.ID, err)
 		}
+
 		if dispType == (dispatcher.DispatcherType{}) {
 			continue
 		}
@@ -202,6 +206,7 @@ func (m *Manager) detachAllLinks(ctx context.Context, links []bpfman.LinkRecord)
 		if err := m.executor.Execute(ctx, action.RebuildDispatcherForDetach{Key: key, ExcludeLinkID: link.ID}); err != nil {
 			return rebuiltDispatchers, fmt.Errorf("rebuild dispatcher after detaching link %d: %w", link.ID, err)
 		}
+
 		rebuiltDispatchers[key] = struct{}{}
 	}
 	return rebuiltDispatchers, nil
@@ -238,6 +243,7 @@ func (m *Manager) cleanupSharedMapPins(ctx context.Context, programID kernel.Pro
 	}); err != nil {
 		return err
 	}
+
 	bpffs := m.rt.BPFFS()
 	for _, mapName := range orphaned {
 		path := bpffs.SharedMapPin(mapName)

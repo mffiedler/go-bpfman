@@ -205,6 +205,7 @@ func assertFormatProgramRoundTrip(t *testing.T, src string) {
 	if err != nil {
 		t.Fatalf("parse source: %v", err)
 	}
+
 	formatted := FormatProgramSource(prog)
 	if _, err := parseSource(t, formatted); err != nil {
 		t.Fatalf("reparse formatted source:\n%s\nerror: %v", formatted, err)

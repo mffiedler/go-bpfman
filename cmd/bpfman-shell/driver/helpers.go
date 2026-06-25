@@ -31,11 +31,13 @@ func WriteValue(cli *cli.CLI, v runtime.Value) error {
 		if err != nil {
 			return err
 		}
+
 		return cli.PrintOut(s + "\n")
 	}
 	b, err := json.MarshalIndent(v.Raw(), "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal value: %w", err)
 	}
+
 	return cli.PrintOut(string(b) + "\n")
 }

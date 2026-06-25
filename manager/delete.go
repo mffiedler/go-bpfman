@@ -43,6 +43,7 @@ func (m *Manager) ResolveDeleteProgramIDs(ctx context.Context, all bool, explici
 	if err != nil {
 		return nil, fmt.Errorf("list programs: %w", err)
 	}
+
 	ids := make([]kernel.ProgramID, len(result))
 	for i, prog := range result {
 		ids[i] = prog.Record.ProgramID
@@ -65,6 +66,7 @@ func (m *Manager) DeletePrograms(ctx context.Context, writeLock lock.WriterScope
 		}
 		return results
 	}
+
 	batch := deleteBatch{
 		dependentsByOwner: dependentsByOwner,
 		removedPrograms:   make(map[kernel.ProgramID]bool, len(ids)),
@@ -94,6 +96,7 @@ func (m *Manager) DeleteLinks(ctx context.Context, writeLock lock.WriterScope, i
 		}
 		return results
 	}
+
 	batch := deleteBatch{
 		dependentsByOwner: dependentsByOwner,
 		removedPrograms:   make(map[kernel.ProgramID]bool),
@@ -132,6 +135,7 @@ func (m *Manager) deleteLink(ctx context.Context, writeLock lock.WriterScope, li
 	if err := m.Detach(ctx, writeLock, linkID); err != nil {
 		return deleteOutcome{}, fmt.Errorf("detach: %w", err)
 	}
+
 	batch.removedLinks[linkID] = true
 
 	links, err := m.ListLinksByProgram(ctx, programID)
@@ -185,6 +189,7 @@ func (m *Manager) deleteProgram(ctx context.Context, writeLock lock.WriterScope,
 		if err := m.Detach(ctx, writeLock, link.ID); err != nil {
 			return deleted, fmt.Errorf("detach link %d: %w", link.ID, err)
 		}
+
 		batch.removedLinks[link.ID] = true
 		deleted.links = append(deleted.links, link.ID)
 	}

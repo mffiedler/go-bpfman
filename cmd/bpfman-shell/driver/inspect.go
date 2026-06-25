@@ -42,6 +42,7 @@ func LoweredInput(r LineReader, out io.Writer, errOut io.Writer, file string) bo
 		if err != nil {
 			return err
 		}
+
 		return ir.Dump(out, lp)
 	})
 }
@@ -59,6 +60,7 @@ func SymbolsInput(r LineReader, out io.Writer, errOut io.Writer, file string) bo
 		fmt.Fprintf(errOut, "%s: %v\n", file, err)
 		return true
 	}
+
 	if strings.TrimSpace(src) == "" {
 		return false
 	}
@@ -73,6 +75,7 @@ func SymbolsInput(r LineReader, out io.Writer, errOut io.Writer, file string) bo
 	if parseErr != nil {
 		return reportErr(parseErr)
 	}
+
 	doc := localSymbolsDocument(file, prog)
 	if symbolsInputHasImportBase(file) {
 		doc = visibleSymbolsDocument(file, prog)
@@ -80,6 +83,7 @@ func SymbolsInput(r LineReader, out io.Writer, errOut io.Writer, file string) bo
 	if err := writeSymbolsJSON(out, doc); err != nil {
 		return reportErr(err)
 	}
+
 	return false
 }
 
@@ -93,11 +97,13 @@ func FormatInput(r LineReader, out io.Writer, errOut io.Writer, file string) boo
 	if hadIssue {
 		return true
 	}
+
 	_, err := io.WriteString(out, formatted)
 	if err != nil {
 		fmt.Fprintf(errOut, "%s: %v\n", file, err)
 		return true
 	}
+
 	return false
 }
 
@@ -109,6 +115,7 @@ func FormatInputString(r LineReader, errOut io.Writer, file string) (string, boo
 		fmt.Fprintf(errOut, "%s: %v\n", file, err)
 		return "", true
 	}
+
 	if strings.TrimSpace(src) == "" {
 		return "", false
 	}
@@ -121,22 +128,27 @@ func FormatInputString(r LineReader, errOut io.Writer, file string) (string, boo
 	if parseErr != nil {
 		return reportErr(parseErr)
 	}
+
 	originalLowered, err := loweredDump(prog)
 	if err != nil {
 		return reportErr(err)
 	}
+
 	formatted := syntax.FormatSource(src, prog)
 	formattedProg, parseErr := parseProgram(file, formatted)
 	if parseErr != nil {
 		return reportErr(parseErr)
 	}
+
 	formattedLowered, err := loweredDump(formattedProg)
 	if err != nil {
 		return reportErr(err)
 	}
+
 	if originalLowered != formattedLowered {
 		return reportErr(fmt.Errorf("internal formatter error: formatted source changed lowered form"))
 	}
+
 	return formatted, false
 }
 
@@ -145,10 +157,12 @@ func loweredDump(prog *syntax.Program) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	var out bytes.Buffer
 	if err := ir.Dump(&out, lp); err != nil {
 		return "", err
 	}
+
 	return out.String(), nil
 }
 
@@ -279,6 +293,7 @@ func symbolError(fallbackFile string, err error) symbolErrorObject {
 			Message: msg,
 		}
 	}
+
 	return symbolErrorObject{File: fallbackFile, Line: 1, Col: 1, Message: err.Error()}
 }
 
@@ -323,6 +338,7 @@ func renderWholeProgramInput(r LineReader, out io.Writer, errOut io.Writer, file
 		fmt.Fprintf(errOut, "%s: %v\n", file, err)
 		return true
 	}
+
 	if strings.TrimSpace(src) == "" {
 		return false
 	}
@@ -337,8 +353,10 @@ func renderWholeProgramInput(r LineReader, out io.Writer, errOut io.Writer, file
 	if parseErr != nil {
 		return reportErr(parseErr)
 	}
+
 	if renderErr := render(out, prog); renderErr != nil {
 		return reportErr(renderErr)
 	}
+
 	return false
 }

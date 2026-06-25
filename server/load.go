@@ -38,6 +38,7 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 		if err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid pull policy: %v", err)
 		}
+
 		ref := platform.ImageRef{URL: loc.Image.Url, PullPolicy: pullPolicy, Auth: protoImageAuth(loc.Image)}
 		source.Image = &ref
 	default:

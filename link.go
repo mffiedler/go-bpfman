@@ -504,6 +504,7 @@ func (r *LinkRecord) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &a); err != nil {
 		return err
 	}
+
 	r.ID = a.ID
 	r.ProgramID = a.ProgramID
 	r.KernelLinkID = a.KernelLinkID
@@ -528,9 +529,11 @@ func (r *LinkRecord) UnmarshalJSON(data []byte) error {
 	if target == nil {
 		return fmt.Errorf("LinkRecord.UnmarshalJSON: no LinkDetails type registered for kind %q", a.Kind)
 	}
+
 	if err := json.Unmarshal(a.Details, target); err != nil {
 		return fmt.Errorf("LinkRecord.UnmarshalJSON: decode %s details: %w", a.Kind, err)
 	}
+
 	r.Details = reflect.ValueOf(target).Elem().Interface().(LinkDetails)
 	return nil
 }

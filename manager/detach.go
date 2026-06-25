@@ -39,13 +39,13 @@ func (m *Manager) Detach(ctx context.Context, writeLock lock.WriterScope, linkID
 		if err != nil {
 			return fmt.Errorf("extract dispatcher key: %w", err)
 		}
+
 		if dispType != (dispatcher.DispatcherType{}) {
 			dispKey = &dispatcher.Key{Type: dispType, Nsid: nsid, Ifindex: ifindex}
 		}
 	}
 
-	m.logger.InfoContext(ctx, "detaching link",
-		"link_id", linkID, "kind", record.Kind, "pin_path", record.PinPath)
+	m.logger.InfoContext(ctx, "detaching link", "link_id", linkID, "kind", record.Kind, "pin_path", record.PinPath)
 
 	plan := m.detachPlan(record, dispKey)
 	if err := operation.Run0(ctx, m.logger, m.executor, plan); err != nil {
@@ -140,11 +140,7 @@ func collectDispatcherKeys(links []bpfman.LinkRecord) map[dispatcher.Key]struct{
 func (m *Manager) cleanupEmptyDispatchers(ctx context.Context, dispatchers map[dispatcher.Key]struct{}) {
 	for key := range dispatchers {
 		if err := m.executor.Execute(ctx, action.RemoveDispatcher{Key: key}); err != nil {
-			m.logger.WarnContext(ctx, "dispatcher cleanup failed",
-				"type", key.Type,
-				"nsid", key.Nsid,
-				"ifindex", key.Ifindex,
-				"error", err)
+			m.logger.WarnContext(ctx, "dispatcher cleanup failed", "type", key.Type, "nsid", key.Nsid, "ifindex", key.Ifindex, "error", err)
 		}
 	}
 }

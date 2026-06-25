@@ -17,6 +17,7 @@ func TestLower_empty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Lower: %v", err)
 	}
+
 	want := strings.Join([]string{
 		"body entry=bb0",
 		"",
@@ -42,6 +43,7 @@ func TestLower_command(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Lower: %v", err)
 	}
+
 	want := strings.Join([]string{
 		"body entry=bb0",
 		"",
@@ -67,6 +69,7 @@ func TestLower_let(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Lower: %v", err)
 	}
+
 	want := strings.Join([]string{
 		"body entry=bb0",
 		"",
@@ -93,6 +96,7 @@ func TestLower_bindNoGuard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Lower: %v", err)
 	}
+
 	want := strings.Join([]string{
 		"body entry=bb0",
 		"",
@@ -120,6 +124,7 @@ func TestLower_bindGuard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Lower: %v", err)
 	}
+
 	want := strings.Join([]string{
 		"body entry=bb0",
 		"",

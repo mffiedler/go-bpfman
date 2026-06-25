@@ -265,6 +265,7 @@ func callDefAsBind(def *defValue, args []Arg, callLoc source.Pos, env *Env) (Bin
 	if err != nil {
 		return BindResult{}, decorateDefError(err, def, callLoc)
 	}
+
 	rc := OkEnvelope()
 	if localDeferFailures > 0 {
 		rc = FailEnvelope()
@@ -283,8 +284,7 @@ func callDefAsBind(def *defValue, args []Arg, callLoc source.Pos, env *Env) (Bin
 // count, and any escaping runtime error.
 func runDefCall(def *defValue, args []Arg, callLoc source.Pos, env *Env) (Value, bool, int, error) {
 	if len(args) != len(def.Params) {
-		return Value{}, false, 0, syntax.LocErrorf(callLoc, "%s: expected %d argument(s), got %d (def declared at %d:%d)",
-			def.Name, len(def.Params), len(args), def.Pos.Line, def.Pos.Col)
+		return Value{}, false, 0, syntax.LocErrorf(callLoc, "%s: expected %d argument(s), got %d (def declared at %d:%d)", def.Name, len(def.Params), len(args), def.Pos.Line, def.Pos.Col)
 	}
 	// Catch runaway recursion before Go's stack does. The cap
 	// is far below Go's per-goroutine stack ceiling so the
@@ -322,10 +322,12 @@ func decorateDefError(err error, def *defValue, callLoc source.Pos) error {
 	if err == nil {
 		return err
 	}
+
 	var se *syntax.SyntaxError
 	if !errors.As(err, &se) {
 		return err
 	}
+
 	// Annotate the message with the def name plus the caller's
 	// line:col. An inner annotation -- recognised by the
 	// "in def " prefix -- leaves the message alone so the
@@ -526,6 +528,7 @@ func runDefers(env *Env, stack []deferEntry) int {
 			failures++
 			continue
 		}
+
 		// Flush the captured stdout/stderr through the driver
 		// before the failure-path branch decides whether to
 		// also render a labelled block: a successful defer's
@@ -948,6 +951,7 @@ func resolveVarRefValueParts(name, path string, span source.Span, env *Env) (Val
 	if !ok {
 		return Value{}, syntax.SpanErrorf(span, "undefined variable %q", name)
 	}
+
 	if path == "" {
 		return v, nil
 	}
@@ -955,6 +959,7 @@ func resolveVarRefValueParts(name, path string, span source.Span, env *Env) (Val
 	if err != nil {
 		return Value{}, err
 	}
+
 	lv, err := v.LookupValue(name, path)
 	if err != nil {
 		return Value{}, syntax.SpanErrorf(span, "%v", err)
@@ -967,12 +972,14 @@ func resolveVarRefArgParts(name, path string, span source.Span, env *Env) (Arg, 
 	if !ok {
 		return nil, syntax.SpanErrorf(span, "undefined variable: %s", name)
 	}
+
 	resolved := v
 	if path != "" {
 		path, err := resolveDynamicPath(path, env, span)
 		if err != nil {
 			return nil, err
 		}
+
 		// Soft lookup at the arg boundary: absent paths surface
 		// as MissingArg so the shape-test predicates
 		// (present / missing / strict null) can distinguish
@@ -983,6 +990,7 @@ func resolveVarRefArgParts(name, path string, span source.Span, env *Env) (Arg, 
 		if err != nil {
 			return nil, syntax.SpanErrorf(span, "%v", err)
 		}
+
 		if presence.IsMissing() {
 			return MissingArg{Name: name, Path: path, Span: span}, nil
 		}
@@ -1020,6 +1028,7 @@ func resolveAdapterArgParts(adapter, name, path string, span source.Span, env *E
 	if !ok {
 		return nil, syntax.SpanErrorf(span, "undefined variable: %s", name)
 	}
+
 	resolved := v
 	if path != "" {
 		var err error
@@ -1027,10 +1036,12 @@ func resolveAdapterArgParts(adapter, name, path string, span source.Span, env *E
 		if err != nil {
 			return nil, err
 		}
+
 		lv, err := v.LookupValue(name, path)
 		if err != nil {
 			return nil, syntax.SpanErrorf(span, "%v", err)
 		}
+
 		resolved = lv
 	}
 	if resolved.IsNil() || resolved.IsNull() {
@@ -1089,10 +1100,12 @@ func resolveDynamicPath(path string, env *Env, span source.Span) (string, error)
 		if !ok {
 			return "", syntax.SpanErrorf(span, "index variable $%s is not defined", name)
 		}
+
 		n, err := valueToIndex(v)
 		if err != nil {
 			return "", syntax.SpanErrorf(span, "index variable $%s: %v", name, err)
 		}
+
 		b.WriteByte('[')
 		b.WriteString(strconv.Itoa(n))
 		b.WriteByte(']')
@@ -1222,10 +1235,12 @@ func evalCompare(op string, l, r Value, span source.Span) (Value, error) {
 	if err != nil {
 		return Value{}, syntax.SpanErrorf(span, "binary %s: left: %v", op, err)
 	}
+
 	right, err := r.Scalar()
 	if err != nil {
 		return Value{}, syntax.SpanErrorf(span, "binary %s: right: %v", op, err)
 	}
+
 	switch lk {
 	case "number":
 		v, err := evalNumericComparison(op, left, right)
@@ -1280,6 +1295,7 @@ func parseShellNumber(text, side string) (shellNumber, error) {
 		if !ok {
 			return shellNumber{}, fmt.Errorf("%s operand %q is not numeric", side, text)
 		}
+
 		n.i = i
 		return n, nil
 	}
@@ -1287,6 +1303,7 @@ func parseShellNumber(text, side string) (shellNumber, error) {
 	if err != nil || math.IsInf(f, 0) || math.IsNaN(f) {
 		return shellNumber{}, fmt.Errorf("%s operand %q exceeds the representable range", side, text)
 	}
+
 	n.f = f
 	return n, nil
 }
@@ -1315,10 +1332,12 @@ func evalArithmetic(op, left, right string) (Value, error) {
 	if err != nil {
 		return Value{}, fmt.Errorf("arithmetic %s: %w", op, err)
 	}
+
 	b, err := parseShellNumber(right, "right")
 	if err != nil {
 		return Value{}, fmt.Errorf("arithmetic %s: %w", op, err)
 	}
+
 	if a.integral && b.integral && op != "/" {
 		if op == "%" && b.i.Sign() == 0 {
 			return Value{}, fmt.Errorf("division by zero")
@@ -1342,10 +1361,12 @@ func evalArithmetic(op, left, right string) (Value, error) {
 	if err != nil {
 		return Value{}, fmt.Errorf("arithmetic %s: %w", op, err)
 	}
+
 	bf, err := b.float64("right")
 	if err != nil {
 		return Value{}, fmt.Errorf("arithmetic %s: %w", op, err)
 	}
+
 	var r float64
 	switch op {
 	case "+":
@@ -1501,10 +1522,12 @@ func evalNumericComparison(op, left, right string) (Value, error) {
 	if err != nil {
 		return Value{}, err
 	}
+
 	b, err := parseShellNumber(right, "right")
 	if err != nil {
 		return Value{}, err
 	}
+
 	var cmp int
 	if a.integral && b.integral {
 		cmp = a.i.Cmp(b.i)
@@ -1513,10 +1536,12 @@ func evalNumericComparison(op, left, right string) (Value, error) {
 		if err != nil {
 			return Value{}, err
 		}
+
 		bf, err := b.float64("right")
 		if err != nil {
 			return Value{}, err
 		}
+
 		switch {
 		case af < bf:
 			cmp = -1

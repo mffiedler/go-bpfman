@@ -55,6 +55,7 @@ func CreateNamed(name string) error {
 		safeUnlock = true
 		return fmt.Errorf("get current netns: %w", err)
 	}
+
 	defer origNs.Close()
 
 	newNs, err := vishvananda.NewNamed(name)
@@ -65,6 +66,7 @@ func CreateNamed(name string) error {
 		// the runtime retires the thread.
 		panic(fmt.Errorf("netns.CreateNamed: NewNamed(%s) failed and may have left this OS thread in a partially-created netns; cannot safely continue: %w", name, err))
 	}
+
 	newNs.Close()
 
 	if err := vishvananda.Set(origNs); err != nil {

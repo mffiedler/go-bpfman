@@ -92,10 +92,12 @@ func TestCredentialStoreForGoContainerRegistryReportsMissingRegistryEntry(t *tes
 	if err != nil {
 		t.Fatalf("parseRegistryReference returned error: %v", err)
 	}
+
 	_, found, err := credentialStoreForGoContainerRegistry(context.Background(), ref, discardLogger())
 	if err != nil {
 		t.Fatalf("credentialStoreForGoContainerRegistry returned error: %v", err)
 	}
+
 	if found {
 		t.Fatal("found = true, want false")
 	}
@@ -104,10 +106,12 @@ func TestCredentialStoreForGoContainerRegistryReportsMissingRegistryEntry(t *tes
 	if err != nil {
 		t.Fatalf("parseRegistryReference returned error: %v", err)
 	}
+
 	_, found, err = credentialStoreForGoContainerRegistry(context.Background(), ref, discardLogger())
 	if err != nil {
 		t.Fatalf("credentialStoreForGoContainerRegistry returned error: %v", err)
 	}
+
 	if !found {
 		t.Fatal("found = false, want true")
 	}

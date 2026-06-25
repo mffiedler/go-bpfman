@@ -26,8 +26,7 @@ func TestUniqueTestName(t *testing.T) {
 		name := uniqueTestName()
 		middle := name[1:13]
 		for _, c := range middle {
-			assert.True(t, (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'),
-				"character %c should be hex", c)
+			assert.True(t, (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'), "character %c should be hex", c)
 		}
 	})
 

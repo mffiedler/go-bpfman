@@ -193,9 +193,11 @@ func readFixtureExpectationDir(root string) (*fixtureExpectation, error) {
 	if err := dec.Decode(&exp); err != nil {
 		return nil, fmt.Errorf("failed to parse %s: %w", path, err)
 	}
+
 	if err := validateFixtureExpectation(path, &exp); err != nil {
 		return nil, err
 	}
+
 	if err := expandFixtureExpectationDir(root, &exp); err != nil {
 		return nil, err
 	}

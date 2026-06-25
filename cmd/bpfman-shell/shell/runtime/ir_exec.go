@@ -59,6 +59,7 @@ func execProgram(lp *ir.Program, env *Env, skipProgramScope bool) error {
 			runErr = syntax.FrameAt(gf.Span, runErr)
 		}
 	}
+
 	ex.unwindOnExit()
 	return runErr
 }
@@ -99,6 +100,7 @@ func runLoweredDefCall(def *defValue, args []Arg, env *Env) (Value, bool, int, e
 		if err != nil {
 			return Value{}, false, 0, err
 		}
+
 		ex.temps[i] = v
 	}
 	err := ex.runUnit(def.Entry)
@@ -318,9 +320,11 @@ func (ex *executor) runUnit(entry *ir.BasicBlock) error {
 		if err != nil {
 			return err
 		}
+
 		if halt {
 			return nil
 		}
+
 		cur = next
 	}
 	return nil
@@ -360,6 +364,7 @@ func renderPollRetryMessage(v Value) string {
 	if err != nil {
 		return "<unrenderable retry message>"
 	}
+
 	return rendered
 }
 
@@ -505,6 +510,7 @@ func (ex *executor) execInstr(ins ir.Instr) (*ir.BasicBlock, bool, error) {
 		if err != nil {
 			return nil, false, err
 		}
+
 		ex.temps[v.Dst] = val
 		return nil, false, nil
 	case *ir.BuildArgs:
@@ -512,6 +518,7 @@ func (ex *executor) execInstr(ins ir.Instr) (*ir.BasicBlock, bool, error) {
 		if err != nil {
 			return nil, false, err
 		}
+
 		ex.temps[v.Dst] = args
 		return nil, false, nil
 	case *ir.DispatchCommand:
@@ -519,6 +526,7 @@ func (ex *executor) execInstr(ins ir.Instr) (*ir.BasicBlock, bool, error) {
 		if err != nil {
 			return nil, false, err
 		}
+
 		if v.Trace && ex.env.Trace != nil {
 			ex.env.Trace(v.Span.Pos, renderArgvTrace(args))
 		}
@@ -551,6 +559,7 @@ func (ex *executor) execInstr(ins ir.Instr) (*ir.BasicBlock, bool, error) {
 		if err != nil {
 			return nil, false, err
 		}
+
 		if v.TracePrefix != "" && ex.env.Trace != nil {
 			rendered, rerr := RenderCompact(val)
 			if rerr != nil {
@@ -565,6 +574,7 @@ func (ex *executor) execInstr(ins ir.Instr) (*ir.BasicBlock, bool, error) {
 		if err != nil {
 			return nil, false, err
 		}
+
 		if v.TraceHeader != "" && ex.env.Trace != nil {
 			ex.env.Trace(v.Span.Pos, fmt.Sprintf("%s <- %s", v.TraceHeader, renderArgvTrace(args)))
 		}
@@ -595,6 +605,7 @@ func (ex *executor) execInstr(ins ir.Instr) (*ir.BasicBlock, bool, error) {
 			// syntax.FrameAt(s.Span, err) on the AST side.
 			return nil, false, syntax.FrameAt(v.Span, err)
 		}
+
 		ex.bindArgs[v.Dst] = args
 		ex.temps[v.Dst] = result
 		return nil, false, nil
@@ -603,6 +614,7 @@ func (ex *executor) execInstr(ins ir.Instr) (*ir.BasicBlock, bool, error) {
 		if !ok {
 			return nil, false, syntax.SpanErrorf(v.Span, "exec: t%d expected BindResult, got %T", v.Src, ex.temps[v.Src])
 		}
+
 		if v.Guard && !res.Rc.OK() {
 			if v.OnFail == nil {
 				return nil, false, syntax.SpanErrorf(v.Span, "exec: guard fail has no OnFail block")
@@ -635,9 +647,11 @@ func (ex *executor) execInstr(ins ir.Instr) (*ir.BasicBlock, bool, error) {
 		if err != nil {
 			return nil, false, err
 		}
+
 		if err := ex.bindDestructure(v.Names, val, v.Span); err != nil {
 			return nil, false, err
 		}
+
 		if v.Trace && ex.env.Trace != nil {
 			ex.emitDestructureTrace(v.Names, val, v.Span)
 		}
@@ -663,6 +677,7 @@ func (ex *executor) execInstr(ins ir.Instr) (*ir.BasicBlock, bool, error) {
 		if err != nil {
 			return nil, false, err
 		}
+
 		if v.Trace {
 			traceValue(ex.env, v.Span, "expr ", val)
 		}
@@ -678,10 +693,12 @@ func (ex *executor) execInstr(ins ir.Instr) (*ir.BasicBlock, bool, error) {
 		if err != nil {
 			return nil, false, err
 		}
+
 		cond, err := AsBool(val)
 		if err != nil {
 			return nil, false, syntax.SpanErrorf(v.Span, "exec: branch condition: %v", err)
 		}
+
 		if cond {
 			return v.True, false, nil
 		}
@@ -695,6 +712,7 @@ func (ex *executor) execInstr(ins ir.Instr) (*ir.BasicBlock, bool, error) {
 		if err != nil {
 			return nil, false, err
 		}
+
 		if v.Trace && ex.env.Trace != nil {
 			rendered, rerr := RenderCompact(val)
 			if rerr != nil {
@@ -797,6 +815,7 @@ func (ex *executor) execInstr(ins ir.Instr) (*ir.BasicBlock, bool, error) {
 			if err != nil {
 				return nil, false, err
 			}
+
 			lastRetry = renderPollRetryMessage(val)
 		}
 		if len(ex.polls) == 0 {
@@ -811,6 +830,7 @@ func (ex *executor) execInstr(ins ir.Instr) (*ir.BasicBlock, bool, error) {
 		if err != nil {
 			return nil, false, err
 		}
+
 		return next, false, nil
 	case *ir.ForEachCollect:
 		return ex.execForEachCollect(v)
@@ -833,6 +853,7 @@ func (ex *executor) execRegisterDefer(v *ir.RegisterDefer) error {
 	if err != nil {
 		return err
 	}
+
 	if v.Trace && ex.env.Trace != nil {
 		ex.env.Trace(v.Span.Pos, "defer "+renderArgvTrace(args))
 	}
@@ -856,6 +877,7 @@ func (ex *executor) execForEach(v *ir.ForEach) (*ir.BasicBlock, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
+
 	if val.IsNil() {
 		return nil, false, syntax.SpanErrorf(v.Span, "foreach: list expression is null")
 	}
@@ -863,6 +885,7 @@ func (ex *executor) execForEach(v *ir.ForEach) (*ir.BasicBlock, bool, error) {
 	if !ok {
 		return nil, false, syntax.SpanErrorf(v.Span, "foreach: expected a list, got %s", val.Kind())
 	}
+
 	state := &loopState{
 		List:            raw,
 		Index:           0,
@@ -880,6 +903,7 @@ func (ex *executor) execForEach(v *ir.ForEach) (*ir.BasicBlock, bool, error) {
 	if err := ex.beginIteration(state); err != nil {
 		return nil, false, err
 	}
+
 	return state.Body, false, nil
 }
 
@@ -892,6 +916,7 @@ func (ex *executor) beginIteration(state *loopState) error {
 	if err := ex.bindForEachNames(state, elem); err != nil {
 		return err
 	}
+
 	if ex.env.Trace != nil {
 		ex.emitForEachTrace(state, elem)
 	}
@@ -912,6 +937,7 @@ func (ex *executor) bindForEachNames(state *loopState, elem Value) error {
 	if !ok {
 		return syntax.SpanErrorf(state.Span, "foreach: element %d is not a list, cannot destructure into %d names", state.Index, len(state.Names))
 	}
+
 	if len(sub) != len(state.Names) {
 		return syntax.SpanErrorf(state.Span, "foreach: element %d has %d sub-elements, cannot destructure into %d names", state.Index, len(sub), len(state.Names))
 	}
@@ -1003,6 +1029,7 @@ func (ex *executor) execForEachCollect(v *ir.ForEachCollect) (*ir.BasicBlock, bo
 	if err != nil {
 		return nil, false, err
 	}
+
 	if val.IsNil() {
 		return nil, false, syntax.SpanErrorf(v.Span, "bind-collect: list expression is null")
 	}
@@ -1010,6 +1037,7 @@ func (ex *executor) execForEachCollect(v *ir.ForEachCollect) (*ir.BasicBlock, bo
 	if !ok {
 		return nil, false, syntax.SpanErrorf(v.Span, "bind-collect: expected a list, got %s", val.Kind())
 	}
+
 	state := &loopState{
 		List:            raw,
 		Index:           0,
@@ -1032,6 +1060,7 @@ func (ex *executor) execForEachCollect(v *ir.ForEachCollect) (*ir.BasicBlock, bo
 	if err := ex.beginIteration(state); err != nil {
 		return nil, false, err
 	}
+
 	return state.Body, false, nil
 }
 
@@ -1053,6 +1082,7 @@ func (ex *executor) execCollectProduce(v *ir.CollectProduce) (*ir.BasicBlock, bo
 	if !ok {
 		return nil, false, syntax.SpanErrorf(v.Span, "collect-produce: t%d expected BindResult, got %T", v.Result, ex.temps[v.Result])
 	}
+
 	outcome := ValueFromOutcome(res)
 	state.Results = append(state.Results, outcome)
 	if res.Rc.OK() {
@@ -1093,6 +1123,7 @@ func (ex *executor) advanceLoop(state *loopState) (*ir.BasicBlock, bool, error) 
 	if err := ex.beginIteration(state); err != nil {
 		return nil, false, err
 	}
+
 	return state.Body, false, nil
 }
 
@@ -1134,6 +1165,7 @@ func (ex *executor) bindDestructure(names []string, val Value, sp source.Span) e
 	if !ok {
 		return syntax.SpanErrorf(sp, "let: destructure RHS is not a list, cannot bind %d names", len(names))
 	}
+
 	if len(raw) != len(names) {
 		return syntax.SpanErrorf(sp, "let: destructure RHS has %d elements, cannot bind %d names", len(raw), len(names))
 	}
@@ -1155,6 +1187,7 @@ func (ex *executor) argvAt(t ir.Temp, sp source.Span) ([]Arg, error) {
 	if !ok {
 		return nil, syntax.SpanErrorf(sp, "exec: t%d expected argv, got %T", t, v)
 	}
+
 	return args, nil
 }
 
@@ -1167,5 +1200,6 @@ func (ex *executor) valueAt(t ir.Temp, sp source.Span) (Value, error) {
 	if !ok {
 		return Value{}, syntax.SpanErrorf(sp, "exec: t%d expected Value, got %T", t, v)
 	}
+
 	return val, nil
 }

@@ -174,12 +174,10 @@ func TestDebug_DetachDeferral_Kretprobe(t *testing.T) {
 
 	bAfter := readArrayCounterByID(t, mapIDB)
 	bDelta := bAfter - bSnapshot
-	t.Logf("phase3 batch Fire(5): start +%s, ack +%s after Detach, b delta = %d (expected 0; one event = %d)",
-		tBatchStart.Sub(tDetachReturn), tBatchReturn.Sub(tDetachReturn), bDelta, plans[1].weight)
+	t.Logf("phase3 batch Fire(5): start +%s, ack +%s after Detach, b delta = %d (expected 0; one event = %d)", tBatchStart.Sub(tDetachReturn), tBatchReturn.Sub(tDetachReturn), bDelta, plans[1].weight)
 
 	if bDelta != 0 {
-		t.Logf("RESULT phase3: STILL FIRING at +%s -- deferral observed (delta = %d events of weight %d)",
-			tBatchStart.Sub(tDetachReturn), bDelta/plans[1].weight, plans[1].weight)
+		t.Logf("RESULT phase3: STILL FIRING at +%s -- deferral observed (delta = %d events of weight %d)", tBatchStart.Sub(tDetachReturn), bDelta/plans[1].weight, plans[1].weight)
 	} else {
 		t.Logf("RESULT phase3: quiet")
 	}

@@ -38,6 +38,7 @@ func dispatchCommandExternal(ctx context.Context, args []runtime.Arg) (runtime.V
 		if err != nil {
 			return runtime.Value{}, fmt.Errorf("bpfman arg %d: %w", i+1, err)
 		}
+
 		argv = append(argv, text)
 	}
 	if commandSupportsOutput(argv) && !hasOutputFlag(argv) {
@@ -58,6 +59,7 @@ func dispatchCommandExternal(ctx context.Context, args []runtime.Arg) (runtime.V
 		}
 		return runtime.Value{}, errors.New(msg)
 	}
+
 	if cancelErr := cancellationErr(); cancelErr != nil {
 		return runtime.Value{}, cancelErr
 	}
@@ -166,6 +168,7 @@ func decodeBpfmanResult(args []runtime.Arg, stdout []byte) (runtime.Value, error
 			if err := json.Unmarshal(stdout, &p); err != nil {
 				return runtime.Value{}, fmt.Errorf("decode Program: %w", err)
 			}
+
 			v, err := runtime.ValueFromStruct(p)
 			if err != nil {
 				return runtime.Value{}, err
@@ -204,6 +207,7 @@ func decodeBpfmanResult(args []runtime.Arg, stdout []byte) (runtime.Value, error
 			if err := json.Unmarshal(stdout, &l); err != nil {
 				return runtime.Value{}, fmt.Errorf("decode Link: %w", err)
 			}
+
 			v, err := runtime.ValueFromStruct(l)
 			if err != nil {
 				return runtime.Value{}, err

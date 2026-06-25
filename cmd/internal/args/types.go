@@ -273,8 +273,7 @@ func ParseProgramTypes(types []string) (map[bpfman.ProgramType]struct{}, error) 
 		}
 		pt, err := bpfman.ParseProgramType(strings.ToLower(t))
 		if err != nil {
-			return nil, fmt.Errorf("unknown program type %q (valid: %s)",
-				raw, strings.Join(bpfman.ProgramTypeNames(), ", "))
+			return nil, fmt.Errorf("unknown program type %q (valid: %s)", raw, strings.Join(bpfman.ProgramTypeNames(), ", "))
 		}
 		result[pt] = struct{}{}
 	}
@@ -292,8 +291,7 @@ func ParseProgramTypesSlice(types []string) ([]bpfman.ProgramType, error) {
 		}
 		pt, err := bpfman.ParseProgramType(strings.ToLower(t))
 		if err != nil {
-			return nil, fmt.Errorf("unknown program type %q (valid: %s)",
-				raw, strings.Join(bpfman.ProgramTypeNames(), ", "))
+			return nil, fmt.Errorf("unknown program type %q (valid: %s)", raw, strings.Join(bpfman.ProgramTypeNames(), ", "))
 		}
 		result = append(result, pt)
 	}
@@ -311,8 +309,7 @@ func ParseLinkKindsSlice(kinds []string) ([]bpfman.LinkKind, error) {
 		}
 		kind, err := bpfman.ParseLinkKind(strings.ToLower(k))
 		if err != nil {
-			return nil, fmt.Errorf("unknown link kind %q (valid: %s)",
-				raw, strings.Join(bpfman.LinkKindNames(), ", "))
+			return nil, fmt.Errorf("unknown link kind %q (valid: %s)", raw, strings.Join(bpfman.LinkKindNames(), ", "))
 		}
 		result = append(result, kind)
 	}

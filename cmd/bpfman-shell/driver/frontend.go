@@ -28,9 +28,11 @@ func parseAndExpandWithBaseTrace(file, baseDir, src string, startLine int, visib
 	if err != nil {
 		return nil, err
 	}
+
 	if err := validateImportPlacement(file, prog.Stmts, 0); err != nil {
 		return nil, err
 	}
+
 	visibleDefs = cloneDefInfo(visibleDefs)
 	recordTopLevelDefInfo(visibleDefs, prog.Stmts)
 
@@ -38,6 +40,7 @@ func parseAndExpandWithBaseTrace(file, baseDir, src string, startLine int, visib
 	if err != nil {
 		return nil, err
 	}
+
 	return &syntax.Program{Span: prog.Span, Stmts: stmts}, nil
 }
 
@@ -65,6 +68,7 @@ func expandDirectImports(file, baseDir string, prog *syntax.Program, visibleDefs
 			}
 			return nil, err
 		}
+
 		if !isImport {
 			out = append(out, st)
 			continue
@@ -82,6 +86,7 @@ func expandDirectImports(file, baseDir string, prog *syntax.Program, visibleDefs
 			}
 			return nil, err
 		}
+
 		childSrc, err := SlurpReader(lr)
 		lr.Close()
 		if err != nil {
@@ -99,6 +104,7 @@ func expandDirectImports(file, baseDir string, prog *syntax.Program, visibleDefs
 			}
 			return nil, err
 		}
+
 		if visitImport != nil {
 			visitImport(directImport{Path: resolved, Span: span, Prog: lib})
 		}
@@ -117,6 +123,7 @@ func parseProgramAt(file, src string, startLine int) (*syntax.Program, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return parseTokens(file, tokens)
 }
 
@@ -125,6 +132,7 @@ func parseTokens(file string, tokens []syntax.Token) (*syntax.Program, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return prog, nil
 }
 
@@ -216,6 +224,7 @@ func validateImportPlacement(file string, stmts []syntax.Stmt, depth int) error 
 		if err != nil {
 			return syntaxError(file, span, err.Error())
 		}
+
 		if isImport && depth != 0 {
 			return syntaxError(file, span, "import must be declared at top level")
 		}
@@ -224,6 +233,7 @@ func validateImportPlacement(file string, stmts []syntax.Stmt, depth int) error 
 			if err := validateImportPlacement(file, n.Then, depth+1); err != nil {
 				return err
 			}
+
 			for _, br := range n.Elifs {
 				if err := validateImportPlacement(file, br.Body, depth+1); err != nil {
 					return err
@@ -260,10 +270,12 @@ func importLiteralPath(st syntax.Stmt) (string, source.Span, bool, error) {
 	if !ok || cmd == nil || len(cmd.Args) == 0 {
 		return "", source.Span{}, false, nil
 	}
+
 	head, ok := cmd.Args[0].(*syntax.LiteralExpr)
 	if !ok || head.Quoted || head.Text != "import" {
 		return "", source.Span{}, false, nil
 	}
+
 	if len(cmd.Args) != 2 {
 		return "", cmd.Span, true, fmt.Errorf("import requires exactly one file argument")
 	}
@@ -271,6 +283,7 @@ func importLiteralPath(st syntax.Stmt) (string, source.Span, bool, error) {
 	if !ok {
 		return "", cmd.Span, true, fmt.Errorf("import path must be a literal file argument")
 	}
+
 	return path.Text, path.Span, true, nil
 }
 
@@ -298,6 +311,7 @@ func parseImportProgram(file, src string, visibleDefs map[string]check.DefStatic
 	if err != nil {
 		return nil, err
 	}
+
 	issues := check.CheckImportLibraryWithDefs(prog, visibleDefs)
 	if len(issues) > 0 {
 		return nil, &syntax.SyntaxError{
@@ -306,5 +320,6 @@ func parseImportProgram(file, src string, visibleDefs map[string]check.DefStatic
 			Cause: issues[0],
 		}
 	}
+
 	return prog, nil
 }

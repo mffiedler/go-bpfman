@@ -103,15 +103,13 @@ func TestTC_IngressEgressIndependence(t *testing.T) {
 
 	// Egress dispatcher should be gone.
 	_, err = env.GetDispatcherSnapshot(ctx, egressKey)
-	require.ErrorIs(t, err, platform.ErrRecordNotFound,
-		"egress dispatcher should be absent after detaching all egress links")
+	require.ErrorIs(t, err, platform.ErrRecordNotFound, "egress dispatcher should be absent after detaching all egress links")
 
 	// Ingress dispatcher should be unaffected.
 	ingressSnapAfter, err := env.GetDispatcherSnapshot(ctx, ingressKey)
 	require.NoError(t, err, "ingress dispatcher should still exist")
 
-	assert.Len(t, ingressSnapAfter.Members, len(ingressSnap.Members),
-		"ingress program count should be unchanged")
+	assert.Len(t, ingressSnapAfter.Members, len(ingressSnap.Members), "ingress program count should be unchanged")
 }
 
 // TestTC_DispatcherPriorityTieBreakByName verifies that when two
@@ -182,9 +180,7 @@ func TestTC_DispatcherPriorityTieBreakByName(t *testing.T) {
 	betaTCDetails, ok := betaDetails.(bpfman.TCDetails)
 	require.True(t, ok, "beta link should have TC details")
 
-	assert.Less(t, alphaTCDetails.Position, betaTCDetails.Position,
-		"alpha (position=%d) should precede beta (position=%d)",
-		alphaTCDetails.Position, betaTCDetails.Position)
+	assert.Less(t, alphaTCDetails.Position, betaTCDetails.Position, "alpha (position=%d) should precede beta (position=%d)", alphaTCDetails.Position, betaTCDetails.Position)
 }
 
 // TestTC_DispatcherFillDrainRefill exercises repeated fill-drain-refill
@@ -353,9 +349,7 @@ func TestTC_DispatcherFillDrainRefill(t *testing.T) {
 		veth.Ping(t, 20)
 		for i, p := range active {
 			after := readStatsMap(t, filepath.Join(p.mapPinPath, "tc_stats_map"))
-			assert.Greater(t, after, before[i],
-				"%s: program %d (kernel_id=%d) should have received new traffic",
-				phase, i, p.kernelID)
+			assert.Greater(t, after, before[i], "%s: program %d (kernel_id=%d) should have received new traffic", phase, i, p.kernelID)
 		}
 	}
 
@@ -505,10 +499,8 @@ func TestTC_DispatcherChainExecution(t *testing.T) {
 	for i, prog := range progs {
 		statsPath := filepath.Join(prog.mapPinPath, "tc_stats_map")
 		packets := readStatsMap(t, statsPath)
-		t.Logf("program %d (kernel_id=%d, priority=%d): %d packets",
-			i, prog.kernelID, priorities[i], packets)
-		assert.Greater(t, packets, uint64(0),
-			"program %d (priority %d) should have counted packets", i, priorities[i])
+		t.Logf("program %d (kernel_id=%d, priority=%d): %d packets", i, prog.kernelID, priorities[i], packets)
+		assert.Greater(t, packets, uint64(0), "program %d (priority %d) should have counted packets", i, priorities[i])
 	}
 }
 
@@ -616,11 +608,9 @@ func TestTC_DispatcherChainProceedOn(t *testing.T) {
 				t.Logf("program %d (kernel_id=%d): %d packets", i, prog.kernelID, packets)
 
 				if tt.breakAt == -1 || i <= tt.breakAt {
-					assert.Greater(t, packets, uint64(0),
-						"program %d should have counted packets (at or before break point)", i)
+					assert.Greater(t, packets, uint64(0), "program %d should have counted packets (at or before break point)", i)
 				} else {
-					assert.Equal(t, uint64(0), packets,
-						"program %d should have zero packets (after break point at position %d)", i, tt.breakAt)
+					assert.Equal(t, uint64(0), packets, "program %d should have zero packets (after break point at position %d)", i, tt.breakAt)
 				}
 			}
 		})
@@ -701,10 +691,8 @@ func TestTC_EgressTrafficCounting(t *testing.T) {
 	for i, prog := range progs {
 		statsPath := filepath.Join(prog.mapPinPath, "tc_stats_map")
 		packets := readStatsMap(t, statsPath)
-		t.Logf("egress program %d (kernel_id=%d): %d packets",
-			i, prog.kernelID, packets)
-		assert.Greater(t, packets, uint64(0),
-			"egress program %d should have counted packets", i)
+		t.Logf("egress program %d (kernel_id=%d): %d packets", i, prog.kernelID, packets)
+		assert.Greater(t, packets, uint64(0), "egress program %d should have counted packets", i)
 	}
 }
 
@@ -779,8 +767,7 @@ func TestTC_DefaultProceedOnRebuild(t *testing.T) {
 	})
 	require.NoError(t, err)
 	for _, m := range snap.Members {
-		t.Logf("position=%d program_id=%d name=%q priority=%d proceed_on=%#x",
-			m.Position, m.ProgramID, m.ProgramName, m.Priority, m.ProceedOn)
+		t.Logf("position=%d program_id=%d name=%q priority=%d proceed_on=%#x", m.Position, m.ProgramID, m.ProgramName, m.Priority, m.ProceedOn)
 	}
 
 	// The newly-attached program must be at position 0, matching
@@ -792,16 +779,13 @@ func TestTC_DefaultProceedOnRebuild(t *testing.T) {
 	for _, m := range snap.Members {
 		memberByPos[m.Position] = m
 	}
-	assert.Equal(t, incoming.id, memberByPos[0].ProgramID,
-		"newly-attached program should be at position 0")
-	assert.Equal(t, existing.id, memberByPos[1].ProgramID,
-		"previously-attached program should be at position 1")
+	assert.Equal(t, incoming.id, memberByPos[0].ProgramID, "newly-attached program should be at position 0")
+	assert.Equal(t, existing.id, memberByPos[1].ProgramID, "previously-attached program should be at position 1")
 
 	// With the incoming program at position 0, it must see traffic.
 	veth.Ping(t, 20)
 	t.Logf("existing=%d packets, incoming=%d packets", packets(existing), packets(incoming))
-	assert.Greater(t, packets(incoming), uint64(0),
-		"incoming program at position 0 should count packets")
+	assert.Greater(t, packets(incoming), uint64(0), "incoming program at position 0 should count packets")
 }
 
 // TestTC_MultiPriorityChainDefaultProceedOn verifies that the default
@@ -872,12 +856,9 @@ func TestTC_MultiPriorityChainDefaultProceedOn(t *testing.T) {
 		count := packets(p)
 		t.Logf("priority=%d program_id=%d packets=%d", priorities[i], p.id, count)
 		if i == 0 {
-			assert.Greater(t, count, uint64(0),
-				"position 0 (priority %d) should count packets", priorities[i])
+			assert.Greater(t, count, uint64(0), "position 0 (priority %d) should count packets", priorities[i])
 		} else {
-			assert.Equal(t, uint64(0), count,
-				"position %d (priority %d) should NOT count packets with default proceed-on",
-				i, priorities[i])
+			assert.Equal(t, uint64(0), count, "position %d (priority %d) should NOT count packets with default proceed-on", i, priorities[i])
 		}
 	}
 }
@@ -944,8 +925,7 @@ func TestTC_MultiPriorityChainWithOKProceedOn(t *testing.T) {
 	for i, p := range progs {
 		count := packets(p)
 		t.Logf("priority=%d program_id=%d packets=%d", priorities[i], p.id, count)
-		assert.Greater(t, count, uint64(0),
-			"program at priority %d should count packets", priorities[i])
+		assert.Greater(t, count, uint64(0), "program at priority %d should count packets", priorities[i])
 	}
 }
 
@@ -1000,8 +980,7 @@ func TestTC_PinByNameMapSharing(t *testing.T) {
 
 	// Each program should have a distinct kernel ID (they are
 	// separate program loads).
-	require.NotEqual(t, progA.kernelID, progB.kernelID,
-		"programs should have distinct kernel IDs")
+	require.NotEqual(t, progA.kernelID, progB.kernelID, "programs should have distinct kernel IDs")
 
 	// Verify map sharing: load the pinned tc_stats_map from each
 	// program's per-program directory and compare kernel map IDs.
@@ -1024,8 +1003,7 @@ func TestTC_PinByNameMapSharing(t *testing.T) {
 	t.Logf("program A (kernel_id=%d): tc_stats_map ID=%d", progA.kernelID, mapIDA)
 	t.Logf("program B (kernel_id=%d): tc_stats_map ID=%d", progB.kernelID, mapIDB)
 
-	require.Equal(t, mapIDA, mapIDB,
-		"both programs should share the same kernel map for tc_stats_map (PinByName sharing)")
+	require.Equal(t, mapIDA, mapIDB, "both programs should share the same kernel map for tc_stats_map (PinByName sharing)")
 
 	// Attach both programs at different priorities with
 	// proceed-on including TC_ACT_OK so both execute.
@@ -1067,10 +1045,8 @@ func TestTC_PinByNameMapSharing(t *testing.T) {
 
 	t.Logf("program A packets=%d, program B packets=%d", countA, countB)
 
-	assert.Greater(t, countA, uint64(0),
-		"shared tc_stats_map should have counted packets")
-	assert.Equal(t, countA, countB,
-		"shared map: writes via either pin must be observable through both")
+	assert.Greater(t, countA, uint64(0), "shared tc_stats_map should have counted packets")
+	assert.Equal(t, countA, countB, "shared map: writes via either pin must be observable through both")
 
 	// Verify shared pin cleanup on unload.
 	sharedPinPath := env.Layout.BPFFS().SharedMapPin("tc_stats_map")

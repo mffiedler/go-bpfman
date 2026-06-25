@@ -59,10 +59,12 @@ func TestPackageInitSurvivesAbsentProc(t *testing.T) {
 	if err != nil {
 		t.Skipf("unshare(1) not available, skipping: %v", err)
 	}
+
 	umountPath, err := exec.LookPath("umount")
 	if err != nil {
 		t.Skipf("umount(8) not available, skipping: %v", err)
 	}
+
 	shPath, err := exec.LookPath("sh")
 	if err != nil {
 		t.Skipf("sh not available, skipping: %v", err)
@@ -100,7 +102,6 @@ func TestPackageInitSurvivesAbsentProc(t *testing.T) {
 	cmd.Stderr = &stderr
 
 	runErr := cmd.Run()
-
 	if runErr != nil {
 		t.Errorf("helper-init-probe subprocess failed: %v\n"+
 			"This usually means a package init() in the import graph "+
@@ -109,6 +110,7 @@ func TestPackageInitSurvivesAbsentProc(t *testing.T) {
 			runErr, stdout.String(), stderr.String())
 		return
 	}
+
 	if !strings.Contains(stdout.String(), helperInitProbeMarker) {
 		t.Errorf("helper-init-probe subprocess did not emit %q marker.\n"+
 			"stdout:\n%s\nstderr:\n%s",

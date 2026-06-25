@@ -88,12 +88,12 @@ func (k *kernelAdapter) InterfaceByName(_ context.Context, name, netnsPath strin
 		if err != nil {
 			return err
 		}
+
 		ifindex = iface.Index
 		return nil
 	})
 	if err != nil {
-		return 0, fmt.Errorf("resolve interface %q in netns %q: %w: %w",
-			name, netnsPath, err, platform.ErrInterfaceNotFound)
+		return 0, fmt.Errorf("resolve interface %q in netns %q: %w: %w", name, netnsPath, err, platform.ErrInterfaceNotFound)
 	}
 	return ifindex, nil
 }
@@ -181,6 +181,7 @@ func (k *kernelAdapter) Programs(ctx context.Context) iter.Seq2[kernel.Program, 
 			if err != nil {
 				return // No more programs
 			}
+
 			id = nextID
 
 			prog, err := ebpf.NewProgramFromID(id)
@@ -223,6 +224,7 @@ func (k *kernelAdapter) Maps(ctx context.Context) iter.Seq2[kernel.Map, error] {
 			if err != nil {
 				return
 			}
+
 			id = nextID
 
 			m, err := ebpf.NewMapFromID(id)

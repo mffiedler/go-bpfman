@@ -42,6 +42,7 @@ func TestU32LE_FormatsLittleEndian(t *testing.T) {
 			if err != nil {
 				t.Fatalf("u32le %s: %v", c.in, err)
 			}
+
 			got, _ := v.Scalar()
 			if got != c.want {
 				t.Errorf("u32le %s: got %q want %q", c.in, got, c.want)
@@ -69,6 +70,7 @@ func TestU64LE_FormatsLittleEndian(t *testing.T) {
 			if err != nil {
 				t.Fatalf("u64le %s: %v", c.in, err)
 			}
+
 			got, _ := v.Scalar()
 			if got != c.want {
 				t.Errorf("u64le %s: got %q want %q", c.in, got, c.want)

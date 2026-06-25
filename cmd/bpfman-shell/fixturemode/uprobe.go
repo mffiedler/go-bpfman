@@ -135,6 +135,7 @@ func runUprobeFireWorker(args []string) error {
 	if err != nil {
 		return fmt.Errorf("uprobe-fire-worker: invalid N %q: %w", args[2], err)
 	}
+
 	k, err := strconv.Atoi(args[3])
 	if err != nil {
 		return fmt.Errorf("uprobe-fire-worker: invalid K %q: %w", args[3], err)
@@ -154,6 +155,7 @@ func runUprobeFireWorker(args []string) error {
 		if err != nil {
 			return fmt.Errorf("uprobe-fire-worker: create ack %s: %w", ack, err)
 		}
+
 		f.Close()
 	}
 	return nil

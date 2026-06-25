@@ -48,6 +48,7 @@ func InspectBytecodeImage(ctx context.Context, imageRef string) (ImageInspection
 	if err != nil {
 		return ImageInspection{}, err
 	}
+
 	opts := []remote.Option{
 		remote.WithContext(ctx),
 		remote.WithAuth(authn.Anonymous),
@@ -58,6 +59,7 @@ func InspectBytecodeImage(ctx context.Context, imageRef string) (ImageInspection
 		if authErr != nil {
 			return ImageInspection{}, authErr
 		}
+
 		if !found {
 			return ImageInspection{}, missingCredentialError(
 				ref.Context().RegistryStr(),
@@ -85,16 +87,19 @@ func InspectBytecodeImage(ctx context.Context, imageRef string) (ImageInspection
 		if err != nil {
 			return ImageInspection{}, err
 		}
+
 		manifest, err := idx.IndexManifest()
 		if err != nil {
 			return ImageInspection{}, fmt.Errorf("failed to read image index manifest: %w", err)
 		}
+
 		out.Manifests = make([]ManifestSummary, 0, len(manifest.Manifests))
 		for _, child := range manifest.Manifests {
 			summary, err := inspectChildManifest(idx, child)
 			if err != nil {
 				return ImageInspection{}, err
 			}
+
 			out.Manifests = append(out.Manifests, summary)
 		}
 	case types.OCIManifestSchema1, types.DockerManifestSchema2:
@@ -102,10 +107,12 @@ func InspectBytecodeImage(ctx context.Context, imageRef string) (ImageInspection
 		if err != nil {
 			return ImageInspection{}, err
 		}
+
 		programs, maps, layers, err := inspectImage(img)
 		if err != nil {
 			return ImageInspection{}, err
 		}
+
 		out.Programs = programs
 		out.Maps = maps
 		out.Layers = layers
@@ -128,10 +135,12 @@ func inspectChildManifest(idx v1.ImageIndex, child v1.Descriptor) (ManifestSumma
 	if err != nil {
 		return ManifestSummary{}, fmt.Errorf("failed to fetch child manifest %s: %w", child.Digest, err)
 	}
+
 	programs, maps, layers, err := inspectImage(img)
 	if err != nil {
 		return ManifestSummary{}, err
 	}
+
 	summary.Programs = programs
 	summary.Maps = maps
 	summary.Layers = layers
@@ -143,6 +152,7 @@ func inspectImage(img v1.Image) (map[string]string, map[string]string, []Descrip
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to read image config: %w", err)
 	}
+
 	programs, maps, err := decodeBPFLabels(config.Config.Labels)
 	if err != nil {
 		return nil, nil, nil, err
@@ -152,6 +162,7 @@ func inspectImage(img v1.Image) (map[string]string, map[string]string, []Descrip
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to read image manifest: %w", err)
 	}
+
 	layers := make([]DescriptorSummary, 0, len(manifest.Layers))
 	for _, layer := range manifest.Layers {
 		layers = append(layers, descriptorSummary(layer))

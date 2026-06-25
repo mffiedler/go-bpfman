@@ -87,6 +87,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	if err != nil {
 		return fmt.Errorf("open runtime: %w", err)
 	}
+
 	defer opened.Close()
 
 	verifier, err := verify.FromSigningConfig(cfg.Config.Signing, logger)
@@ -139,10 +140,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 		)
 
 		go func() {
-			logger.Info("starting CSI driver",
-				"socket", csiSocketPath,
-				"driver", DefaultCSIDriverName,
-			)
+			logger.Info("starting CSI driver", "socket", csiSocketPath, "driver", DefaultCSIDriverName)
 			if err := csiDriver.Run(); err != nil {
 				logger.Error("CSI driver failed", "error", err)
 			}
@@ -161,6 +159,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 		if err != nil {
 			return fmt.Errorf("pprof listen on %s: %w", cfg.PprofAddress, err)
 		}
+
 		pprofServer := &http.Server{}
 		logger.Info("pprof HTTP server listening", "address", pprofListener.Addr().String())
 		go func() {
@@ -245,6 +244,7 @@ func (s *Server) serve(ctx context.Context, socketPath, tcpAddr string) error {
 	if err != nil {
 		return fmt.Errorf("failed to listen on %s: %w", socketPath, err)
 	}
+
 	defer unixListener.Close()
 
 	// Set socket permissions
@@ -321,11 +321,9 @@ func (s *Server) rpcInterceptor() grpc.UnaryServerInterceptor {
 			code := status.Code(err)
 			switch code {
 			case codes.Internal, codes.Unknown, codes.DataLoss:
-				s.logger.ErrorContext(ctx, "rpc handler failed",
-					"method", info.FullMethod, "code", code, "error", err)
+				s.logger.ErrorContext(ctx, "rpc handler failed", "method", info.FullMethod, "code", code, "error", err)
 			default:
-				s.logger.DebugContext(ctx, "rpc returned non-ok",
-					"method", info.FullMethod, "code", code, "error", err)
+				s.logger.DebugContext(ctx, "rpc returned non-ok", "method", info.FullMethod, "code", code, "error", err)
 			}
 		}
 		return resp, err

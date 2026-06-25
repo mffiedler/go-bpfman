@@ -30,9 +30,7 @@ func TestConstructorWithSelfNamespace(t *testing.T) {
 		ns.MntNsEnvVar + "=/proc/self/ns/mnt",
 	})
 	if result.mntNsEnv != "cleared" {
-		t.Fatalf("%s was not cleared by the constructor: env is %q",
-			ns.MntNsEnvVar, result.mntNsEnv)
+		t.Fatalf("%s was not cleared by the constructor: env is %q", ns.MntNsEnvVar, result.mntNsEnv)
 	}
-	t.Logf("subprocess inode: %d (constructor cleared %s)",
-		result.inode, ns.MntNsEnvVar)
+	t.Logf("subprocess inode: %d (constructor cleared %s)", result.inode, ns.MntNsEnvVar)
 }

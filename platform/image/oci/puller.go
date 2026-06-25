@@ -123,6 +123,7 @@ func (p *puller) Pull(ctx context.Context, ref platform.ImageRef) (platform.Pull
 		logger.Error("failed to parse image reference", "error", err)
 		return platform.PulledImage{}, fmt.Errorf("failed to parse image reference: %w", err)
 	}
+
 	if isLoopbackRegistry(repo.Reference.Registry) {
 		repo.PlainHTTP = true
 	}
@@ -163,6 +164,7 @@ func (p *puller) Pull(ctx context.Context, ref platform.ImageRef) (platform.Pull
 			logger.Error("image signature verification failed", "error", err)
 			return platform.PulledImage{}, fmt.Errorf("signature verification failed: %w", err)
 		}
+
 		switch verification.Status {
 		case platform.SignatureVerificationVerified:
 			logger.Info("image signature verified")
@@ -184,6 +186,7 @@ func (p *puller) Pull(ctx context.Context, ref platform.ImageRef) (platform.Pull
 		if err != nil {
 			return platform.PulledImage{}, err
 		}
+
 		manifestDesc = platformDesc
 		logger.Info("selected platform manifest", "digest", manifestDesc.Digest.String())
 	}
@@ -194,6 +197,7 @@ func (p *puller) Pull(ctx context.Context, ref platform.ImageRef) (platform.Pull
 		logger.Error("failed to fetch manifest", "error", err)
 		return platform.PulledImage{}, fmt.Errorf("failed to fetch manifest: %w", err)
 	}
+
 	manifestContent, err := io.ReadAll(rc)
 	rc.Close()
 	if err != nil {
@@ -241,6 +245,7 @@ func (p *puller) Pull(ctx context.Context, ref platform.ImageRef) (platform.Pull
 		logger.Error("failed to fetch layer", "error", err)
 		return platform.PulledImage{}, fmt.Errorf("failed to fetch layer: %w", err)
 	}
+
 	layerContent, err := io.ReadAll(layerRC)
 	layerRC.Close()
 	if err != nil {
@@ -254,6 +259,7 @@ func (p *puller) Pull(ctx context.Context, ref platform.ImageRef) (platform.Pull
 	if err != nil {
 		return platform.PulledImage{}, fmt.Errorf("failed to create temp directory: %w", err)
 	}
+
 	defer cleanup()
 
 	// Write layer content to temp file
@@ -261,6 +267,7 @@ func (p *puller) Pull(ctx context.Context, ref platform.ImageRef) (platform.Pull
 	if err := p.cache.WriteTempFile(tempDir, "layer.blob", layerContent); err != nil {
 		return platform.PulledImage{}, fmt.Errorf("failed to write layer: %w", err)
 	}
+
 	_ = layerFile // used by extractBytecode via the tempDir
 
 	// Extract bytecode from the layer
@@ -397,6 +404,7 @@ func (p *puller) selectPlatform(ctx context.Context, repo *remote.Repository, in
 	if err != nil {
 		return ocispec.Descriptor{}, fmt.Errorf("failed to fetch index: %w", err)
 	}
+
 	defer rc.Close()
 
 	indexContent, err := io.ReadAll(rc)
@@ -497,6 +505,7 @@ func (p *puller) extractLabels(ctx context.Context, repo *remote.Repository, con
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to fetch config: %w", err)
 	}
+
 	defer rc.Close()
 
 	configContent, err := io.ReadAll(rc)

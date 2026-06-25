@@ -30,6 +30,7 @@ func Read(path string) (Mode, error) {
 	if err != nil {
 		return Mode{}, fmt.Errorf("open script %s for header prescan: %w", path, err)
 	}
+
 	defer f.Close()
 	return Scan(f, path)
 }
@@ -48,6 +49,7 @@ func Scan(f *os.File, path string) (Mode, error) {
 	if err := scanner.Err(); err != nil {
 		return Mode{}, fmt.Errorf("read script %s for header prescan: %w", path, err)
 	}
+
 	return mode, nil
 }
 
@@ -61,6 +63,7 @@ func ParsePragma(path, line string, labels k8slabels.Set) error {
 	if err != nil {
 		return err
 	}
+
 	maps.Copy(labels, parsed)
 	return nil
 }
@@ -80,6 +83,7 @@ func ParseLabelPragma(path, raw string) (k8slabels.Set, error) {
 	if err := json.Unmarshal([]byte(raw), &csv); err != nil {
 		return nil, fmt.Errorf("parse %s labels pragma %q: expected JSON string, JSON string array, or JSON object: %w", path, raw, err)
 	}
+
 	return LabelsToSet(SplitLabelList(csv)), nil
 }
 

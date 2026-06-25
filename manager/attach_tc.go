@@ -19,11 +19,7 @@ import (
 // TC_ACT_OK is deliberately excluded because it means "accept and
 // stop" in standard TC semantics; programs that want chain
 // continuation should return TC_ACT_PIPE.
-var DefaultTCProceedOn = mustProceedOnMask(
-	dispatcher.DispatcherTypeTCIngress,
-	bpfman.TCActionPipe.Int32(),
-	bpfman.TCActionDispatcherReturn.Int32(),
-)
+var DefaultTCProceedOn = mustProceedOnMask(dispatcher.DispatcherTypeTCIngress, bpfman.TCActionPipe.Int32(), bpfman.TCActionDispatcherReturn.Int32())
 
 func mustProceedOnMask(dt dispatcher.DispatcherType, codes ...int32) uint32 {
 	mask, err := dispatcher.ProceedOnMask(dt, codes...)
@@ -126,6 +122,7 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 	if err != nil {
 		return bpfman.Link{}, err
 	}
+
 	nsid, err := netns.NSID(netnsPath)
 	if err != nil {
 		return bpfman.Link{}, fmt.Errorf("get nsid: %w", err)
@@ -182,31 +179,19 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 		case kerr == nil:
 			return true // live anchor; keep
 		case errors.Is(kerr, os.ErrNotExist):
-			m.logger.WarnContext(ctx, "ignoring stale TCX link whose anchor program is not in the kernel",
-				"interface", ifname,
-				"direction", direction.String(),
-				"dead_program_id", id)
+			m.logger.WarnContext(ctx, "ignoring stale TCX link whose anchor program is not in the kernel", "interface", ifname, "direction", direction.String(), "dead_program_id", id)
 			return false // confirmed dead; drop
 		default:
 			// Inconclusive lookup (transient, EPERM, fd exhaustion).
 			// Do not drop a possibly-live anchor on a kernel hiccup;
 			// keep it and let the attach surface any real failure.
-			m.logger.WarnContext(ctx, "inconclusive kernel lookup for TCX anchor; keeping link",
-				"interface", ifname,
-				"direction", direction.String(),
-				"program_id", id,
-				"error", kerr)
+			m.logger.WarnContext(ctx, "inconclusive kernel lookup for TCX anchor; keeping link", "interface", ifname, "direction", direction.String(), "program_id", id, "error", kerr)
 			return true
 		}
 	})
 	order := computeTCXAttachOrder(liveLinks, int32(priority))
 
-	m.logger.DebugContext(ctx, "computed TCX attach order",
-		"program_id", programID,
-		"priority", priority,
-		"existing_links", len(existingLinks),
-		"live_links", len(liveLinks),
-		"order", order)
+	m.logger.DebugContext(ctx, "computed TCX attach order", "program_id", programID, "priority", priority, "existing_links", len(existingLinks), "live_links", len(liveLinks), "order", order)
 
 	// --- Build and execute plan ---
 	plan := m.attachTCXPlan(programID, spec.Metadata(), ifindex, ifname, direction, priority, nsid, netnsPath, linkPinPath, progPinPath, target, order)
@@ -216,15 +201,7 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 	}
 
 	link := operation.Get(b, linkKey)
-	m.logger.InfoContext(ctx, "attached TCX program",
-		"link_id", link.Record.ID,
-		"program_id", programID,
-		"interface", ifname,
-		"direction", direction,
-		"ifindex", ifindex,
-		"nsid", nsid,
-		"priority", priority,
-		"pin_path", linkPinPath)
+	m.logger.InfoContext(ctx, "attached TCX program", "link_id", link.Record.ID, "program_id", programID, "interface", ifname, "direction", direction, "ifindex", ifindex, "nsid", nsid, "priority", priority, "pin_path", linkPinPath)
 
 	return link, nil
 }

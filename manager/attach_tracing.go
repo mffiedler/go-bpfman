@@ -51,6 +51,7 @@ func (m *Manager) validateTracepointExists(ctx context.Context, group, name stri
 	if err != nil {
 		return fmt.Errorf("list tracepoints: %w", err)
 	}
+
 	if len(tps) == 0 {
 		return nil
 	}

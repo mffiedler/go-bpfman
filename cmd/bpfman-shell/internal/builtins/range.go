@@ -62,6 +62,7 @@ func HandleRange(c driver.Ctx) (runtime.Value, error) {
 	if err != nil {
 		return runtime.Value{}, fmt.Errorf("range: invalid integer %q: %w", text, err)
 	}
+
 	// Cap at a sane upper bound to avoid pathological scripts
 	// freezing the shell on 'range 4294967295'. math.MaxInt32
 	// covers every realistic test loop and keeps the failure

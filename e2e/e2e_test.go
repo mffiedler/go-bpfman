@@ -3276,18 +3276,13 @@ func TestLoadWithMetadataAndGlobalData(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify user metadata is returned
-	require.Equal(t, "test-team", gotProg.Record.Meta.Metadata["owner"],
-		"Get should return user metadata 'owner'")
-	require.Equal(t, "e2e-testing", gotProg.Record.Meta.Metadata["environment"],
-		"Get should return user metadata 'environment'")
-	require.Equal(t, "metadata-test", gotProg.Record.Meta.Metadata["bpfman.io/application"],
-		"Get should return user metadata 'bpfman.io/application'")
+	require.Equal(t, "test-team", gotProg.Record.Meta.Metadata["owner"], "Get should return user metadata 'owner'")
+	require.Equal(t, "e2e-testing", gotProg.Record.Meta.Metadata["environment"], "Get should return user metadata 'environment'")
+	require.Equal(t, "metadata-test", gotProg.Record.Meta.Metadata["bpfman.io/application"], "Get should return user metadata 'bpfman.io/application'")
 
 	// Verify global data is returned
-	require.Equal(t, []byte{0x42}, gotProg.Record.Load.GlobalData()["config_u8"],
-		"Get should return global data 'config_u8'")
-	require.Equal(t, []byte{0xDE, 0xAD, 0xBE, 0xEF}, gotProg.Record.Load.GlobalData()["config_u32"],
-		"Get should return global data 'config_u32'")
+	require.Equal(t, []byte{0x42}, gotProg.Record.Load.GlobalData()["config_u8"], "Get should return global data 'config_u8'")
+	require.Equal(t, []byte{0xDE, 0xAD, 0xBE, 0xEF}, gotProg.Record.Load.GlobalData()["config_u32"], "Get should return global data 'config_u32'")
 
 	// Then: List should also return the user metadata and global data
 	listedProgs, err := env.List(ctx)
@@ -3295,16 +3290,12 @@ func TestLoadWithMetadataAndGlobalData(t *testing.T) {
 	require.Len(t, listedProgs, 1)
 
 	// Verify user metadata via List
-	require.Equal(t, "test-team", listedProgs[0].Record.Meta.Metadata["owner"],
-		"List should return user metadata 'owner'")
-	require.Equal(t, "e2e-testing", listedProgs[0].Record.Meta.Metadata["environment"],
-		"List should return user metadata 'environment'")
+	require.Equal(t, "test-team", listedProgs[0].Record.Meta.Metadata["owner"], "List should return user metadata 'owner'")
+	require.Equal(t, "e2e-testing", listedProgs[0].Record.Meta.Metadata["environment"], "List should return user metadata 'environment'")
 
 	// Verify global data via List
-	require.Equal(t, []byte{0x42}, listedProgs[0].Record.Load.GlobalData()["config_u8"],
-		"List should return global data 'config_u8'")
-	require.Equal(t, []byte{0xDE, 0xAD, 0xBE, 0xEF}, listedProgs[0].Record.Load.GlobalData()["config_u32"],
-		"List should return global data 'config_u32'")
+	require.Equal(t, []byte{0x42}, listedProgs[0].Record.Load.GlobalData()["config_u8"], "List should return global data 'config_u8'")
+	require.Equal(t, []byte{0xDE, 0xAD, 0xBE, 0xEF}, listedProgs[0].Record.Load.GlobalData()["config_u32"], "List should return global data 'config_u32'")
 
 	// When: unload
 	err = env.Unload(ctx, prog.Status.Kernel.ID)
@@ -3368,7 +3359,6 @@ func TestLoad_FentryFexit_TypeMismatchFailsLoudly(t *testing.T) {
 		},
 	})
 	require.Error(t, err, "load with type=Fexit against fentry SEC should fail")
-	require.Contains(t, err.Error(), "program type mismatch",
-		"error should name the mismatch explicitly; got: %v", err)
+	require.Contains(t, err.Error(), "program type mismatch", "error should name the mismatch explicitly; got: %v", err)
 	env.AssertCleanState()
 }

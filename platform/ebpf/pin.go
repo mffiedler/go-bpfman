@@ -100,6 +100,7 @@ func (k *kernelAdapter) GetPinned(ctx context.Context, pinPath string) (*kernel.
 	if !ok {
 		return nil, fmt.Errorf("failed to get program ID from kernel")
 	}
+
 	ebpfMapIDs, _ := info.MapIDs() // MapIDs may not be available on older kernels
 	mapIDs := make([]kernel.MapID, len(ebpfMapIDs))
 	for i, mid := range ebpfMapIDs {

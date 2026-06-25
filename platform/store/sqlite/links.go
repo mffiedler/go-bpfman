@@ -50,6 +50,7 @@ func (s *sqliteStore) DeleteLink(ctx context.Context, linkID bpfman.LinkID) erro
 	if err != nil {
 		return err
 	}
+
 	s.logger.Debug("sql", "stmt", "DeleteLink", "args", []any{linkID}, "duration_ms", msec(time.Since(start)), "rows_affected", rows)
 	if rows == 0 {
 		return fmt.Errorf("link %d: %w", linkID, platform.ErrRecordNotFound)
@@ -71,6 +72,7 @@ func (s *sqliteStore) CreatePendingLink(ctx context.Context, spec bpfman.LinkSpe
 		if err != nil {
 			return err
 		}
+
 		record, err = tx.setLinkPinPath(ctx, created.ID, linksDir)
 		return err
 	})
@@ -94,6 +96,7 @@ func (s *sqliteStore) setLinkPinPath(ctx context.Context, id bpfman.LinkID, link
 		s.logger.Debug("sql", "stmt", "SetLinkPinPath", "args", []any{pin, id}, "duration_ms", msec(time.Since(start)), "error", err)
 		return bpfman.LinkRecord{}, fmt.Errorf("failed to set link pin path: %w", err)
 	}
+
 	s.logger.Debug("sql", "stmt", "SetLinkPinPath", "args", []any{pin, id}, "duration_ms", msec(time.Since(start)))
 	return record, nil
 }
@@ -134,6 +137,7 @@ func (s *sqliteStore) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman
 		s.logger.Debug("sql", "stmt", "GetLinkRegistry", "args", []any{linkID}, "duration_ms", msec(time.Since(start)), "rows", 0)
 		return bpfman.LinkRecord{}, err
 	}
+
 	s.logger.Debug("sql", "stmt", "GetLinkRegistry", "args", []any{linkID}, "duration_ms", msec(time.Since(start)), "rows", 1)
 
 	// Phase 2: Get details based on link kind
@@ -141,6 +145,7 @@ func (s *sqliteStore) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman
 	if err != nil {
 		return bpfman.LinkRecord{}, err
 	}
+
 	record.Details = details
 
 	return record, nil
@@ -156,12 +161,14 @@ func (s *sqliteStore) ListLinks(ctx context.Context) ([]bpfman.LinkRecord, error
 		s.logger.Debug("sql", "stmt", "ListLinks", "duration_ms", msec(time.Since(start)), "error", err)
 		return nil, err
 	}
+
 	defer rows.Close()
 
 	result, err := s.scanLinkRecords(rows)
 	if err != nil {
 		return nil, err
 	}
+
 	s.logger.Debug("sql", "stmt", "ListLinks", "duration_ms", msec(time.Since(start)), "rows", len(result))
 
 	// Batch-fetch all details and populate links
@@ -181,12 +188,14 @@ func (s *sqliteStore) ListLinksByProgram(ctx context.Context, programID kernel.P
 		s.logger.Debug("sql", "stmt", "ListLinksByProgram", "args", []any{programID}, "duration_ms", msec(time.Since(start)), "error", err)
 		return nil, err
 	}
+
 	defer rows.Close()
 
 	result, err := s.scanLinkRecords(rows)
 	if err != nil {
 		return nil, err
 	}
+
 	s.logger.Debug("sql", "stmt", "ListLinksByProgram", "args", []any{programID}, "duration_ms", msec(time.Since(start)), "rows", len(result))
 
 	// Batch-fetch all details and populate links
@@ -206,6 +215,7 @@ func (s *sqliteStore) ListTCXLinksByInterface(ctx context.Context, nsid uint64, 
 		s.logger.Debug("sql", "stmt", "ListTCXLinksByInterface", "args", []any{nsid, ifindex, direction}, "duration_ms", msec(time.Since(start)), "error", err)
 		return nil, err
 	}
+
 	defer rows.Close()
 
 	result := make([]bpfman.TCXLinkInfo, 0)
@@ -215,12 +225,14 @@ func (s *sqliteStore) ListTCXLinksByInterface(ctx context.Context, nsid uint64, 
 		if err := rows.Scan(&info.LinkID, &kernelLinkID, &info.KernelProgramID, &info.Priority); err != nil {
 			return nil, fmt.Errorf("scan TCX link info: %w", err)
 		}
+
 		info.KernelLinkID = kernel.LinkID(kernelLinkID)
 		result = append(result, info)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate TCX links: %w", err)
 	}
+
 	s.logger.Debug("sql", "stmt", "ListTCXLinksByInterface", "args", []any{nsid, ifindex, direction}, "duration_ms", msec(time.Since(start)), "rows", len(result))
 	return result, nil
 }
@@ -244,6 +256,7 @@ func (s *sqliteStore) batchPopulateDetails(
 	if err != nil {
 		return fmt.Errorf("batch fetch %s details: %w", label, err)
 	}
+
 	defer rows.Close()
 
 	for rows.Next() {
@@ -251,6 +264,7 @@ func (s *sqliteStore) batchPopulateDetails(
 		if err != nil {
 			return fmt.Errorf("scan %s details: %w", label, err)
 		}
+
 		if idx, ok := linkIndex[linkID]; ok {
 			links[idx].Details = details
 		}
@@ -503,6 +517,7 @@ func (s *sqliteStore) createLink(ctx context.Context, spec bpfman.LinkSpec) (bpf
 	if err != nil {
 		return bpfman.LinkRecord{}, err
 	}
+
 	record.Details = spec.Details
 	return record, nil
 }
@@ -527,6 +542,7 @@ func (s *sqliteStore) saveDetails(
 		s.logger.Debug("sql", "stmt", "Save"+label+"Details", "args", args, "duration_ms", msec(time.Since(start)), "error", err)
 		return fmt.Errorf("failed to insert %s details: %w", label, err)
 	}
+
 	s.logger.Debug("sql", "stmt", "Save"+label+"Details", "args", args, "duration_ms", msec(time.Since(start)), "rows_affected", 1)
 	return nil
 }
@@ -591,6 +607,7 @@ func (s *sqliteStore) insertLinkRegistry(ctx context.Context, spec bpfman.LinkSp
 		s.logger.Debug("sql", "stmt", "InsertLinkRegistry", "args", []any{spec.Kind, spec.ProgramID, kernelLinkID, pinPath, "(timestamp)"}, "duration_ms", msec(time.Since(start)), "error", err)
 		return bpfman.LinkRecord{}, fmt.Errorf("failed to insert link: %w", err)
 	}
+
 	record.Details = spec.Details
 
 	s.logger.Debug("sql", "stmt", "InsertLinkRegistry", "args", []any{spec.Kind, spec.ProgramID, kernelLinkID, pinPath, "(timestamp)"}, "duration_ms", msec(time.Since(start)))
@@ -622,6 +639,7 @@ func (s *sqliteStore) scanLinkRecord(row *sql.Row) (bpfman.LinkRecord, error) {
 	if err != nil {
 		return bpfman.LinkRecord{}, fmt.Errorf("invalid link kind in DB for link %d: %w", linkID, err)
 	}
+
 	record.Kind = kind
 	record.ProgramID = programID
 	if kernelLinkID.Valid {
@@ -636,10 +654,12 @@ func (s *sqliteStore) scanLinkRecord(row *sql.Row) (bpfman.LinkRecord, error) {
 	if err != nil {
 		return bpfman.LinkRecord{}, err
 	}
+
 	createdAt, err := time.Parse(time.RFC3339, createdAtStr)
 	if err != nil {
 		return bpfman.LinkRecord{}, fmt.Errorf("invalid created_at timestamp for link %d: %q: %w", linkID, createdAtStr, err)
 	}
+
 	record.CreatedAt = createdAt
 
 	return record, nil
@@ -668,6 +688,7 @@ func (s *sqliteStore) scanLinkRecords(rows *sql.Rows) ([]bpfman.LinkRecord, erro
 		if err != nil {
 			return nil, fmt.Errorf("invalid link kind in DB for link %d: %w", linkID, err)
 		}
+
 		record := bpfman.LinkRecord{
 			ID:        bpfman.LinkID(linkID),
 			Kind:      kind,
@@ -685,10 +706,12 @@ func (s *sqliteStore) scanLinkRecords(rows *sql.Rows) ([]bpfman.LinkRecord, erro
 		if err != nil {
 			return nil, err
 		}
+
 		createdAt, err := time.Parse(time.RFC3339, createdAtStr)
 		if err != nil {
 			return nil, fmt.Errorf("invalid created_at timestamp for link %d: %q: %w", linkID, createdAtStr, err)
 		}
+
 		record.CreatedAt = createdAt
 
 		result = append(result, record)
@@ -719,6 +742,7 @@ func (s *sqliteStore) getDetailsFromRow(
 		s.logger.Debug("sql", "stmt", "Get"+label+"Details", "args", []any{linkID}, "duration_ms", msec(time.Since(start)), "error", err)
 		return nil, err
 	}
+
 	s.logger.Debug("sql", "stmt", "Get"+label+"Details", "args", []any{linkID}, "duration_ms", msec(time.Since(start)), "rows", 1)
 	return details, nil
 }

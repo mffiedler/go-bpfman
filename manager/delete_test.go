@@ -45,8 +45,7 @@ func TestDeleteProgramsRecursiveTreatsBatchDependentsAsDeleted(t *testing.T) {
 
 			var results []manager.DeleteProgramResult
 			err := lock.Run(ctx, f.fixture.Layout.LockPath(), func(ctx context.Context, writeLock lock.WriterScope) error {
-				results = f.fixture.Manager.DeletePrograms(ctx, writeLock, ids,
-					manager.DeleteProgramsOpts{Recursive: true})
+				results = f.fixture.Manager.DeletePrograms(ctx, writeLock, ids, manager.DeleteProgramsOpts{Recursive: true})
 				return nil
 			})
 			require.NoError(t, err)
@@ -72,8 +71,7 @@ func TestDeleteProgramsAllRecursiveSucceedsWithSharedMapDependents(t *testing.T)
 
 	var results []manager.DeleteProgramResult
 	err = lock.Run(ctx, f.fixture.Layout.LockPath(), func(ctx context.Context, writeLock lock.WriterScope) error {
-		results = f.fixture.Manager.DeletePrograms(ctx, writeLock, ids,
-			manager.DeleteProgramsOpts{Recursive: true})
+		results = f.fixture.Manager.DeletePrograms(ctx, writeLock, ids, manager.DeleteProgramsOpts{Recursive: true})
 		return nil
 	})
 	require.NoError(t, err)
@@ -98,8 +96,7 @@ func TestDeleteProgramsAllOrdersDependentsWithoutRecursive(t *testing.T) {
 
 	var results []manager.DeleteProgramResult
 	err = lock.Run(ctx, f.fixture.Layout.LockPath(), func(ctx context.Context, writeLock lock.WriterScope) error {
-		results = f.fixture.Manager.DeletePrograms(ctx, writeLock, ids,
-			manager.DeleteProgramsOpts{All: true})
+		results = f.fixture.Manager.DeletePrograms(ctx, writeLock, ids, manager.DeleteProgramsOpts{All: true})
 		return nil
 	})
 	require.NoError(t, err)
@@ -120,9 +117,7 @@ func TestDeleteProgramsOrdersExplicitDependentsWithoutRecursive(t *testing.T) {
 
 	var results []manager.DeleteProgramResult
 	err := lock.Run(ctx, f.fixture.Layout.LockPath(), func(ctx context.Context, writeLock lock.WriterScope) error {
-		results = f.fixture.Manager.DeletePrograms(ctx, writeLock,
-			[]kernel.ProgramID{f.ownerID, f.dependentID},
-			manager.DeleteProgramsOpts{})
+		results = f.fixture.Manager.DeletePrograms(ctx, writeLock, []kernel.ProgramID{f.ownerID, f.dependentID}, manager.DeleteProgramsOpts{})
 		return nil
 	})
 	require.NoError(t, err)
@@ -173,9 +168,7 @@ func TestDeleteLinksRecursiveTreatsBatchDependentsAsDeleted(t *testing.T) {
 
 			var results []manager.DeleteLinkResult
 			err = lock.Run(ctx, f.fixture.Layout.LockPath(), func(ctx context.Context, writeLock lock.WriterScope) error {
-				results = f.fixture.Manager.DeleteLinks(ctx, writeLock,
-					tt.ids(ownerLink.Record.ID, dependentLink.Record.ID),
-					manager.DeleteLinksOpts{Recursive: true})
+				results = f.fixture.Manager.DeleteLinks(ctx, writeLock, tt.ids(ownerLink.Record.ID, dependentLink.Record.ID), manager.DeleteLinksOpts{Recursive: true})
 				return nil
 			})
 			require.NoError(t, err)
@@ -207,10 +200,7 @@ func newSharedMapDeleteFixture(t *testing.T, ctx context.Context) sharedMapDelet
 		{Name: "dependent", SectionName: "tracepoint", Type: bpfman.ProgramTypeTracepoint},
 	})
 
-	owner, err := f.LoadDirect(ctx,
-		manager.LoadSource{FilePath: obj},
-		[]manager.ProgramSpec{{Name: "owner", Type: bpfman.ProgramTypeTracepoint}},
-		manager.LoadOpts{})
+	owner, err := f.LoadDirect(ctx, manager.LoadSource{FilePath: obj}, []manager.ProgramSpec{{Name: "owner", Type: bpfman.ProgramTypeTracepoint}}, manager.LoadOpts{})
 	require.NoError(t, err)
 	require.Len(t, owner, 1)
 	ownerID := owner[0].Record.ProgramID

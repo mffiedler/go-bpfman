@@ -46,6 +46,7 @@ func runWorkloadDriver() {
 			_ = out.Encode(workloadAck{Op: "decode", Err: err.Error()})
 			continue
 		}
+
 		ack := workloadAck{Op: cmd.Op, OK: true}
 		switch cmd.Op {
 		case "uprobe":

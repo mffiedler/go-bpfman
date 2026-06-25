@@ -72,6 +72,7 @@ func singleUintArg(verb string, args []runtime.Arg, max uint64) (uint64, error) 
 	if err != nil {
 		return 0, fmt.Errorf("%s: invalid integer %q: %w", verb, text, err)
 	}
+
 	if n > max {
 		return 0, fmt.Errorf("%s: value %d does not fit in %d bits", verb, n, bitsForMax(max))
 	}

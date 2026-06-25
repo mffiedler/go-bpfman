@@ -143,6 +143,7 @@ func TestIsBpffsMounted(t *testing.T) {
 			if err != nil {
 				t.Fatalf("IsBpffsMounted() error = %v", err)
 			}
+
 			if got != tt.want {
 				t.Errorf("IsBpffsMounted() = %v, want %v", got, tt.want)
 			}
@@ -184,6 +185,7 @@ func TestIsBpffsMounted_LongLine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("IsBpffsMounted() error = %v (scanner buffer may be too small)", err)
 	}
+
 	if !got {
 		t.Error("IsBpffsMounted() = false, want true")
 	}
@@ -204,6 +206,7 @@ func TestIsBpffsMounted_EscapedMountPoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("IsBpffsMounted() error = %v", err)
 	}
+
 	if !got {
 		t.Error("IsBpffsMounted() = false, want true")
 	}

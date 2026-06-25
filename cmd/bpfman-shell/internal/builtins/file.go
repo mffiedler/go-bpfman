@@ -29,10 +29,12 @@ func handleFile(c driver.Ctx) (runtime.Value, error) {
 	if err != nil {
 		return runtime.Value{}, fmt.Errorf("file temp: %w", err)
 	}
+
 	path, err := driver.WriteValueToTemp(v)
 	if err != nil {
 		return runtime.Value{}, fmt.Errorf("file temp: %w", err)
 	}
+
 	if err := c.CLI.PrintOut(path + "\n"); err != nil {
 		return runtime.Value{}, err
 	}

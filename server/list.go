@@ -24,6 +24,7 @@ func (s *Server) List(ctx context.Context, req *pb.ListRequest) (*pb.ListRespons
 		if err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid program type: %v", err)
 		}
+
 		opts = append(opts, bpfman.WithTypes(pt))
 	}
 	if len(req.MatchMetadata) > 0 {

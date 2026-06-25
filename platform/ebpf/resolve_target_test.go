@@ -60,6 +60,7 @@ func TestParseLdSoCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseLdSoCache: %v", err)
 	}
+
 	if len(entries) != 2 {
 		t.Fatalf("entries: got %d, want 2", len(entries))
 	}
@@ -81,10 +82,12 @@ func TestParseLdSoCache_RealHostCacheIfPresent(t *testing.T) {
 	if err != nil {
 		t.Skipf("no host cache: %v", err)
 	}
+
 	entries, err := parseLdSoCache(data)
 	if err != nil {
 		t.Skipf("host cache not new-format: %v", err)
 	}
+
 	if len(entries) == 0 {
 		t.Fatal("host cache parsed to zero entries")
 	}
@@ -211,6 +214,7 @@ func writeResolverFixture(t *testing.T, pid string, maps string, cache []byte) t
 		if err := os.MkdirAll(filepath.Join(procRoot, pid), 0o755); err != nil {
 			t.Fatal(err)
 		}
+
 		if err := os.WriteFile(filepath.Join(procRoot, pid, "maps"), []byte(maps), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -236,6 +240,7 @@ func TestResolveUprobeTarget_TierOrder(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		if res.Path != "/usr/lib64/libc.so.6" || res.Source != sourceProcMaps {
 			t.Fatalf("got %+v", res)
 		}
@@ -248,6 +253,7 @@ func TestResolveUprobeTarget_TierOrder(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		if res.Path != "/usr/bin/thing" || res.Source != sourceAbsolutePath {
 			t.Fatalf("got %+v", res)
 		}
@@ -260,6 +266,7 @@ func TestResolveUprobeTarget_TierOrder(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		if res.Path != "/from/cache/libc.so.6" || res.Source != sourceLdSoCache {
 			t.Fatalf("got %+v", res)
 		}
@@ -272,6 +279,7 @@ func TestResolveUprobeTarget_TierOrder(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		if res.Path != "/from/cache/libc.so.6" || res.Source != sourceLdSoCache {
 			t.Fatalf("got %+v", res)
 		}

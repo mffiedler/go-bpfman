@@ -63,6 +63,5 @@ func TestTCAction_JSONRoundTrip(t *testing.T) {
 	}
 
 	var got bpfman.TCAction
-	assert.Error(t, json.Unmarshal([]byte(`"garbage"`), &got),
-		"unknown name should be rejected on decode")
+	assert.Error(t, json.Unmarshal([]byte(`"garbage"`), &got), "unknown name should be rejected on decode")
 }

@@ -44,11 +44,7 @@ func (c *LoadImageCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	}
 	defer cleanup()
 
-	logger.Info("loading BPF programs from OCI image",
-		"image", c.ImageURL,
-		"programs", len(c.Programs),
-		"pull_policy", c.PullPolicy.String(),
-	)
+	logger.Info("loading BPF programs from OCI image", "image", c.ImageURL, "programs", len(c.Programs), "pull_policy", c.PullPolicy.String())
 
 	// loadImageResult captures the result of a load image operation.
 	type loadImageResult struct {
@@ -64,6 +60,7 @@ func (c *LoadImageCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
 	if auth != nil {
 		logger.Debug("using registry auth", "username", auth.Username)
 	}
@@ -89,6 +86,7 @@ func (c *LoadImageCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to load from image: %w", err)
 	}
+
 	result := loadImageResult{Programs: loaded}
 
 	return cliformat.RenderLoadedPrograms(cli.Out, cliformat.LoadedProgramsView{Programs: result.Programs}, format)
@@ -104,6 +102,7 @@ func registryAuthFromFlag(encoded string) (*platform.ImageAuth, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid registry-auth: %w", err)
 	}
+
 	return &platform.ImageAuth{
 		Username: username,
 		Password: password,

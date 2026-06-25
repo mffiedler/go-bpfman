@@ -31,6 +31,7 @@ func runKillFireWorker(args []string) error {
 	if err != nil {
 		return fmt.Errorf("kill-fire-worker: invalid N %q: %w", args[2], err)
 	}
+
 	k, err := strconv.Atoi(args[3])
 	if err != nil {
 		return fmt.Errorf("kill-fire-worker: invalid K %q: %w", args[3], err)
@@ -62,6 +63,7 @@ func runKillFireWorker(args []string) error {
 		if err != nil {
 			return fmt.Errorf("kill-fire-worker: create ack %s: %w", ack, err)
 		}
+
 		f.Close()
 	}
 	return nil

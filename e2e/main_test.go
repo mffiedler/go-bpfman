@@ -38,6 +38,7 @@ func acquireSuiteLock() {
 		fmt.Fprintf(os.Stderr, "e2e: open suite lock %s: %v\n", e2eSuiteLockPath, err)
 		os.Exit(1)
 	}
+
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		fmt.Fprintf(os.Stderr,
 			"e2e: another e2e.test run holds %s -- refusing to start.\n"+
@@ -47,6 +48,7 @@ func acquireSuiteLock() {
 		f.Close()
 		os.Exit(1)
 	}
+
 	suiteLock = f
 }
 
@@ -148,6 +150,7 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "os.Executable: %v\n", err)
 		os.Exit(1)
 	}
+
 	selfExe = exe
 
 	if err := cleanupStaleTestDirs(); err != nil {
@@ -162,6 +165,7 @@ func TestMain(m *testing.M) {
 			fmt.Fprintf(os.Stderr, "shared runtime setup failed: %v\n", err)
 			os.Exit(1)
 		}
+
 		code := m.Run()
 		// Suite-end leak detection promotes a passing run to a
 		// failure if any program or link survived: the t.Cleanup

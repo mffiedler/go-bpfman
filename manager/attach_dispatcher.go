@@ -65,16 +65,7 @@ func (m *Manager) dispatcherAttach(ctx context.Context, p dispatcherAttachParams
 	}
 
 	r := operation.Get(b, extResultKey)
-	m.logger.InfoContext(ctx, "attached via dispatcher",
-		"type", p.dispType,
-		"link_id", r.link.Record.ID,
-		"program_id", p.programID,
-		"interface", p.ifname,
-		"ifindex", p.ifindex,
-		"nsid", r.key.Nsid,
-		"position", r.position,
-		"revision", r.revision,
-		"pin_path", r.pinPath)
+	m.logger.InfoContext(ctx, "attached via dispatcher", "type", p.dispType, "link_id", r.link.Record.ID, "program_id", p.programID, "interface", p.ifname, "ifindex", p.ifindex, "nsid", r.key.Nsid, "position", r.position, "revision", r.revision, "pin_path", r.pinPath)
 
 	return r.link, nil
 }

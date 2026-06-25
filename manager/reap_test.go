@@ -58,8 +58,7 @@ func TestReapDeadProgramRecords(t *testing.T) {
 
 	// Guard: without a real map_owner_id FK the ordering assertion
 	// would be hollow (both rows independently deletable).
-	require.NotNil(t, dependent[0].Record.Handles.MapOwnerID,
-		"dependent must record a map owner; otherwise the test does not exercise the RESTRICT ordering")
+	require.NotNil(t, dependent[0].Record.Handles.MapOwnerID, "dependent must record a map owner; otherwise the test does not exercise the RESTRICT ordering")
 	require.Equal(t, ownerID, *dependent[0].Record.Handles.MapOwnerID)
 
 	// A standalone program that stays live in the kernel.

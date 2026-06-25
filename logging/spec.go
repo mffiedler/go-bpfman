@@ -68,6 +68,7 @@ func ParseSpec(s string) (Spec, error) {
 			if err != nil {
 				return spec, err
 			}
+
 			spec.BaseLevel = level
 		}
 	}

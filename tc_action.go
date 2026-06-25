@@ -73,6 +73,7 @@ func (a *TCAction) UnmarshalText(b []byte) error {
 	if err != nil {
 		return err
 	}
+
 	*a = parsed
 	return nil
 }
@@ -103,6 +104,7 @@ func ParseTCActions(actions []string) ([]TCAction, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		result = append(result, a)
 	}
 	return result, nil

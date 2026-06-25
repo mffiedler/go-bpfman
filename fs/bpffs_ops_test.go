@@ -44,6 +44,7 @@ func TestBPFFS_RemoveDispatcherProgPin_ValidatesNameAndParent(t *testing.T) {
 	if err := os.WriteFile(badPin, []byte("x"), 0644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
+
 	if err := b.RemoveDispatcherProgPin(bpfman.ProgPinPath(badPin)); err == nil {
 		t.Errorf("RemoveDispatcherProgPin(%s) = nil; want error", badPin)
 	}
@@ -53,10 +54,12 @@ func TestBPFFS_RemoveDispatcherProgPin_ValidatesNameAndParent(t *testing.T) {
 	if err := os.MkdirAll(badDir, 0755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
+
 	badPin2 := filepath.Join(badDir, "dispatcher")
 	if err := os.WriteFile(badPin2, []byte("x"), 0644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
+
 	if err := b.RemoveDispatcherProgPin(bpfman.ProgPinPath(badPin2)); err == nil {
 		t.Errorf("RemoveDispatcherProgPin(%s) = nil; want error", badPin2)
 	}
@@ -98,6 +101,7 @@ func TestBPFFS_RemoveProgPin_ValidatesNumericSuffix(t *testing.T) {
 	if err := os.WriteFile(ok, []byte("x"), 0644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
+
 	if err := b.RemoveProgPin(bpfman.ProgPinPath(ok)); err != nil {
 		t.Errorf("RemoveProgPin(%s) = %v; want nil", ok, err)
 	}
@@ -107,6 +111,7 @@ func TestBPFFS_RemoveProgPin_ValidatesNumericSuffix(t *testing.T) {
 	if err := os.WriteFile(bad, []byte("x"), 0644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
+
 	if err := b.RemoveProgPin(bpfman.ProgPinPath(bad)); err == nil {
 		t.Errorf("RemoveProgPin(%s) = nil; want error", bad)
 	}
@@ -130,6 +135,7 @@ func TestBPFFS_RemoveDispatcherLinkPin_ValidatesPattern(t *testing.T) {
 	if err := os.WriteFile(ok, []byte("x"), 0644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
+
 	if err := b.RemoveDispatcherLinkPin(bpfman.LinkPath(ok)); err != nil {
 		t.Errorf("RemoveDispatcherLinkPin(%s) = %v; want nil", ok, err)
 	}
@@ -139,6 +145,7 @@ func TestBPFFS_RemoveDispatcherLinkPin_ValidatesPattern(t *testing.T) {
 	if err := os.WriteFile(bad, []byte("x"), 0644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
+
 	if err := b.RemoveDispatcherLinkPin(bpfman.LinkPath(bad)); err == nil {
 		t.Errorf("RemoveDispatcherLinkPin(%s) = nil; want error", bad)
 	}

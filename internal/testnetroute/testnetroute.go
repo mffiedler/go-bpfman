@@ -122,6 +122,7 @@ func Installed() ([]netlink.Rule, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list ip rules: %w", err)
 	}
+
 	var out []netlink.Rule
 	for _, r := range rules {
 		if matches(r) {
@@ -152,17 +153,18 @@ func Ensure() error {
 	if err != nil {
 		return err
 	}
+
 	atPref, err := netlink.RuleListFiltered(netlink.FAMILY_V4,
 		&netlink.Rule{Priority: pref}, netlink.RT_FILTER_PRIORITY)
 	if err != nil {
 		return fmt.Errorf("list ip rules at pref %d: %w", pref, err)
 	}
+
 	if slices.ContainsFunc(atPref, matches) {
 		return nil
 	}
 	if len(atPref) > 0 {
-		return fmt.Errorf("ip rule preference %d is occupied by a foreign rule (dst %v table %d); set %s to a free preference (wanted: %s)",
-			pref, atPref[0].Dst, atPref[0].Table, PrefEnvVar, Spec(pref))
+		return fmt.Errorf("ip rule preference %d is occupied by a foreign rule (dst %v table %d); set %s to a free preference (wanted: %s)", pref, atPref[0].Dst, atPref[0].Table, PrefEnvVar, Spec(pref))
 	}
 	if err := netlink.RuleAdd(rule(pref)); err != nil {
 		if errors.Is(err, os.ErrExist) {
@@ -186,6 +188,7 @@ func RemoveAll() error {
 	if err != nil {
 		return err
 	}
+
 	for _, r := range existing {
 		del := r
 		if err := netlink.RuleDel(&del); err != nil {

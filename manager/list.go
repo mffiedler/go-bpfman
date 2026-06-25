@@ -193,6 +193,7 @@ func (m *Manager) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.P
 	if err != nil {
 		return bpfman.Program{}, fmt.Errorf("list programs for map users: %w", err)
 	}
+
 	prog.Status.MapUsedBy = inspect.MapSetMembers(records)[programID]
 	return prog, nil
 }
@@ -244,6 +245,7 @@ func (m *Manager) ListLinksScopedToPrograms(ctx context.Context, programOpts []b
 	if err != nil {
 		return nil, err
 	}
+
 	allowed := make(map[kernel.ProgramID]struct{}, len(progs))
 	for _, p := range progs {
 		allowed[p.Record.ProgramID] = struct{}{}
@@ -253,6 +255,7 @@ func (m *Manager) ListLinksScopedToPrograms(ctx context.Context, programOpts []b
 	if err != nil {
 		return nil, err
 	}
+
 	result := []bpfman.LinkRecord{}
 	for _, l := range links {
 		if _, ok := allowed[l.ProgramID]; ok {
@@ -351,13 +354,7 @@ func (m *Manager) FindLoadedProgramByMetadata(ctx context.Context, key, value st
 		slices.SortFunc(matches, func(a, b inspect.ProgramView) int {
 			return cmp.Compare(a.ProgramID, b.ProgramID)
 		})
-		m.logger.DebugContext(ctx, "found metadata match",
-			"key", key,
-			"value", value,
-			"total_matches", len(matches),
-			"program_id", matches[0].ProgramID,
-			"program_name", matches[0].Managed.Meta.Name,
-		)
+		m.logger.DebugContext(ctx, "found metadata match", "key", key, "value", value, "total_matches", len(matches), "program_id", matches[0].ProgramID, "program_name", matches[0].Managed.Meta.Name)
 		return *matches[0].Managed, matches[0].ProgramID, nil
 	}
 }

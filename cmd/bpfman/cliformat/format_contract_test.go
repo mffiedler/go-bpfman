@@ -42,13 +42,11 @@ func TestStdlibJSONMarshal_NoTrailingNewline(t *testing.T) {
 
 			plain, err := json.Marshal(tc.v)
 			require.NoError(t, err)
-			require.False(t, bytes.HasSuffix(plain, []byte("\n")),
-				"json.Marshal(%v) unexpectedly ends with \\n: %q", tc.v, plain)
+			require.False(t, bytes.HasSuffix(plain, []byte("\n")), "json.Marshal(%v) unexpectedly ends with \\n: %q", tc.v, plain)
 
 			indented, err := json.MarshalIndent(tc.v, "", "  ")
 			require.NoError(t, err)
-			require.False(t, bytes.HasSuffix(indented, []byte("\n")),
-				"json.MarshalIndent(%v) unexpectedly ends with \\n: %q", tc.v, indented)
+			require.False(t, bytes.HasSuffix(indented, []byte("\n")), "json.MarshalIndent(%v) unexpectedly ends with \\n: %q", tc.v, indented)
 		})
 	}
 }

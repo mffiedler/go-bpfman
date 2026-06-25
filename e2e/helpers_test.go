@@ -127,6 +127,7 @@ func NewTestEnv(t *testing.T) *TestEnv {
 	if err != nil {
 		t.Fatalf("invalid image cache directory: %v", err)
 	}
+
 	imageCache, err := fs.EnsureCache(imageCacheBase)
 	if err != nil {
 		t.Fatalf("failed to ensure image cache: %v", err)
@@ -278,6 +279,7 @@ func callerOp() string {
 	if !ok {
 		return "?"
 	}
+
 	fn := runtime.FuncForPC(pc)
 	if fn == nil {
 		return "?"
@@ -299,6 +301,7 @@ func (e *TestEnv) LoadImage(ctx context.Context, ref platform.ImageRef, programs
 	if err == nil {
 		e.trackPrograms(result)
 	}
+
 	return result, err
 }
 
@@ -320,6 +323,7 @@ func (e *TestEnv) LoadFile(ctx context.Context, filePath string, programs []mana
 	if err == nil {
 		e.trackPrograms(result)
 	}
+
 	return result, err
 }
 
@@ -331,6 +335,7 @@ func (e *TestEnv) Unload(ctx context.Context, programID kernel.ProgramID) error 
 	if err == nil {
 		e.untrackProgram(programID)
 	}
+
 	return err
 }
 
@@ -347,6 +352,7 @@ func (e *TestEnv) List(ctx context.Context) ([]bpfman.Program, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if !e.shared {
 		return result, nil
 	}
@@ -382,11 +388,13 @@ func (e *TestEnv) Attach(ctx context.Context, spec bpfman.AttachSpec) (bpfman.Li
 	if err != nil {
 		return bpfman.LinkRecord{}, err
 	}
+
 	e.trackLink(result.Record.ID)
 	record, err := e.Manager.GetLink(ctx, result.Record.ID)
 	if err != nil {
 		return bpfman.LinkRecord{ID: result.Record.ID}, nil
 	}
+
 	return record, nil
 }
 
@@ -398,6 +406,7 @@ func (e *TestEnv) Detach(ctx context.Context, linkID bpfman.LinkID) error {
 	if err == nil {
 		e.untrackLink(linkID)
 	}
+
 	return err
 }
 
@@ -469,6 +478,7 @@ func (e *TestEnv) ListLinks(ctx context.Context) ([]bpfman.LinkRecord, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if !e.shared {
 		return all, nil
 	}
@@ -487,6 +497,7 @@ func (e *TestEnv) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.Lin
 	if err != nil {
 		return bpfman.LinkRecord{}, nil, err
 	}
+
 	return record, record.Details, nil
 }
 
@@ -515,9 +526,7 @@ func (e *TestEnv) AssertProgramCount(expected int) {
 	e.T.Helper()
 	if e.shared {
 		got := e.scopeProgramCount()
-		require.Equal(e.T, expected, got,
-			"unexpected scope-local program count (shared runtime mode); want=%d got=%d",
-			expected, got)
+		require.Equal(e.T, expected, got, "unexpected scope-local program count (shared runtime mode); want=%d got=%d", expected, got)
 		return
 	}
 	ctx := context.Background()
@@ -532,9 +541,7 @@ func (e *TestEnv) AssertLinkCount(expected int) {
 	e.T.Helper()
 	if e.shared {
 		got := e.scopeLinkCount()
-		require.Equal(e.T, expected, got,
-			"unexpected scope-local link count (shared runtime mode); want=%d got=%d",
-			expected, got)
+		require.Equal(e.T, expected, got, "unexpected scope-local link count (shared runtime mode); want=%d got=%d", expected, got)
 		return
 	}
 	ctx := context.Background()
@@ -679,10 +686,12 @@ func runCommand(cmd string) error {
 	if err != nil {
 		return err
 	}
+
 	state, err := p.Wait()
 	if err != nil {
 		return err
 	}
+
 	if !state.Success() {
 		return fmt.Errorf("command failed: %s", cmd)
 	}
@@ -706,6 +715,7 @@ func tcFilterCount(t *testing.T, iface, direction string) int {
 		t.Logf("tc filter show dev %s %s: %v (output: %s)", iface, direction, err, out)
 		return 0
 	}
+
 	count := 0
 	for line := range strings.SplitSeq(string(out), "\n") {
 		if strings.Contains(line, "pref") {
@@ -727,6 +737,7 @@ func cleanupStaleTestDirs() error {
 	if err != nil {
 		return err
 	}
+
 	if !plan.Empty() {
 		fmt.Fprintln(os.Stderr, "e2e pre-flight removed residue from a prior run:")
 		plan.Describe(os.Stderr)
@@ -1027,9 +1038,7 @@ func waitDetachQuiescent(t *testing.T, p QuiescenceProbe) QuiescenceResult {
 				if p.ControlMap != 0 {
 					controlDelta := readArrayCounterByID(t, p.ControlMap) - controlInitial
 					expected := uint64(probes) * p.ControlWeight
-					require.Equal(t, expected, controlDelta,
-						"control sibling counter delta should equal probes(%d) * weight(%d) = %d after barrier; got %d. Workload likely not hitting the hook -- 'quiescence' would be a false positive",
-						probes, p.ControlWeight, expected, controlDelta)
+					require.Equal(t, expected, controlDelta, "control sibling counter delta should equal probes(%d) * weight(%d) = %d after barrier; got %d. Workload likely not hitting the hook -- 'quiescence' would be a false positive", probes, p.ControlWeight, expected, controlDelta)
 				}
 				return result
 			}
@@ -1138,6 +1147,7 @@ func readHashCounterByID(t *testing.T, mapID kernel.MapID, key uint32) uint64 {
 		}
 		t.Fatalf("lookup key %d in map ID %d: %v", key, mapID, err)
 	}
+
 	return val
 }
 

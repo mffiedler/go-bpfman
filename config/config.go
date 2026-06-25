@@ -203,6 +203,7 @@ func (c *SigningConfig) TrustedSigningIdentities() ([]SigningIdentity, error) {
 		if err != nil {
 			return nil, fmt.Errorf("trusted identity %d: %w", i+1, err)
 		}
+
 		identities = append(identities, identity)
 	}
 	if len(c.TrustedIdentities) > 1 {
@@ -226,6 +227,7 @@ func (c *TrustedIdentityConfig) SigningIdentity() (SigningIdentity, error) {
 	if err != nil {
 		return SigningIdentity{}, err
 	}
+
 	issuer, issuerRegexp, issuerConfigured, err := signingIdentityField(
 		"certificate_oidc_issuer",
 		c.CertificateOIDCIssuer,
@@ -235,6 +237,7 @@ func (c *TrustedIdentityConfig) SigningIdentity() (SigningIdentity, error) {
 	if err != nil {
 		return SigningIdentity{}, err
 	}
+
 	if !subjectConfigured || !issuerConfigured {
 		return SigningIdentity{}, fmt.Errorf("certificate identity and OIDC issuer must be configured together")
 	}
@@ -261,6 +264,7 @@ func signingIdentityField(exactName, exactValue, regexpName, regexpValue string)
 		if _, err := regexp.Compile(regexpValue); err != nil {
 			return "", "", false, fmt.Errorf("invalid signing %s %q: %w", regexpName, regexpValue, err)
 		}
+
 		return "", anchorRegexp(regexpValue), true, nil
 	}
 	if exactValue != "" {

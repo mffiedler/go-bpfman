@@ -230,12 +230,10 @@ func makeRenderPollFailure(cli *cli.CLI) func(source.Span, time.Duration, time.D
 	return func(span source.Span, timeout, every time.Duration, attempts int, lastRetry string) {
 		loc := SourceLoc{File: span.Pos.File, Line: span.Pos.Line, Col: span.Pos.Col}
 		if lastRetry == "" {
-			_ = cli.PrintErrf("%s[poll] FAIL: timed out after %s every %s across %d attempt(s)\n",
-				loc, timeout, every, attempts)
+			_ = cli.PrintErrf("%s[poll] FAIL: timed out after %s every %s across %d attempt(s)\n", loc, timeout, every, attempts)
 			return
 		}
-		_ = cli.PrintErrf("%s[poll] FAIL: timed out after %s every %s across %d attempt(s): %s\n",
-			loc, timeout, every, attempts, lastRetry)
+		_ = cli.PrintErrf("%s[poll] FAIL: timed out after %s every %s across %d attempt(s): %s\n", loc, timeout, every, attempts, lastRetry)
 	}
 }
 
@@ -303,6 +301,7 @@ func sourceBaseDir(file string) string {
 	if err != nil {
 		return ""
 	}
+
 	return cwd
 }
 
@@ -323,21 +322,25 @@ func runProgramSource(ctx context.Context, cli *cli.CLI, env *runtime.Env, input
 		if isContextCancellation(ctx, err) {
 			return err
 		}
+
 		var re *RuntimeError
 		if errors.As(err, &re) {
 			cite(re.Span, re.Msg)
 			return ErrScriptError
 		}
+
 		var ae *ExecArgError
 		if errors.As(err, &ae) {
 			cite(ae.Span, ae.Msg)
 			return ErrScriptError
 		}
+
 		var cnf *CommandNotFound
 		if errors.As(err, &cnf) {
 			cite(cnf.Span, cnf.Name+": command not found")
 			return ErrScriptError
 		}
+
 		var ef *ExecFailure
 		if errors.As(err, &ef) {
 			if loc.File != "" {
@@ -357,6 +360,7 @@ func runProgramSource(ctx context.Context, cli *cli.CLI, env *runtime.Env, input
 			}
 			return ErrScriptError
 		}
+
 		var se *syntax.SyntaxError
 		if errors.As(err, &se) && se.Span.Pos.Line > 0 {
 			// A *SyntaxError that escaped through callDef has
@@ -376,6 +380,7 @@ func runProgramSource(ctx context.Context, cli *cli.CLI, env *runtime.Env, input
 			emitFrame(se.Span, se.Msg)
 			return ErrScriptError
 		}
+
 		_ = cli.PrintErrf("%serror: %v\n", loc, err)
 		return ErrScriptError
 	}
@@ -386,6 +391,7 @@ func runProgramSource(ctx context.Context, cli *cli.CLI, env *runtime.Env, input
 	if err != nil {
 		return report(err)
 	}
+
 	evalErr := execProgram(prog, env)
 	if evalErr != nil {
 		if errors.Is(evalErr, runtime.ErrRequireFailed) {
@@ -404,8 +410,10 @@ func runProgramSource(ctx context.Context, cli *cli.CLI, env *runtime.Env, input
 			RenderEnvelopeFailure(cli, "guard", loc.File, stmtLoc, gf.Args, gf.Envelope)
 			return ErrScriptError
 		}
+
 		return report(evalErr)
 	}
+
 	return nil
 }
 
@@ -414,6 +422,7 @@ func execProgram(prog *syntax.Program, env *runtime.Env) error {
 	if err != nil {
 		return err
 	}
+
 	return runtime.Exec(lp, env)
 }
 
@@ -446,6 +455,7 @@ func Dispatch(ctx context.Context, cli *cli.CLI, session *runtime.Session, env *
 	if !ok {
 		return false, runtime.Value{}, nil
 	}
+
 	callLoc := dispatchSourceLoc(loc, env, span)
 	c := Ctx{
 		Ctx:  ctx,
@@ -476,6 +486,7 @@ func makeExecCommand(ctxFor func() context.Context, cli *cli.CLI, session *runti
 		if err != nil {
 			return runtime.Value{}, err
 		}
+
 		if handled {
 			return val, nil
 		}
@@ -489,6 +500,7 @@ func makeExecCommand(ctxFor func() context.Context, cli *cli.CLI, session *runti
 		if err := ResolveCommandPath(first, span); err != nil {
 			return runtime.Value{}, err
 		}
+
 		val, err = RunExecStatement(ctx, cli, args, span)
 		return val, syntax.FrameAt(span, err)
 	}
@@ -556,6 +568,7 @@ func makeExecBind(ctxFor func() context.Context, cli *cli.CLI, session *runtime.
 			}
 			return runtime.BindResult{Rc: rc, Primary: primary}, nil
 		}
+
 		return runExternalAsBind(ctx, args, span)
 	}
 }
@@ -585,6 +598,7 @@ func runExternalAsBind(ctx context.Context, args []runtime.Arg, span source.Span
 	if err != nil {
 		return runtime.BindResult{}, err
 	}
+
 	rc := runtime.Envelope{
 		ExitCode: cap.ExitCode,
 		Stdout:   cap.Stdout,

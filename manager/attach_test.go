@@ -265,14 +265,12 @@ func TestAttach_PersistsLinkMetadata(t *testing.T) {
 
 	link, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err, "AttachKprobe should succeed")
-	assert.Equal(t, map[string]string{"owner": "acme", "env": "test"}, link.Record.Metadata,
-		"attach response should carry the metadata")
+	assert.Equal(t, map[string]string{"owner": "acme", "env": "test"}, link.Record.Metadata, "attach response should carry the metadata")
 
 	// Persistence: re-read from the store.
 	got, err := fix.Store.GetLink(ctx, link.Record.ID)
 	require.NoError(t, err)
-	assert.Equal(t, map[string]string{"owner": "acme", "env": "test"}, got.Metadata,
-		"metadata must persist on the link record")
+	assert.Equal(t, map[string]string{"owner": "acme", "env": "test"}, got.Metadata, "metadata must persist on the link record")
 }
 
 // TestAttachXDP_PersistsLinkMetadata verifies the XDP dispatcher path
@@ -294,13 +292,11 @@ func TestAttachXDP_PersistsLinkMetadata(t *testing.T) {
 
 	link, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err, "AttachXDP should succeed")
-	assert.Equal(t, map[string]string{"owner": "acme", "env": "test"}, link.Record.Metadata,
-		"attach response should carry the metadata")
+	assert.Equal(t, map[string]string{"owner": "acme", "env": "test"}, link.Record.Metadata, "attach response should carry the metadata")
 
 	got, err := fix.Store.GetLink(ctx, link.Record.ID)
 	require.NoError(t, err)
-	assert.Equal(t, map[string]string{"owner": "acme", "env": "test"}, got.Metadata,
-		"metadata must persist on the XDP link record")
+	assert.Equal(t, map[string]string{"owner": "acme", "env": "test"}, got.Metadata, "metadata must persist on the XDP link record")
 }
 
 // TestAttachTC_PersistsLinkMetadata verifies the TC dispatcher path
@@ -322,13 +318,11 @@ func TestAttachTC_PersistsLinkMetadata(t *testing.T) {
 
 	link, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err, "AttachTC should succeed")
-	assert.Equal(t, map[string]string{"owner": "acme", "env": "test"}, link.Record.Metadata,
-		"attach response should carry the metadata")
+	assert.Equal(t, map[string]string{"owner": "acme", "env": "test"}, link.Record.Metadata, "attach response should carry the metadata")
 
 	got, err := fix.Store.GetLink(ctx, link.Record.ID)
 	require.NoError(t, err)
-	assert.Equal(t, map[string]string{"owner": "acme", "env": "test"}, got.Metadata,
-		"metadata must persist on the TC link record")
+	assert.Equal(t, map[string]string{"owner": "acme", "env": "test"}, got.Metadata, "metadata must persist on the TC link record")
 }
 
 // TestAttachXDP_RebuildPreservesExistingMemberMetadata is the key
@@ -369,8 +363,7 @@ func TestAttachXDP_RebuildPreservesExistingMemberMetadata(t *testing.T) {
 
 	gotA, err := fix.Store.GetLink(ctx, linkA.Record.ID)
 	require.NoError(t, err)
-	assert.Equal(t, map[string]string{"owner": "a"}, gotA.Metadata,
-		"rebuild must preserve the existing member's metadata")
+	assert.Equal(t, map[string]string{"owner": "a"}, gotA.Metadata, "rebuild must preserve the existing member's metadata")
 }
 
 // TestListLinksScopedToPrograms verifies the Rust-faithful program-scoped
@@ -451,8 +444,7 @@ func TestAttachTC_RebuildPreservesExistingMemberMetadata(t *testing.T) {
 
 	gotA, err := fix.Store.GetLink(ctx, linkA.Record.ID)
 	require.NoError(t, err)
-	assert.Equal(t, map[string]string{"owner": "a"}, gotA.Metadata,
-		"rebuild must preserve the existing member's metadata")
+	assert.Equal(t, map[string]string{"owner": "a"}, gotA.Metadata, "rebuild must preserve the existing member's metadata")
 }
 
 // TestAttachTCX_PersistsLinkMetadata verifies the TCX path (saveLinkNode)
@@ -476,13 +468,11 @@ func TestAttachTCX_PersistsLinkMetadata(t *testing.T) {
 
 	link, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err, "AttachTCX should succeed")
-	assert.Equal(t, map[string]string{"owner": "acme", "env": "test"}, link.Record.Metadata,
-		"attach response should carry the metadata")
+	assert.Equal(t, map[string]string{"owner": "acme", "env": "test"}, link.Record.Metadata, "attach response should carry the metadata")
 
 	got, err := fix.Store.GetLink(ctx, link.Record.ID)
 	require.NoError(t, err)
-	assert.Equal(t, map[string]string{"owner": "acme", "env": "test"}, got.Metadata,
-		"metadata must persist on the TCX link record")
+	assert.Equal(t, map[string]string{"owner": "acme", "env": "test"}, got.Metadata, "metadata must persist on the TCX link record")
 }
 
 // TestKprobe_AttachWithOffset verifies that:
@@ -801,8 +791,7 @@ func TestXDP_FullLifecycle(t *testing.T) {
 		err := fix.Detach(ctx, linkID)
 		require.NoError(t, err, "Detach link %d should succeed", linkID)
 		expectedLinks := numAttachments - i - 1
-		assert.Equal(t, expectedLinks, fix.Kernel.LinkCount(),
-			"should have %d links after detaching link %d", expectedLinks, i+1)
+		assert.Equal(t, expectedLinks, fix.Kernel.LinkCount(), "should have %d links after detaching link %d", expectedLinks, i+1)
 	}
 
 	// Step 4: Unload program
@@ -992,8 +981,7 @@ func TestTC_DetachUsesPersistedFilterHandle(t *testing.T) {
 
 	events := fix.Kernel.TCDetachEvents()
 	require.NotEmpty(t, events)
-	assert.Equal(t, persisted, events[len(events)-1].handle,
-		"detach must delete the TC filter by the exact persisted handle")
+	assert.Equal(t, persisted, events[len(events)-1].handle, "detach must delete the TC filter by the exact persisted handle")
 }
 
 // TestTC_ClsactReclaimedOnLastDetach proves the manager owns the clsact
@@ -1035,18 +1023,15 @@ func TestTC_ClsactReclaimedOnLastDetach(t *testing.T) {
 
 	details, ok := first.Record.Details.(bpfman.TCDetails)
 	require.True(t, ok)
-	require.True(t, fix.Kernel.ClsactPresent("", int(details.Ifindex)),
-		"clsact must exist while members are attached")
+	require.True(t, fix.Kernel.ClsactPresent("", int(details.Ifindex)), "clsact must exist while members are attached")
 
 	// Detaching one of two leaves a member, so the clsact stays.
 	require.NoError(t, fix.Detach(ctx, first.Record.ID))
-	require.True(t, fix.Kernel.ClsactPresent("", int(details.Ifindex)),
-		"clsact must be retained while a member remains")
+	require.True(t, fix.Kernel.ClsactPresent("", int(details.Ifindex)), "clsact must be retained while a member remains")
 
 	// Detaching the last member reclaims the clsact.
 	require.NoError(t, fix.Detach(ctx, second.Record.ID))
-	require.False(t, fix.Kernel.ClsactPresent("", int(details.Ifindex)),
-		"clsact must be reclaimed once the last member detaches")
+	require.False(t, fix.Kernel.ClsactPresent("", int(details.Ifindex)), "clsact must be reclaimed once the last member detaches")
 }
 
 func TestTCProceedOnUnspecWritesDispatcherBitZero(t *testing.T) {
@@ -1453,20 +1438,15 @@ func TestMapSharing_MultiProgramLoad_FirstIsOwner(t *testing.T) {
 
 	// Verify map sharing through pin directories
 	// First program owns maps - uses its own ID in pin dir
-	assert.Contains(t, prog1.Record.Handles.MapsDir, fmt.Sprintf("/%d", ownerID),
-		"first program should have its own maps directory")
+	assert.Contains(t, prog1.Record.Handles.MapsDir, fmt.Sprintf("/%d", ownerID), "first program should have its own maps directory")
 
 	// Second and third programs share maps with owner
-	assert.Contains(t, prog2.Record.Handles.MapsDir, fmt.Sprintf("/%d", ownerID),
-		"second program should share owner's maps directory")
-	assert.Contains(t, prog3.Record.Handles.MapsDir, fmt.Sprintf("/%d", ownerID),
-		"third program should share owner's maps directory")
+	assert.Contains(t, prog2.Record.Handles.MapsDir, fmt.Sprintf("/%d", ownerID), "second program should share owner's maps directory")
+	assert.Contains(t, prog3.Record.Handles.MapsDir, fmt.Sprintf("/%d", ownerID), "third program should share owner's maps directory")
 
 	// All should have same pin dir
-	assert.Equal(t, prog1.Record.Handles.MapsDir, prog2.Record.Handles.MapsDir,
-		"second program should have same PinDir as owner")
-	assert.Equal(t, prog1.Record.Handles.MapsDir, prog3.Record.Handles.MapsDir,
-		"third program should have same PinDir as owner")
+	assert.Equal(t, prog1.Record.Handles.MapsDir, prog2.Record.Handles.MapsDir, "second program should have same PinDir as owner")
+	assert.Equal(t, prog1.Record.Handles.MapsDir, prog3.Record.Handles.MapsDir, "third program should have same PinDir as owner")
 }
 
 // TestMapSharing_SingleProgram_NoMapOwner verifies that:
@@ -1487,8 +1467,7 @@ func TestMapSharing_SingleProgram_NoMapOwner(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Single program owns its own maps - pin dir contains its own ID
-	assert.Contains(t, prog.Record.Handles.MapsDir, fmt.Sprintf("/%d", prog.Record.ProgramID),
-		"single program should have its own maps directory")
+	assert.Contains(t, prog.Record.Handles.MapsDir, fmt.Sprintf("/%d", prog.Record.ProgramID), "single program should have its own maps directory")
 }
 
 // TestPinBasedExtension_XDPAttach_UsesProgPinPath verifies that:
@@ -1522,8 +1501,7 @@ func TestPinBasedExtension_XDPAttach_UsesProgPinPath(t *testing.T) {
 	extOps := fix.Kernel.ExtensionAttachOps()
 	require.Len(t, extOps, 1, "expected one XDP extension attach")
 	assert.Equal(t, "attach-xdp-ext", extOps[0].Op)
-	assert.Equal(t, expectedProgPinPath, extOps[0].ProgPinPath,
-		"XDP attach should use the program's PinPath")
+	assert.Equal(t, expectedProgPinPath, extOps[0].ProgPinPath, "XDP attach should use the program's PinPath")
 }
 
 // TestPinBasedExtension_TCAttach_UsesProgPinPath verifies that:
@@ -1557,8 +1535,7 @@ func TestPinBasedExtension_TCAttach_UsesProgPinPath(t *testing.T) {
 	extOps := fix.Kernel.ExtensionAttachOps()
 	require.Len(t, extOps, 1, "expected one TC extension attach")
 	assert.Equal(t, "attach-tc-ext", extOps[0].Op)
-	assert.Equal(t, expectedProgPinPath, extOps[0].ProgPinPath,
-		"TC attach should use the program's PinPath")
+	assert.Equal(t, expectedProgPinPath, extOps[0].ProgPinPath, "TC attach should use the program's PinPath")
 }
 
 // TestPinBasedExtension_MultiProgram_XDPAttach_UsesOwnPinPath verifies that:
@@ -1588,8 +1565,7 @@ func TestPinBasedExtension_MultiProgram_XDPAttach_UsesOwnPinPath(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify XDP program has same MapPinPath as owner
-	assert.Equal(t, ownerMapPinPath, prog2.Record.Handles.MapsDir,
-		"XDP program should have same MapPinPath as owner")
+	assert.Equal(t, ownerMapPinPath, prog2.Record.Handles.MapsDir, "XDP program should have same MapPinPath as owner")
 
 	// Attach the XDP program
 	attachSpec, err := bpfman.NewXDPAttachSpec(prog2.Record.ProgramID, "eth0", 0)
@@ -1600,8 +1576,7 @@ func TestPinBasedExtension_MultiProgram_XDPAttach_UsesOwnPinPath(t *testing.T) {
 	// Verify the kernel received the XDP program's own PinPath
 	extOps := fix.Kernel.ExtensionAttachOps()
 	require.Len(t, extOps, 1, "expected one XDP extension attach")
-	assert.Equal(t, prog2.Record.Handles.PinPath.String(), extOps[0].ProgPinPath,
-		"XDP attach should use the program's own PinPath")
+	assert.Equal(t, prog2.Record.Handles.PinPath.String(), extOps[0].ProgPinPath, "XDP attach should use the program's own PinPath")
 }
 
 // TestPinBasedExtension_MultiProgram_TCAttach_UsesOwnPinPath verifies that:
@@ -1631,8 +1606,7 @@ func TestPinBasedExtension_MultiProgram_TCAttach_UsesOwnPinPath(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify TC program has same MapPinPath as owner
-	assert.Equal(t, ownerMapPinPath, prog2.Record.Handles.MapsDir,
-		"TC program should have same MapPinPath as owner")
+	assert.Equal(t, ownerMapPinPath, prog2.Record.Handles.MapsDir, "TC program should have same MapPinPath as owner")
 
 	// Attach the TC program
 	attachSpec, err := bpfman.NewTCAttachSpec(prog2.Record.ProgramID, "eth0", bpfman.TCDirectionIngress, 50)
@@ -1643,8 +1617,7 @@ func TestPinBasedExtension_MultiProgram_TCAttach_UsesOwnPinPath(t *testing.T) {
 	// Verify the kernel received the TC program's own PinPath
 	extOps := fix.Kernel.ExtensionAttachOps()
 	require.Len(t, extOps, 1, "expected one TC extension attach")
-	assert.Equal(t, prog2.Record.Handles.PinPath.String(), extOps[0].ProgPinPath,
-		"TC attach should use the program's own PinPath")
+	assert.Equal(t, prog2.Record.Handles.PinPath.String(), extOps[0].ProgPinPath, "TC attach should use the program's own PinPath")
 }
 
 // =============================================================================
@@ -1774,18 +1747,14 @@ func TestXDP_DispatcherRebuildRollbackRestoresOuterLink(t *testing.T) {
 	linkPath := fix.Layout.BPFFS().DispatcherLinkPath(snap.Key.Type, snap.Key.Nsid, snap.Key.Ifindex)
 	oldTarget, ok := fix.Kernel.XDPDispatcherTarget(linkPath)
 	require.True(t, ok, "dispatcher link should exist")
-	assert.Equal(t,
-		fix.Layout.BPFFS().DispatcherProgPath(snap.Key.Type, snap.Key.Nsid, snap.Key.Ifindex, snap.Revision),
-		oldTarget,
-	)
+	assert.Equal(t, fix.Layout.BPFFS().DispatcherProgPath(snap.Key.Type, snap.Key.Nsid, snap.Key.Ifindex, snap.Revision), oldTarget)
 
 	_, err = fix.Attach(ctx, attachSpec)
 	require.ErrorIs(t, err, persistErr)
 
 	restoredTarget, ok := fix.Kernel.XDPDispatcherTarget(linkPath)
 	require.True(t, ok, "rollback should keep the dispatcher link")
-	assert.Equal(t, oldTarget, restoredTarget,
-		"snapshot failure must retarget the outer link to the old dispatcher")
+	assert.Equal(t, oldTarget, restoredTarget, "snapshot failure must retarget the outer link to the old dispatcher")
 
 	after, err := fix.Store.GetDispatcherSnapshot(ctx, summaries[0].Key)
 	require.NoError(t, err)
@@ -1829,10 +1798,8 @@ func TestTC_DispatcherRebuildRollbackRestoresOldFilter(t *testing.T) {
 	handles := fix.Kernel.TCFilterHandles()
 	require.Len(t, handles, 1, "rollback should leave exactly one TC filter")
 	created := tcFilterCreateHandles(fix.Kernel.Operations())
-	require.GreaterOrEqual(t, len(created), 3,
-		"rollback should create a replacement filter for the old dispatcher")
-	assert.NotEqual(t, created[1], handles[0],
-		"snapshot failure must not leave the failed new filter installed")
+	require.GreaterOrEqual(t, len(created), 3, "rollback should create a replacement filter for the old dispatcher")
+	assert.NotEqual(t, created[1], handles[0], "snapshot failure must not leave the failed new filter installed")
 
 	after, err := fix.Store.GetDispatcherSnapshot(ctx, summaries[0].Key)
 	require.NoError(t, err)
@@ -2092,8 +2059,7 @@ func TestXDP_ExtensionPositionsAreSequential(t *testing.T) {
 	require.NoError(t, err)
 	lastXDP, ok := lastRecord.Details.(bpfman.XDPDetails)
 	require.True(t, ok)
-	assert.Equal(t, int32(0), lastXDP.Position,
-		"last-attached link should be at position 0")
+	assert.Equal(t, int32(0), lastXDP.Position, "last-attached link should be at position 0")
 }
 
 // TestTC_ExtensionPositionsAreSequential verifies that multiple TC
@@ -2138,8 +2104,7 @@ func TestTC_ExtensionPositionsAreSequential(t *testing.T) {
 	require.NoError(t, err)
 	lastTC, ok := lastRecord.Details.(bpfman.TCDetails)
 	require.True(t, ok)
-	assert.Equal(t, int32(0), lastTC.Position,
-		"last-attached link should be at position 0")
+	assert.Equal(t, int32(0), lastTC.Position, "last-attached link should be at position 0")
 }
 
 // =============================================================================
@@ -2495,8 +2460,7 @@ func TestTCX_AttachUsesProgramPinPath(t *testing.T) {
 	tcxOps := fix.Kernel.TCXAttachOps()
 	require.Len(t, tcxOps, 1, "expected one TCX attach")
 	assert.Equal(t, "attach-tcx", tcxOps[0].Op)
-	assert.Equal(t, expectedPinPath, tcxOps[0].Name,
-		"TCX attach should use prog.PinPath directly")
+	assert.Equal(t, expectedPinPath, tcxOps[0].Name, "TCX attach should use prog.PinPath directly")
 }
 
 // =============================================================================
@@ -2690,8 +2654,7 @@ func TestXDPDispatcher_FullLifecycle(t *testing.T) {
 		err := fix.Detach(ctx, linkID)
 		require.NoError(t, err, "Detach link %d should succeed", linkID)
 		expectedLinks := numAttachments - i - 1
-		assert.Equal(t, expectedLinks, fix.Kernel.LinkCount(),
-			"should have %d links after detaching link %d", expectedLinks, i+1)
+		assert.Equal(t, expectedLinks, fix.Kernel.LinkCount(), "should have %d links after detaching link %d", expectedLinks, i+1)
 	}
 
 	// Step 4: Unload program
@@ -2944,8 +2907,7 @@ func TestTracepointAttach_PreflightRejectsUnknown(t *testing.T) {
 	require.ErrorAs(t, err, &tpErr, "expected ErrTracepointNotFound, got %T: %v", err, err)
 	assert.Equal(t, "syscalls", tpErr.Group)
 	assert.Equal(t, "sched_switch", tpErr.Name)
-	assert.Contains(t, tpErr.Suggestions, "sched/sched_switch",
-		"expected sched/sched_switch among suggestions, got %v", tpErr.Suggestions)
+	assert.Contains(t, tpErr.Suggestions, "sched/sched_switch", "expected sched/sched_switch among suggestions, got %v", tpErr.Suggestions)
 	assert.Contains(t, err.Error(), "did you mean")
 }
 

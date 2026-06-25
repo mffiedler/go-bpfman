@@ -20,6 +20,7 @@ func Parse(tokens []Token) (*Program, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	var start source.Pos
 	if len(tokens) > 0 {
 		start = tokens[0].Pos
@@ -28,6 +29,7 @@ func Parse(tokens []Token) (*Program, error) {
 	if err := validateLocs(prog); err != nil {
 		return nil, err
 	}
+
 	return prog, nil
 }
 
@@ -166,6 +168,7 @@ func (p *parser) parseStmts(isEnd func() bool) ([]Stmt, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		if stmt != nil {
 			stmts = append(stmts, stmt)
 		}
@@ -302,6 +305,7 @@ func (p *parser) parseAssertClause(keywordTok Token) (AssertClause, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		return &AssertCommandClause{
 			Head:     buf[bodyStart].Text,
 			HeadSpan: buf[bodyStart].Span,
@@ -314,6 +318,7 @@ func (p *parser) parseAssertClause(keywordTok Token) (AssertClause, error) {
 	if err != nil {
 		return nil, WrapError(keywordTok.Text, err)
 	}
+
 	return &AssertExprClause{Expr: expr}, nil
 }
 
@@ -328,6 +333,7 @@ func (p *parser) parseAssertStmt(isRequire bool) (Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return &AssertStmt{
 		IsRequire: isRequire,
 		Clause:    clause,
@@ -370,13 +376,16 @@ func (p *parser) parseExprStmt() (Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if len(tokens) == 0 {
 		return nil, LocErrorf(startLoc, "empty expression statement")
 	}
+
 	expr, err := parseExpression(tokens)
 	if err != nil {
 		return nil, err
 	}
+
 	return &ExprStmt{Expr: expr, Span: p.spanFrom(startLoc)}, nil
 }
 
@@ -385,6 +394,7 @@ func (p *parser) parseBreakStmt() (Stmt, error) {
 	if err := p.rejectTrailingArgs("break"); err != nil {
 		return nil, err
 	}
+
 	return &BreakStmt{Span: p.spanFrom(t.Pos)}, nil
 }
 
@@ -393,6 +403,7 @@ func (p *parser) parseContinueStmt() (Stmt, error) {
 	if err := p.rejectTrailingArgs("continue"); err != nil {
 		return nil, err
 	}
+
 	return &ContinueStmt{Span: p.spanFrom(t.Pos)}, nil
 }
 
@@ -429,6 +440,7 @@ func (p *parser) parseLetStmt() (Stmt, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		if p.atEOF() {
 			return nil, spanErrorf(openTok.Span, "let: expected '=' or '<-' after name list")
 		}
@@ -442,13 +454,16 @@ func (p *parser) parseLetStmt() (Stmt, error) {
 			if err != nil {
 				return nil, err
 			}
+
 			if len(rhsTokens) == 0 {
 				return nil, spanErrorf(letTok.Span, "let requires: let (<names>) = <value...>")
 			}
+
 			rhs, err := parseExpression(rhsTokens)
 			if err != nil {
 				return nil, err
 			}
+
 			return &LetDestructureStmt{Names: names, RHS: rhs, Span: p.spanFrom(letTok.Pos)}, nil
 		case TokenBind:
 			return nil, spanErrorf(openTok.Span, "tuple bind after '<-' is no longer supported; bind a single outcome name and use named fields")
@@ -483,13 +498,16 @@ func (p *parser) parseLetStmt() (Stmt, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		if len(rhsTokens) == 0 {
 			return nil, spanErrorf(letTok.Span, "let requires: let <name> = <value...>")
 		}
+
 		rhs, err := parseExpression(rhsTokens)
 		if err != nil {
 			return nil, err
 		}
+
 		return &LetStmt{Name: name, RHS: rhs, Span: p.spanFrom(letTok.Pos)}, nil
 	case TokenBind:
 		return p.parseBindRHS(letTok.Pos, name, false)
@@ -512,13 +530,16 @@ func (p *parser) parseDeferStmt() (Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if len(cmdTokens) == 0 {
 		return nil, spanErrorf(deferTok.Span, "defer requires a command form")
 	}
+
 	args, err := parseCommandArgs(cmdTokens)
 	if err != nil {
 		return nil, err
 	}
+
 	cmd := &CommandStmt{Args: args, Span: p.spanFrom(cmdTokens[0].Pos)}
 	return &DeferStmt{Cmd: cmd, Span: p.spanFrom(deferTok.Pos)}, nil
 }
@@ -636,6 +657,7 @@ func (p *parser) parseBindRHS(stmtLoc source.Pos, target Ident, guard bool) (Stm
 		if err != nil {
 			return nil, err
 		}
+
 		fe := feStmt.(*ForEachStmt)
 		if len(fe.Body) == 0 {
 			return nil, spanErrorf(bindTok.Span, "bind-collect: foreach body must produce a command at its last statement")
@@ -655,10 +677,12 @@ func (p *parser) parseBindRHS(stmtLoc source.Pos, target Ident, guard bool) (Stm
 	if err != nil {
 		return nil, err
 	}
+
 	args, err := parseCommandArgs(cmdTokens)
 	if err != nil {
 		return nil, err
 	}
+
 	cmd := &CommandStmt{Args: args, Span: p.spanFrom(cmdTokens[0].Pos)}
 	return &BindStmt{Target: target, Cmd: cmd, Guard: guard, Span: p.spanFrom(stmtLoc)}, nil
 }
@@ -935,6 +959,7 @@ func (p *parser) parseDefStmt() (Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	// Skip separators between ')' and '{'.
 	for !p.atEOF() && p.peek().Kind == TokenSep {
 		p.pos++
@@ -943,6 +968,7 @@ func (p *parser) parseDefStmt() (Stmt, error) {
 	if err != nil {
 		return nil, WrapError(fmt.Sprintf("def %s", name.Text), err)
 	}
+
 	return &DefStmt{Name: name, Params: params, Body: body, Span: p.spanFrom(defTok.Pos)}, nil
 }
 
@@ -960,13 +986,16 @@ func (p *parser) parseReturnStmt() (Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if len(tokens) == 0 {
 		return nil, spanErrorf(retTok.Span, "return requires an expression: return EXPR")
 	}
+
 	expr, err := parseExpression(tokens)
 	if err != nil {
 		return nil, WrapError("return", err)
 	}
+
 	return &ReturnStmt{Expr: expr, Span: p.spanFrom(retTok.Pos)}, nil
 }
 
@@ -1064,10 +1093,12 @@ func (p *parser) parsePollStmt() (Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	body, err := p.parseBlock()
 	if err != nil {
 		return nil, WrapError("poll", err)
 	}
+
 	return &PollStmt{
 		Timeout: timeout,
 		Every:   every,
@@ -1085,6 +1116,7 @@ func (p *parser) parsePollClauses(pollTok Token) (time.Duration, time.Duration, 
 	if err != nil {
 		return 0, 0, err
 	}
+
 	if p.atEOF() || p.peek().Kind != TokenWord || p.peek().Text != "every" {
 		return 0, 0, spanErrorf(pollTok.Span, "poll requires 'every DUR' after timeout")
 	}
@@ -1093,6 +1125,7 @@ func (p *parser) parsePollClauses(pollTok Token) (time.Duration, time.Duration, 
 	if err != nil {
 		return 0, 0, err
 	}
+
 	return timeout, every, nil
 }
 
@@ -1108,9 +1141,11 @@ func (p *parser) parseDurationWord(ownerTok Token, owner, clause string) (time.D
 	if err != nil {
 		return 0, spanErrorf(durTok.Span, "%s %s: %v", owner, clause, err)
 	}
+
 	if d <= 0 {
 		return 0, spanErrorf(durTok.Span, "%s %s: %q is not a positive duration", owner, clause, durTok.Text)
 	}
+
 	return d, nil
 }
 
@@ -1126,6 +1161,7 @@ func (p *parser) parseRetryStmt() (Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	var msgTokens, unlessTokens []Token
 	for i, t := range tokens {
 		if t.Kind == TokenWord && t.Text == "unless" {
@@ -1143,6 +1179,7 @@ build:
 		if err != nil {
 			return nil, WrapError("retry", err)
 		}
+
 		message = expr
 	}
 	var unless Expr
@@ -1154,6 +1191,7 @@ build:
 		if err != nil {
 			return nil, WrapError("retry", err)
 		}
+
 		unless = expr
 	}
 	return &RetryStmt{
@@ -1169,6 +1207,7 @@ func (p *parser) parseForEachStmt() (Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if p.atEOF() || p.peek().Kind != TokenWord || p.peek().Text != "in" {
 		return nil, spanErrorf(feTok.Span, "foreach requires 'in' after the loop variable")
 	}
@@ -1177,17 +1216,21 @@ func (p *parser) parseForEachStmt() (Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if len(listTokens) == 0 {
 		return nil, spanErrorf(feTok.Span, "foreach requires: foreach <name> in <expr> { ... }")
 	}
+
 	list, err := parseExpression(listTokens)
 	if err != nil {
 		return nil, err
 	}
+
 	body, err := p.parseBlock()
 	if err != nil {
 		return nil, err
 	}
+
 	return &ForEachStmt{Names: names, List: list, Body: body, Span: p.spanFrom(feTok.Pos)}, nil
 }
 
@@ -1215,6 +1258,7 @@ func (p *parser) parseForEachNames(feTok Token) ([]Ident, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return []Ident{name}, nil
 }
 
@@ -1246,6 +1290,7 @@ func (p *parser) parseForEachDestructureNames(feTok Token) ([]Ident, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		if name.Text != "_" {
 			if seen[name.Text] {
 				return nil, spanErrorf(nameTok.Span, "foreach: duplicate name %q", name.Text)
@@ -1367,10 +1412,12 @@ func (p *parser) parseIfStmt() (Stmt, error) {
 	if err != nil {
 		return nil, WrapError("if", err)
 	}
+
 	then, err := p.parseBlock()
 	if err != nil {
 		return nil, WrapError("if", err)
 	}
+
 	// Capture the end at each block's closing brace before the
 	// elif/else lookahead below advances past trailing separators, so
 	// the statement span ends at `}` and a comment following the block
@@ -1396,10 +1443,12 @@ func (p *parser) parseIfStmt() (Stmt, error) {
 			if err != nil {
 				return nil, WrapError("elif", err)
 			}
+
 			eb, err := p.parseBlock()
 			if err != nil {
 				return nil, WrapError("elif", err)
 			}
+
 			branch := p.spanFrom(elifTok.Pos)
 			elifs = append(elifs, IfBranch{Cond: ec, Body: eb, Span: branch})
 			end = branch.End
@@ -1409,6 +1458,7 @@ func (p *parser) parseIfStmt() (Stmt, error) {
 			if err != nil {
 				return nil, WrapError("else", err)
 			}
+
 			els = eb
 			end = p.spanFrom(ifTok.Pos).End
 			return &IfStmt{Cond: cond, Then: then, Elifs: elifs, Else: els, Span: source.Span{Pos: ifTok.Pos, End: end}}, nil
@@ -1503,6 +1553,7 @@ func (p *parser) parseBlock() ([]Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if p.atEOF() || !(p.peek().Kind == TokenWord && p.peek().Text == "}") {
 		return nil, fmt.Errorf("unterminated block: missing '}'")
 	}
@@ -1540,6 +1591,7 @@ func parseExpression(tokens []Token) (Expr, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if !ep.eof() {
 		t := ep.peek()
 		if hint, ok := smushedArithmeticHint(t); ok {
@@ -1641,10 +1693,12 @@ func parseInterpBody(inner string, span source.Span) (Expr, error) {
 	if err != nil {
 		return nil, spanErrorf(span, "string interpolation ${%s}: %v", inner, err)
 	}
+
 	expr, ok := tryParseExpression(tokens)
 	if !ok {
 		return nil, spanErrorf(span, "string interpolation ${%s}: not a valid expression", inner)
 	}
+
 	return expr, nil
 }
 
@@ -1678,6 +1732,7 @@ func tryParseExpression(tokens []Token) (Expr, bool) {
 	if err != nil {
 		return nil, false
 	}
+
 	return e, true
 }
 
@@ -1736,12 +1791,14 @@ func (p *exprParser) parseOr() (Expr, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	for !p.eof() && isKeywordWord(p.peek(), "or") {
 		p.advance()
 		right, err := p.parseAnd()
 		if err != nil {
 			return nil, err
 		}
+
 		left = &LogicalExpr{Op: "or", Left: left, Right: right, Span: p.spanFromNodeStart(left)}
 	}
 	return left, nil
@@ -1754,12 +1811,14 @@ func (p *exprParser) parseAnd() (Expr, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	for !p.eof() && isKeywordWord(p.peek(), "and") {
 		p.advance()
 		right, err := p.parseNot()
 		if err != nil {
 			return nil, err
 		}
+
 		left = &LogicalExpr{Op: "and", Left: left, Right: right, Span: p.spanFromNodeStart(left)}
 	}
 	return left, nil
@@ -1777,6 +1836,7 @@ func (p *exprParser) parseNot() (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		return &NotExpr{Operand: operand, Span: p.spanFrom(notTok.Pos)}, nil
 	}
 	return p.parseComparison()
@@ -1800,6 +1860,7 @@ func (p *exprParser) parseComparison() (Expr, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if p.eof() {
 		return left, nil
 	}
@@ -1817,6 +1878,7 @@ func (p *exprParser) parseComparison() (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		return &MatchesExpr{Target: left, Block: block, Span: p.spanFromNodeStart(left)}, nil
 	}
 	op, ok := binaryOpFromToken(p.peek())
@@ -1828,6 +1890,7 @@ func (p *exprParser) parseComparison() (Expr, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return &BinaryExpr{Left: left, Op: op, Right: right, Span: p.spanFromNodeStart(left)}, nil
 }
 
@@ -1841,6 +1904,7 @@ func (p *exprParser) parseAdditive() (Expr, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	for !p.eof() {
 		t := p.peek()
 		if t.Kind != TokenWord || (t.Text != "+" && t.Text != "-") {
@@ -1851,6 +1915,7 @@ func (p *exprParser) parseAdditive() (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		left = &BinaryExpr{Left: left, Op: opTok.Text, Right: right, Span: p.spanFromNodeStart(left)}
 	}
 	return left, nil
@@ -1865,6 +1930,7 @@ func (p *exprParser) parseMultiplicative() (Expr, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	for !p.eof() {
 		t := p.peek()
 		if t.Kind != TokenWord || (t.Text != "*" && t.Text != "/" && t.Text != "%") {
@@ -1875,6 +1941,7 @@ func (p *exprParser) parseMultiplicative() (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		left = &BinaryExpr{Left: left, Op: opTok.Text, Right: right, Span: p.spanFromNodeStart(left)}
 	}
 	return left, nil
@@ -1894,6 +1961,7 @@ func (p *exprParser) parsePredicate() (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		return &UnaryExpr{Pred: pred, Operand: operand, Span: p.spanFrom(predTok.Pos)}, nil
 	}
 	return p.parseNegate()
@@ -1912,6 +1980,7 @@ func (p *exprParser) parseNegate() (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		return &NegateExpr{Operand: operand, Span: p.spanFrom(negTok.Pos)}, nil
 	}
 	return p.parseThread()
@@ -1976,12 +2045,14 @@ func (p *exprParser) parseThread() (Expr, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	for !p.eof() && p.peek().Kind == TokenThread {
 		threadTok := p.advance()
 		args, err := p.parseThreadRHS(threadTok.Pos)
 		if err != nil {
 			return nil, err
 		}
+
 		lhs = &ThreadExpr{LHS: lhs, Args: args, PipePos: threadTok.Pos, Span: p.spanFromNodeStart(lhs)}
 	}
 	return lhs, nil
@@ -2024,11 +2095,13 @@ func (p *exprParser) parseThreadRHS(threadLoc source.Pos) ([]Expr, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		args = append(args, e)
 	}
 	if len(args) == 0 {
 		return nil, LocErrorf(threadLoc, "thread requires a command on the right-hand side")
 	}
+
 	return args, nil
 }
 
@@ -2052,6 +2125,7 @@ func (p *exprParser) parseTerm() (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		if p.eof() || !(p.peek().Kind == TokenWord && p.peek().Text == ")") {
 			return nil, spanErrorf(openTok.Span, "missing ')' to close parenthesised expression")
 		}
@@ -2082,6 +2156,7 @@ func (p *exprParser) parseTerm() (Expr, error) {
 	if err := validateExpressionWordLiteral(t); err != nil {
 		return nil, err
 	}
+
 	p.advance()
 	return parsePrimary(t)
 }
@@ -2190,6 +2265,7 @@ func (p *exprParser) parseRecordLiteral() (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		fields = append(fields, RecordField{
 			Name: name,
 			Expr: value,
@@ -2254,6 +2330,7 @@ func (p *exprParser) parseListLiteral() (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		elems = append(elems, elem)
 	}
 }
@@ -2276,6 +2353,7 @@ func (p *exprParser) parsePureCall(pb pureBuiltinSpec) (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		args = append(args, arg)
 	}
 	return &PureCallExpr{Name: pb.Name, Args: args, Span: p.spanFrom(nameTok.Pos)}, nil
@@ -2299,6 +2377,7 @@ func (p *exprParser) parsePureCallArg(name string) (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		if p.eof() || !(p.peek().Kind == TokenWord && p.peek().Text == ")") {
 			return nil, spanErrorf(openTok.Span, "missing ')' to close parenthesised expression")
 		}
@@ -2337,6 +2416,7 @@ func (p *exprParser) parseMatchesBlockExpr(matchesLoc source.Pos, exhaustive boo
 	if err != nil {
 		return nil, err
 	}
+
 	p.pos = sub.pos
 	return block, nil
 }
@@ -2374,14 +2454,17 @@ func parseCommandArgs(tokens []Token) ([]Expr, error) {
 			if err != nil {
 				return nil, err
 			}
+
 			inner := tokens[i+1 : end]
 			if len(inner) == 0 || onlySeparators(inner) {
 				return nil, spanErrorf(t.Span, "empty parenthesised expression in argument position")
 			}
+
 			e, err := parseExpression(inner)
 			if err != nil {
 				return nil, err
 			}
+
 			exprs = append(exprs, e)
 			i = end + 1
 			continue
@@ -2394,6 +2477,7 @@ func parseCommandArgs(tokens []Token) ([]Expr, error) {
 			if err != nil {
 				return nil, err
 			}
+
 			// parseExpression routes a run starting with '['
 			// through parseTerm to parseListLiteral, so handing
 			// it the whole '[ ... ]' slice (brackets included)
@@ -2402,6 +2486,7 @@ func parseCommandArgs(tokens []Token) ([]Expr, error) {
 			if err != nil {
 				return nil, err
 			}
+
 			exprs = append(exprs, e)
 			i = end + 1
 			continue
@@ -2413,6 +2498,7 @@ func parseCommandArgs(tokens []Token) ([]Expr, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		exprs = append(exprs, e)
 		i++
 	}
@@ -2510,6 +2596,7 @@ func parsePrimary(t Token) (Expr, error) {
 			if err != nil {
 				return nil, err
 			}
+
 			segs = append(segs, InterpStringSegment{Expr: expr})
 		}
 		return &InterpStringExpr{Segments: segs, Span: t.Span}, nil

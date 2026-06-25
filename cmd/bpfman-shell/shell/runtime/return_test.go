@@ -262,9 +262,7 @@ f
 	err := execParsedProgram(t, prog, env)
 	require.Error(t, err)
 	// One of the unbound-variable messages; not "return outside a def body".
-	assert.True(t,
-		strings.Contains(err.Error(), "missing") || strings.Contains(err.Error(), "undefined"),
-		"expected unbound-variable diagnostic, got %q", err.Error())
+	assert.True(t, strings.Contains(err.Error(), "missing") || strings.Contains(err.Error(), "undefined"), "expected unbound-variable diagnostic, got %q", err.Error())
 }
 
 func TestExecSource_Return_NestedDefsHonourEachOwnReturn(t *testing.T) {

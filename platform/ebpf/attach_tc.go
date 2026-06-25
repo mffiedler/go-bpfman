@@ -90,8 +90,7 @@ func (k *kernelAdapter) DetachTCFilter(ctx context.Context, ifindex int, ifname 
 			if errors.Is(err, unix.ENOENT) {
 				return nil
 			}
-			return fmt.Errorf("delete TC filter (ifindex=%d parent=%x prio=%d handle=%x): %w",
-				ifindex, parent, priority, handle, err)
+			return fmt.Errorf("delete TC filter (ifindex=%d parent=%x prio=%d handle=%x): %w", ifindex, parent, priority, handle, err)
 		}
 		return nil
 	})
@@ -102,19 +101,13 @@ func (k *kernelAdapter) DetachTCFilter(ctx context.Context, ifindex int, ifname 
 		// detach when enter_netns fails ("the netns may have been
 		// deleted").
 		if errors.Is(err, os.ErrNotExist) {
-			k.logger.Debug("target netns gone; TC filter already removed with it",
-				"netns", netnsPath, "ifindex", ifindex, "priority", priority)
+			k.logger.Debug("target netns gone; TC filter already removed with it", "netns", netnsPath, "ifindex", ifindex, "priority", priority)
 			return nil
 		}
 		return err
 	}
-	k.logger.Debug("detached TC filter",
-		"ifindex", ifindex,
-		"ifname", ifname,
-		"netns", netnsPath,
-		"parent", fmt.Sprintf("%x", parent),
-		"priority", priority,
-		"handle", fmt.Sprintf("%x", handle))
+
+	k.logger.Debug("detached TC filter", "ifindex", ifindex, "ifname", ifname, "netns", netnsPath, "parent", fmt.Sprintf("%x", parent), "priority", priority, "handle", fmt.Sprintf("%x", handle))
 	return nil
 }
 
@@ -134,10 +127,12 @@ func (k *kernelAdapter) RemoveTCClsactIfUnused(ctx context.Context, ifindex int,
 		if err != nil {
 			return fmt.Errorf("look up interface %s (ifindex %d): %w", ifname, ifindex, err)
 		}
+
 		qdiscs, err := netlink.QdiscList(netlinkLink)
 		if err != nil {
 			return fmt.Errorf("list qdiscs on %s (ifindex %d): %w", ifname, ifindex, err)
 		}
+
 		hasClsact := false
 		for _, q := range qdiscs {
 			if q.Type() == "clsact" {
@@ -168,6 +163,7 @@ func (k *kernelAdapter) RemoveTCClsactIfUnused(ctx context.Context, ifindex int,
 		if err := netlink.QdiscDel(qdisc); err != nil && !errors.Is(err, unix.ENOENT) {
 			return fmt.Errorf("delete clsact qdisc on %s (ifindex %d): %w", ifname, ifindex, err)
 		}
+
 		k.logger.Debug("reclaimed unused clsact qdisc", "ifindex", ifindex, "ifname", ifname, "netns", netnsPath)
 		return nil
 	})
@@ -204,6 +200,7 @@ func (k *kernelAdapter) LoadAndPinTCDispatcher(ctx context.Context, cfg dispatch
 	if err != nil {
 		return 0, fmt.Errorf("get TC dispatcher program info: %w", err)
 	}
+
 	progID, ok := progInfo.ID()
 	if !ok {
 		return 0, fmt.Errorf("failed to get TC dispatcher program ID from kernel")
@@ -213,10 +210,7 @@ func (k *kernelAdapter) LoadAndPinTCDispatcher(ctx context.Context, cfg dispatch
 		return 0, fmt.Errorf("pin TC dispatcher program to %s: %w", progPinPath, err)
 	}
 
-	k.logger.Debug("loaded and pinned TC dispatcher",
-		"program_id", progID,
-		"prog_pin_path", progPinPath,
-		"num_progs", cfg.NumProgsEnabled)
+	k.logger.Debug("loaded and pinned TC dispatcher", "program_id", progID, "prog_pin_path", progPinPath, "num_progs", cfg.NumProgsEnabled)
 	return kernel.ProgramID(progID), nil
 }
 
@@ -245,8 +239,7 @@ func (k *kernelAdapter) CreateTCFilter(ctx context.Context, progPinPath bpfman.P
 	}
 
 	if netnsPath != "" {
-		k.logger.Debug("entering network namespace for TC filter creation",
-			"netns", netnsPath, "ifname", ifname, "ifindex", ifindex, "direction", direction)
+		k.logger.Debug("entering network namespace for TC filter creation", "netns", netnsPath, "ifname", ifname, "ifindex", ifindex, "direction", direction)
 	}
 
 	var result *platform.TCDispatcherResult
@@ -264,10 +257,12 @@ func (k *kernelAdapter) CreateTCFilter(ctx context.Context, progPinPath bpfman.P
 		if err != nil {
 			return fmt.Errorf("look up interface %s (ifindex %d): %w", ifname, ifindex, err)
 		}
+
 		qdiscs, err := netlink.QdiscList(netlinkLink)
 		if err != nil {
 			return fmt.Errorf("list qdiscs on %s (ifindex %d): %w", ifname, ifindex, err)
 		}
+
 		hasClsact := false
 		conflictKind := ""
 		for _, q := range qdiscs {
@@ -279,8 +274,7 @@ func (k *kernelAdapter) CreateTCFilter(ctx context.Context, progPinPath bpfman.P
 			}
 		}
 		if !hasClsact && conflictKind != "" {
-			return fmt.Errorf("cannot attach TC program to %s: a %q qdisc already occupies the ingress qdisc slot; bpfman requires clsact -- remove it (tc qdisc del dev %s %s) or detach the conflicting program first",
-				ifname, conflictKind, ifname, conflictKind)
+			return fmt.Errorf("cannot attach TC program to %s: a %q qdisc already occupies the ingress qdisc slot; bpfman requires clsact -- remove it (tc qdisc del dev %s %s) or detach the conflicting program first", ifname, conflictKind, ifname, conflictKind)
 		}
 		if !hasClsact {
 			qdisc := &netlink.Clsact{
@@ -303,14 +297,14 @@ func (k *kernelAdapter) CreateTCFilter(ctx context.Context, progPinPath bpfman.P
 
 		handle, err := addTCBpfFilterWithEcho(ifindex, parent, tcDispatcherPriority, prog.FD(), "tc_dispatcher", desiredHandle)
 		if err != nil {
-			return fmt.Errorf("add TC BPF filter to %s (ifindex %d) %s: %w",
-				ifname, ifindex, direction, err)
+			return fmt.Errorf("add TC BPF filter to %s (ifindex %d) %s: %w", ifname, ifindex, direction, err)
 		}
 
 		progInfo, err := prog.Info()
 		if err != nil {
 			return fmt.Errorf("get TC dispatcher program info: %w", err)
 		}
+
 		progID, ok := progInfo.ID()
 		if !ok {
 			return fmt.Errorf("failed to get TC dispatcher program ID from kernel")
@@ -339,6 +333,7 @@ func (k *kernelAdapter) AttachTCExtension(ctx context.Context, spec dispatcher.T
 	if err := spec.Validate(); err != nil {
 		return bpfman.AttachOutput{}, fmt.Errorf("invalid spec: %w", err)
 	}
+
 	linkPin := spec.LinkPinPath.String()
 
 	// Load the pinned dispatcher to use as attach target.
@@ -360,6 +355,7 @@ func (k *kernelAdapter) AttachTCExtension(ctx context.Context, spec dispatcher.T
 	if err != nil {
 		return bpfman.AttachOutput{}, fmt.Errorf("slot name for position %d: %w", spec.Position, err)
 	}
+
 	lnk, err := link.AttachFreplace(dispatcherProg, slotName, extensionProg)
 	if err != nil {
 		return bpfman.AttachOutput{}, fmt.Errorf("attach TC freplace to %s: %w", slotName, err)
@@ -371,8 +367,7 @@ func (k *kernelAdapter) AttachTCExtension(ctx context.Context, spec dispatcher.T
 			lnk.Close()
 			if linkPin != "" {
 				if err := os.Remove(linkPin); err != nil && !os.IsNotExist(err) {
-					k.logger.Warn("failed to remove pinned TC extension link during cleanup",
-						"path", linkPin, "error", err)
+					k.logger.Warn("failed to remove pinned TC extension link during cleanup", "path", linkPin, "error", err)
 				}
 			}
 		}
@@ -470,8 +465,7 @@ func (k *kernelAdapter) AttachTCX(ctx context.Context, ifindex int, direction st
 				lnk.Close()
 				if linkPin != "" {
 					if err := os.Remove(linkPin); err != nil && !os.IsNotExist(err) {
-						k.logger.Warn("failed to remove pinned TCX link during cleanup",
-							"path", linkPin, "error", err)
+						k.logger.Warn("failed to remove pinned TCX link during cleanup", "path", linkPin, "error", err)
 					}
 				}
 			}

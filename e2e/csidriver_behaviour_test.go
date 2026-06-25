@@ -133,8 +133,7 @@ func TestCSIDriver_PublishUnpublishRoundTrip(t *testing.T) {
 
 	// The per-pod bpffs is mounted with the hardening flags.
 	for _, opt := range []string{"nosuid", "nodev", "noexec"} {
-		require.True(t, mountHasOption(t, podBpffs, opt),
-			"per-pod bpffs should be mounted %s", opt)
+		require.True(t, mountHasOption(t, podBpffs, opt), "per-pod bpffs should be mounted %s", opt)
 	}
 
 	_, err = d.NodeUnpublishVolume(context.Background(), &csi.NodeUnpublishVolumeRequest{
@@ -163,8 +162,7 @@ func TestCSIDriver_RollbackLeavesCleanState(t *testing.T) {
 
 	_, err := d.NodePublishVolume(context.Background(),
 		publishRequest(volumeID, targetPath, programName, "no_such_map", false, ""))
-	require.Equal(t, codes.NotFound, status.Code(err),
-		"a map the program does not pin is a caller error, not Internal")
+	require.Equal(t, codes.NotFound, status.Code(err), "a map the program does not pin is a caller error, not Internal")
 
 	require.Equal(t, 0, countMountpoints(t, podBpffs), "per-pod bpffs unmounted after rollback")
 	require.NoDirExists(t, podBpffs, "per-pod directory removed after rollback")

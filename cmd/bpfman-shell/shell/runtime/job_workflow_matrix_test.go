@@ -197,6 +197,7 @@ func (rt *fakeJobRuntime) exec(env *Env, args []Arg, span source.Span) (BindResu
 		if err != nil {
 			return BindResult{}, err
 		}
+
 		job.MarkManaged()
 		if !jobDone(job) {
 			job.ExitCode = 0
@@ -217,6 +218,7 @@ func (rt *fakeJobRuntime) exec(env *Env, args []Arg, span source.Span) (BindResu
 		if err != nil {
 			return BindResult{}, err
 		}
+
 		job.MarkManaged()
 		job.Killed = true
 		job.Signal = "TERM"
@@ -304,6 +306,7 @@ func captureBindings(t *testing.T, env *Env, names []string) map[string]string {
 			out[name] = "<missing>"
 			continue
 		}
+
 		rendered, err := RenderCompact(v)
 		require.NoError(t, err)
 		out[name] = rendered

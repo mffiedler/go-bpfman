@@ -145,18 +145,15 @@ func TestLoad_MultiProgramDoesNotFabricateMapOwnership(t *testing.T) {
 	require.Len(t, programs, 3)
 
 	for _, prog := range programs {
-		assert.Nil(t, prog.Record.Handles.MapOwnerID,
-			"%s load response should not fabricate a map owner", prog.Record.Meta.Name)
+		assert.Nil(t, prog.Record.Handles.MapOwnerID, "%s load response should not fabricate a map owner", prog.Record.Meta.Name)
 
 		got, err := f.Store.Get(ctx, prog.Record.ProgramID)
 		require.NoError(t, err)
-		assert.Nil(t, got.Handles.MapOwnerID,
-			"%s persisted record should not fabricate a map owner", prog.Record.Meta.Name)
+		assert.Nil(t, got.Handles.MapOwnerID, "%s persisted record should not fabricate a map owner", prog.Record.Meta.Name)
 	}
 
 	for _, prog := range programs {
-		require.NoError(t, f.Unload(ctx, prog.Record.ProgramID),
-			"unload in load order should succeed for %s", prog.Record.Meta.Name)
+		require.NoError(t, f.Unload(ctx, prog.Record.ProgramID), "unload in load order should succeed for %s", prog.Record.Meta.Name)
 	}
 	f.AssertCleanState()
 }
@@ -356,8 +353,7 @@ func TestLoad_MapSetGCDeletesSetOnlyAfterLastUser(t *testing.T) {
 	assert.Empty(t, recorder.deleted, "owner-first unload must not delete a map set with users")
 
 	require.NoError(t, f.Unload(ctx, dependentID))
-	assert.Equal(t, []kernel.ProgramID{ownerID}, recorder.deleted,
-		"last user unload must delete the surviving map set")
+	assert.Equal(t, []kernel.ProgramID{ownerID}, recorder.deleted, "last user unload must delete the surviving map set")
 }
 
 func TestLoad_MapSetSurvivesDependentUnloadWhileCreatorLives(t *testing.T) {
@@ -449,8 +445,7 @@ func TestLoad_ReusedProgramIDCollidingWithSurvivingMapSetFailsClosed(t *testing.
 		[]manager.ProgramSpec{{Name: "reused", Type: bpfman.ProgramTypeXDP}},
 		manager.LoadOpts{})
 	require.Error(t, err)
-	assert.ErrorIs(t, err, platform.ErrMapSetIDReused,
-		"reused-id collision must surface a diagnosable error, not a bare constraint violation")
+	assert.ErrorIs(t, err, platform.ErrMapSetIDReused, "reused-id collision must surface a diagnosable error, not a bare constraint violation")
 	assert.Contains(t, err.Error(), "reused kernel program id collided with a surviving map set")
 
 	_, err = f.Store.Get(ctx, ownerID)
@@ -559,8 +554,7 @@ func TestLoad_RollbackExplicitMapOwnerDoesNotRemoveOwnerMapSet(t *testing.T) {
 
 	_, err = f.Store.Get(ctx, ownerID)
 	require.NoError(t, err, "owner record must survive dependent rollback")
-	assert.Equal(t, 0, f.Kernel.UnloadFailureCount(ownerMapDir),
-		"dependent rollback must not attempt to remove the owner's map set")
+	assert.Equal(t, 0, f.Kernel.UnloadFailureCount(ownerMapDir), "dependent rollback must not attempt to remove the owner's map set")
 	assert.Equal(t, 1, f.Kernel.ProgramCount(), "only the owner should remain loaded")
 }
 
@@ -601,8 +595,7 @@ func TestLoad_ExplicitPrograms_PreservesOrder(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, programs, len(requested))
 	for i, want := range requested {
-		assert.Equal(t, want.Name, programs[i].Record.Meta.Name,
-			"programs[%d].Record.Meta.Name should match requested[%d].Name", i, i)
+		assert.Equal(t, want.Name, programs[i].Record.Meta.Name, "programs[%d].Record.Meta.Name should match requested[%d].Name", i, i)
 	}
 }
 

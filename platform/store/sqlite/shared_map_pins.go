@@ -108,6 +108,7 @@ func (s *sqliteStore) ListReferencedSharedMaps(ctx context.Context) ([]string, e
 		s.logger.Debug("sql", "stmt", "ListReferencedSharedMaps", "duration_ms", msec(time.Since(start)), "error", err)
 		return nil, fmt.Errorf("list referenced shared maps: %w", err)
 	}
+
 	defer rows.Close()
 
 	var names []string
@@ -116,6 +117,7 @@ func (s *sqliteStore) ListReferencedSharedMaps(ctx context.Context) ([]string, e
 		if err := rows.Scan(&name); err != nil {
 			return nil, fmt.Errorf("scan shared map name: %w", err)
 		}
+
 		names = append(names, name)
 	}
 	if err := rows.Err(); err != nil {
@@ -132,6 +134,7 @@ func (s *sqliteStore) listSharedMapsByProgram(ctx context.Context, programID ker
 	if err != nil {
 		return nil, fmt.Errorf("list shared maps for program %d: %w", programID, err)
 	}
+
 	defer rows.Close()
 
 	var names []string
@@ -140,6 +143,7 @@ func (s *sqliteStore) listSharedMapsByProgram(ctx context.Context, programID ker
 		if err := rows.Scan(&name); err != nil {
 			return nil, fmt.Errorf("scan shared map name: %w", err)
 		}
+
 		names = append(names, name)
 	}
 	if err := rows.Err(); err != nil {

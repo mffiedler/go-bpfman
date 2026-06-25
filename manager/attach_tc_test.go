@@ -13,11 +13,7 @@ import (
 func TestDefaultTCProceedOn(t *testing.T) {
 	t.Parallel()
 
-	want, err := dispatcher.ProceedOnMask(
-		dispatcher.DispatcherTypeTCIngress,
-		bpfman.TCActionPipe.Int32(),
-		bpfman.TCActionDispatcherReturn.Int32(),
-	)
+	want, err := dispatcher.ProceedOnMask(dispatcher.DispatcherTypeTCIngress, bpfman.TCActionPipe.Int32(), bpfman.TCActionDispatcherReturn.Int32())
 	require.NoError(t, err)
 	assert.Equal(t, want, DefaultTCProceedOn)
 }

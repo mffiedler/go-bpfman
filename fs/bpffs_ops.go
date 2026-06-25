@@ -20,6 +20,7 @@ func (b BPFFS) removePinFile(path string) error {
 	if err != nil {
 		return err
 	}
+
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove pin %s: %w", path, err)
 	}
@@ -36,6 +37,7 @@ func (b BPFFS) removeDir(path string) error {
 	if err != nil {
 		return err
 	}
+
 	if err := os.RemoveAll(path); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove dir %s: %w", path, err)
 	}
@@ -52,6 +54,7 @@ func (b BPFFS) RemoveProgPin(p bpfman.ProgPinPath) error {
 	if err != nil {
 		return err
 	}
+
 	if filepath.Dir(path) != b.MountPoint() {
 		return fmt.Errorf("prog pin not under mount root: %s", path)
 	}
@@ -87,6 +90,7 @@ func (b BPFFS) RemoveDispatcherProgPin(p bpfman.ProgPinPath) error {
 	if err != nil {
 		return err
 	}
+
 	if filepath.Base(path) != "dispatcher" {
 		return fmt.Errorf("dispatcher prog pin has unexpected name: %s", path)
 	}
@@ -109,6 +113,7 @@ func (b BPFFS) RemoveDispatcherRevDir(p bpfman.DispatcherRevDir) error {
 	if err != nil {
 		return err
 	}
+
 	if err := b.validateDispatcherRevDirPath(path); err != nil {
 		return err
 	}
@@ -155,6 +160,7 @@ func (b BPFFS) RemoveSharedMapPin(p bpfman.MapPinPath) error {
 	if err != nil {
 		return err
 	}
+
 	if filepath.Dir(path) != b.SharedMapPinDir() {
 		return fmt.Errorf("shared map pin not inside shared directory: %s", path)
 	}
@@ -168,6 +174,7 @@ func (b BPFFS) removeNumericChildDir(parent, path, what string) error {
 	if err != nil {
 		return err
 	}
+
 	if filepath.Dir(path) != parent {
 		return fmt.Errorf("%s not directly under %s: %s", what, parent, path)
 	}

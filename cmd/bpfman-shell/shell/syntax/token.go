@@ -216,6 +216,7 @@ func tokeniseAt(start source.Pos, input string, strict bool) ([]Token, error) {
 					End: locAt(end, lineStarts, base),
 				}, "%v", err)
 			}
+
 			tokens = emit(tokens, start, start+n, tok)
 			i += n
 
@@ -232,6 +233,7 @@ func tokeniseAt(start source.Pos, input string, strict bool) ([]Token, error) {
 				openPos := locAt(start, lineStarts, base)
 				return nil, spanErrorf(source.Span{Pos: openPos, End: openPos}, "%v", err)
 			}
+
 			tokens = emit(tokens, start, start+n, tok)
 			i += n
 
@@ -422,6 +424,7 @@ func lexBareVarRef(input string, pos int) (Token, int, error) {
 			if err != nil {
 				return Token{}, 0, fmt.Errorf("invalid variable reference %q: %w", input[pos:next], err)
 			}
+
 			i = next
 		} else {
 			break
@@ -481,6 +484,7 @@ func lexBracedVarRef(input string, pos int) (Token, int, error) {
 			if err != nil {
 				return Token{}, 0, fmt.Errorf("invalid variable reference: %w", err)
 			}
+
 			i = next
 		} else {
 			return Token{}, 0, fmt.Errorf("invalid variable reference: unexpected character %q in ${...} path", input[i])
@@ -660,6 +664,7 @@ func lexDoubleQuoted(input string, pos int, base source.Pos) (Token, int, error)
 			if err != nil {
 				return Token{}, 0, err
 			}
+
 			inner := input[start+2 : innerEnd]
 			if strings.TrimSpace(inner) == "" {
 				return Token{}, 0, fmt.Errorf("empty interpolation '${}' in string")
@@ -782,6 +787,7 @@ func lexAdapterRef(input string, pos int) (Token, int, bool) {
 			// Let normal flow handle the error via lexWord + lexVarRef.
 			return Token{}, 0, false
 		}
+
 		adapterTok := Token{
 			Kind:    TokenAdapterRef,
 			Text:    input[pos : afterColon+n],

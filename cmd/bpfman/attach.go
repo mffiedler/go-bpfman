@@ -69,6 +69,7 @@ func (c *AttachXDPCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 		if err != nil {
 			return attachResult{}, fmt.Errorf("invalid XDP spec: %w", err)
 		}
+
 		spec = spec.WithProceedOnActions(c.ProceedOn)
 		if c.Netns != "" {
 			spec = spec.WithNetns(c.Netns)
@@ -80,6 +81,7 @@ func (c *AttachXDPCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 		if err != nil {
 			return attachResult{}, err
 		}
+
 		return attachResult{Link: link}, nil
 	})
 }
@@ -102,6 +104,7 @@ func (c *AttachTCCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 		if err != nil {
 			return attachResult{}, fmt.Errorf("invalid TC spec: %w", err)
 		}
+
 		spec = spec.WithProceedOnActions(c.ProceedOn)
 		if c.Netns != "" {
 			spec = spec.WithNetns(c.Netns)
@@ -113,6 +116,7 @@ func (c *AttachTCCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 		if err != nil {
 			return attachResult{}, err
 		}
+
 		return attachResult{Link: link}, nil
 	})
 }
@@ -134,6 +138,7 @@ func (c *AttachTCXCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 		if err != nil {
 			return attachResult{}, fmt.Errorf("invalid TCX spec: %w", err)
 		}
+
 		if c.Netns != "" {
 			spec = spec.WithNetns(c.Netns)
 		}
@@ -144,6 +149,7 @@ func (c *AttachTCXCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 		if err != nil {
 			return attachResult{}, err
 		}
+
 		return attachResult{Link: link}, nil
 	})
 }
@@ -169,6 +175,7 @@ func (c *AttachTracepointCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 		if err != nil {
 			return attachResult{}, err
 		}
+
 		return attachResult{Link: link}, nil
 	})
 }
@@ -188,6 +195,7 @@ func (c *AttachKprobeCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 		if err != nil {
 			return attachResult{}, fmt.Errorf("invalid kprobe spec: %w", err)
 		}
+
 		if c.Offset != 0 {
 			spec = spec.WithOffset(c.Offset)
 		}
@@ -198,6 +206,7 @@ func (c *AttachKprobeCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 		if err != nil {
 			return attachResult{}, err
 		}
+
 		return attachResult{Link: link}, nil
 	})
 }
@@ -220,6 +229,7 @@ func (c *AttachUprobeCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 		if err != nil {
 			return attachResult{}, fmt.Errorf("invalid uprobe spec: %w", err)
 		}
+
 		if c.FnName != "" {
 			spec = spec.WithFnName(c.FnName)
 		}
@@ -233,6 +243,7 @@ func (c *AttachUprobeCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 		if err != nil {
 			return attachResult{}, err
 		}
+
 		return attachResult{Link: link}, nil
 	})
 }
@@ -257,6 +268,7 @@ func (c *AttachFentryCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 		if err != nil {
 			return attachResult{}, err
 		}
+
 		return attachResult{Link: link}, nil
 	})
 }
@@ -281,6 +293,7 @@ func (c *AttachFexitCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 		if err != nil {
 			return attachResult{}, err
 		}
+
 		return attachResult{Link: link}, nil
 	})
 }

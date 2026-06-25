@@ -55,6 +55,7 @@ func handleKfuncAcquire(origin string, args []runtime.Arg) (runtime.Value, error
 	if err != nil {
 		return runtime.Value{}, fmt.Errorf("kfunc acquire: %w", err)
 	}
+
 	rememberKfuncLease(kf, lease)
 	return runtime.ValueFromKfunc(kf), nil
 }
@@ -67,6 +68,7 @@ func handleKfuncRelease(args []runtime.Arg) (runtime.Value, error) {
 	if err != nil {
 		return runtime.Value{}, fmt.Errorf("kfunc release: %w", err)
 	}
+
 	if kf.MarkReleased() {
 		return runtime.ValueFromEnvelope(runtime.OkEnvelope()), nil
 	}
@@ -86,13 +88,16 @@ func handleKfuncFire(args []runtime.Arg) (runtime.Value, error) {
 	if err != nil {
 		return runtime.Value{}, fmt.Errorf("kfunc fire: %w", err)
 	}
+
 	n, err := strconv.Atoi(driver.ArgText(args[1]))
 	if err != nil {
 		return runtime.Value{}, fmt.Errorf("kfunc fire: N: %w", err)
 	}
+
 	if n < 0 {
 		return runtime.Value{}, fmt.Errorf("kfunc fire: N must not be negative (got %d)", n)
 	}
+
 	f, err := os.OpenFile(kf.Trigger, os.O_WRONLY, 0)
 	if err != nil {
 		return runtime.Value{}, fmt.Errorf("kfunc fire: open %s: %w", kf.Trigger, err)

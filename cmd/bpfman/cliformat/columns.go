@@ -173,6 +173,7 @@ func selectProgramColumns(names []string) (ColumnSet, error) {
 		if !ok {
 			return ColumnSet{}, fmt.Errorf("unknown column %q", name)
 		}
+
 		columns = append(columns, ColumnSpec{
 			Name:    info.Name,
 			Extract: info.Extract,
@@ -295,6 +296,7 @@ func selectLinkColumns(names []string) (ColumnSet, error) {
 		if !ok {
 			return ColumnSet{}, fmt.Errorf("unknown link column %q", name)
 		}
+
 		columns = append(columns, ColumnSpec{
 			Name:        info.Name,
 			ExtractLink: info.ExtractLink,

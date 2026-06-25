@@ -53,8 +53,7 @@ func TestRenderLoadedProgramsJSON_WrapsWithProgramsKey(t *testing.T) {
 	for i := range programs {
 		record, ok := raw.Programs[i]["record"].(map[string]any)
 		require.True(t, ok, "programs[%d].record missing", i)
-		require.EqualValues(t, programs[i].Record.ProgramID, record["program_id"],
-			"slice order preserved at index %d", i)
+		require.EqualValues(t, programs[i].Record.ProgramID, record["program_id"], "slice order preserved at index %d", i)
 	}
 }
 
@@ -78,8 +77,7 @@ func TestRenderLoadedProgramsJSON_EmptySlice(t *testing.T) {
 			var raw map[string]json.RawMessage
 			require.NoError(t, json.NewDecoder(strings.NewReader(got)).Decode(&raw))
 			require.Contains(t, raw, "programs", "top-level key 'programs' must always be present")
-			require.Equal(t, "[]", string(raw["programs"]),
-				"empty load result must marshal as `programs: []`, not null")
+			require.Equal(t, "[]", string(raw["programs"]), "empty load result must marshal as `programs: []`, not null")
 		})
 	}
 }
