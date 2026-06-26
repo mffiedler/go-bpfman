@@ -156,7 +156,7 @@ func Run(ctx context.Context, cfg Config) error {
 // it inside one outer job scope and one outer defer scope.
 // `defer cleanup` therefore fires at script end and any
 // unmanaged job is reported as `[job] FAIL ...`, killed, and
-// counted toward the final non-zero exit.
+// counted towards the final non-zero exit.
 func Loop(ctx context.Context, cfg Config) error {
 	return scriptLoop(ctx, cfg)
 }
@@ -532,11 +532,9 @@ func makeExecBind(ctxFor func() context.Context, cli *cli.CLI, session *runtime.
 		}
 
 		// Capture the in-process Dispatch path's stdout / stderr
-		// into a buffer rather than discarding it: a builtin that
-		// runs through the bind family (`let v <- print "x"`, or
-		// a defer firing a print at unwind) used to lose the
-		// bytes entirely. Capturing puts them on the rc envelope
-		// alongside what runExternalAsBind already produces for
+		// into a buffer rather than discarding it. Capturing puts
+		// them on the rc envelope alongside what runExternalAsBind
+		// already produces for
 		// subprocesses, so both halves of the bind family populate
 		// rc.Stdout / rc.Stderr uniformly. The bytes flow from
 		// there: ordinary bind callers read them via $v.stdout;
@@ -616,12 +614,8 @@ func runExternalAsBind(ctx context.Context, args []runtime.Arg, span source.Span
 // are inside a def body, falling back to the executing
 // program's loc.Line otherwise. Without this, trace lines
 // emitted from a def body get shifted by the top-level source
-// start (the bug at the heart of W17), and a nested call
-// renders both the body's call and the top-level statement as
-// if they lived on the same line. Same root cause as the W10
-// fix in decorateDefError's call-site annotation; both
-// renderers translate Pos values that were captured during
-// def-body parsing.
+// start, and a nested call renders both the body's call and the
+// top-level statement as if they lived on the same line.
 func makeTracePrinter(cli *cli.CLI, session *runtime.Session) func(source.Pos, string) {
 	return func(pos source.Pos, rendered string) {
 		if !session.TraceEnabled() {

@@ -79,10 +79,7 @@ func TestRuntime_NullEqualsNull(t *testing.T) {
 	t.Parallel()
 
 	// Null is a first-class comparable value in the language:
-	// `null == null` succeeds and binds true. Earlier the
-	// runtime compareKind returned "" for a nil carrier and
-	// the equality reduced to "Null is not a scalar" because
-	// the kind classifier had no entry for nullable values.
+	// `null == null` succeeds and binds true.
 	src := "let r = null == null\nrequire $r == true"
 	err := runScriptError(t, src, nil)
 	require.NoError(t, err, "null == null must succeed")
@@ -126,12 +123,9 @@ func TestPoll_HelperRetryFailedDeferIsFatal(t *testing.T) {
 	// The retry sequence in a helper emits RunDefersAttemptFatal,
 	// the same policy the lexical poll body uses, but the
 	// helper runs on its own executor where ex.polls is empty.
-	// Without a fix the executor's "fatal cleanup" branch (gated
-	// on len(ex.polls) > 0) is skipped, the failure is dropped,
-	// the helper signals retry to the caller, and the poll
-	// burns its budget. The discriminator is the error string:
-	// the bug returns "poll timed out"; the fix returns the
-	// attempt-local defer diagnostic immediately.
+	// The discriminator is the error string: a dropped failure
+	// would surface as "poll timed out"; the correct path
+	// returns the attempt-local defer diagnostic immediately.
 	src := `
 def helper() {
   defer cleanup

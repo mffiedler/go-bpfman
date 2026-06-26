@@ -302,10 +302,8 @@ func TestCheck_JobLeak_StartShadowedNoFalsePositive(t *testing.T) {
 	t.Parallel()
 
 	// A user `def start` does not create a job, so the bind
-	// target it produces is not subject to the job-leak rule.
-	// Before the def-aware gate, the checker recognised the
-	// head as the builtin start and demanded a matching wait
-	// or kill, generating a false-positive leak diagnostic.
+	// target it produces is not subject to the job-leak rule
+	// and the checker must not demand a matching wait or kill.
 	src := "def start(name) { print $name }\nlet j <- start foo"
 	issues := checkSource(t, src)
 	assert.Empty(t, issues, "shadowed start: no false job-leak report")
@@ -316,10 +314,8 @@ func TestCheck_JobLeak_KillShadowedSurfacesRealLeak(t *testing.T) {
 
 	// Conversely, when the real `start` does create a job and
 	// the call that looks like `kill $j` is actually a user
-	// def, the def does not consume the job. The previous
-	// jobReferenceTarget rule marked $j as managed regardless
-	// of whether kill resolved to a def, hiding the real
-	// leak. The tightened rule lets the leak surface.
+	// def, the def does not consume the job, so the leak must
+	// surface.
 	src := "def kill(arg) { print $arg }\nguard j <- start foo\nkill $j"
 	issues := checkSource(t, src)
 	require.Len(t, issues, 1)

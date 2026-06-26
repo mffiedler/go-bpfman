@@ -17,10 +17,10 @@ import (
 	"github.com/frobware/go-bpfman/platform"
 )
 
-// These tests pin down the link pin-naming contract introduced when
-// link pins moved from symbol-derived names
-// (links/{program_id}/{fn_name}) to the numeric bpfman link id
-// (links/{link_id}). bpffs rejects path components containing dots,
+// These tests pin down the link pin-naming contract: link pins use
+// the numeric bpfman link id (links/{link_id}), not symbol-derived
+// names (links/{program_id}/{fn_name}). bpffs rejects path
+// components containing dots,
 // so any naming scheme that lets a symbol reach the pin path fails
 // at attach time for real-world Go targets like main.getCount. The
 // shape assertions here are the unit-level guard; the e2e script

@@ -8,10 +8,7 @@
 // runWithDeferScope, runDefers -- so the interpreter owns control
 // flow while the scope mechanics stay centralised.
 //
-// First slice: ir.EnterFrame, ir.ExitFrame, ir.EnterDeferScope, ir.RegisterDefer,
-// ir.RunDefers, ir.Eval, ir.BuildArgs, ir.DispatchCommand, ir.BindName, ir.Jump, ir.Stop,
-// ir.PropagateError. Bind ops, branch, assert, foreach, poll, def,
-// and return come in subsequent slices.
+// execInstr's switch handles the IR instruction set.
 
 package runtime
 
@@ -583,8 +580,7 @@ func (ex *executor) execInstr(ins ir.Instr) (*ir.BasicBlock, bool, error) {
 		}
 		callPos := v.CallPos
 		if callPos.Line == 0 {
-			// Defensive fallback for IR built before CallPos was
-			// split from the statement frame span.
+			// Fall back to the statement span when CallPos is unset.
 			callPos = v.Span.Pos
 		}
 		result, err := dispatchBindByPolicy(v.Policy, args, callPos, v.Span, ex.env)
@@ -668,9 +664,7 @@ func (ex *executor) execInstr(ins ir.Instr) (*ir.BasicBlock, bool, error) {
 		// units (defs). At the program
 		// body level there is no caller frame to receive the
 		// result; treat it as a no-op so the lowerer can emit it
-		// unconditionally in unreachable trailing blocks. Real
-		// def calls will route through a separate execDef path
-		// that consumes this.
+		// unconditionally in unreachable trailing blocks.
 		return nil, false, nil
 	case *ir.EmitResult:
 		val, err := ex.valueAt(v.Src, v.Span)
@@ -1097,8 +1091,7 @@ func (ex *executor) execCollectProduce(v *ir.CollectProduce) (*ir.BasicBlock, bo
 		}
 		frame := v.FrameSpan
 		if frame.Pos.Line == 0 {
-			// Defensive fallback for IR built before FrameSpan was
-			// split from the producer command span.
+			// Fall back to the statement span when FrameSpan is unset.
 			frame = v.Span
 		}
 		return nil, false, syntax.FrameAt(frame, gf)

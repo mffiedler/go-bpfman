@@ -2,8 +2,7 @@
 // kernel-stimulus workers. It is a typed wrapper over start: the
 // script states the kind of stimulus (unlinkat / kill / uprobe)
 // and the wave-protocol parameters; fire owns binary resolution,
-// env-var construction, and process shaping. See
-// docs/PLAN-fire-builtin.md for the design rationale.
+// env-var construction, and process shaping.
 //
 // fire is for syscall / signal / uprobe event generators only.
 // A richer fixture surface, if needed, lives in its own subsystem,
@@ -48,7 +47,7 @@ func init() {
 // --count is required (per-wave fire count). --waves defaults to
 // 1. Both must be non-negative integers; --waves must be >= 1.
 // An unknown kind is rejected at runtime with a list of the
-// registered names; v2 will hoist this check into the parser.
+// registered names.
 //
 // Both spellings are accepted for each flag: `--count N` (space
 // separated) and `--count=N` (equals form). The space form is

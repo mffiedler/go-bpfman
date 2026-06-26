@@ -91,8 +91,7 @@ func NewTestEnv(t *testing.T) *TestEnv {
 	// runtime that TestMain stood up. The per-test bpffs mount,
 	// store, and manager are skipped; cleanup is a no-op. Note
 	// that AssertCleanState and friends still operate on global
-	// state in this mode -- phase 2 of the shared-runtime work
-	// makes them scope-aware. Today, running multiple tests
+	// state in this mode. Today, running multiple tests
 	// concurrently in shared mode will trip the global checks.
 	if sharedRuntimeMode() {
 		rt := requireSharedRuntimeForTest(t)
@@ -153,10 +152,7 @@ func NewTestEnv(t *testing.T) *TestEnv {
 		// t.Logf at Info level so the verify: extension link
 		// lines from the dispatcher rebuild paths surface in
 		// test output on failure. Re-enable by changing
-		// `if false` to a true condition. Disabled because
-		// the per-record t.Logf call alters timing enough to
-		// hide the chain race we are currently hunting; we
-		// want the original stderr-only path for repro.
+		// `if false` to a true condition.
 		logger = slog.New(newTLogHandler(t, slog.LevelInfo))
 	} else {
 		// Default: only errors
@@ -890,11 +886,11 @@ func readArrayCounterByID(t *testing.T, mapID kernel.MapID) uint64 {
 // assertCounterQuiet drives `fire` and asserts that the named
 // counter map on `prog` does not advance. Use after Detach to
 // prove that detach actually stopped the BPF program firing, not
-// just removed bpfman's link record. The original perf-link
-// detach bug (commit 1459c0b) would surface here as a non-zero
-// delta even though `events * weight == count` passed pre-detach,
-// because the singleton tests never fire post-detach traffic by
-// themselves. Applies to every program type -- the bug is
+// just removed bpfman's link record. A perf-link that keeps
+// firing post-detach would surface here as a non-zero delta even
+// though `events * weight == count` passed pre-detach, because the
+// singleton tests never fire post-detach traffic by themselves.
+// Applies to every program type -- the bug is
 // perf-link specific but the property "detach stopped it" is
 // worth pinning down uniformly.
 func assertCounterQuiet(t *testing.T, prog bpfman.Program, mapName string, fire func()) {
@@ -981,9 +977,8 @@ type QuiescenceProbe struct {
 //
 // This is the only correct primitive for proving "this BPF program
 // stopped firing" on bpf-perf-link types (kprobe, kretprobe, uprobe,
-// uretprobe, tracepoint, fentry, fexit). Per
-// docs/PERF-LINK-DETACH-IS-ASYNC.md the kernel exposes no synchronous
-// teardown for those: pin removal is RCU-deferred via the bpffs
+// uretprobe, tracepoint, fentry, fexit). The kernel exposes no
+// synchronous teardown for those: pin removal is RCU-deferred via the bpffs
 // inode's free_inode super_op, and the FD close path can only free
 // when it drops the LAST ref, which it never does while the pin is
 // alive. The deferred bpf_link_free is what eventually runs
@@ -1073,11 +1068,11 @@ func waitKmodSlotDetachQuiescent(
 // uniqueWeights returns n distinct random uint64 weights derived
 // from a fresh test-scoped seed. Used by tests that pass per-program
 // weights as global data so the BPF program's counter is a verifiable
-// function of (events × weight) rather than a bare event tally.
+// function of (events x weight) rather than a bare event tally.
 //
 // Weights are forced to differ from each other so that a "wrong map"
 // or "swapped indices" bug is detectable. The high bit is cleared so
-// that events × weight cannot overflow for realistic event counts.
+// that events x weight cannot overflow for realistic event counts.
 func uniqueWeights(t *testing.T, n int) []uint64 {
 	t.Helper()
 	r := newTestRand(t)

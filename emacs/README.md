@@ -4,11 +4,11 @@ This directory contains Emacs tooling for the bpfman-shell language.
 
 ## Files
 
-- [`bpfman-mode.el`](bpfman-mode.el) — major mode for editing
+- [`bpfman-mode.el`](bpfman-mode.el) -- major mode for editing
   `.bpfman` scripts: syntax highlighting, comment handling, and paired
   `()`/`{}`/`[]` delimiters so `show-paren-mode` picks up block and
   command-substitution structure.
-- [`syntax-gallery.bpfman`](syntax-gallery.bpfman) — a deliberately
+- [`syntax-gallery.bpfman`](syntax-gallery.bpfman) -- a deliberately
   inert `.bpfman` file that exercises every construct in the
   language. Use it to verify highlighting after changes to the mode.
   It is not intended to be evaluated.
@@ -83,7 +83,7 @@ Specific lines to watch:
   `def` is keyword-face; the def name and each parameter name (with
   trailing-comma support) get the variable-name face. Body
   statements fontify by the usual rules. Call sites of a registered
-  def do *not* highlight the name specially — the fontifier has no
+  def do *not* highlight the name specially -- the fontifier has no
   cross-line memory of which words have been registered.
 
 ## Maintaining

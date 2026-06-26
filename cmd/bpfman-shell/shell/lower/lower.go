@@ -521,7 +521,7 @@ func (l *lowerer) emitRetryStmt(s *syntax.RetryStmt) {
 // parameter names bind against the first N temp slots, which
 // the interpreter populates with call arguments. The lowered
 // def is recorded on the program's Defs list; canonical
-// lowering no longer emits a body-time ir.RegisterDef instruction
+// lowering does not emit a body-time ir.RegisterDef instruction
 // because top-level defs are hoisted before body execution.
 func (l *lowerer) lowerDefStmt(s *syntax.DefStmt) error {
 	// Top-level defs are the only shape the IR Defs list is meant
@@ -634,7 +634,7 @@ func (l *lowerer) lowerBindCmd(s *syntax.BindStmt) error {
 		Span:   s.Span,
 	}
 	if s.Guard {
-		apply.OnFail = l.buildGuardFailBlock(s.Span, result)
+		apply.OnFail = l.buildGuardFailBlock(s.Span)
 	}
 	l.emit(apply)
 	return nil
@@ -645,7 +645,7 @@ func (l *lowerer) lowerBindCmd(s *syntax.BindStmt) error {
 // runs attempt-local cleanup, but ordinary guard failure stays
 // fatal; polling retries only when an explicit retry statement
 // runs.
-func (l *lowerer) buildGuardFailBlock(sp source.Span, last ir.Temp) *ir.BasicBlock {
+func (l *lowerer) buildGuardFailBlock(sp source.Span) *ir.BasicBlock {
 	saved := l.cur
 	fb := l.newBlock(sp)
 	l.cur = fb

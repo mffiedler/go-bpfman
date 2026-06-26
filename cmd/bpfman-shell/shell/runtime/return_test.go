@@ -15,10 +15,7 @@ import (
 )
 
 // Parse-level tests pin the AST shape and the diagnostic for the
-// rejected forms. The previous tombstone for `return` lived in
-// parse_test.go and rejected the word outright; lifting that into
-// a real production stops the diagnostic from firing on every
-// well-formed return.
+// rejected forms.
 
 func TestParse_Return_BindsExpression(t *testing.T) {
 	t.Parallel()
@@ -741,12 +738,10 @@ let v <- loop
 	assert.Contains(t, msg, "loop", "diagnostic must name the offending def")
 }
 
-// Regression: a `defer my_def` statement must route through the
-// def's body, not through env.ExecBind's external-dispatch
-// fallback. The bind-statement path already does the def
-// lookup ahead of ExecBind; the defer path missed the same
-// precedence and so a `defer cleanup` against a user-defined
-// `def cleanup` tried to exec a subprocess named `cleanup`.
+// A `defer my_def` statement must route through the def's body,
+// not through env.ExecBind's external-dispatch fallback. The
+// bind-statement path already does the def lookup ahead of
+// ExecBind, and the defer path follows the same precedence.
 //
 // The recorder's ExecBind records every call it receives, so a
 // successful def dispatch must leave no defer-side recording
@@ -855,8 +850,8 @@ print $p
 // operator distinction between `=` (expression) and `<-`
 // (bind) is intentional, but the silent-wrong-thing failure
 // mode is steep enough that new users routinely walk off the
-// cliff. The checker has the defs map already populated for
-// the W2 / W3 work; on a single-name `let v = bareword` where
+// cliff. The checker has the defs map already populated; on a
+// single-name `let v = bareword` where
 // the bareword matches a known def, emit a hint pointing at
 // the bind form. Does NOT restrict the user -- a def name is
 // a valid bareword literal -- just helps when the shape is
@@ -893,15 +888,11 @@ func TestCheck_Return_LetEqualsNonDefIsClean(t *testing.T) {
 	assert.Empty(t, issues, "a bareword RHS that is not a def must not trigger the hint")
 }
 
-// Regression: a typo'd def name at the bind RHS used to slip
-// through the checker (which sees nothing wrong with an
-// unknown bind head -- it might be an external command) and
-// land at the runtime "exec NAME: exec NAME: executable file
-// not found in $PATH" diagnostic. With the defs map already
-// populated, the checker can fuzzy-match the typo'd head
-// against the known defs and emit a "did you mean ..." hint.
-// Doesn't restrict: an unknown head might genuinely be an
-// external command, so the hint is informational.
+// With the defs map populated, the checker fuzzy-matches a
+// typo'd bind head against the known defs and emits a "did you
+// mean ..." hint. Doesn't restrict: an unknown head might
+// genuinely be an external command, so the hint is
+// informational.
 func TestCheck_Return_BindRHSTypoSuggestsDefName(t *testing.T) {
 	t.Parallel()
 	src := `
@@ -936,7 +927,7 @@ func TestCheck_Return_BindRHSUnknownNoDefsIsClean(t *testing.T) {
 }
 
 // Regression: a comparison operand naming a def must hint
-// at the bind form. The W3 arithmetic-operand hint covered
+// at the bind form. The arithmetic-operand hint covers
 // `let x = two + 3`; this is the parallel for `if two == 2`.
 // Same shape, different code path.
 func TestCheck_Return_ComparisonHintsAtDefBindForm(t *testing.T) {
@@ -1141,14 +1132,12 @@ print $v.field
 	assert.Empty(t, issues, "recursive value-returning def must allow field access on its primary")
 }
 
-// Regression: a no-return def in bind position produces the
-// envelope mirror as the primary (matching the no-payload
-// command-bind family); the checker must keep the sealed
-// envelope shape for that case so accessing a non-envelope
-// field on the bound primary is caught at preflight rather
-// than failing at runtime. The earlier fix that introduced
-// def-as-bind-head over-broadened to semantics.OriginUnknown for every
-// def, which masked this class of mistake.
+// A no-return def in bind position produces the envelope
+// mirror as the primary (matching the no-payload command-bind
+// family); the checker must keep the sealed envelope shape for
+// that case so accessing a non-envelope field on the bound
+// primary is caught at preflight rather than failing at
+// runtime.
 func TestCheck_Return_NoReturnDefBindsSealedEnvelope(t *testing.T) {
 	t.Parallel()
 	src := `

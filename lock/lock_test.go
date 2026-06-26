@@ -20,8 +20,8 @@ func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-// TestRunCreatesLockDirOnFirstTouch covers the CI regression where
-// the lockfile's parent directory does not yet exist (no daemon has
+// TestRunCreatesLockDirOnFirstTouch covers the case where the
+// lockfile's parent directory does not yet exist (no daemon has
 // initialised the runtime root). acquireWriter must MkdirAll the
 // parent so first-touch CLI invocations and scripted scenarios
 // succeed, matching the existing O_CREATE behaviour for the lock
@@ -41,8 +41,8 @@ func TestRunCreatesLockDirOnFirstTouch(t *testing.T) {
 // TestRunPanicsOnSamePathReentry proves the deadlock tripwire: a nested
 // Run for a path the context already holds is a programmer error (it
 // would otherwise EWOULDBLOCK against the held flock until the deadline),
-// so Run panics immediately rather than reusing or blocking. The fix is
-// to thread the held WriterScope to the callee.
+// so Run panics immediately rather than reusing or blocking. Callers
+// already holding the path thread the held WriterScope to the callee.
 func TestRunPanicsOnSamePathReentry(t *testing.T) {
 	t.Parallel()
 

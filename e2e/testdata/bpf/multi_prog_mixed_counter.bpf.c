@@ -8,7 +8,7 @@
 // Each program filters on `expected_pid` (a load-time global) and
 // increments its counter by its own per-program `weight_X` global on
 // every matching event. Tests pass test-unique weights so the final
-// counter value is a verifiable function of (events × weight), not
+// counter value is a verifiable function of (events x weight), not
 // just an event tally.
 
 #include "counter_common.bpf.h"

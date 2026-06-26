@@ -43,13 +43,13 @@ const (
 	// not ordinary immutable data: its internal state evolves as
 	// the underlying process runs and exits.
 	OriginJob
-	// OriginNull is a Value that represents JSON null — a value
-	// that is present but whose content is null.  Distinct from
+	// OriginNull is a Value that represents JSON null -- a value
+	// that is present but whose content is null. Distinct from
 	// an absent (zero) Value: an absent Value is a lookup miss or
 	// an uninitialised slot, whereas an OriginNull value is what
 	// jq returns when a filter selects a missing field, what
 	// commands return when they explicitly produce a null result,
-	// and what users can get by asking for one.  The
+	// and what users can get by asking for one. The
 	// distinction matters at substitution and assignment
 	// boundaries: a null is assignable and renderable as "null";
 	// an absent value trips "produces no assignable value".
@@ -269,9 +269,7 @@ var (
 		// snapshot and `bpfman dispatcher list` binds a
 		// DispatcherListResult, both as untagged (unsealed)
 		// values, so field access is permitted but not
-		// typo-checked. Tagging those Values and growing the
-		// semantic table by one entry alongside Program and
-		// Link would buy deep field checking.
+		// typo-checked.
 		OriginMap:     {Sealed: false, Kind: OriginMap},
 		OriginUnknown: {Sealed: false, Kind: OriginUnknown},
 	}

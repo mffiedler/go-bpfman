@@ -161,7 +161,8 @@ func TestTC_DetachDeletesOwnFilterNotForeign(t *testing.T) {
 }
 
 // TestTC_RebuildSwapPreservesForeignFilter exercises the second site
-// that previously rediscovered the filter by priority: the dispatcher
+// where filter removal must use the exact handle, not a priority-only
+// lookup: the dispatcher
 // rebuild a second attach triggers (the filter swap). The swap must
 // remove only bpfman's old filter, by its exact handle, leaving a
 // foreign filter at the same priority untouched. Distinct from the

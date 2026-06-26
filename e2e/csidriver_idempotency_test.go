@@ -21,8 +21,7 @@ import (
 // Idempotency here is observable as mount stability: a duplicate publish
 // must not stack an extra bpffs mount on the per-pod directory or an
 // extra bind mount on the target. The test publishes the same volume
-// twice and asserts each path still carries exactly one mount. See
-// NPV-IDEMPOTENCY.md.
+// twice and asserts each path still carries exactly one mount.
 func TestCSIDriver_NodePublishVolume_Idempotent(t *testing.T) {
 	t.Parallel()
 

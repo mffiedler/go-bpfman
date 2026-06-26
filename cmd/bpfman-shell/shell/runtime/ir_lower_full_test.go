@@ -32,7 +32,7 @@ func TestLower_defer(t *testing.T) {
 }
 
 // TestLower_assertAndRequire covers AssertStmt in both forms:
-// the verb verb-form path stays in the parser as CommandStmt,
+// the verb-form path stays in the parser as CommandStmt,
 // but the expression form (assert EXPR / require EXPR) lowers
 // to Assert or Require carrying the embedded expression.
 func TestLower_assertAndRequire(t *testing.T) {

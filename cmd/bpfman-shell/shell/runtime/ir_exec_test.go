@@ -92,9 +92,9 @@ func TestExec_LetThenCommand(t *testing.T) {
 	assertCalls(t, runOnLowered(t, src), []execCall{{Lane: "command", Argv: "echo hello 42"}})
 }
 
-// TestExec_ThreadAndPureCall exercises the newly lowered
-// expression families that still dispatch through ExecBind but now
-// do so from concrete IR-owned expression nodes.
+// TestExec_ThreadAndPureCall exercises the expression families
+// that dispatch through ExecBind from concrete IR-owned expression
+// nodes.
 func TestExec_ThreadAndPureCall(t *testing.T) {
 	t.Parallel()
 
@@ -201,9 +201,8 @@ func TestExec_LetDestructure(t *testing.T) {
 }
 
 // TestExec_LetDestructureErrorText pins the runtime
-// diagnostic for a non-list destructure RHS. Lowered execution
-// is now the default engine, so the bad script must render the
-// documented user-facing message.
+// diagnostic for a non-list destructure RHS: the bad script
+// must render the documented user-facing message.
 func TestExec_LetDestructureErrorText(t *testing.T) {
 	t.Parallel()
 	src := "let (a b) = 1"
@@ -371,10 +370,9 @@ func TestExec_BindCollectGuardFailureArgs(t *testing.T) {
 
 // TestExec_FinalBindingsAcrossLetSequence compares the
 // final values of every variable a multi-statement let-chain
-// binds. The previous parity helpers only compared recorded
-// ExecCommand / ExecBind calls; this test extends parity to
-// the binding side of Env.Session so a divergence in how Eval
-// or BindName produces values shows up directly.
+// binds. This test extends parity to the binding side of
+// Env.Session so a divergence in how Eval or BindName
+// produces values shows up directly.
 func TestExec_FinalBindingsAcrossLetSequence(t *testing.T) {
 	t.Parallel()
 	src := "let a = 1\nlet b = 2\nlet pair = [$a $b]"
@@ -440,8 +438,7 @@ func TestExec_GuardFailureAtTopLevel(t *testing.T) {
 // MaxDefCallDepth and both engines emit the same diagnostic.
 // The check fires before runDefCall branches to the AST or
 // lowered lane, so the message is identical by construction;
-// pinning it with a test prevents accidental drift if either
-// path takes over the depth bookkeeping later.
+// pinning it with a test prevents accidental drift.
 func TestExec_RecursionDepthDiagnostic(t *testing.T) {
 	t.Parallel()
 	src := "def f() { f }\nf"
@@ -737,10 +734,7 @@ func assertBindingRaw(t *testing.T, env *Env, name, want string) {
 // clear env.defers on exit; the caller owns that pointer.
 //
 // The two examples scripts in the corpus (kprobe, tracepoint,
-// ...) all hit this path, and the lowered engine used to fail
-// the second source unit with "defer outside any defer scope" because
-// the first source unit's unwindOnExit ran the inherited scope and
-// nilled the pointer.
+// ...) all hit this path.
 func TestExecInScope_PreservesInheritedDeferScope(t *testing.T) {
 	t.Parallel()
 	env, calls := recordingEnv(t)
@@ -793,10 +787,7 @@ func TestExecInScope_PreservesInheritedDeferScope(t *testing.T) {
 // RunDefers RunDefersDefLocal), so runLoweredDefCall sets up and
 // tears down its own scope around the def body. When the def
 // returns cleanly, env.defers must be back at the caller's
-// outer pointer; the same unwindOnExit trailing drain that bit
-// the InScope path used to nil that pointer here too, so any
-// top-level defer registered after a def call hit "defer
-// outside any defer scope".
+// outer pointer.
 //
 // To isolate the def-call lane (rather than the InScope source-unit
 // boundary covered by the test above), everything happens in a

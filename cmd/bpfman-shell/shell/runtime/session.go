@@ -44,9 +44,9 @@ type defValue struct {
 	// was installed from a lowered program's hoisted top-level
 	// def set (or, in hand-built IR, by a RegisterDef
 	// instruction). If Entry is non-nil, runDefCall runs
-	// the def via the lowered interpreter. The AST statement
-	// runner is gone; the remaining semantic metadata the shell
-	// still needs from the original body is HasReturn.
+	// the def via the lowered interpreter. The remaining
+	// semantic metadata the shell still needs from the original
+	// body is HasReturn.
 	Entry    *ir.BasicBlock
 	NumTemps int
 }

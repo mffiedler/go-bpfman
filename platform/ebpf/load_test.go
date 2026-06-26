@@ -21,8 +21,7 @@ var xdpPassGlobalsObject = mustReadXDPPass()
 
 // mustReadXDPPass reads the compiled xdp_pass object, panicking if
 // it is absent -- a missing build artefact is a setup failure, not
-// a test condition, and the embed it replaces failed the build the
-// same way.
+// a test condition.
 func mustReadXDPPass() []byte {
 	b, err := os.ReadFile("xdp_pass.bpf.o")
 	if err != nil {
@@ -88,12 +87,9 @@ func TestDeclaredTypeMatchesSection(t *testing.T) {
 	}
 }
 
-// TestApplyGlobalData_UnknownKeyRejected pins finding 6: a
-// global-data key that names no variable in the object must fail
-// the load, mirroring Rust's must_exist=true (aya's
-// ParseError::SymbolNotFound). The previous behaviour silently
-// skipped the key, so a typo'd --global-data name loaded with the
-// compile-time default.
+// TestApplyGlobalData_UnknownKeyRejected requires that a global-data
+// key that names no variable in the object fails the load, mirroring
+// Rust's must_exist=true (aya's ParseError::SymbolNotFound).
 func TestApplyGlobalData_UnknownKeyRejected(t *testing.T) {
 	t.Parallel()
 

@@ -179,9 +179,8 @@ func (s *Server) ListLinks(ctx context.Context, req *pb.ListLinksRequest) (*pb.L
 
 // GetLink implements the GetLink RPC method.
 func (s *Server) GetLink(ctx context.Context, req *pb.GetLinkRequest) (*pb.GetLinkResponse, error) {
-	// The legacy protobuf field is named kernel_link_id, but the server
-	// has moved to bpfman-managed link handles. The gRPC layer is expected
-	// to disappear, so keep the wire shape and interpret this field as the
+	// The legacy protobuf field is named kernel_link_id; the server
+	// uses bpfman-managed link handles, so interpret this field as the
 	// bpfman LinkID at the boundary.
 	linkID := bpfman.LinkID(req.KernelLinkId)
 	info, err := s.mgr.GetLinkInfo(ctx, linkID)

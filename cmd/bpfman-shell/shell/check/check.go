@@ -37,8 +37,7 @@ import (
 // Issue is one finding from a Check pass: a source location
 // and a human-readable message. Multiple issues can be
 // reported in a single Check invocation; severity is
-// implicit (every Issue is an error today, but the field
-// could grow if warnings become useful).
+// implicit: every Issue is an error.
 type Issue struct {
 	source.Span
 	Msg string
@@ -67,8 +66,7 @@ func (i Issue) Error() string {
 // error lets callers report all problems at once instead of
 // the user having to re-run after fixing each. An empty
 // return slice means the program is clean by every check
-// implemented today; future checks land here without changing
-// the signature.
+// implemented.
 func Check(prog *syntax.Program) []Issue {
 	c := newChecker()
 	c.prescanTopLevelDefs(prog.Stmts)
@@ -2066,10 +2064,7 @@ func (c *checker) checkBuiltinArity(prog *syntax.Program) {
 		// --count=$n), which makes them non-syntax.LiteralExpr args that
 		// nonFlagArgCount cannot recognise as flags. Strict static
 		// counting would reject every interpolated invocation. The
-		// runtime handler enforces the exact positional/flag shape;
-		// the v2 work in PLAN-fire-builtin.md hoists kind-name and
-		// NeedsBinary validation into the checker, which is where a
-		// flag-aware arity check belongs.
+		// runtime handler enforces the exact positional/flag shape.
 		"fire": {min: 1, max: -1},
 	}
 	syntax.Inspect(prog, func(n syntax.Node) bool {

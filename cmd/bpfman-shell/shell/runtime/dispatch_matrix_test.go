@@ -12,10 +12,10 @@ import (
 )
 
 // Dispatch sites x head kinds. Right now there is only one
-// legal def-shaped head kind left, so the matrix is narrower
-// than it used to be, but it still pins the main cross-site
-// invariant: top-level def dispatch behaves the same at bind,
-// command, defer, and bind-collect producer sites. If alias
+// legal def-shaped head kind, but it still pins the main
+// cross-site invariant: top-level def dispatch behaves the
+// same at bind, command, defer, and bind-collect producer
+// sites. If alias
 // resolution or another dispatch shape comes back into play,
 // widen the headKinds table rather than cloning per-site
 // tests.

@@ -7,11 +7,8 @@
 //	    bpfman link attach tc ... --priority $prio --proceed-on $po $prog
 //	}
 //
-// Arity is fixed at 2. A variadic 'zip A B C ...' would mirror
-// Python / Clojure more closely but the pure-builtin registry holds
-// a single arity per name; the wider form can be added when a
-// concrete test demands them, alongside whatever extension of the
-// registry's arity model that would imply.
+// Arity is fixed at 2: the pure-builtin registry holds a single
+// arity per name.
 //
 // Length mismatch is a hard error rather than a silent truncation:
 // the parallel-list pattern this primitive exists to serve carries

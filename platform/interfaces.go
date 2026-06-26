@@ -187,7 +187,6 @@ type ProgramLister interface {
 }
 
 // ProgramFinder finds programs by criteria.
-// This interface is currently empty but retained for future extensions.
 type ProgramFinder any
 
 // MapOwnershipReader provides access to map ownership information.
@@ -384,8 +383,8 @@ type LinkDetacher interface {
 // PinRemover removes program pins from bpffs.
 type PinRemover interface {
 	// RemovePin removes a program pin from bpffs. The bpfman.ProgPinPath
-	// type ensures only program pin paths --- not link pins, map pins,
-	// or arbitrary strings --- can be passed in. For a kernel-attached
+	// type ensures only program pin paths -- not link pins, map pins,
+	// or arbitrary strings -- can be passed in. For a kernel-attached
 	// BPF link, DetachLink is required because dropping the userland
 	// reference does not synchronously detach the link from its
 	// attach point. Returns nil if the path does not exist.

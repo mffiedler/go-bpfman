@@ -19,8 +19,8 @@ func TestFindE2EUnmanagedProgramPins(t *testing.T) {
 		E2EUnmanagedPinPrefix + "schedcls_42",
 		E2EUnmanagedPinPrefix + "kprobe_99",
 	}
-	// Entries that must be left alone: the old prefix (renamed away),
-	// bpfman's own pins, and unrelated names.
+	// Entries that must be left alone: a name under a different
+	// prefix, bpfman's own pins, and unrelated names.
 	others := []string{
 		"e2e_unmanaged_schedcls_1",
 		"dispatcher_xdp_eth0",

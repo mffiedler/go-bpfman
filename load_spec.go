@@ -204,7 +204,7 @@ type imageSourceJSON struct {
 }
 
 // loadSpecJSON is the JSON representation of LoadSpec.
-// This allows LoadSpec to have private fields while still being serializable.
+// This allows LoadSpec to have private fields while still being serialisable.
 //
 // Every field is always emitted: nullable concepts (ImageSource,
 // MapOwnerID) marshal as JSON null when unset; collections
@@ -256,7 +256,7 @@ func (s LoadSpec) MarshalJSON() ([]byte, error) {
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
-// Note: This bypasses the constructor validation to support deserializing
+// Note: This bypasses the constructor validation to support deserialising
 // stored data. The assumption is that data was validated at creation time.
 func (s *LoadSpec) UnmarshalJSON(data []byte) error {
 	var js loadSpecJSON

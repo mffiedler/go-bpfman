@@ -46,12 +46,9 @@ import (
 // line. Failure modes: child non-zero exit (panic in init,
 // observable via stderr) or missing marker.
 //
-// Coverage gap closed: the failure mode tested here was
-// previously caught only by the bpfman-operator integration
-// suite running against a real Kubernetes cluster, several
-// layers removed from the cause. A regression in any imported
-// package's init that introduces a /proc dependency now
-// surfaces as a single targeted test failure on this side.
+// A regression in any imported package's init that introduces a
+// /proc dependency surfaces here as a single targeted test
+// failure.
 func TestPackageInitSurvivesAbsentProc(t *testing.T) {
 	t.Parallel()
 

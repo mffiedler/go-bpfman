@@ -203,10 +203,10 @@ func TestAcquirePoolSlot_Exhaustion(t *testing.T) {
 	assert.ErrorIs(t, err, errNetPoolExhausted)
 }
 
-// TestAcquirePoolSlot_ReleasedSlotIgnoresExtantLink confirms
-// the post-fix behaviour: a slot whose previous tenant wrote
-// released_at is trusted to have cleaned up, even when an
-// extant link of the same name still exists in the kernel.
+// TestAcquirePoolSlot_ReleasedSlotIgnoresExtantLink confirms that
+// a slot whose previous tenant wrote released_at is trusted to
+// have cleaned up, even when an extant link of the same name still
+// exists in the kernel.
 // That extant link is presumed to belong to a later unrelated
 // process (typically another concurrent run of a script with
 // deterministic names) and must not be flagged as a leak this

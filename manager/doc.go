@@ -17,7 +17,7 @@
 // # Actions and the executor
 //
 // The action package (manager/action/) defines a small instruction set
-// for BPF lifecycle operations. Each action type is an opcode — pure
+// for BPF lifecycle operations. Each action type is an opcode -- pure
 // data describing what to do with typed operands. The executor
 // (manager/executor.go) is the single interpreter: one type switch
 // dispatches each opcode to the store, kernel, or filesystem. Plan
@@ -34,7 +34,7 @@
 // Mutating operations follow a phased pattern:
 //
 //  1. FETCH: gather state from store, kernel, and filesystem
-//  2. COMPUTE: build a plan — a sequence of nodes that emit actions
+//  2. COMPUTE: build a plan -- a sequence of nodes that emit actions
 //  3. EXECUTE: the plan interpreter runs each node's action through
 //     the executor, accumulates undo actions, and on failure rolls
 //     back in reverse order
@@ -64,10 +64,10 @@
 // loaded with metadata persisted, or nothing is left behind. The load
 // plan emits four actions through the executor:
 //
-//  1. LoadProgram — load into kernel and pin to bpffs
-//  2. CheckProgramNotInStore — verify no stale entry exists
-//  3. PublishBytecode — copy object file to per-program directory
-//  4. SaveProgram — persist metadata to store
+//  1. LoadProgram -- load into kernel and pin to bpffs
+//  2. CheckProgramNotInStore -- verify no stale entry exists
+//  3. PublishBytecode -- copy object file to per-program directory
+//  4. SaveProgram -- persist metadata to store
 //
 // On failure the plan interpreter rolls back completed actions in
 // reverse order (UnloadProgram, RemoveProgramDir). On success,
@@ -83,24 +83,24 @@
 // Rollback operates at two scopes that compose cleanly.
 //
 // The plan interpreter (operation/run.go) handles rollback across
-// actions.  Each plan node may declare undo actions via UndoFrom.
+// actions. Each plan node may declare undo actions via UndoFrom.
 // When a node fails, the interpreter walks previously
 // completed nodes in reverse order and executes their undo actions.
 // This is the inter-step scope: it ensures that a multi-step
 // operation either completes fully or leaves no partial artefacts
 // from earlier steps.
 //
-// The executor handles rollback within a single action.  Deep actions
+// The executor handles rollback within a single action. Deep actions
 // such as EnsureXDPDispatcher and EnsureTCDispatcher perform a
 // mini-transaction internally: kernel I/O followed by a store
-// persist.  If the persist fails, the executor rolls back the kernel
-// artefacts before returning an error.  The plan interpreter never
-// sees the partial internal state — it receives a clean error and
+// persist. If the persist fails, the executor rolls back the kernel
+// artefacts before returning an error. The plan interpreter never
+// sees the partial internal state -- it receives a clean error and
 // undoes earlier nodes as usual.
 //
 // The two scopes nest: if a deep action fails internally, its inline
 // rollback cleans up within that action, then the plan interpreter
-// undoes any earlier nodes that succeeded.  Failed mutating
+// undoes any earlier nodes that succeeded. Failed mutating
 // operations (Load, Unload, Attach*, Detach*) return plain errors.
 // Rollback failures are logged but do not alter the returned error.
 //

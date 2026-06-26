@@ -685,9 +685,8 @@ func TestSessionFrames_WithFramePopsOnPanic(t *testing.T) {
 func TestSessionExpandNilVariable(t *testing.T) {
 	t.Parallel()
 
-	// Expanding a nil variable now produces a NilArg at the
-	// argument boundary rather than erroring out at expansion
-	// time. Downstream commands decide whether null is meaningful
+	// Expanding a nil variable produces a NilArg at the argument
+	// boundary. Downstream commands decide whether null is meaningful
 	// for their semantics (jq treats it as JSON null; print
 	// renders the JSON token "null"; predicates that care -- nil,
 	// present, not-empty -- inspect NilArg explicitly).

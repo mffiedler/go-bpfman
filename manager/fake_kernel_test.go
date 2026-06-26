@@ -11,10 +11,7 @@
 // Trust this suite accordingly. The fake verifies the kernel
 // invariants it has been taught; it cannot discover invariants it
 // does not model. A green run proves the manager's logic against the
-// modelled behaviour, not that the model matches the kernel. The
-// netns-aware filter identity here exists because review against the
-// Rust implementation found detach operating on the wrong namespace
-// while the then netns-blind fake passed everything.
+// modelled behaviour, not that the model matches the kernel.
 //
 // Two rules keep that honest. Extend the fake only when a bug or a
 // parity finding depends on a kernel invariant it lacks; grown
@@ -285,7 +282,7 @@ type fakeProgram struct {
 // kernel BPF object being pinned to bpffs. When the pin file is
 // later removed (e.g. by os.RemoveAll on a revision directory),
 // ProgramCount/LinkCount will detect the absence and garbage-collect
-// the stale entry — mirroring the real kernel's refcount semantics.
+// the stale entry -- mirroring the real kernel's refcount semantics.
 func createPinFile[P ~string](p P) {
 	path := string(p)
 	if path == "" {

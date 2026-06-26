@@ -4,9 +4,8 @@ import "github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
 
 // Expr is the lowered-expression sum type carried by Eval,
 // BuildArgs, and Assert. It mirrors the surface expression
-// families the runtime still needs after statement lowering,
-// but it is distinct from the parser AST so the lowered engine
-// can retire its dependency on Expr incrementally.
+// families the runtime still needs after statement lowering.
+// It is distinct from the parser AST.
 type Expr interface {
 	irExprNode()
 }

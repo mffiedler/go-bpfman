@@ -160,9 +160,9 @@ type NamespaceHelperInvocation struct {
 // namespace helper subprocess (used for container uprobe attachment).
 //
 // Detection logic:
-//   - "bpfman-ns" → helper mode
-//   - "bpfman-rpc" → not helper (valid, but different mode)
-//   - anything else → error (unknown mode)
+//   - "bpfman-ns" -> helper mode
+//   - "bpfman-rpc" -> not helper (valid, but different mode)
+//   - anything else -> error (unknown mode)
 //
 // Returns the invocation details (with rewritten args for the helper parser),
 // whether helper mode was detected, and any error for invalid configuration.

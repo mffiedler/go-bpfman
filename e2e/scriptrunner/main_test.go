@@ -22,8 +22,8 @@ import (
 // binaries on separate runners so the flock never contends
 // there.
 //
-// Kept byte-identical to the workload binary's constant so a
-// future shared-helper extraction is a mechanical move.
+// Kept byte-identical to the workload binary's constant so the
+// two definitions stay in sync.
 const e2eSuiteLockPath = "/tmp/bpfman-e2e.lock"
 
 // suiteLock is package-scoped so the open file (and thus the

@@ -26,8 +26,7 @@ type kernelAdapter struct {
 	// fentry/fexit) where multiple BPF programs share a kernel
 	// hook, pin-removal alone does not run perf_event_free_bpf_prog
 	// for the released link's program. DetachLink removes the pin
-	// and then consumes this map -- the order matters; see
-	// docs/DETACH-DOES-NOT-STOP-PROGRAM.md.
+	// and then consumes this map -- the order matters.
 	liveLinks sync.Map
 
 	// testDisp holds lazily-loaded test dispatchers used as

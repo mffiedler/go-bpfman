@@ -2038,7 +2038,7 @@ func TestXDP_ExtensionPositionsAreSequential(t *testing.T) {
 	}
 
 	// Verify all positions are assigned and the last-attached
-	// (newest) program is at position 0 — matching Rust bpfman
+	// (newest) program is at position 0 -- matching Rust bpfman
 	// behaviour where new programs sort before existing ones at
 	// the same priority.
 	positions := make(map[int32]bool)
@@ -2960,13 +2960,10 @@ func TestTracepointAttach_PreflightSkippedWhenListEmpty(t *testing.T) {
 // TestTCX_DuplicateAttachRejected pins the duplicate-attach
 // contract: attaching the same TCX program a second time to the
 // same (interface, direction) is rejected, and the first
-// attachment survives untouched. The previous behaviour was the
-// inverse: the stale-pin preflight detached the live kernel link
-// and a second store record was created sharing the first's pin
-// path, so detaching either record killed the other's attachment.
-// Rust gets the equivalent rejection from the kernel's mprog
-// EEXIST; the store record for the same program on the same hook
-// is our proof of a live managed attachment.
+// attachment survives untouched. Rust gets the equivalent
+// rejection from the kernel's mprog EEXIST; the store record for
+// the same program on the same hook is our proof of a live managed
+// attachment.
 func TestTCX_DuplicateAttachRejected(t *testing.T) {
 	t.Parallel()
 
@@ -3072,9 +3069,8 @@ func TestTCX_EqualPriorityOrderIsInsertionOrder(t *testing.T) {
 // TestUprobe_PidFilterFlowsToKernelAndDetails pins the pid-filter
 // contract end to end at the manager boundary: a spec carrying a
 // pid must surface it in the link details, persist it through the
-// store, and -- the part that was silently dropped before -- hand
-// it to the kernel attach so the probe is scoped to one process
-// rather than firing machine-wide.
+// store, and hand it to the kernel attach so the probe is scoped
+// to one process rather than firing machine-wide.
 func TestUprobe_PidFilterFlowsToKernelAndDetails(t *testing.T) {
 	t.Parallel()
 

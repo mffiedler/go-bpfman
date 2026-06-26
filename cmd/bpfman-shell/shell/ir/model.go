@@ -43,11 +43,6 @@ type Program struct {
 	source.Span
 }
 
-// Def is the lowered form of a DefStmt: a named callable
-// with an ordered parameter list, its own entry block, and its
-// own block table. Params keeps the original parameter names
-// for diagnostics; binding happens inside the def's entry block
-// via the usual EnterFrame / BindName sequence.
 // Param is one declared def parameter. Type is the optional
 // annotation ("number", "string", "bool"); empty means untyped,
 // keeping the baseline binding rule (words bind as strings,
@@ -74,6 +69,11 @@ func ParamList(params []Param) string {
 	return strings.Join(texts, " ")
 }
 
+// Def is the lowered form of a DefStmt: a named callable
+// with an ordered parameter list, its own entry block, and its
+// own block table. Params keeps the original parameter names
+// for diagnostics; binding happens inside the def's entry block
+// via the usual EnterFrame / BindName sequence.
 type Def struct {
 	Name      string
 	Params    []Param
@@ -473,11 +473,11 @@ type ExitLoop struct {
 }
 
 // RegisterDef installs a Def into the session. Canonical
-// lowering now hoists top-level defs into Program.Defs and
-// pre-registers them before body execution, so ordinary lowered
-// output no longer emits RegisterDef. The instruction remains as
-// an escape hatch for hand-built IR and tests that want an
-// explicit def-publication step.
+// lowering hoists top-level defs into Program.Defs and
+// pre-registers them before body execution, so lowered output
+// does not emit RegisterDef; the instruction is an escape hatch
+// for hand-built IR and tests that want an explicit
+// def-publication step.
 type RegisterDef struct {
 	Def *Def
 	source.Span

@@ -10,7 +10,7 @@
 // Each program filters on `expected_pid` (a load-time global) and
 // increments its counter by its own per-program `weight_X` global on
 // every matching event. Tests pass test-unique weights so the final
-// counter value is a verifiable function of (burst count × weight),
+// counter value is a verifiable function of (burst count x weight),
 // not just an event tally. This catches "wrong map", "globals not
 // applied", and cross-test interference in ways a bare counter
 // cannot.

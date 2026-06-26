@@ -1,9 +1,6 @@
 // Package strdist holds string-distance primitives shared between
 // the manager (tracepoint and syscall suggestions) and the shell
-// (suggested-field hints in static-check diagnostics). The
-// implementations originated in manager/suggest.go and were
-// extracted unchanged so a second consumer does not have to copy
-// or reach across package boundaries.
+// (suggested-field hints in static-check diagnostics).
 package strdist
 
 import (

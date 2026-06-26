@@ -3,8 +3,7 @@
 // script chooses the topology parameters (names, addresses);
 // the built-in owns the imperative order of ip(8) calls, the
 // idempotent pre-clean against leftover kernel state, and the
-// LIFO-correct teardown. See docs/PLAN-net-builtin.md for the
-// design rationale.
+// LIFO-correct teardown.
 //
 // net is for paired-veth single-netns topologies used by
 // TC / TCX / XDP dispatcher tests. A richer network-fixture
@@ -312,9 +311,8 @@ func identityFlagsBreakdown(f vethPairFlags) (given, missing string) {
 }
 
 // parseIPv4Prefix validates s as an IPv4 prefix in CIDR form and
-// returns the bare address. v1 is IPv4-only; the IPv6 case is the
-// future-expansion notch the plan calls out in section 9 and
-// rejects loudly here so a stray AAAA address never silently
+// returns the bare address. v1 is IPv4-only; the IPv6 case is
+// rejected loudly here so a stray AAAA address never silently
 // produces a malformed `ip addr add` invocation.
 func parseIPv4Prefix(s string) (string, error) {
 	prefix, err := netip.ParsePrefix(s)
@@ -624,10 +622,9 @@ var linkNameSeq atomic.Uint64
 // headroom under Linux IFNAMSIZ (15), so a per-end suffix like "a"
 // or "b" still fits the host- and peer-side veth names.
 //
-// Borrowed verbatim from e2e/helpers.go's uniqueTestName; the e2e
-// suite and bpfman-shell now share the same name shape so a
-// breadcrumb in /sys/class/net or /run/netns is attributable from
-// either side.
+// Matches e2e/helpers.go's uniqueTestName, so the e2e suite and
+// bpfman-shell share the same name shape and a breadcrumb in
+// /sys/class/net or /run/netns is attributable from either side.
 func uniqueLinkBase() string {
 	n := linkNameSeq.Add(1)
 	h := fnv.New64a()
@@ -741,9 +738,8 @@ func NetExecEnvelope(ctx context.Context, args []runtime.Arg) (runtime.Envelope,
 // background job. Symmetric to the corpus pattern start CMD
 // returns: the same $job handle, lifecycle through wait / kill,
 // process-group containment for descendants the netns-exec
-// wrapper forks. No corpus script needs this yet; it ships in v1
-// so the sync/async invariant (sync verbs return envelopes,
-// async verbs return jobs) holds for net from day one.
+// wrapper forks. It keeps the sync/async invariant (sync verbs
+// return envelopes, async verbs return jobs) holding for net.
 func handleNetStart(ctx context.Context, env *runtime.Env, origin string, args []runtime.Arg) (runtime.Value, error) {
 	if len(args) < 2 {
 		return runtime.Value{}, fmt.Errorf("net start: requires $pair and a command")

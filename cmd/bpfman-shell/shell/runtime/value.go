@@ -98,10 +98,10 @@ func ValueFromRecord(fields map[string]Value) Value {
 
 // ValueFromAny wraps an arbitrary JSON-compatible value as a
 // Value. Unlike ValueFromJSON it does not parse anything; it
-// stores x directly.  Suitable for integration points (e.g. gojq)
+// stores x directly. Suitable for integration points (e.g. gojq)
 // that already produce Go-native types matching the Value's
 // internal vocabulary (map[string]any, []any, string, json.Number,
-// float64, bool, nil).  Callers that know the domain kind should
+// float64, bool, nil). Callers that know the domain kind should
 // chain WithKind.
 func ValueFromAny(x any) Value {
 	return Value{v: x}
@@ -313,8 +313,8 @@ func BoolValue(b bool) Value {
 }
 
 // NullValue returns a Value that represents an explicit JSON null
-// — a present value with null content, distinct from an absent
-// (zero) Value.  Use this where a command or filter produced a
+// -- a present value with null content, distinct from an absent
+// (zero) Value. Use this where a command or filter produced a
 // null result by design (for example, gojq evaluating a filter
 // against a missing field) rather than as a stand-in for "no
 // result".
@@ -322,9 +322,9 @@ func NullValue() Value {
 	return Value{kind: semantics.OriginNull}
 }
 
-// IsNil reports whether the Value is absent — a zero/uninitialised
+// IsNil reports whether the Value is absent -- a zero/uninitialised
 // Value that signals "no result", as distinct from a present
-// value whose content happens to be null.  A Value constructed
+// value whose content happens to be null. A Value constructed
 // via NullValue has kind semantics.OriginNull and IsNil returns false for
 // it; a Value{} returned by a failed lookup or an unproduced
 // command has kind semantics.OriginUnknown and IsNil returns true.
@@ -336,13 +336,13 @@ func (v Value) IsNil() bool {
 }
 
 // IsNull reports whether the Value represents an explicit JSON
-// null.  See NullValue.
+// null. See NullValue.
 func (v Value) IsNull() bool {
 	return v.kind == semantics.OriginNull
 }
 
 // IsScalar reports whether the value stringifies as a single
-// token: string, number, bool, or the null marker.  Structured
+// token: string, number, bool, or the null marker. Structured
 // types (map, slice) and absent values are not scalars.
 func (v Value) IsScalar() bool {
 	if v.kind == semantics.OriginNull {

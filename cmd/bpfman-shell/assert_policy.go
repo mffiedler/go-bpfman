@@ -4,10 +4,9 @@
 // rendered, how the remaining command-status forms dispatch, and
 // how assert vs require affect counters and control flow.
 //
-// Assert failures now mean "the script failed" everywhere.
-// Polling is expressed explicitly through `poll` + `retry`,
-// so assert no longer has any retry-specific meaning. Require
-// remains fatal everywhere.
+// Assert failures mean "the script failed" everywhere.
+// Polling is expressed explicitly through `poll` + `retry`.
+// Require is fatal everywhere.
 package main
 
 import (
@@ -270,10 +269,10 @@ func exprScalar(e ir.Expr, session *runtime.Session) string {
 	return s
 }
 
-// evalAssertVerb dispatches the transitional command-form
-// assertion heads that still exist after slice 3. `ok` / `fail`
-// remain command-shaped; the named predicates route through the
-// shared expression/builtin predicate mechanism for compatibility.
+// evalAssertVerb dispatches the command-form assertion heads.
+// `ok` / `fail` remain command-shaped; the named predicates route
+// through the shared expression/builtin predicate mechanism for
+// compatibility.
 func evalAssertVerb(env *runtime.Env, verbArg runtime.Arg, verb string, args []runtime.Arg) (assertResult, error) {
 	verbSpan := runtime.ArgSpan(verbArg)
 	switch verb {

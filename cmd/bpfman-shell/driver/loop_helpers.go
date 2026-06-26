@@ -26,8 +26,8 @@ var ErrScriptError = errors.New("script error")
 // defer through to the driver's terminal. Defers go through
 // ExecBind, which captures the deferred command's output into
 // the result envelope; without this flush the captured bytes
-// were dropped, so `defer print "trace"` produced no visible
-// output. Failure-path defers still render through
+// would be dropped and `defer print "trace"` would produce no
+// visible output. Failure-path defers still render through
 // RenderDeferFailure's labelled block (which already shows the
 // captured streams), so this hook only fires on success.
 //

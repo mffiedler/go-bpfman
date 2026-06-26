@@ -19,8 +19,7 @@ var xdpPassObject = mustReadXDPPass()
 
 // mustReadXDPPass reads the compiled xdp_pass object, panicking if
 // it is absent -- a missing build artefact is a setup failure, not
-// a test condition, and the embed it replaces failed the build the
-// same way.
+// a test condition.
 func mustReadXDPPass() []byte {
 	b, err := os.ReadFile("xdp_pass.bpf.o")
 	if err != nil {

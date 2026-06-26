@@ -36,10 +36,10 @@
 //
 // The interaction between these fields:
 //
-//	AllowUnsigned=true,  VerifyEnabled=true  → verify if signed, accept if unsigned
-//	AllowUnsigned=true,  VerifyEnabled=false → accept all, no verification
-//	AllowUnsigned=false, VerifyEnabled=true  → require valid signature
-//	AllowUnsigned=false, VerifyEnabled=false → accept all, no verification
+//	AllowUnsigned=true,  VerifyEnabled=true  -> verify if signed, accept if unsigned
+//	AllowUnsigned=true,  VerifyEnabled=false -> accept all, no verification
+//	AllowUnsigned=false, VerifyEnabled=true  -> require valid signature
+//	AllowUnsigned=false, VerifyEnabled=false -> accept all, no verification
 //
 // When unsigned images are forbidden and verification is enabled, a trusted
 // certificate identity list may be configured to restrict who can sign.

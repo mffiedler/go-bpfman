@@ -72,11 +72,9 @@ func checkSource(t *testing.T, src string) []check.Issue {
 }
 
 // astExprFromIR is the test-only inverse of the syntax->IR
-// expression lowering path. Runtime and dump paths no longer
-// reconstruct AST expressions from IR, but round-trip tests and
-// compatibility adapters still need an explicit inverse to prove
-// the lowering remains structure-preserving while the parser AST
-// exists.
+// expression lowering path. Round-trip tests and compatibility
+// adapters need an explicit inverse to prove the lowering remains
+// structure-preserving.
 func astExprFromIR(expr ir.Expr) syntax.Expr {
 	switch e := expr.(type) {
 	case *ir.LiteralExpr:

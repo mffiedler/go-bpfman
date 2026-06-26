@@ -486,15 +486,14 @@ func (s *sqliteStore) closeStatements() {
 
 // schemaVersion is the current schema version. Increment this when the schema changes.
 // Migrations are supported from version 2 onwards; an unmigrated mismatch causes New to
-// delete and recreate the database. Version 14 added links.metadata_json.
-// Version 15 added dispatchers.filter_handle.
+// delete and recreate the database.
 const schemaVersion = 16
 
 // debugLinkIDSequenceSeed makes store-allocated bpfman link handles
-// visually distinct from small kernel bpf_link IDs while the link identity
-// redesign is being reviewed. SQLite AUTOINCREMENT returns seq+1, so the
-// first generated handle is 2123456789. Keep this below uint32 max while the
-// legacy gRPC surface still narrows link IDs to uint32.
+// visually distinct from small kernel bpf_link IDs. SQLite AUTOINCREMENT
+// returns seq+1, so the first generated handle is 2123456789. Keep this
+// below uint32 max while the legacy gRPC surface still narrows link IDs
+// to uint32.
 const debugLinkIDSequenceSeed = 2_123_456_788
 
 func (s *sqliteStore) migrate(ctx context.Context) error {

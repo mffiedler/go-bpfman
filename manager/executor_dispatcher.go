@@ -633,7 +633,7 @@ func (e *executor) rebuildTCDispatcher(
 
 // removeDispatcherIfEmpty removes a dispatcher when no extension
 // links remain in its snapshot, and is a no-op otherwise. This is
-// the implementation of action.RemoveDispatcher --- the manager's
+// the implementation of action.RemoveDispatcher -- the manager's
 // single domain intent for nominal empty-dispatcher teardown.
 //
 // It is intentionally *not* the same as
@@ -1027,20 +1027,9 @@ func snapInterfaceName(snap platform.DispatcherSnapshot) string {
 //     only userland orphans that coherency, audit, and GC repair.
 //     This mirrors the post-detach contract on Manager.unload.
 //
-// This contract was implicit and wrong in the previous action-list
-// version: ExecuteAll stops on first error, which for teardown
-// meant a transient bpffs failure could leave the store row
-// referencing a kernel attachment that no longer existed --- the
-// worst of both worlds. Naming the steps and stating the contract
-// here makes the intended semantics reviewable.
-//
-// Ordering is also load-bearing for safety. Splitting the kernel
-// detach step across layers is what allowed the ARM detach race
-// fixed in commit 32024a9 (a manager-level recipe emitted
-// RemovePin --- os.Remove on a bpffs path --- where the XDP outer
-// link required BPF_LINK_DETACH). The lifecycle methods are
-// private to the executor; nothing outside this file can compose
-// them differently.
+// Ordering is also load-bearing for safety. The lifecycle methods
+// are private to the executor; nothing outside this file can
+// compose them differently.
 func (e *executor) removeEmptyDispatcher(ctx context.Context, snap platform.DispatcherSnapshot) error {
 	key := snap.Key
 	e.logger.DebugContext(ctx, "removing empty dispatcher", "type", key.Type, "nsid", key.Nsid, "ifindex", key.Ifindex, "program_id", snap.Runtime.ProgramID, "kernel_link_id", snap.Runtime.KernelLinkID)

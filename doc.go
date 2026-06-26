@@ -7,18 +7,18 @@
 // The core types form a hierarchy reflecting the program lifecycle:
 //
 //	Program             - The complete domain object combining Record and Status
-//	├── ProgramRecord   - DB-backed stored record (what bpfman manages)
-//	│   ├── LoadSpec    - Validated load request (immutable, private fields)
-//	│   ├── License/GPLCompatible - Discovered from ELF at load time
-//	│   ├── Handles     - Filesystem paths (pin, maps)
-//	│   └── Meta        - User-facing metadata (name, owner, labels)
-//	└── ProgramStatus   - Observed runtime state (kernel + filesystem-derived paths)
-//	    ├── Kernel      - Live kernel program info (nil if not present)
-//	    ├── ProgPin     - Program pin path (derived from program ID)
-//	    ├── MapDir      - Map pin directory (derived)
-//	    ├── Bytecode    - Bytecode file path (derived)
-//	    ├── Links       - Attached links with their own record/status
-//	    └── Maps        - Associated kernel maps with pin correlation
+//	+-- ProgramRecord   - DB-backed stored record (what bpfman manages)
+//	|   +-- LoadSpec    - Validated load request (immutable, private fields)
+//	|   +-- License/GPLCompatible - Discovered from ELF at load time
+//	|   +-- Handles     - Filesystem paths (pin, maps)
+//	|   +-- Meta        - User-facing metadata (name, owner, labels)
+//	+-- ProgramStatus   - Observed runtime state (kernel + filesystem-derived paths)
+//	    +-- Kernel      - Live kernel program info (nil if not present)
+//	    +-- ProgPin     - Program pin path (derived from program ID)
+//	    +-- MapDir      - Map pin directory (derived)
+//	    +-- Bytecode    - Bytecode file path (derived)
+//	    +-- Links       - Attached links with their own record/status
+//	    +-- Maps        - Associated kernel maps with pin correlation
 //
 // # Program Lifecycle Flow
 //
@@ -45,17 +45,17 @@
 // Links follow a parallel pattern to programs:
 //
 //	Link              - The complete domain object combining Record and Status
-//	├── LinkRecord    - DB-backed stored record (what bpfman manages)
-//	│   ├── ID        - bpfman management handle allocated by the store
-//	│   ├── ProgramID - The program this link attaches
-//	│   ├── KernelLinkID - Optional captured kernel bpf_link ID
-//	│   ├── Kind      - Link type (tracepoint, kprobe, xdp, tc, etc.)
-//	│   ├── PinPath   - Optional bpffs pin path
-//	│   └── Details   - Type-specific details (sealed interface)
-//	└── LinkStatus    - Observed runtime state
-//	    ├── Kernel    - Live kernel link info, if captured and still present
-//	    ├── KernelSeen - Whether kernel enumeration found the link
-//	    └── PinPresent - Whether the pin path exists on filesystem
+//	+-- LinkRecord    - DB-backed stored record (what bpfman manages)
+//	|   +-- ID        - bpfman management handle allocated by the store
+//	|   +-- ProgramID - The program this link attaches
+//	|   +-- KernelLinkID - Optional captured kernel bpf_link ID
+//	|   +-- Kind      - Link type (tracepoint, kprobe, xdp, tc, etc.)
+//	|   +-- PinPath   - Optional bpffs pin path
+//	|   +-- Details   - Type-specific details (sealed interface)
+//	+-- LinkStatus    - Observed runtime state
+//	    +-- Kernel    - Live kernel link info, if captured and still present
+//	    +-- KernelSeen - Whether kernel enumeration found the link
+//	    +-- PinPresent - Whether the pin path exists on filesystem
 //
 // # Link Lifecycle Flow
 //

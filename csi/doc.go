@@ -19,27 +19,27 @@
 // is no external storage to provision.
 //
 //	kubelet
-//	   │
-//	   ▼ (gRPC over unix socket)
-//	┌──────────────────────────┐
-//	│     CSI Driver           │
-//	│  ┌────────────────────┐  │
-//	│  │ Identity Service   │  │  GetPluginInfo, Probe
-//	│  └────────────────────┘  │
-//	│  ┌────────────────────┐  │
-//	│  │ Node Service       │  │  NodePublishVolume, NodeUnpublishVolume
-//	│  └────────────────────┘  │
-//	└──────────────────────────┘
-//	           │
-//	           ▼
-//	┌──────────────────────────┐
-//	│ bpfman (ProgramFinder)   │  Lookup program by metadata
-//	└──────────────────────────┘
-//	           │
-//	           ▼
-//	┌──────────────────────────┐
-//	│ Kernel (RepinMap)        │  Re-pin maps to per-pod bpffs
-//	└──────────────────────────┘
+//	   |
+//	   v (gRPC over unix socket)
+//	+--------------------------+
+//	|     CSI Driver           |
+//	|  +--------------------+  |
+//	|  | Identity Service   |  |  GetPluginInfo, Probe
+//	|  +--------------------+  |
+//	|  +--------------------+  |
+//	|  | Node Service       |  |  NodePublishVolume, NodeUnpublishVolume
+//	|  +--------------------+  |
+//	+--------------------------+
+//	           |
+//	           v
+//	+--------------------------+
+//	| bpfman (ProgramFinder)   |  Lookup program by metadata
+//	+--------------------------+
+//	           |
+//	           v
+//	+--------------------------+
+//	| Kernel (RepinMap)        |  Re-pin maps to per-pod bpffs
+//	+--------------------------+
 //
 // # Volume Lifecycle
 //

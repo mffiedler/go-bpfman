@@ -77,7 +77,7 @@ type suiteRuntime struct {
 	// IDs that were already in the store when the suite opened the
 	// DB. The end-of-suite leak detector excludes these so residue
 	// inherited from a prior crashed run is not misreported as a
-	// this-run leak: the production manager (post-d11ccb81) hands
+	// this-run leak: the production manager hands
 	// crash recovery back to the operator and so legitimately keeps
 	// rows around across runs in shared mode. The leak detector's
 	// real job is to catch programs and links this run created and
@@ -265,10 +265,10 @@ func teardownSharedRuntime(rt *suiteRuntime) (leaked bool) {
 //
 // Records that were already in the store when the suite opened the
 // DB are excluded: in shared mode the production manager hands
-// crash recovery back to the operator (see d11ccb81), so a row
-// inherited from a prior crashed run is not this run's leak. The
-// suiteRuntime baseline maps capture that starting state, and the
-// check below diffs the end-of-suite listing against them.
+// crash recovery back to the operator, so a row inherited from a
+// prior crashed run is not this run's leak. The suiteRuntime
+// baseline maps capture that starting state, and the check below
+// diffs the end-of-suite listing against them.
 //
 // For each leaked record the report also notes whether the kernel
 // still has the corresponding object. "store ghost" means the row

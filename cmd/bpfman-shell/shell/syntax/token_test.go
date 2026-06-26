@@ -264,8 +264,7 @@ func TestTokenise(t *testing.T) {
 			},
 		},
 
-		// Malformed variable reference tests (Step 6: tighten
-		// tokeniser invariants).
+		// Malformed variable reference tests.
 
 		// Bare form: trailing dot.
 		{
@@ -505,7 +504,7 @@ func TestTokenise(t *testing.T) {
 			},
 		},
 
-		// Thread operator.  A `|>` at a token boundary is a
+		// Thread operator. A `|>` at a token boundary is a
 		// standalone TokenThread; inside a bare word or quoted
 		// string the characters stay part of the word/string.
 		// A lone `|` is ordinary word content.

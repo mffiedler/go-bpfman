@@ -16,7 +16,7 @@ import (
 // because the action.Action interface is sealed within the action
 // package; a local test-only action cannot implement it. The
 // operation tests do not care about RemoveProgPin's production
-// semantics --- only that the action carries a path-shaped field
+// semantics -- only that the action carries a path-shaped field
 // that can serve as a label.
 func testAction(label string) action.Action {
 	return action.RemoveProgPin{Path: bpfman.ProgPinPath(label)}
@@ -76,7 +76,7 @@ var _ action.ExecutorWithResult = (*fakeExecutor)(nil)
 var errTest = errors.New("test error")
 
 // staticUndo is a test helper that wraps fixed actions in an UndoFrom
-// closure, replacing the deleted WithUndo combinator.
+// closure.
 func staticUndo(actions ...action.Action) NodeOpt {
 	return UndoFrom(func(_ *Bindings) []action.Action { return actions })
 }

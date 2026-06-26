@@ -11,10 +11,9 @@
 // occupant, and leak attribution to the prior test if the
 // invariants do break.
 //
-// Originally lived in e2e/helpers.go alongside the rest of the
-// fixture machinery. Moved into its own package so test binaries
-// outside the e2e package (e.g. e2e/grpc) can share the same
-// veth helpers instead of growing parallel thinner versions.
+// Lives in its own package so test binaries outside the e2e
+// package (e.g. e2e/grpc) can share the same veth helpers instead
+// of growing parallel thinner versions.
 package testnet
 
 import (
@@ -109,9 +108,7 @@ type slotProvenance struct {
 // pool is sized for peak concurrent veth pairs across parallel
 // tests, not the cumulative total over the lifetime of the
 // process: NewTestVethPair acquires an index, the t.Cleanup
-// releases it. Pre-release the counter was monotonic and a
-// `-test.count=N` run quickly exceeded the 127 ceiling even
-// though peak concurrency stayed well under it.
+// releases it.
 //
 // Allocation order is FIFO: the oldest released index is handed
 // out first. Each pair index pins a (deterministic MAC, IP)
@@ -314,7 +311,7 @@ type TestVethPair struct {
 
 // vethConfig captures NewTestVethPair's tunable behaviour.
 // Fields default to the values most callers want (warmup on,
-// ip monitor on), matching the helper's historical behaviour.
+// ip monitor on).
 type vethConfig struct {
 	waitForConnectivity bool
 	startIPMonitor      bool
@@ -433,7 +430,7 @@ func NewTestVethPair(t *testing.T, opts ...VethOption) TestVethPair {
 
 	// Compute deterministic MACs and pass them at create time
 	// rather than overwriting after creation. See the long
-	// comment further down for the format and history. Setting
+	// comment further down for the format. Setting
 	// the address at LinkAdd time (via LinkAttrs.HardwareAddr /
 	// PeerHardwareAddr) means the kernel never assigns a random
 	// MAC in the first place; subsequent NETDEV_CHANGE storms
@@ -537,31 +534,20 @@ func NewTestVethPair(t *testing.T, opts ...VethOption) TestVethPair {
 	// the A side (root namespace) or 02 for the B side (test
 	// namespace).
 	//
-	// History: we originally relied on kernel-assigned random
-	// MACs, which worked reliably for sequential tests. When we
-	// made subtests parallel for speed (32s down to ~4s), one
-	// subtest per run would fail intermittently with 100% ping
-	// packet loss.
-	//
-	// Using ip monitor we captured the root cause: a live veth
-	// interface's MAC would change mid-test (same ifindex,
+	// Parallel subtests flake without explicit MACs: a live
+	// veth interface's MAC can change mid-test (same ifindex,
 	// different MAC), immediately followed by the kernel
 	// flushing ARP neighbour entries and regenerating the IPv6
 	// link-local address (derived via EUI-64 from the new MAC).
-	// The MAC change was always correlated with another
-	// subtest's t.Cleanup deleting its own (unrelated) veth
-	// pair. Serialising setup and teardown under a mutex did
-	// not help because the MAC regeneration is kernel-internal
-	// and asynchronous.
+	// The MAC change correlates with another subtest's t.Cleanup
+	// deleting its own (unrelated) veth pair, and the MAC
+	// regeneration is kernel-internal and asynchronous, so
+	// serialising setup and teardown under a mutex does not help.
+	// The strategy is to assign explicit MACs at LinkAdd time and
+	// disable IPv6 on both ends so parallel subtests do not flake.
 	//
-	// First mitigation was to call LinkSetHardwareAddr after
-	// LinkAdd, which reduced the failure rate from ~40% to ~5%
-	// but did not eliminate it. Layering disableIPv6 on both
-	// veth ends (see calls below) drove it to 0% in our
-	// original stress runs.
-	//
-	// Examining the kernel 6.12 source revealed the likely
-	// chain of events: when a veth peer is deleted,
+	// In the kernel 6.12 source the chain of events is: when a
+	// veth peer is deleted,
 	// veth_dellink triggers carrier loss on the surviving end
 	// via netif_carrier_off, which fires a NETDEV_CHANGE
 	// notification through the linkwatch subsystem. The IPv6
@@ -571,14 +557,10 @@ func NewTestVethPair(t *testing.T, opts ...VethOption) TestVethPair {
 	// device's MAC. This processing chain appears to cause MAC
 	// regeneration on other veth interfaces as a side effect.
 	//
-	// On aarch64 (Asahi, kernel 6.12.x) we observed the
-	// LinkSetHardwareAddr-then-disableIPv6 combination still
-	// flaking: A's MAC reverted to a kernel-random value
-	// between LinkSetHardwareAddr and the post-warmup ARP
-	// check, even with IPv6 disabled. The current strategy
-	// passes the deterministic MAC at LinkAdd time via
-	// LinkAttrs.HardwareAddr and PeerHardwareAddr, so the
-	// kernel never assigns a random MAC in the first place.
+	// The current strategy passes the deterministic MAC at
+	// LinkAdd time via LinkAttrs.HardwareAddr and
+	// PeerHardwareAddr, so the kernel never assigns a random MAC
+	// in the first place.
 	// There is no "original" address for any later code path
 	// to regenerate back to. disableIPv6 is retained as a
 	// secondary defence and to avoid wasting cycles on

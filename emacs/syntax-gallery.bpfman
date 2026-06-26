@@ -151,8 +151,8 @@ let interp_m   = "pre-${int_lit}-mid-${n}-suf"   # multiple slots
 let interp_a   = "${$n * 2}s"                      # arithmetic in interpolation
 
 # Double-quoted strings support C-style escapes: \n, \t, \r,
-# \\, \", and \$ (for a literal dollar sign).  Single-quoted
-# strings are fully literal — backslashes and everything else
+# \\, \", and \$ (for a literal dollar sign). Single-quoted
+# strings are fully literal -- backslashes and everything else
 # pass through unchanged.
 let esc_nl     = "line1\nline2"                    # newline in the middle
 let esc_tab    = "col1\tcol2"                      # tab separator
@@ -409,7 +409,7 @@ bpfman link list     select id,kind,program_id
 
 # ---- 19. Logical operators and parenthesised expressions ----
 
-# `and', `or' short-circuit; `not' is a unary prefix.  Parens
+# `and', `or' short-circuit; `not' is a unary prefix. Parens
 # group sub-expressions; they do not introduce a new command.
 assert $ready and $healthy
 assert $ready or  $booting
@@ -532,10 +532,10 @@ let scalar = jq "." '{"answer": 42}'
 # ---- 24. assert <expr> matches { ... } ----
 
 # A subset-match block: every listed path is checked against its
-# pattern; unlisted fields on the record are allowed.  Patterns may
+# pattern; unlisted fields on the record are allowed. Patterns may
 # be literals, $variables, $variable.path lookups, or the
-# `not-empty' unary form.  The keyword `matches' is highlighted as
-# a builtin; the block's `{' / `}' delimiters are plain.  Entries
+# `not-empty' unary form. The keyword `matches' is highlighted as
+# a builtin; the block's `{' / `}' delimiters are plain. Entries
 # are separated by newlines -- the block is a table of relations,
 # not a sequence of statements, so `,' and `;' between entries are
 # both syntax errors (a deliberate departure from the rest of the
@@ -563,7 +563,7 @@ assert $prog matches {
 
 # `def NAME(P1 P2 ...) { BODY }' registers NAME as a callable.
 # The keyword `def' is fontified like `let'/`foreach'; the def name
-# and each parameter name carry the variable-name face.  Inside the
+# and each parameter name carry the variable-name face. Inside the
 # body, statements fontify exactly as they do at the top level.
 def expect_program_load(prog load_tp kernel_tp name) {
     assert $prog matches {

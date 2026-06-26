@@ -74,8 +74,8 @@ func TestReapDeadProgramRecords(t *testing.T) {
 
 	// Attach each program so it owns a real link row -- the rows that
 	// must cascade-delete when their program is reaped. Distinct
-	// interfaces keep the attaches independent; the manager now
-	// resolves the name, so register the extra ones (eth0 is seeded).
+	// interfaces keep the attaches independent; the manager resolves
+	// the name, so register the extra ones (eth0 is seeded).
 	f.Kernel.InjectInterface("eth1", 3)
 	f.Kernel.InjectInterface("eth2", 4)
 	attach := func(progID kernel.ProgramID, ifname string) {

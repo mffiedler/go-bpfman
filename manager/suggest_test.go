@@ -266,10 +266,10 @@ func TestNearestTracepoints(t *testing.T) {
 
 	t.Run("target without a slash tolerates a single typo", func(t *testing.T) {
 		t.Parallel()
-		// Regression: before name-only scoring, "sched_swtch" against
-		// "sched/sched_switch" cost seven edits (the group prefix plus
-		// the missing 'i') and fell outside the absolute cap, leaving
-		// the user with no suggestion.
+		// Name-only scoring keeps "sched_swtch" against
+		// "sched/sched_switch" within the absolute cap: a single
+		// typo in the name portion scores below the cap even though
+		// the full strings differ by the group prefix too.
 		got := nearestTracepoints("sched_swtch", candidates, 3)
 		assert.Contains(t, got, "sched/sched_switch")
 	})

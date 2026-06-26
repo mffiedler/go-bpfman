@@ -34,12 +34,12 @@ const (
 	// TokenSep is a statement separator: a newline or a semicolon.
 	// Consecutive separators are collapsed at parse time.
 	TokenSep
-	// TokenThread is the '|>' operator at a token boundary — the
+	// TokenThread is the '|>' operator at a token boundary -- the
 	// value-threading composition operator that feeds the LHS
-	// Value into the RHS command's last argument slot.  Matches
+	// Value into the RHS command's last argument slot. Matches
 	// the '|>' sigil used by F#, OCaml, Elixir, Julia, and R;
 	// semantically equivalent to Clojure's `->>` thread-last
-	// macro.  Inside a bare word or quoted string, '|>' stays
+	// macro. Inside a bare word or quoted string, '|>' stays
 	// part of the surrounding literal.
 	TokenThread
 	// TokenBind is the '<-' sigil at a token boundary. It binds
@@ -51,22 +51,22 @@ const (
 	// token boundary (whitespace or start of input on the left).
 	TokenBind
 	// TokenInterpString is a double-quoted string containing one
-	// or more ${...} interpolation points.  Segments carries the
+	// or more ${...} interpolation points. Segments carries the
 	// alternation of literal text and raw expression text; the
 	// parser retokenises each expression inner, parses it as a
 	// single expression, and the evaluator concatenates the
-	// resolved scalars at run time.  Double-quoted strings with
+	// resolved scalars at run time. Double-quoted strings with
 	// no interpolation stay as TokenQuoted so the common case
 	// pays no extra cost.
 	TokenInterpString
 )
 
 // InterpSegment is one piece of an interpolated double-quoted
-// string.  IsLit true means Literal carries the text verbatim and
+// string. IsLit true means Literal carries the text verbatim and
 // Inner is unused; IsLit false means Inner carries the raw source
 // of an "${expr}" interpolation (without the '${' and '}'
 // delimiters) and the parser tokenises and parses it at parse
-// time.  source.Pos points at the segment's first byte in the enclosing
+// time. source.Pos points at the segment's first byte in the enclosing
 // input so diagnostics cite the right column.
 type InterpSegment struct {
 	Literal string
@@ -92,9 +92,9 @@ type Token struct {
 
 // Tokenise lexes input in shell mode: '-' and '/' are valid
 // word-interior characters so paths like /sys/fs/bpf and flags
-// like -x and --long stay whole.  Arithmetic operators '+', '*',
+// like -x and --long stay whole. Arithmetic operators '+', '*',
 // and '%' still split without whitespace, matching the status
-// quo.  See tokeniseStrict for the mode used inside [[...]] where
+// quo. See tokeniseStrict for the mode used inside [[...]] where
 // '-' and '/' are also operators.
 func Tokenise(input string) ([]Token, error) {
 	return tokeniseAt(source.Pos{Line: 1, Col: 1}, input, false)
@@ -102,11 +102,11 @@ func Tokenise(input string) ([]Token, error) {
 
 // tokeniseStrict lexes input in strict expression mode: '-', '/',
 // '+', '*', and '%' all emit as single-character tokens regardless
-// of surrounding whitespace.  This is the mode used inside
+// of surrounding whitespace. This is the mode used inside
 // [[...]] so expressions like [[4/2]] and [[$x-1]] split
 // arithmetically rather than keeping '/' and '-' as word-interior
-// characters.  Paths and flags appearing inside [[...]] must be
-// quoted — "/sys/fs/bpf" rather than /sys/fs/bpf.
+// characters. Paths and flags appearing inside [[...]] must be
+// quoted -- "/sys/fs/bpf" rather than /sys/fs/bpf.
 func tokeniseStrict(input string) ([]Token, error) {
 	return tokeniseAt(source.Pos{Line: 1, Col: 1}, input, true)
 }
@@ -180,7 +180,7 @@ func tokeniseAt(start source.Pos, input string, strict bool) ([]Token, error) {
 			// Arithmetic operators that cannot appear inside a
 			// bare word (unlike '-' and '/', which are valid
 			// word-interior characters because of negative
-			// literals, flags, and paths).  Emitting them as
+			// literals, flags, and paths). Emitting them as
 			// single-char tokens lets "1+1", "$x*2", "7%3" split
 			// cleanly without requiring surrounding whitespace.
 			tokens = emit(tokens, start, start+1, Token{Kind: TokenWord, Text: string(ch)})
@@ -188,7 +188,7 @@ func tokeniseAt(start source.Pos, input string, strict bool) ([]Token, error) {
 
 		case strict && (ch == '-' || ch == '/'):
 			// In strict mode '-' and '/' join '+', '*', '%' as
-			// single-char operator tokens.  Callers that reach
+			// single-char operator tokens. Callers that reach
 			// strict mode are inside [[...]] where paths and
 			// negative literals do not appear bare.
 			tokens = emit(tokens, start, start+1, Token{Kind: TokenWord, Text: string(ch)})
@@ -244,7 +244,7 @@ func tokeniseAt(start source.Pos, input string, strict bool) ([]Token, error) {
 		case ch == '|' && i+1 < len(input) && input[i+1] == '>':
 			// Reaching this case means the previous byte was
 			// whitespace or absent, so '|>' sits at a token
-			// boundary.  The lexWord path keeps '|' as an
+			// boundary. The lexWord path keeps '|' as an
 			// interior word character, so 'a|>b' stays a word.
 			tokens = emit(tokens, start, start+2, Token{Kind: TokenThread, Text: "|>"})
 			i += 2
@@ -555,8 +555,8 @@ func lexQuoted(input string, pos int, base source.Pos) (Token, int, error) {
 	return lexDoubleQuoted(input, pos, base)
 }
 
-// lexSingleQuoted lexes a single-quoted string.  Single quotes
-// are fully literal: no '$' recognition, no escapes.  The result
+// lexSingleQuoted lexes a single-quoted string. Single quotes
+// are fully literal: no '$' recognition, no escapes. The result
 // is always a plain TokenQuoted.
 func lexSingleQuoted(input string, pos int) (Token, int, error) {
 	i := pos + 1
@@ -572,9 +572,9 @@ func lexSingleQuoted(input string, pos int) (Token, int, error) {
 }
 
 // lexDoubleQuoted lexes a double-quoted string, splitting on
-// "${...}" interpolation points.  A string with no interpolation
+// "${...}" interpolation points. A string with no interpolation
 // emits TokenQuoted so downstream code paths for plain literals
-// do not need to know about segments.  A string with at least one
+// do not need to know about segments. A string with at least one
 // "${...}" emits TokenInterpString whose Segments alternate
 // literal and interp pieces; a bare '$' inside a double-quoted
 // string that is not followed by '{' is a lex-time error so the
@@ -689,12 +689,11 @@ func lexDoubleQuoted(input string, pos int, base source.Pos) (Token, int, error)
 }
 
 // scanInterpBody returns the offset of the '}' that closes an
-// interpolation whose contents start at pos.  Single-quoted
+// interpolation whose contents start at pos. Single-quoted
 // strings inside the body are skipped so a stray '}' inside a
 // literal does not close the interpolation prematurely; nested
-// braces are counted so future features (block-shaped expressions,
-// structured literals) fit without changing the scanner.  A bare
-// '"' inside the body is rejected — the simple rule "use single
+// braces are counted so the matching close brace is found. A bare
+// '"' inside the body is rejected -- the simple rule "use single
 // quotes inside ${...}" keeps the lexer linear and avoids an
 // escape mechanism.
 func scanInterpBody(input string, pos int) (int, error) {
@@ -723,7 +722,7 @@ func scanInterpBody(input string, pos int) (int, error) {
 			// missing '}' (user forgot to close the
 			// interpolation and the next '"' is the outer
 			// string's close) or a nested double-quoted
-			// string (unsupported — use single quotes).
+			// string (unsupported -- use single quotes).
 			// Either way the user needs to fix it; the
 			// more actionable diagnostic is "unterminated
 			// interpolation" since that is the common case.
@@ -744,7 +743,7 @@ func scanInterpBody(input string, pos int) (int, error) {
 //
 // In shell mode '-' and '/' stay as word-interior characters: '-'
 // is part of negative literals ("-3") and flags ("-x", "--long");
-// '/' is part of file paths ("/sys/fs/bpf").  In strict mode (set
+// '/' is part of file paths ("/sys/fs/bpf"). In strict mode (set
 // inside [[...]]) '-' and '/' are terminators too so "4/2" and
 // "$x-1" split arithmetically.
 func lexWord(input string, pos int, strict bool) (Token, int) {

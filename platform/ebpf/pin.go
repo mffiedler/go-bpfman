@@ -186,8 +186,7 @@ func (k *kernelAdapter) Unpin(pinDir string) (int, error) {
 // link types where Detach() is not supported, this is the step
 // that gets bpf_perf_link_release running synchronously enough
 // for the program to stop firing -- the order Remove-then-Close
-// (rather than the reverse) is load-bearing here, see
-// docs/DETACH-DOES-NOT-STOP-PROGRAM.md.
+// (rather than the reverse) is load-bearing here.
 //
 // Stage 3 (Close): drops the last user reference to the link
 // FD; the kernel reclaims the link object.

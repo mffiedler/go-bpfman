@@ -464,9 +464,6 @@ func getHostArch() string {
 
 // detectArch detects the current architecture.
 func detectArch() string {
-	// Use runtime detection via uname or similar
-	// For now, use a compile-time constant via build tags would be better,
-	// but we'll use a simple heuristic
 	return goArchToOCI(runtime.GOARCH)
 }
 

@@ -131,10 +131,10 @@ func TestParse_MatchesBlock_MultiEntry_NewlineSeparated(t *testing.T) {
 // Two diagnostic shapes appear: a stand-alone `,` token (when
 // surrounded by whitespace, as on a line of its own) hits the
 // "',' is not a valid entry separator" path; a `,` glued to the
-// preceding token (the common `1,` shape — the lexer treats `,`
+// preceding token (the common `1,` shape -- the lexer treats `,`
 // as a word-interior character because the rest of the language
 // has no syntactic use for it) hits the "trailing ',' on ..."
-// path.  Both share the "entries are separated by newlines"
+// path. Both share the "entries are separated by newlines"
 // suffix; the test asserts that.
 func TestParse_MatchesBlock_RejectsCommaSeparator(t *testing.T) {
 	t.Parallel()
@@ -166,7 +166,7 @@ func TestParse_MatchesBlock_RejectsCommaSeparator(t *testing.T) {
 
 // `;` is not a valid entry separator either: a matches block is
 // line-oriented (one path-pattern relation per line), not a
-// sequence of statements.  The same diagnostic shape as the comma
+// sequence of statements. The same diagnostic shape as the comma
 // rejection points the user at the newline rule.
 func TestParse_MatchesBlock_RejectsSemicolonSeparator(t *testing.T) {
 	t.Parallel()

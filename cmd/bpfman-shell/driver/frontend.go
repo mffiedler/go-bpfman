@@ -124,10 +124,10 @@ func parseProgramAt(file, src string, startLine int) (*syntax.Program, error) {
 		return nil, err
 	}
 
-	return parseTokens(file, tokens)
+	return parseTokens(tokens)
 }
 
-func parseTokens(file string, tokens []syntax.Token) (*syntax.Program, error) {
+func parseTokens(tokens []syntax.Token) (*syntax.Program, error) {
 	prog, err := syntax.Parse(tokens)
 	if err != nil {
 		return nil, err
@@ -171,11 +171,9 @@ func recordTopLevelDefInfo(dst map[string]check.DefStaticInfo, stmts []syntax.St
 		if _, exists := dst[name]; exists {
 			continue
 		}
-		// ReturnShape is intentionally left open here for now:
+		// ReturnShape is intentionally left open here:
 		// the expanded-program check sees local def declarations
-		// and infers their return shapes directly. Exporting
-		// inferred shapes through pre-expansion import metadata is
-		// a separate follow-up.
+		// and infers their return shapes directly.
 		dst[name] = check.DefStaticInfo{
 			Arity:     len(def.Params),
 			DeclPos:   def.Name.Pos,

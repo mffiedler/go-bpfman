@@ -4,12 +4,8 @@
 // over coreutils' 'seq' (1-indexed, inclusive) for consistency
 // with the corpus's existing 'jq "[range(5)]"' idiom.
 //
-// Arity is fixed at 1. A two-arg 'range START END' or three-arg
-// 'range START END STEP' would mirror Python / jq more closely
-// but the pure-builtin registry holds a single arity per name;
-// the wider forms can be added when a concrete test demands
-// them, alongside whatever extension of the registry's arity
-// model that would imply.
+// Arity is fixed at 1: the pure-builtin registry holds a single
+// arity per name.
 package builtins
 
 import (

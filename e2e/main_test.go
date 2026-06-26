@@ -15,10 +15,8 @@ import (
 // duration of a run. The e2e tests share kernel state (bpffs,
 // kprobes, perf events, network namespaces) and running two
 // instances concurrently produces undefined results that look like
-// flakes -- we found this empirically when an interrupted invocation
-// kept running and a second was started in parallel. Holding an
-// exclusive non-blocking flock at TestMain entry makes a duplicate
-// run fail fast with a clear message instead.
+// flakes. Holding an exclusive non-blocking flock at TestMain entry
+// makes a duplicate run fail fast with a clear message instead.
 //
 // The path deliberately does NOT start with "bpfman-e2e-" so it
 // can't be picked up by cleanupStaleTestDirs's glob, which would
@@ -159,7 +157,7 @@ func TestMain(m *testing.M) {
 	}
 
 	// Stand up the suite-wide runtime when shared mode is requested,
-	// before any test runs.  Tests pick it up via NewTestEnv.
+	// before any test runs. Tests pick it up via NewTestEnv.
 	if sharedRuntimeMode() {
 		if _, err := initSharedRuntime(); err != nil {
 			fmt.Fprintf(os.Stderr, "shared runtime setup failed: %v\n", err)

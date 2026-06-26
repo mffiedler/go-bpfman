@@ -12,7 +12,7 @@
 //   - A bpffs mount (typically /run/bpfman/fs) for BPF program pins,
 //     map pins, link pins, and dispatcher directories
 //
-// The package has two layers.  Path computation ([Layout], [BPFFS]
+// The package has two layers. Path computation ([Layout], [BPFFS]
 // path methods, [ImageCache] key derivation) is pure and I/O-free.
 // Operations that touch the filesystem -- [BPFFS] removal methods,
 // [Bytecode] publish/remove, and [Scanner] directory reads -- perform

@@ -67,7 +67,6 @@ func (p Presence) OrphanFS() bool { return p.InFS && !p.InStore && !p.InKernel }
 func (p Presence) KernelOnly() bool { return p.InKernel && !p.InStore }
 
 // ProgramView is a correlation view of a program across store, kernel, and FS.
-// Renamed from ProgramView.
 type ProgramView struct {
 	ProgramID kernel.ProgramID `json:"program_id"`
 

@@ -32,7 +32,7 @@
 #      re-reads the drop-ins shipped by qemu-user-binfmt and applies
 #      the registrations immediately. The service is statically
 #      enabled by sysinit.target, so no `enable` is required (and
-#      `enable` would be rejected — there is no [Install] section).
+#      `enable` would be rejected -- there is no [Install] section).
 #
 # Usage: hack/install-fedora-binfmt.sh
 #   Re-run safely; dnf skips already-installed packages and

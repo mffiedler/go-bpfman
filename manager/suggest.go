@@ -30,13 +30,13 @@
 //
 // A candidate is surfaced if it survives both:
 //
-//  1. Per-candidate score — how close is THIS candidate to the
+//  1. Per-candidate score -- how close is THIS candidate to the
 //     target, on a scale where each unit is roughly one keystroke of
 //     error. Cheaper when the shape of the error is known (wrong
 //     group, partial name, etc.); falls back to whole-string distance
 //     otherwise.
 //
-//  2. Top-level caps — how close does the BEST candidate need to be
+//  2. Top-level caps -- how close does the BEST candidate need to be
 //     before we show anything, and how close do the runners-up need
 //     to be relative to the best. Two caps combine:
 //
@@ -124,7 +124,7 @@
 //   - Upgrade levenshtein to Damerau-Levenshtein. Small algorithm
 //     change; benefits real-world adjacent-key typos.
 //   - Bump the limit passed by callers (currently 3). Rarely the
-//     right lever — three is enough to spot a family.
+//     right lever -- three is enough to spot a family.
 //
 // To be MORE STRICT (fewer suggestions, higher precision):
 //

@@ -124,10 +124,7 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 	//
 	// To enable: flip this to true and set readOnly: true on the
 	// csi volume source in the examples (and the e2e
-	// publishRequest). Those example changes, validated end to
-	// end against the bpfman-operator integration suite, live on
-	// the frobware/bpfman branch csi-examples-readonly; the
-	// rationale and rollout sequencing are tracked upstream in
+	// publishRequest); see
 	// https://github.com/bpfman/bpfman/issues/1670. A read-only
 	// mount restricts only the map pins, not the map data, so
 	// userspace can still read and write the maps it is handed.
@@ -188,7 +185,7 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 	metadata, _, err := d.programFinder.FindLoadedProgramByMetadata(ctx, MetadataKeyProgramName, programName)
 	if err != nil {
 		// Return appropriate gRPC code based on error type.
-		// NotFound is expected during reconciliation — the CSI
+		// NotFound is expected during reconciliation -- the CSI
 		// driver may ask before the operator has loaded the program.
 		switch {
 		case errors.Is(err, platform.ErrRecordNotFound):

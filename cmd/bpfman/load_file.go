@@ -55,7 +55,7 @@ func (c *LoadFileCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 // BPF program from a local object file, returning the result without
 // formatting. Both the CLI command and bpfman-shell call this function.
 func executeLoadFileResult(ctx context.Context, cli *runtime.CLI, mgr *manager.Manager, c *LoadFileCmd) (loadFileResult, error) {
-	_ = cli // reserved for future use; load no longer takes the writer lock.
+	_ = cli // load does not take the writer lock.
 
 	// Validate object file exists.
 	objPath, err := args.ParseObjectPath(c.Path)

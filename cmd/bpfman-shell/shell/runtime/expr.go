@@ -64,7 +64,7 @@ type Env struct {
 	// ExecBind and, when the rc is not ok, calls this callback
 	// so the driver can emit the labelled-block diagnostic. A
 	// nil callback discards the rendering; the failure still
-	// counts toward the script's exit code via Session.
+	// counts towards the script's exit code via Session.
 	RenderDeferFailure func(stmtLoc source.Pos, args []Arg, rc Envelope)
 
 	// Draining is true while runDefers is executing a defer
@@ -311,9 +311,8 @@ func runDefCall(def *defValue, args []Arg, callLoc source.Pos, env *Env) (Value,
 // Independently of the source coordinates, the error's message
 // gains a leading "in def NAME (called at L:C): " annotation
 // so a runtime error escaping a value-returning helper is no
-// longer ambiguous about which call site produced it -- a
-// helper reused across several lines of script used to render
-// only the body line. Decoration is suppressed when the error
+// longer ambiguous about which call site produced it.
+// Decoration is suppressed when the error
 // already carries an inner def's annotation (the innermost
 // callDef has decorated first), so propagation preserves the
 // closest-to-the-failure call rather than over-attributing to
@@ -681,10 +680,7 @@ func reportJobLeaks(env *Env, jobs []*Job) {
 // the external bind-dispatch path. Used by every bind-position
 // site (evalBindStmt, bind-collect producer, runDefers) so the
 // def-vs-external precedence is one rule applied at one site
-// rather than three. Without this helper, each site
-// independently consulted lookupDefHead before falling through
-// to env.ExecBind, and asymmetries crept in -- the W11 / W23
-// fixes were each "rule applied at site A but not B".
+// rather than three.
 //
 // The helper returns the BindResult and error verbatim. source.Span
 // framing is left to the caller because the relevant span
@@ -757,9 +753,8 @@ func lookupDefHead(args []Arg, env *Env) (*defValue, bool) {
 // the BindResult was produced.
 
 // ErrRequireFailed is the sentinel error chained under a
-// *RequireFailure so existing `errors.Is(err, ErrRequireFailed)`
-// checks at script-loop boundaries continue to recognise a
-// failed `require` after the typed-error layer landed. The
+// *RequireFailure so `errors.Is(err, ErrRequireFailed)` at
+// script-loop boundaries recognises a failed `require`. The
 // driver layer re-exports this value so callers reading driver
 // import paths see the same sentinel.
 var ErrRequireFailed = errors.New("require failed")
@@ -859,7 +854,7 @@ func commandHeadName(a Arg) (string, bool) {
 }
 
 // structuredShape returns a short description of a structured
-// Value suitable for error messages.  The declared semantics.OriginKind is
+// Value suitable for error messages. The declared semantics.OriginKind is
 // used when it is anything other than semantics.OriginUnknown (so "program"
 // or "exec.result" read as such); otherwise the raw Go shape is
 // inspected so an untagged record or array still reports
@@ -884,7 +879,7 @@ func structuredShape(v Value) string {
 // their text form; structured values marshal to compact JSON;
 // an absent Value renders as "null" so a missing slot surfaces as
 // visible "null" rather than silently vanishing or erroring.
-// Used wherever a Value must flatten onto a single line — string
+// Used wherever a Value must flatten onto a single line -- string
 // interpolation and multi-argument print both feed through it
 // so formatting stays consistent across those paths.
 func RenderCompact(v Value) (string, error) {
@@ -1267,7 +1262,7 @@ func evalCompare(op string, l, r Value, span source.Span) (Value, error) {
 }
 
 // isArithmeticOpText reports whether op is one of the five
-// arithmetic operators.  Separate from isArithmeticOp (which
+// arithmetic operators. Separate from isArithmeticOp (which
 // operates on a syntax.Token) because the evaluator works with the
 // already-extracted Op string on syntax.BinaryExpr.
 func isArithmeticOpText(op string) bool {

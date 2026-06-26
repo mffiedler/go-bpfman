@@ -16,11 +16,10 @@ type AssertExprClause struct {
 	Expr Expr
 }
 
-// AssertCommandClause is the transitional bucket for the remaining
-// command-status assertion forms: `assert ok CMD...` and
-// `assert fail CMD...`. Head is the verb token; Args keep the
-// command-style argument payload in expression form rather than
-// embedding a statement node.
+// AssertCommandClause holds the command-status assertion forms:
+// `assert ok CMD...` and `assert fail CMD...`. Head is the verb
+// token; Args keep the command-style argument payload in
+// expression form rather than embedding a statement node.
 type AssertCommandClause struct {
 	Head     string
 	HeadSpan source.Span

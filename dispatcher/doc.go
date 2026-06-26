@@ -58,7 +58,4 @@
 // The extension spec types ([XDPExtensionAttachSpec],
 // [TCExtensionAttachSpec]) are value objects describing attachment
 // parameters.
-//
-// See dispatcher-model.md for filesystem layout, store schema,
-// lifecycle timelines, and GC interaction detail.
 package dispatcher

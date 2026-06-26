@@ -499,13 +499,11 @@ func TestParse_BareAssignIsError(t *testing.T) {
 func TestParse_AliasSyntaxRejected(t *testing.T) {
 	t.Parallel()
 
-	// `alias` was a builtin that used `=` as a sigil
-	// syntactically. With the feature removed, the parser
-	// treats `alias name = expansion` like any other command
-	// form: a stray '=' at command position is rejected with
-	// the "use `let` for assignment" hint. Pinning this stops
-	// the syntax sneaking back through preflight only to fail
-	// at runtime.
+	// The parser treats `alias name = expansion` like any other
+	// command form: a stray '=' at command position is rejected
+	// with the "use `let` for assignment" hint. Pinning this
+	// stops the syntax sneaking back through preflight only to
+	// fail at runtime.
 	_, err := parseSource(t, "alias b = bpfman")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unexpected '='")
@@ -530,7 +528,7 @@ func TestParse_ExprStmt_TriggerTokens(t *testing.T) {
 	t.Parallel()
 
 	// Each leading token in the trigger set must route to
-	// ExprStmt, not CommandStmt.  Bare words keep routing to
+	// ExprStmt, not CommandStmt. Bare words keep routing to
 	// CommandStmt.
 	cases := []struct {
 		name  string
@@ -593,7 +591,7 @@ func TestParse_LocPropagation(t *testing.T) {
 	t.Parallel()
 
 	// Statements and expressions should carry source.Pos from their first
-	// token.  A multi-line program has different lines on each
+	// token. A multi-line program has different lines on each
 	// statement.
 	prog, err := parseSource(t, "hostname\nshow program")
 	require.NoError(t, err)
@@ -668,7 +666,7 @@ func TestParse_Thread_TighterThanComparison(t *testing.T) {
 func TestParse_Thread_LocPointsAtThreadToken(t *testing.T) {
 	t.Parallel()
 
-	// ThreadExpr spans now cover the full threaded expression, but
+	// ThreadExpr spans cover the full threaded expression, but
 	// the PipePos still identifies the `|>` itself so errors about
 	// the threading step can point at the operator rather than at
 	// the LHS or RHS.
@@ -679,7 +677,7 @@ func TestParse_Thread_LocPointsAtThreadToken(t *testing.T) {
 	assert.Equal(t, 1, thread.PipePos.Line)
 	// Column of the `|>` in "let r = $x |> jq \"add\"":
 	//   columns 1..9 = "let r = $"
-	//   column 10 = 'x' (end of varref) — the `|>` is
+	//   column 10 = 'x' (end of varref) -- the `|>` is
 	//   after `$x ` so at column 12.
 	assert.Equal(t, 12, thread.PipePos.Col)
 }
@@ -908,7 +906,7 @@ func TestParse_Break_InsideIf(t *testing.T) {
 func TestParse_Break_RejectsArguments(t *testing.T) {
 	t.Parallel()
 
-	// break and continue take no arguments — a trailing token
+	// break and continue take no arguments -- a trailing token
 	// is a parse-time error so "break 2"-style multi-level
 	// escapes don't silently tokenise as a command.
 	_, err := parseSource(t, "foreach x in $xs { break 2 }")
@@ -1038,8 +1036,8 @@ func TestParse_Logical_PredBeforeCloseParen(t *testing.T) {
 	t.Parallel()
 
 	// "($a == true) and $b": the 'true' inside the parens is
-	// on the RHS of a comparison, and the next token is ')' —
-	// not an operand.  operandFollowsPred must treat ')' as an
+	// on the RHS of a comparison, and the next token is ')' --
+	// not an operand. operandFollowsPred must treat ')' as an
 	// expression terminator so 'true' parses as a literal, not
 	// a UnaryExpr that greedily eats the ')'.
 	prog, err := parseSource(t, "if ($a == true) and $b { print ok }")
@@ -1188,7 +1186,7 @@ func TestParse_Arithmetic_UnaryNegate_VarRef(t *testing.T) {
 func TestParse_Arithmetic_UnaryNegate_ParenExpr(t *testing.T) {
 	t.Parallel()
 
-	// -(1 + 2) — negation of a parenthesised additive expression.
+	// -(1 + 2) -- negation of a parenthesised additive expression.
 	prog, err := parseSource(t, "let r = -(1 + 2)")
 	require.NoError(t, err)
 	let := firstStmt(t, prog).(*LetStmt)
@@ -1202,7 +1200,7 @@ func TestParse_Arithmetic_UnaryNegate_ParenExpr(t *testing.T) {
 func TestParse_Arithmetic_UnaryNegate_Stacked(t *testing.T) {
 	t.Parallel()
 
-	// - - 3 (with spaces) stacks two negations.  "-3" alone
+	// - - 3 (with spaces) stacks two negations. "-3" alone
 	// tokenises as a single WORD, so we force separation.
 	prog, err := parseSource(t, "let r = - - $x")
 	require.NoError(t, err)
@@ -1462,9 +1460,9 @@ func TestParse_EmptyParens_UniformMessage(t *testing.T) {
 
 	// '()' in any expression position (let RHS, paren arg, inside a
 	// pure-call arg, assert operand) must surface the same
-	// "empty parenthesised expression" message rather than the
-	// misleading "missing ')'" that the older path emitted when
-	// the closing paren was right there.
+	// "empty parenthesised expression" message rather than a
+	// misleading "missing ')'" when the closing paren is right
+	// there.
 	cases := []struct {
 		name  string
 		input string
@@ -1487,10 +1485,7 @@ func TestParse_PureCallArg_ListLiteral(t *testing.T) {
 	t.Parallel()
 
 	// A pure-builtin call's argument grammar must accept a list
-	// literal as a primary. Before this, parsePureCallArg fell
-	// through '[' to parsePrimary, which made the call consume
-	// '[' as one arg and '1' as the next, leaving '2 3 4]' as
-	// trailing tokens the outer parser blamed on '2'.
+	// literal as a primary.
 	//
 	// 'jq "." [1 2 3]' is the smallest exercise: jq takes 2 args,
 	// arg 0 is the filter, arg 1 should be the whole list literal.

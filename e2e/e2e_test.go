@@ -447,12 +447,10 @@ func TestMultiProgMixed_LoadAttachDetachUnload(t *testing.T) {
 
 // TestMultiProgKprobe_LoadAttachDetachUnload proves that detaching
 // one kprobe from a same-hook multi-program chain stops that
-// program firing while the still-attached programs continue --
-// the property the perf-link order-of-operations fix in commit
-// 1459c0b was added to guarantee. Without the fix the kernel
-// keeps a detached perf-link program running, and staggered
-// exact-equality counters surface that as a wrong product rather
-// than a missed signal.
+// program firing while the still-attached programs continue.
+// Staggered exact-equality counters surface a detached perf-link
+// program that keeps running as a wrong product rather than a
+// missed signal.
 func TestMultiProgKprobe_LoadAttachDetachUnload(t *testing.T) {
 	t.Parallel()
 	RequireRoot(t)
@@ -3331,11 +3329,8 @@ func fireUprobe() error {
 // expected_attach_type (different verifier rules, retval access
 // rules, and trampoline shape), so silently loading the program
 // according to SEC while bpfman records the caller's intent
-// would be a long-tail bug source. The latent version of this
-// only surfaced by accident -- when we wrote the kmod-targeting
-// tests with a SEC placeholder different from the runtime
-// AttachFunc -- so we lock the invariant in with an explicit
-// test.
+// would be a long-tail bug source. An explicit test locks the
+// invariant in.
 func TestLoad_FentryFexit_TypeMismatchFailsLoudly(t *testing.T) {
 	t.Parallel()
 	RequireRoot(t)

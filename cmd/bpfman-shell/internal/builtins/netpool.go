@@ -4,8 +4,7 @@
 // 198.51.100.0/24 (TEST-NET-2); exclusion is via flock on a
 // per-slot lockfile under /run/bpfman-net-pool/. The kernel
 // releases the flock when the holder exits, so the pool is
-// self-cleaning against crashes without a daemon. See
-// docs/PLAN-net-auto-subnet.md for the full design.
+// self-cleaning against crashes without a daemon.
 package builtins
 
 import (
@@ -298,8 +297,8 @@ func tryAcquirePoolSlot(req poolAcquireRequest) (*poolLease, error) {
 
 // releasePoolSlot writes a final provenance body carrying
 // released_at, then closes the lockfile (which releases the
-// flock). The teardown order matches plan section 11: the body is
-// the canonical "what was released" payload, and the flock release
+// flock). The teardown order is deliberate: the body is the
+// canonical "what was released" payload, and the flock release
 // must happen before any subsequent operation on the local handle
 // short-circuits.
 //

@@ -10,7 +10,7 @@ import (
 var ErrInvalidAttachSpec = errors.New("invalid attach spec")
 
 // AttachSpec is a sealed interface satisfied by all concrete attach
-// spec types.  The unexported marker method prevents external packages
+// spec types. The unexported marker method prevents external packages
 // from implementing it, so the set of valid types is closed.
 type AttachSpec interface {
 	attachSpec() // sealed marker

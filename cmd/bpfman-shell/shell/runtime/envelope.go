@@ -133,7 +133,7 @@ type outcomeOrigin struct {
 
 // OkEnvelope returns the canonical "command succeeded with no
 // specific payload" envelope: ExitCode=0, no streams.
-// Used by dispatch sites that synthesize a successful outcome
+// Used by dispatch sites that synthesise a successful outcome
 // from scratch -- a def body that ran cleanly, a poll
 // attempt that satisfied its body without retry. Sites that
 // have real outcome data (a subprocess's captured streams,

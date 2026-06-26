@@ -12,9 +12,8 @@
 // The .bpfman scripts under e2e/scripts/ remain the canonical
 // correctness suite (exhaustive `matches exhaustive` blocks per
 // program type); this test is deliberately thin and exists to
-// stress the daemon-side surface the in-process mutex removal
-// opened up -- read RPCs running lockless alongside
-// writer-flock-serialised mutators inside a single daemon
+// stress the daemon-side surface: read RPCs running lockless
+// alongside writer-flock-serialised mutators inside a single daemon
 // process.
 //
 // Run from the repository root:

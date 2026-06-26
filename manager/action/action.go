@@ -350,9 +350,7 @@ func (RemoveSharedMapPin) isAction() {}
 
 // Deep dispatcher actions - cross-subsystem operations that the
 // executor handles internally (kernel + store transactions with
-// rollback). These replace direct manager method calls for dispatcher
-// attach, moving all cross-subsystem complexity behind the opcode
-// boundary.
+// rollback).
 
 // RebuildXDPDispatcher triggers a full dispatcher rebuild for XDP.
 // This handles both first-attach (no dispatcher exists) and

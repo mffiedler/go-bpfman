@@ -8,8 +8,6 @@ package kernel
 // discriminator for which type-specific fields are meaningful. Zero on
 // a field that does not apply to this link's LinkType is not a
 // meaningful observation, and zero on a field that does apply is.
-// Splitting this into per-kind structs is deferred; see the JSON
-// encoding policy doc for the long-term direction.
 type Link struct {
 	// Core identity
 	ID        LinkID    `json:"id"`

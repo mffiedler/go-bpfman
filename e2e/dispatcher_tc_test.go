@@ -207,7 +207,7 @@ func TestTC_DispatcherPriorityTieBreakByName(t *testing.T) {
 //   - Member count equals dispatcher.MaxPrograms (10).
 //   - Every program (including newly attached ones) receives new
 //     traffic: packet counts are recorded before a ping burst and
-//     verified to have increased afterward.
+//     verified to have increased afterwards.
 //
 // At each trough the test asserts:
 //   - Member count equals the surviving program count.

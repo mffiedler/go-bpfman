@@ -327,8 +327,7 @@ func actualTypeMetadataKey(programName string) string {
 // and an anchor pointing at a dead program makes the kernel reject the
 // attach with ENOENT (see attachTCX). Nothing else prunes them --
 // PlanFromObservation deliberately leaves store-managed rows "for the
-// next bpfman invocation to reconcile", and that reconcile lived
-// nowhere until here.
+// next bpfman invocation to reconcile".
 //
 // The load path stays thin: observe an immutable snapshot, produce a
 // pure plan from that snapshot, then interpret the plan against the
@@ -509,7 +508,7 @@ func (m *Manager) loadBody(ctx context.Context, specs []bpfman.LoadSpec, opts Lo
 	}
 	var loaded []bpfman.Program
 	var items []loadedItem
-	// Cleanup invariant: in v2 the rollback can fire either after the
+	// Cleanup invariant: the rollback can fire either after the
 	// per-program kernel/fs work succeeded but before the phase-B
 	// commit transaction, or during phase B when the commit fails.
 	// Either way no sqlite row was persisted for any of these programs

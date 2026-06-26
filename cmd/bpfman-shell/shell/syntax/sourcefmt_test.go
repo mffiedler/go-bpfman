@@ -127,14 +127,14 @@ func TestFormatExprSource_MatchesRoundTripsThroughParser(t *testing.T) {
 	t.Parallel()
 
 	// Rendering a matches block from the AST and feeding it
-	// back through the parser must succeed: the formatter
-	// previously emitted entries separated by commas, but the
-	// parser explicitly rejects commas inside a matches block
-	// ("matches: ',' is not a valid entry separator; entries
-	// are separated by newlines"). The format-then-reparse
-	// loop is the load-bearing contract here -- diagnostics
-	// and developer tooling that round-trip the printed form
-	// rely on it being a re-parseable string.
+	// back through the parser must succeed: the parser
+	// explicitly rejects commas inside a matches block, so the
+	// printed form must not emit them ("matches: ',' is not a
+	// valid entry separator; entries are separated by
+	// newlines"). The format-then-reparse loop is the
+	// load-bearing contract here -- diagnostics and developer
+	// tooling that round-trip the printed form rely on it being
+	// a re-parseable string.
 	expr := &MatchesExpr{
 		Target: &VarRefExpr{Name: "src"},
 		Block: &MatchesBlockExpr{

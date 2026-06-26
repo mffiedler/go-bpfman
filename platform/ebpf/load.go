@@ -425,8 +425,9 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 }
 
 // Unload removes a BPF program from the kernel by unpinning.
-// Handles both old-style (directory containing everything) and new-style
-// (separate program pin and maps directory) layouts.
+// Handles both a single-directory layout (everything in one
+// directory) and a split layout (separate program pin and maps
+// directory).
 func (k *kernelAdapter) Unload(ctx context.Context, pinPath string) error {
 	info, err := os.Stat(pinPath)
 	if err != nil {

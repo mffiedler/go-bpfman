@@ -1,8 +1,7 @@
 // SourceLoc is the file/line/col triple the shell runner threads
 // through every diagnostic. Lives in the driver package because the loop,
 // the dispatcher, the renderer, and every handler that emits a
-// failure path share it; previous incarnation was an unexported
-// struct in cmd/bpfman-shell/check.go.
+// failure path share it.
 
 package driver
 

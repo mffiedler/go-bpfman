@@ -7,7 +7,7 @@
 // machine. An action is pure data: a tagged instruction with typed
 // operands that describes what to do, never how. The executor
 // (manager/executor.go) is the single interpreter that dispatches
-// each opcode to the appropriate I/O subsystem — store, kernel, or
+// each opcode to the appropriate I/O subsystem -- store, kernel, or
 // filesystem.
 //
 //   - Store:      CheckProgramNotInStore, SaveProgram, DeleteProgram,
@@ -25,7 +25,7 @@
 //     RebuildDispatcherForDetach, RemoveDispatcher
 //
 // Rebuild actions are cross-subsystem operations that the executor
-// handles internally (kernel + store with inline rollback).  They
+// handles internally (kernel + store with inline rollback). They
 // encapsulate a full dispatcher rebuild so the plan interpreter sees
 // a single atomic action rather than multiple steps.
 //

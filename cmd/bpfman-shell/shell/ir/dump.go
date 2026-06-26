@@ -16,12 +16,10 @@
 // rules are best-effort and the result is not guaranteed to
 // round-trip through the parser.
 //
-// Spans live on every instruction but are not rendered in this
-// first version. Including them would tie every snapshot to
-// every source line and column, so a one-line edit to a script
-// would diff its entire lowered form. A later flag-controlled
-// mode can render spans for diagnostics if observability needs
-// it; the IR keeps the data either way.
+// Spans live on every instruction but are not rendered.
+// Including them would tie every snapshot to every source line
+// and column, so a one-line edit to a script would diff its
+// entire lowered form. The IR keeps the data either way.
 
 package ir
 

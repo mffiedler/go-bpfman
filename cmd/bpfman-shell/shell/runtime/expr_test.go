@@ -15,15 +15,14 @@ import (
 )
 
 // evalEnv returns an Env with the given session and no command
-// runners.  Suitable for expression tests that stay inside the
+// runners. Suitable for expression tests that stay inside the
 // pure-evaluation layer.
 func evalEnv(s *Session) *Env {
 	return &Env{Session: s}
 }
 
 // bindFromValue adapts a (Value, error)-returning closure to the
-// ExecBind signature so tests that drove ExecSubstitution can keep
-// the same body shape under the new hook.
+// ExecBind signature.
 func bindFromValue(f func([]Arg, source.Span) (Value, error)) func([]Arg, source.Span) (BindResult, error) {
 	return func(args []Arg, span source.Span) (BindResult, error) {
 		v, err := f(args, span)
@@ -601,7 +600,7 @@ func TestEvalExpr_Thread_AppendsScalarValueAsLastArg(t *testing.T) {
 	s2, err := v.Scalar()
 	require.NoError(t, err)
 	assert.Equal(t, "ok", s2)
-	// Captured args: [jq, ".", "42"] — LHS value becomes last arg.
+	// Captured args: [jq, ".", "42"] -- LHS value becomes last arg.
 	require.Len(t, captured, 3)
 	assert.Equal(t, WordArg{Text: "jq"}, captured[0])
 	assert.Equal(t, QuotedArg{Text: "."}, captured[1])
@@ -662,10 +661,10 @@ let got = $left |> jq "."
 func TestEvalExpr_Thread_NilLHSPassesAsNilArg(t *testing.T) {
 	t.Parallel()
 
-	// Threading a null value into a command no longer errors at
-	// the shell layer; the command receives NilArg and decides
-	// for itself how to interpret null at its input boundary
-	// (e.g. jq treats it as JSON null). This is the natural
+	// Threading a null value into a command passes NilArg to the
+	// command, which decides for itself how to interpret null at
+	// its input boundary (e.g. jq treats it as JSON null). This
+	// is the natural
 	// shape-test pattern `$got.status.links |> jq "length"`
 	// where the source field is the JSON value null.
 	s := NewSession()
@@ -787,7 +786,7 @@ func TestExecSource_ForEach_IteratesList(t *testing.T) {
 		},
 	}
 
-	// foreach p in $xs { $p }  — the body is a single command
+	// foreach p in $xs { $p }  -- the body is a single command
 	// statement whose only arg is the loop variable, so the
 	// runner captures each element's text.
 	prog := &syntax.Program{Stmts: []syntax.Stmt{
@@ -1521,7 +1520,7 @@ func TestEvalExpr_And_BothTrue(t *testing.T) {
 func TestEvalExpr_And_ShortCircuitsOnFalseLeft(t *testing.T) {
 	t.Parallel()
 
-	// Right operand would error on Scalar() — if the short-circuit
+	// Right operand would error on Scalar() -- if the short-circuit
 	// fires correctly, it's never evaluated.
 	s := NewSession()
 	s.Set("m", ValueFromMap(map[string]any{"x": 1}))
@@ -1602,14 +1601,11 @@ func TestEvalExpr_And_RejectsNonBoolLeft(t *testing.T) {
 	assert.Contains(t, err.Error(), "and")
 }
 
-// retry / timeout / iteration coverage moved to poll-focused
-// runtime and parser tests after the old construct was retired.
-
 // --- arithmetic ----------------------------------------------------
 
 // scalarTextEval is a small helper that evaluates an expression
-// and returns its scalar-formatted result.  Every arithmetic
-// test reduces to "evaluate, compare the rendered string" — the
+// and returns its scalar-formatted result. Every arithmetic
+// test reduces to "evaluate, compare the rendered string" -- the
 // helper keeps the call sites short.
 func scalarTextEval(t *testing.T, e syntax.Expr) string {
 	t.Helper()
@@ -1699,7 +1695,7 @@ func TestEvalExpr_Negate_Literal(t *testing.T) {
 func TestEvalExpr_Negate_DoubleNegate(t *testing.T) {
 	t.Parallel()
 
-	// -(-5) → 5: stacks resolve inside-out.
+	// -(-5) -> 5: stacks resolve inside-out.
 	e := &syntax.NegateExpr{Operand: &syntax.NegateExpr{Operand: &syntax.LiteralExpr{Text: "5"}}}
 	assert.Equal(t, "5", scalarTextEval(t, e))
 }
@@ -1707,7 +1703,7 @@ func TestEvalExpr_Negate_DoubleNegate(t *testing.T) {
 func TestEvalExpr_Negate_StructuredIsError(t *testing.T) {
 	t.Parallel()
 
-	// Negating a map is nonsense — must error rather than panic.
+	// Negating a map is nonsense -- must error rather than panic.
 	s := NewSession()
 	s.Set("m", ValueFromMap(map[string]any{"x": 1}))
 	_, err := evalLoweredExpr(&syntax.NegateExpr{Operand: &syntax.VarRefExpr{Name: "m"}}, evalEnv(s))
@@ -1728,7 +1724,7 @@ func TestEvalExpr_Negate_NonNumericScalarIsError(t *testing.T) {
 func TestEvalExpr_Arithmetic_InComparisonPosition(t *testing.T) {
 	t.Parallel()
 
-	// 3 + 4 > 5 → true.  Exercises the full chain:
+	// 3 + 4 > 5 -> true. Exercises the full chain:
 	// comparison evaluates additive on both sides, reduces each
 	// to a numeric scalar, then compares as floats.
 	e := &syntax.BinaryExpr{
@@ -1767,7 +1763,7 @@ func TestEvalExpr_InterpString_LiteralOnly(t *testing.T) {
 	t.Parallel()
 
 	// An InterpStringExpr with only literal segments (rare in
-	// practice — the lexer emits TokenQuoted for that case —
+	// practice -- the lexer emits TokenQuoted for that case --
 	// but the evaluator is happy to concatenate literals if a
 	// caller constructs the node directly).
 	s := NewSession()
@@ -1836,7 +1832,7 @@ func TestEvalExpr_InterpString_StructuredValueCompactJSON(t *testing.T) {
 	got, err := v.Scalar()
 	require.NoError(t, err)
 	// json.Marshal sorts map keys alphabetically, so the output is
-	// stable regardless of the input map's iteration order.  One
+	// stable regardless of the input map's iteration order. One
 	// line, no indentation.
 	assert.Equal(t, `{"exit_code":0,"stdout":"hi"}`, got)
 }
@@ -1863,9 +1859,9 @@ func TestEvalExpr_InterpString_NilRendersAsNull(t *testing.T) {
 	t.Parallel()
 
 	// A nil Value in the interpolation slot renders as "null" so
-	// the output string stays well-formed.  We exercise the
+	// the output string stays well-formed. We exercise the
 	// helper directly because nothing in the expression grammar
-	// produces a bare nil Value today — VarRefExpr with a missing
+	// produces a bare nil Value today -- VarRefExpr with a missing
 	// path errors at lookup time rather than falling through to
 	// nil.
 	got, err := RenderCompact(Value{})

@@ -21,12 +21,12 @@ type Key[T any] struct{ name string }
 //
 // Within a single process, every (name, T) pair must agree:
 //
-//   - Same name, same T — returns a Key with that name (idempotent).
+//   - Same name, same T -- returns a Key with that name (idempotent).
 //     This is what lets `go test -count=N` and parallel tests
 //     re-enter NewKey safely; production callers register at package
 //     init.
 //
-//   - Same name, different T — panics. Without this check, one call
+//   - Same name, different T -- panics. Without this check, one call
 //     site's Produce(Key[int]("foo"), ...) would store an int at
 //     "foo" in a Bindings map, and another site's Get(b,
 //     Key[string]("foo")) would type-assert to string at runtime.
@@ -34,7 +34,7 @@ type Key[T any] struct{ name string }
 //     startup) instead of an arbitrary later Get call.
 //
 // Bindings are per-Run, so name reuse never causes cross-run state
-// sharing — only the type guarantee matters here.
+// sharing -- only the type guarantee matters here.
 func NewKey[T any](name string) Key[T] {
 	t := reflect.TypeFor[T]()
 	if existing, loaded := registry.LoadOrStore(name, t); loaded {

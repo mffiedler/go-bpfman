@@ -21,7 +21,7 @@ import (
 // TestDecodeBpfmanResult_ProgramListDTO proves the external dispatch
 // backend decodes `program list` into the ProgramListResult DTO,
 // preserving the top-level summary fields and -- crucially -- a
-// kernel-only entry's null record. Decoding into the old []Program
+// kernel-only entry's null record. Decoding into a flat []Program
 // shape would silently drop those, so this locks external/library
 // parity for the list command.
 func TestDecodeBpfmanResult_ProgramListDTO(t *testing.T) {

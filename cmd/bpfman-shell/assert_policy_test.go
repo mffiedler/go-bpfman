@@ -71,7 +71,7 @@ func TestAssertMatches_ForwardCompatibleIgnoresExtraFields(t *testing.T) {
 
 	rec := sampleProgram()
 	// Add a new field that the matches block does not mention; the
-	// match must still pass — that's the load-bearing property of
+	// match must still pass -- that's the load-bearing property of
 	// subset semantics.
 	rec["record"].(map[string]any)["meta"].(map[string]any)["labels"] = map[string]any{"env": "prod"}
 

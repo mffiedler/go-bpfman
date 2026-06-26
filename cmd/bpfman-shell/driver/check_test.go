@@ -30,7 +30,7 @@ func runCheckInput(t *testing.T, src string) (bool, string) {
 func TestShellCheck_CleanInput(t *testing.T) {
 	t.Parallel()
 
-	// --check now runs static analysis after parsing; every
+	// --check runs static analysis after parsing; every
 	// $-reference must resolve to a previously-defined name,
 	// matching how go vet and pylint catch undefined-name
 	// typos. The 'if $x > 0' case defines $x first.

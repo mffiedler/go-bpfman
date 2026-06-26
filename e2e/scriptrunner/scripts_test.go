@@ -147,7 +147,7 @@ func TestBPFManScripts(t *testing.T) {
 	// and so on; the t.Parallel queue therefore holds
 	// [s1#0, s2#0, ..., sN#0, s1#1, ...] which preserves
 	// wave diversity across repeats. Scripts marked serial
-	// skip the repeat: they are serialized with other serial
+	// skip the repeat: they are serialised with other serial
 	// scripts by scriptSerialMu, so extra registrations only
 	// burn wall-clock time without tickling new race windows.
 	for r := range repeats {

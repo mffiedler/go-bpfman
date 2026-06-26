@@ -99,7 +99,7 @@ func TestBindShape_LinkAttachUnknownKindFallsBackToGenericLink(t *testing.T) {
 	// record.details unsealed, so a deep field access against
 	// it passes without complaint. The top-level Link fields
 	// still validate, so a typo on `record` or `status` is
-	// caught the same way it always was.
+	// caught.
 	clean := `guard l <- bpfman link attach mystery_kind 1
 print $l.record.details.anything.goes.here`
 	assert.Empty(t, checkSource(t, clean))

@@ -287,9 +287,7 @@ func (k *kernelAdapter) CreateTCFilter(ctx context.Context, progPinPath bpfman.P
 			// A clsact already present (EEXIST) is fine to reuse: the
 			// check above already refused any foreign qdisc in the slot,
 			// so an EEXIST here can only be a clsact whose dump lagged its
-			// creation. This gated tolerance is not the old blind EEXIST
-			// swallow -- that masked exactly the foreign-qdisc case this
-			// now refuses before ever calling QdiscAdd.
+			// creation.
 			if err := netlink.QdiscAdd(qdisc); err != nil && !errors.Is(err, unix.EEXIST) {
 				return fmt.Errorf("add clsact qdisc to %s (ifindex %d): %w", ifname, ifindex, err)
 			}

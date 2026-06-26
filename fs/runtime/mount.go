@@ -33,7 +33,7 @@ const (
 // Example bpffs entry:
 //
 //	30 22 0:27 / /sys/fs/bpf rw,nosuid shared:9 - bpf bpf rw,mode=700
-//	              ↑                               ↑
+//	              ^                               ^
 //	              mount_point (fields[4])         fstype (after " - ")
 //
 // The key insight from libmount (util-linux) is that the separator "

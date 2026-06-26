@@ -15,9 +15,8 @@ import (
 	"github.com/frobware/go-bpfman/platform/store/sqlite"
 )
 
-// These tests cover the two-phase link write introduced when link
-// pins moved to numeric link-id names: CreatePendingLink inserts the
-// row before the kernel attach, recording pin_path =
+// These tests cover the two-phase link write: CreatePendingLink
+// inserts the row before the kernel attach, recording pin_path =
 // {linksDir}/{link_id} in the same transaction so the id exists to
 // name the pin, and FinaliseLink records the captured kernel link id
 // afterwards.

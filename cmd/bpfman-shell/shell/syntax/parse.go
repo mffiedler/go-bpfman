@@ -342,11 +342,11 @@ func (p *parser) parseAssertStmt(isRequire bool) (Stmt, error) {
 }
 
 // leadsExpression reports whether a token can only start an
-// expression at statement position.  These tokens would otherwise
+// expression at statement position. These tokens would otherwise
 // be mis-routed into the command-statement grammar and produce
 // unhelpful errors (unknown command names that are actually
 // variable references, quoted literals, bracketed expressions,
-// etc.).  Bare WORDs are excluded because they are the normal
+// etc.). Bare WORDs are excluded because they are the normal
 // command-name form; the few WORD texts that can only appear in
 // expression position ("(", "not", and the unary predicates) are
 // listed explicitly.
@@ -364,7 +364,7 @@ func leadsExpression(t Token) bool {
 }
 
 // parseExprStmt consumes the current statement as an expression
-// and wraps it in an ExprStmt.  The tokens between the current
+// and wraps it in an ExprStmt. The tokens between the current
 // cursor and the next separator (or end-of-input) are collected
 // and handed to parseExpression verbatim, so every construct the
 // expression grammar understands -- comparisons, logical
@@ -409,7 +409,7 @@ func (p *parser) parseContinueStmt() (Stmt, error) {
 
 // rejectTrailingArgs errors when a bare-keyword statement
 // (break, continue) has extra tokens on the same statement
-// before the next separator or block marker.  Silent tolerance
+// before the next separator or block marker. Silent tolerance
 // would let "break 2" tokenise as if "break" were a command,
 // which is not what the user wrote.
 func (p *parser) rejectTrailingArgs(name string) error {
@@ -486,11 +486,10 @@ func (p *parser) parseLetStmt() (Stmt, error) {
 	case TokenAssign:
 		p.advance() // "="
 		// `_` is consistently a discard slot at every binding
-		// site (bind, destructure, foreach); the single-name
-		// let was historically the only site that bound `_`
-		// as an ordinary name. Reject it so the asymmetry is
-		// gone: force-evaluation for side effects belongs in
-		// bind / guard / a bare command, not `let _ = ...`.
+		// site (bind, destructure, foreach); single-name
+		// `let _ = ...` is rejected: force-evaluation for side
+		// effects belongs in bind / guard / a bare command, not
+		// `let _ = ...`.
 		if name.Text == "_" {
 			return nil, spanErrorf(nameTok.Span, "single-name let cannot bind '_'; use a real name")
 		}
@@ -977,9 +976,7 @@ func (p *parser) parseDefStmt() (Stmt, error) {
 // uniformly value-publishing; if a value-less early-exit form is
 // ever wanted, it earns its place separately. The parser does not
 // know whether it is inside a def body; "return outside a def" is
-// caught by the static checker and again at runtime. Routing
-// `return` through this parser also lifts the older tombstone
-// diagnostic that rejected the word entirely.
+// caught by the static checker and again at runtime.
 func (p *parser) parseReturnStmt() (Stmt, error) {
 	retTok := p.advance() // "return"
 	tokens, err := p.takeStmtTokens(false)
@@ -1341,8 +1338,8 @@ func (p *parser) parseForEachNameToken(feTok Token) (Ident, error) {
 }
 
 // takeUntilOpenBrace collects tokens up to (but not including) the
-// next '{'.  Separator tokens inside the range are skipped so
-// multi-line list expressions work.  Returns an error if no '{'
+// next '{'. Separator tokens inside the range are skipped so
+// multi-line list expressions work. Returns an error if no '{'
 // appears before EOF.
 func (p *parser) takeUntilOpenBrace() ([]Token, error) {
 	var buf []Token
@@ -1562,7 +1559,7 @@ func (p *parser) parseBlock() ([]Stmt, error) {
 }
 
 // parseExpression parses an expression via a cursor-based
-// recursive-descent parser.  Each precedence level has its own
+// recursive-descent parser. Each precedence level has its own
 // method, loosest to tightest:
 //
 //	parseComparison     -- binary comparison (==, !=, <, <=, >, >=)
@@ -1576,7 +1573,7 @@ func (p *parser) parseBlock() ([]Stmt, error) {
 //	                                      cmdsub)
 //
 // Each level calls the next-tighter level for its operands and
-// loops for any left-associative operator of its own.  The shape
+// loops for any left-associative operator of its own. The shape
 // makes errors self-locating: a mismatched token triggers an
 // error from the level that was expecting something else, and
 // trailing tokens after a complete expression get a single
@@ -1604,11 +1601,11 @@ func parseExpression(tokens []Token) (Expr, error) {
 
 // smushedArithmeticHint returns a user-facing hint when the
 // trailing token looks like a binary '-' or '/' fused to its
-// right operand (e.g. "-1", "/2").  The tokeniser keeps '-' and
+// right operand (e.g. "-1", "/2"). The tokeniser keeps '-' and
 // '/' as word-constituents because they appear inside negative
 // literals, flags, and paths, so the common "$x -1" / "$x /2"
 // shapes tokenise as two adjacent primaries rather than as
-// binary arithmetic.  When that shape is the reason parsing
+// binary arithmetic. When that shape is the reason parsing
 // failed, point at whitespace explicitly.
 func smushedArithmeticHint(t Token) (string, bool) {
 	if t.Kind != TokenWord || len(t.Text) < 2 {
@@ -1722,9 +1719,9 @@ func advancePos(start source.Pos, s string) source.Pos {
 }
 
 // tryParseExpression attempts to interpret tokens as a single
-// expression.  It returns (expr, true) only when the expression
+// expression. It returns (expr, true) only when the expression
 // grammar matches and every non-separator token is consumed; any
-// parse error or trailing token returns (nil, false).  Used by the
+// parse error or trailing token returns (nil, false). Used by the
 // cmd-sub primary to detect "[EXPR]" misuse and point the user at
 // the "[[EXPR]]" form.
 func tryParseExpression(tokens []Token) (Expr, bool) {
@@ -1737,7 +1734,7 @@ func tryParseExpression(tokens []Token) (Expr, bool) {
 }
 
 // exprParser is a cursor over a pre-collected token slice used by
-// parseExpression's recursive-descent methods.  Each level calls
+// parseExpression's recursive-descent methods. Each level calls
 // the next-tighter level and loops for any left-associative
 // operator of its own.
 type exprParser struct {
@@ -1782,9 +1779,9 @@ func (p *exprParser) spanFromNodeStart(n Node) source.Span {
 	return p.spanFrom(NodeSpan(n).Pos)
 }
 
-// parseOr recognises left-associative 'or' chains.  'or' is the
+// parseOr recognises left-associative 'or' chains. 'or' is the
 // loosest logical connective; it binds looser than 'and' and
-// looser than the comparison level.  Short-circuit evaluation is
+// looser than the comparison level. Short-circuit evaluation is
 // handled at eval time.
 func (p *exprParser) parseOr() (Expr, error) {
 	left, err := p.parseAnd()
@@ -1804,7 +1801,7 @@ func (p *exprParser) parseOr() (Expr, error) {
 	return left, nil
 }
 
-// parseAnd recognises left-associative 'and' chains.  'and' is
+// parseAnd recognises left-associative 'and' chains. 'and' is
 // tighter than 'or' and looser than 'not'.
 func (p *exprParser) parseAnd() (Expr, error) {
 	left, err := p.parseNot()
@@ -1824,7 +1821,7 @@ func (p *exprParser) parseAnd() (Expr, error) {
 	return left, nil
 }
 
-// parseNot recognises the 'not' prefix.  It binds tighter than
+// parseNot recognises the 'not' prefix. It binds tighter than
 // 'and' / 'or' but looser than the comparison level, matching
 // SQL and Python conventions (so "not $a == $b" parses as
 // "not ($a == $b)", not "(not $a) == $b"). Multiple 'not's are
@@ -1843,7 +1840,7 @@ func (p *exprParser) parseNot() (Expr, error) {
 }
 
 // isKeywordWord reports whether t is a plain word token whose
-// text equals kw.  Used at precedence levels to recognise
+// text equals kw. Used at precedence levels to recognise
 // keyword operators (and / or / not) without colliding with
 // tokens that happen to have the same text inside other positions.
 func isKeywordWord(t Token, kw string) bool {
@@ -1851,7 +1848,7 @@ func isKeywordWord(t Token, kw string) bool {
 }
 
 // parseComparison recognises the optional binary-comparison infix
-// around a tighter sub-expression.  At most one binary operator
+// around a tighter sub-expression. At most one binary operator
 // per expression matches the current grammar; anything else the
 // caller flags via the "unexpected trailing token" check in
 // parseExpression.
@@ -1896,7 +1893,7 @@ func (p *exprParser) parseComparison() (Expr, error) {
 
 // parseAdditive recognises left-associative '+' and '-' chains.
 // The operands live at the multiplicative level so that
-// "1 + 2 * 3" parses as "1 + (2 * 3)".  The '-' here is always
+// "1 + 2 * 3" parses as "1 + (2 * 3)". The '-' here is always
 // binary subtraction; unary negation is handled at the negate
 // level, below the predicate rung.
 func (p *exprParser) parseAdditive() (Expr, error) {
@@ -1922,7 +1919,7 @@ func (p *exprParser) parseAdditive() (Expr, error) {
 }
 
 // parseMultiplicative recognises left-associative '*', '/', and
-// '%' chains.  Operands live at the predicate level.  Division
+// '%' chains. Operands live at the predicate level. Division
 // by zero and non-numeric operands are caught at evaluation
 // time, not here.
 func (p *exprParser) parseMultiplicative() (Expr, error) {
@@ -1948,8 +1945,8 @@ func (p *exprParser) parseMultiplicative() (Expr, error) {
 }
 
 // parsePredicate recognises a unary-predicate prefix applied to a
-// primary operand. The only surviving predicate is "not-empty";
-// "true" and "false" are now plain boolean literals. The rule is
+// primary operand. The only predicate is "not-empty";
+// "true" and "false" are plain boolean literals. The rule is
 // still context-sensitive in shape because the predicate word
 // must actually have an operand to its right -- "not-empty" alone
 // at end of input falls through to the tighter negate level
@@ -1967,8 +1964,8 @@ func (p *exprParser) parsePredicate() (Expr, error) {
 	return p.parseNegate()
 }
 
-// parseNegate recognises a unary '-' prefix.  Right-associative
-// recursion supports stacked negations ("- -$x").  The bare '-'
+// parseNegate recognises a unary '-' prefix. Right-associative
+// recursion supports stacked negations ("- -$x"). The bare '-'
 // WORD token is produced only when whitespace surrounds it;
 // "-3" tokenises as a single WORD (a negative literal) and
 // never reaches this rule.
@@ -1988,11 +1985,11 @@ func (p *exprParser) parseNegate() (Expr, error) {
 
 // operandFollowsPred reports whether the token immediately after
 // the current one could syntactically be a unary predicate's
-// operand.  It rejects anything that belongs to a higher
+// operand. It rejects anything that belongs to a higher
 // precedence level or ends the current expression: binary-
 // comparison words, arithmetic operators, logical operators
 // (and / or), '|>', a closing ')' that would terminate a
-// parenthesised sub-expression, and end of input.  That lets a
+// parenthesised sub-expression, and end of input. That lets a
 // pred word sitting at a comparison-RHS, arithmetic-RHS, or
 // logical-RHS position parse as a literal instead of greedily
 // swallowing the next token.
@@ -2020,9 +2017,9 @@ func (p *exprParser) operandFollowsPred() bool {
 }
 
 // isArithmeticOp reports whether t is a bare WORD carrying one
-// of the five arithmetic operators.  The tokeniser does not
+// of the five arithmetic operators. The tokeniser does not
 // give these tokens a dedicated kind, so recognition is by
-// text.  Used at precedence boundaries to keep arithmetic
+// text. Used at precedence boundaries to keep arithmetic
 // operators from being absorbed as operands at a tighter level.
 func isArithmeticOp(t Token) bool {
 	if t.Kind != TokenWord {
@@ -2037,7 +2034,7 @@ func isArithmeticOp(t Token) bool {
 
 // parseThread consumes a primary then zero or more '|>
 // command-call' segments, folding left-associatively into a
-// chain of ThreadExprs.  The RHS is read by parseThreadRHS,
+// chain of ThreadExprs. The RHS is read by parseThreadRHS,
 // which stops at the next '|>' or a binary-op word so the
 // comparison level can pick up operators at its own precedence.
 func (p *exprParser) parseThread() (Expr, error) {
@@ -2105,7 +2102,7 @@ func (p *exprParser) parseThreadRHS(threadLoc source.Pos) ([]Expr, error) {
 	return args, nil
 }
 
-// parseTerm consumes one primary expression — a single literal,
+// parseTerm consumes one primary expression -- a single literal,
 // varref, adapter, or command-substitution token, a
 // parenthesised sub-expression that recurses back into the full
 // expression grammar at the 'or' level, or a 'timeout DURATION'
@@ -2431,9 +2428,8 @@ func (p *exprParser) parseMatchesBlockExpr(matchesLoc source.Pos, exhaustive boo
 // '(EXPR)' group becomes one argument whose value is computed at
 // command-eval time; downstream evalArg evaluates the expression
 // and wraps the resulting Value as a Scalar / StructuredValueArg.
-// This is the orthogonality the wart entry on "|> in argument
-// position" called for: 'print ($snap |> jq ".x")' parses the same
-// way 'let v = $snap |> jq ".x"' does.
+// '|>' is recognised in argument position: 'print ($snap |> jq
+// ".x")' parses the same way 'let v = $snap |> jq ".x"' does.
 //
 // A leading '[' starts a list literal arg the same way, dispatched
 // to parseListLiteral via parseExpression. 'print [1 2 3]' produces
@@ -2772,7 +2768,7 @@ func WrapError(prefix string, err error) error {
 	return fmt.Errorf("%s: %w", prefix, err)
 }
 
-// spanCarrier marks errors that already carry their own source source.Span
+// spanCarrier marks errors that already carry their own source.Span
 // and so should pass through frameAtSpan unchanged. cmd-side
 // runtime-outcome errors (a subprocess exiting non-zero, future
 // launch-failure variants) implement this so they reach the renderer

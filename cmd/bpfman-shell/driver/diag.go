@@ -107,8 +107,7 @@ func splitSourceLines(src string) []string {
 // lineNumberWidth returns the printable width of the largest line
 // number that may appear in the frame's gutter. The renderer
 // prints only one source line today so the answer is always the
-// width of n; the helper exists so a future multi-line frame can
-// scale the gutter to cover the worst case.
+// width of n.
 func lineNumberWidth(n int) int {
 	if n < 10 {
 		return 1

@@ -14,7 +14,7 @@ import (
 
 // TestAttachRejectsProgramKindMismatch verifies that attaching a loaded
 // program via a verb its type cannot drive is rejected cleanly, before
-// any kernel or store side effect (RUST-PARITY finding 9). The verb to
+// any kernel or store side effect (Rust parity). The verb to
 // program-type mapping is one-to-one except for the probe verbs, which
 // each serve both the entry and return variant; those legitimate cases
 // are covered as controls that must still succeed.

@@ -18,10 +18,9 @@ import (
 // every typed bpfman command the static checker seals: the shape the
 // checker infers for `<noun> <verb>` must equal the shape derived from
 // the type the external dispatch decoder produces for that command. It
-// is the guard that would have caught the program-list DTO drift,
-// where the static shape and the in-process backend moved to
-// ProgramListResult while the external decoder still produced the
-// old type.
+// guards against the static shape and the external decoder drifting
+// apart, for example one side moving to ProgramListResult while the
+// other still produces the old type.
 //
 // Only the program and link commands are covered: those are the ones
 // the static checker gives a sealed typed shape. Image and dispatcher

@@ -15,9 +15,8 @@ import (
 )
 
 func grpcLinkID(id bpfman.LinkID) uint32 {
-	// The legacy gRPC API still carries link handles as uint32. bpfman
-	// handles are now uint64, but the gRPC layer is expected to disappear,
-	// so we accept the temporary narrowing at this boundary.
+	// The legacy gRPC API carries link handles as uint32; bpfman
+	// handles are uint64, so this narrows at the boundary.
 	return uint32(id)
 }
 

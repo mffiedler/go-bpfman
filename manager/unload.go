@@ -37,23 +37,16 @@ import (
 //     row is the worst residue class, and unlike the other
 //     failures it self-heals on retry (the row is still present,
 //     getProgram succeeds, the whole sequence re-runs cleanly).
-//     Every other post-detach step --- map pin removal, shared-map
+//     Every other post-detach step -- map pin removal, shared-map
 //     bookkeeping, the per-program links and bytecode directories,
-//     and the empty-dispatcher cleanup --- is warned and discarded.
+//     and the empty-dispatcher cleanup -- is warned and discarded.
 //     Joining their failures into the returned error only produced
 //     ErrProgramNotFound on the caller's retry, which is a false
 //     negative: the program really is gone, the residue is
 //     internal and not actionable from outside. Coherency, audit,
 //     and GC repair the residue.
 //
-// This mirrors the contract on removeEmptyDispatcher. The previous
-// plan-based version inherited operation.Run0's stop-on-first-error
-// semantics, which after the program-unload point of no return left
-// store rows referencing kernel attachments that no longer existed
-// on transient bpffs failure --- the worst of both worlds. Naming
-// the steps and stating the contract here makes the intended
-// semantics reviewable and brings program unload into line with the
-// dispatcher teardown lifecycle.
+// This mirrors the contract on removeEmptyDispatcher.
 func (m *Manager) unload(ctx context.Context, record bpfman.ProgramRecord, links []bpfman.LinkRecord, persisted bool) error {
 	programID := record.ProgramID
 	progPinPath := record.Handles.PinPath
@@ -122,7 +115,7 @@ func (m *Manager) unload(ctx context.Context, record bpfman.ProgramRecord, links
 	// returns no error: per-dispatcher failures are logged inside it
 	// and repaired by coherency/audit/GC. If deleteProgramRecord
 	// itself failed, the link rows remain, the dispatcher is
-	// observed non-empty, and this call is a no-op --- correct under
+	// observed non-empty, and this call is a no-op -- correct under
 	// the documented contract.
 	dispatcherCleanup := collectDispatcherKeys(links)
 	for key := range rebuiltDispatchers {
@@ -177,7 +170,7 @@ func (m *Manager) gcMapSetIfUnused(ctx context.Context, mapSetID kernel.ProgramI
 // detached. It is the first half of the kernel-side point of no
 // return: once any link detach has succeeded the program's attachment
 // state has been mutated, and a clean inverse no longer exists. The
-// function is fail-fast --- if a detach or dispatcher rebuild fails
+// function is fail-fast -- if a detach or dispatcher rebuild fails
 // the remaining links are left for coherency or a retry to clean up
 // rather than pressed through additional destructive work.
 //

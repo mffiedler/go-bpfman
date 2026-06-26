@@ -92,13 +92,11 @@ func runProgramWithEnv(t *testing.T, src string, env *Env) error {
 	return execSourceProgram(t, src, env)
 }
 
-// Regression: a defer command's stdout/stderr is captured into
-// its result envelope but the driver did not surface it. The
-// user-facing symptom: `defer print "trace"` produces no
-// output. The fix is an Env.RenderDeferOutput callback the
-// driver wires to flush captured streams; the shell layer
-// invokes it after every defer dispatch so the driver decides
-// where the bytes go.
+// A defer command's stdout/stderr is captured into its result
+// envelope; an Env.RenderDeferOutput callback the driver wires
+// flushes the captured streams, and the shell layer invokes it
+// after every defer dispatch so the driver decides where the
+// bytes go.
 func TestExecSource_Defer_StdoutFlushedThroughRenderDeferOutput(t *testing.T) {
 	t.Parallel()
 
@@ -326,19 +324,12 @@ func TestExecSource_Defer_ForEachRegistersInEnclosing(t *testing.T) {
 }
 
 // Tests below pin defer-capture-at-registration behaviour as a
-// load-bearing contract for the upcoming scope rework. Block
-// frames pop at body exit, so a deferred command registered
-// inside a foreach body, an if branch, or a def call survives
-// the frame disappearing. The deferred argument vector was
-// resolved when the defer ran -- not at unwind -- so the call
-// fires with the values the body saw, even after the frame is
-// gone.
-//
-// These tests pass against today's evaluator (capture-at-
-// registration is already implemented in evalDeferStmt) and
-// must keep passing after commits 4-6 land the if / foreach /
-// def frame wiring. Any regression there trips one of these
-// before reaching the corpus.
+// load-bearing contract. Block frames pop at body exit, so a
+// deferred command registered inside a foreach body, an if
+// branch, or a def call survives the frame disappearing. The
+// deferred argument vector was resolved when the defer ran --
+// not at unwind -- so the call fires with the values the body
+// saw, even after the frame is gone.
 
 func TestExecSource_Defer_InsideForEach_CapturesIterationVariable(t *testing.T) {
 	t.Parallel()

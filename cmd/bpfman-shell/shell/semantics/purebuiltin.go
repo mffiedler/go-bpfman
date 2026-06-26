@@ -47,8 +47,7 @@ const (
 // pureLiteralContract describes an optional literal-only checker
 // rule for a pure builtin. The zero value means "no extra static
 // contract"; nonzero values stay intentionally narrow so the
-// registry can carry the same targeted, low-false-positive
-// contracts the checker has historically added case by case.
+// registry can carry targeted, low-false-positive contracts.
 type pureLiteralContract struct {
 	kind pureLiteralContractKind
 	bits int
