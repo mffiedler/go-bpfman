@@ -1,4 +1,3 @@
-// Package logging provides structured logging configuration for bpfman.
 package logging
 
 import (

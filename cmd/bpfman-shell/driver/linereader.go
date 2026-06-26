@@ -12,7 +12,11 @@ var ErrInterrupt = errors.New("interrupted")
 // LineReader provides line-oriented input for whole-program file
 // and stdin execution.
 type LineReader interface {
+	// Readline returns the next line of input without its trailing
+	// newline, or io.EOF once the input is exhausted.
 	Readline() (string, error)
+
+	// Close releases the underlying input source, if any.
 	Close() error
 }
 
@@ -33,6 +37,7 @@ func NewScannerReader(r io.Reader, closer io.Closer) LineReader {
 	}
 }
 
+// Readline returns the next scanned line, or io.EOF at end of input.
 func (s *scannerReader) Readline() (string, error) {
 	if s.scanner.Scan() {
 		return s.scanner.Text(), nil
@@ -44,6 +49,7 @@ func (s *scannerReader) Readline() (string, error) {
 	return "", io.EOF
 }
 
+// Close closes the wrapped closer when one was supplied.
 func (s *scannerReader) Close() error {
 	if s.closer != nil {
 		return s.closer.Close()

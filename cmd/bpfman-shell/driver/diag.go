@@ -5,8 +5,8 @@
 // shape rustc and clang produce so the format is familiar to
 // anyone who has touched a typed language with positional errors.
 //
-// One surface helper: RenderDiagnostic for the full Diagnostic
-// shape (with optional Help text).
+// One helper: renderDiagnostic for the full diagnostic shape
+// (with optional Help text).
 
 package driver
 
@@ -28,7 +28,7 @@ type diagnostic struct {
 }
 
 // renderDiagnostic formats d against src with a rust-compiler
-// frame: a leading "error: ..." line, a "  --> file:line:col"
+// frame: a leading "error: ..." line, a " --> file:line:col"
 // citation, the numbered source line(s) covered by the span, a
 // caret span underlining the region, and an optional help
 // footer. file may be empty, in which case the citation omits

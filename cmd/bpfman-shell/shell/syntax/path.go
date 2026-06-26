@@ -9,8 +9,16 @@ import (
 // PathStep is one navigational component of a dotted/indexed value
 // path such as "maps[0].name".
 type PathStep struct {
-	Field   string
-	Index   int
+	// Field is the field name to descend into; meaningful only when
+	// IsIndex is false.
+	Field string
+
+	// Index is the element position to select; meaningful only when
+	// IsIndex is true.
+	Index int
+
+	// IsIndex distinguishes a numeric "[n]" step (true) from a named
+	// field step (false).
 	IsIndex bool
 }
 

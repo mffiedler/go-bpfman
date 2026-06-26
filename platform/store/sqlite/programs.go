@@ -387,6 +387,7 @@ func (s *sqliteStore) insertSelfOwnedMapSet(ctx context.Context, programID kerne
 	return nil
 }
 
+// CountMapSets returns the number of map sets currently recorded.
 func (s *sqliteStore) CountMapSets(ctx context.Context) (int, error) {
 	start := time.Now()
 	var count int
@@ -400,6 +401,8 @@ func (s *sqliteStore) CountMapSets(ctx context.Context) (int, error) {
 	return count, nil
 }
 
+// CountMapSetUsers returns the number of programs that reference the
+// map set identified by mapSetID, including its owner.
 func (s *sqliteStore) CountMapSetUsers(ctx context.Context, mapSetID kernel.ProgramID) (int, error) {
 	start := time.Now()
 	var count int
@@ -413,6 +416,8 @@ func (s *sqliteStore) CountMapSetUsers(ctx context.Context, mapSetID kernel.Prog
 	return count, nil
 }
 
+// ListMapSetUsers returns the kernel IDs of the programs that
+// reference the map set identified by mapSetID, in ascending order.
 func (s *sqliteStore) ListMapSetUsers(ctx context.Context, mapSetID kernel.ProgramID) ([]kernel.ProgramID, error) {
 	start := time.Now()
 	rows, err := s.stmtListMapSetUsers.QueryContext(ctx, mapSetID)
@@ -441,6 +446,7 @@ func (s *sqliteStore) ListMapSetUsers(ctx context.Context, mapSetID kernel.Progr
 	return users, nil
 }
 
+// MapSetExists reports whether a map set with the given ID exists.
 func (s *sqliteStore) MapSetExists(ctx context.Context, mapSetID kernel.ProgramID) (bool, error) {
 	start := time.Now()
 	var exists bool
@@ -454,6 +460,8 @@ func (s *sqliteStore) MapSetExists(ctx context.Context, mapSetID kernel.ProgramI
 	return exists, nil
 }
 
+// DeleteMapSet removes the map set identified by mapSetID, returning
+// platform.ErrRecordNotFound if no such map set exists.
 func (s *sqliteStore) DeleteMapSet(ctx context.Context, mapSetID kernel.ProgramID) error {
 	start := time.Now()
 	result, err := s.stmtDeleteMapSet.ExecContext(ctx, mapSetID)

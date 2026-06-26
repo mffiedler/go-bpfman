@@ -27,8 +27,11 @@ type CLI struct {
 
 	kctx *kong.Context `kong:"-"`
 
+	// Apply, when set via --apply, executes the planned actions. Without it the command only lists what would change and exits zero (dry-run).
 	Apply bool `name:"apply" help:"Execute the planned actions. Without this flag the command lists what would change and exits zero."`
-	Wipe  bool `name:"wipe" help:"Ignore the store and return --runtime-dir to a fresh-box state: unmount the bpffs at the runtime root if mounted, then remove the runtime root tree wholesale (lock file, store DB, bytecode caches, every subdirectory). The kernel and network e2e residue scans still run, so leaked test interfaces and namespaces are swept too. Use when the store and bpf fs have drifted out of sync. The next bpfman invocation rebuilds a clean tree from scratch."`
+
+	// Wipe, when set via --wipe, ignores the store and returns --runtime-dir to a fresh-box state: it unmounts the bpffs at the runtime root if mounted, then removes the runtime root tree wholesale (lock file, store DB, bytecode caches, every subdirectory). The kernel and network residue scans still run, so leaked test interfaces and namespaces are swept too. Use it when the store and bpffs have drifted out of sync.
+	Wipe bool `name:"wipe" help:"Ignore the store and return --runtime-dir to a fresh-box state: unmount the bpffs at the runtime root if mounted, then remove the runtime root tree wholesale (lock file, store DB, bytecode caches, every subdirectory). The kernel and network e2e residue scans still run, so leaked test interfaces and namespaces are swept too. Use when the store and bpf fs have drifted out of sync. The next bpfman invocation rebuilds a clean tree from scratch."`
 }
 
 // NewCLI parses argv and returns the configured root.

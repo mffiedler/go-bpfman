@@ -190,8 +190,8 @@ func nearestStrings(target string, candidates []string, limit int) []string {
 // positives caused by a long shared prefix diluting the edit-distance
 // ratio.
 //
-// Per-candidate score when target contains a '/' (see suggest_doc.go
-// for the full rationale):
+// Per-candidate score when target contains a '/' (see the design notes
+// at the top of this file for the full rationale):
 //
 //	target tg/tn, candidate cg/cn, prefix = len(tn) >= 3 && cn starts with tn
 //	  tg == cg, tn == cn               -> 0                        // exact match

@@ -22,16 +22,21 @@ const (
 
 // Config is the top-level bpfman configuration.
 type Config struct {
+	// Signing controls OCI image signature verification.
 	Signing SigningConfig `toml:"signing" json:"signing"`
+
+	// Logging controls the log level and output format.
 	Logging LoggingConfig `toml:"logging" json:"logging"`
 }
 
 // LoggingConfig controls logging behaviour.
 type LoggingConfig struct {
-	// Level is the log spec (e.g., "info" or "info,manager=debug").
+	// Level is the log spec (e.g. "info" or "info,manager=debug").
 	Level string `toml:"level" json:"level,omitempty"`
+
 	// Format is the output format: "text" or "json".
 	Format string `toml:"format" json:"format,omitempty"`
+
 	// Components provides an alternative way to specify per-component levels.
 	Components map[string]string `toml:"components" json:"components,omitempty"`
 }
@@ -97,9 +102,20 @@ type TrustedIdentityConfig struct {
 // SigningIdentity is the sigstore keyless identity policy expressed in
 // the form expected by cosign.
 type SigningIdentity struct {
-	Issuer        string
-	IssuerRegexp  string
-	Subject       string
+	// Issuer is the exact OIDC issuer to require on the signing
+	// certificate. Empty when IssuerRegexp is used instead.
+	Issuer string
+
+	// IssuerRegexp is an anchored regexp the certificate's OIDC issuer
+	// must match. Empty when Issuer is used instead.
+	IssuerRegexp string
+
+	// Subject is the exact signing certificate identity (subject) to
+	// require. Empty when SubjectRegexp is used instead.
+	Subject string
+
+	// SubjectRegexp is an anchored regexp the certificate identity
+	// (subject) must match. Empty when Subject is used instead.
 	SubjectRegexp string
 }
 

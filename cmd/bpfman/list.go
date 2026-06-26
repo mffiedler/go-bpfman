@@ -17,18 +17,46 @@ import (
 // ListProgramsCmd lists BPF programs; --all also includes unmanaged kernel programs.
 type ListProgramsCmd struct {
 	cliformat.OutputFlags
-	Quiet            bool                 `short:"q" help:"Output only program IDs, one per line."`
-	Attached         bool                 `name:"attached" help:"Show only programs with active links."`
-	Unattached       bool                 `name:"unattached" help:"Show only programs without active links."`
-	Type             []bpfman.ProgramType `name:"type" sep:"," help:"Filter by program type (case-insensitive, e.g., --type=xdp,kprobe)."`
-	ProgramType      []bpfman.ProgramType `name:"program-type" short:"p" sep:"," help:"Filter by program type (Rust-compatible alias for --type)."`
-	Application      string               `name:"application" help:"Filter by application metadata."`
-	MetadataSelector []args.KeyValue      `name:"metadata-selector" short:"m" help:"Filter by KEY=VALUE metadata (can be repeated)."`
-	All              bool                 `name:"all" short:"a" help:"Include unmanaged kernel programs (those loaded outside bpfman)."`
-	Selector         string               `name:"selector" short:"l" help:"Label selector (e.g., app=myapp,version!=v1)."`
+
+	// Quiet suppresses the table and prints only program references (program/<id>), one per line.
+	Quiet bool `short:"q" help:"Output only program references (program/<id>), one per line."`
+
+	// Attached restricts the listing to programs that have at least one
+	// active kernel link. Mutually exclusive with Unattached.
+	Attached bool `name:"attached" help:"Show only programs with active links."`
+
+	// Unattached restricts the listing to programs that have no active
+	// kernel link. Mutually exclusive with Attached.
+	Unattached bool `name:"unattached" help:"Show only programs without active links."`
+
+	// Type filters by one or more program types (case-insensitive,
+	// comma-separated or repeated, e.g. --type=xdp,kprobe).
+	Type []bpfman.ProgramType `name:"type" sep:"," help:"Filter by program type (case-insensitive, e.g., --type=xdp,kprobe)."`
+
+	// ProgramType is a Rust-CLI-compatible alias for --type; values from
+	// both flags are unioned into the type filter.
+	ProgramType []bpfman.ProgramType `name:"program-type" short:"p" sep:"," help:"Filter by program type (Rust-compatible alias for --type)."`
+
+	// Application filters to programs whose bpfman.io/application metadata
+	// equals this value.
+	Application string `name:"application" help:"Filter by application metadata."`
+
+	// MetadataSelector filters by KEY=VALUE program metadata; repeat the
+	// flag to require several pairs.
+	MetadataSelector []args.KeyValue `name:"metadata-selector" short:"m" help:"Filter by KEY=VALUE metadata (can be repeated)."`
+
+	// All includes unmanaged kernel programs (those loaded outside bpfman)
+	// in the listing; without it only bpfman-managed programs are shown.
+	All bool `name:"all" short:"a" help:"Include unmanaged kernel programs (those loaded outside bpfman)."`
+
+	// Selector filters by a Kubernetes-style label selector over program
+	// metadata (e.g. app=myapp,version!=v1).
+	Selector string `name:"selector" short:"l" help:"Label selector (e.g., app=myapp,version!=v1)."`
 }
 
-// Validate checks that the command flags are consistent.
+// Validate rejects mutually exclusive flag combinations before the
+// command runs; currently it fails when both --attached and --unattached
+// are given.
 func (c *ListProgramsCmd) Validate() error {
 	if c.Attached && c.Unattached {
 		return fmt.Errorf("--attached and --unattached are mutually exclusive")
@@ -96,7 +124,10 @@ func combineSelectors(selectors ...labels.Selector) labels.Selector {
 	return combined
 }
 
-// Run executes the list programs command.
+// Run lists programs matching the configured filters and renders them to
+// the output. With --quiet it prints only "program/<id>" lines;
+// otherwise it renders the program table or structured output in the
+// selected format.
 func (c *ListProgramsCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	if err := c.Validate(); err != nil {
 		return err
@@ -141,12 +172,30 @@ func (c *ListProgramsCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 // ListLinksCmd lists managed links.
 type ListLinksCmd struct {
 	cliformat.OutputFlags
-	Quiet            bool                 `short:"q" help:"Output only link IDs, one per line."`
-	ProgramID        *args.ProgramID      `name:"program-id" help:"Filter by program ID (supports hex with 0x prefix)."`
-	Kind             []bpfman.LinkKind    `name:"kind" sep:"," help:"Filter by link kind (e.g., --kind=xdp,kprobe)."`
-	ProgramType      []bpfman.ProgramType `name:"program-type" short:"p" sep:"," help:"Filter by the owning program's type (e.g. xdp,kprobe)."`
-	Application      string               `name:"application" help:"Filter by the owning program's application metadata."`
-	MetadataSelector []args.KeyValue      `name:"metadata-selector" short:"m" help:"Filter by the owning program's KEY=VALUE metadata (can be repeated)."`
+
+	// Quiet suppresses the table and prints only link references (link/<id>), one per line.
+	Quiet bool `short:"q" help:"Output only link references (link/<id>), one per line."`
+
+	// ProgramID restricts the listing to links owned by this program ID
+	// (accepts decimal or 0x-prefixed hex); nil lists links for all
+	// programs.
+	ProgramID *args.ProgramID `name:"program-id" help:"Filter by program ID (supports hex with 0x prefix)."`
+
+	// Kind filters by one or more link kinds (comma-separated or repeated,
+	// e.g. --kind=xdp,kprobe).
+	Kind []bpfman.LinkKind `name:"kind" sep:"," help:"Filter by link kind (e.g., --kind=xdp,kprobe)."`
+
+	// ProgramType is a program-scoped filter: it lists links whose owning
+	// program is of one of the given types.
+	ProgramType []bpfman.ProgramType `name:"program-type" short:"p" sep:"," help:"Filter by the owning program's type (e.g. xdp,kprobe)."`
+
+	// Application is a program-scoped filter: it lists links whose owning
+	// program's bpfman.io/application metadata equals this value.
+	Application string `name:"application" help:"Filter by the owning program's application metadata."`
+
+	// MetadataSelector is a program-scoped filter on KEY=VALUE metadata of
+	// the owning program; repeat the flag to require several pairs.
+	MetadataSelector []args.KeyValue `name:"metadata-selector" short:"m" help:"Filter by the owning program's KEY=VALUE metadata (can be repeated)."`
 }
 
 func (c *ListLinksCmd) buildLinkListOptions() ([]bpfman.LinkListOption, error) {
@@ -192,7 +241,11 @@ func (c *ListLinksCmd) programScopeOptions() ([]bpfman.ListOption, bool) {
 	return opts, scoped
 }
 
-// Run executes the list links command.
+// Run lists links matching the configured filters and renders them to
+// the output. When any program-scope filter is set the links are scoped
+// to the matching programs. With --quiet it prints only "link/<id>"
+// lines; otherwise it renders the link table or structured output in the
+// selected format.
 func (c *ListLinksCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	format, err := c.OutputFlags.Format()
 	if err != nil {

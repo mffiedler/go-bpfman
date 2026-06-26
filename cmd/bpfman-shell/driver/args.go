@@ -15,8 +15,10 @@ import (
 
 // ArgText extracts the text from a single Arg. For text-bearing
 // variants (WordArg, QuotedArg, ScalarValueArg) this returns the
-// text directly. For StructuredValueArg this returns "$name" as a
-// display form suitable for error messages.
+// text directly. For StructuredValueArg this returns "$name", and
+// for AdapterArg "adapter:$name" (or "adapter:$name.path" when a
+// path is present), both as display forms suitable for error
+// messages.
 func ArgText(a runtime.Arg) string {
 	switch v := a.(type) {
 	case runtime.WordArg:

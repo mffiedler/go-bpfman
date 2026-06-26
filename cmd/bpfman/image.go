@@ -17,40 +17,86 @@ import (
 
 // ImageCmd groups image-related subcommands.
 type ImageCmd struct {
-	Build             ImageBuildCmd             `cmd:"" help:"Build and push an OCI image containing BPF bytecode."`
+	// Build builds an OCI image holding BPF bytecode and pushes it to the
+	// given registry reference.
+	Build ImageBuildCmd `cmd:"" help:"Build and push an OCI image containing BPF bytecode."`
+
+	// GenerateBuildArgs computes and prints the image build contract (the
+	// labels and build arguments describing the bytecode) without building
+	// or pushing anything.
 	GenerateBuildArgs ImageGenerateBuildArgsCmd `cmd:"" help:"Generate OCI image build arguments for BPF bytecode."`
-	Inspect           ImageInspectCmd           `cmd:"" help:"Inspect OCI image metadata for BPF bytecode."`
-	Verify            ImageVerifyCmd            `cmd:"" help:"Verify an OCI image signature."`
+
+	// Inspect fetches an OCI bytecode image and prints its bpfman metadata
+	// as JSON.
+	Inspect ImageInspectCmd `cmd:"" help:"Inspect OCI image metadata for BPF bytecode."`
+
+	// Verify checks an OCI image's signature against the configured trust
+	// policy.
+	Verify ImageVerifyCmd `cmd:"" help:"Verify an OCI image signature."`
 }
 
 // ImageBuildCmd builds and pushes an OCI bytecode image.
 type ImageBuildCmd struct {
-	ImageURL string   `arg:"" name:"image" placeholder:"IMAGE" help:"Image reference to publish."`
+	// ImageURL is the registry reference to publish the built image to.
+	ImageURL string `arg:"" name:"image" placeholder:"IMAGE" help:"Image reference to publish."`
+
+	// Bytecode lists the bytecode inputs. A single bare BYTECODE path
+	// builds a host-architecture image; one or more linux/arch=BYTECODE
+	// entries build a multi-architecture image. Bare and platform-mapped
+	// inputs cannot be mixed, and this is mutually exclusive with
+	// --cilium-ebpf-project.
 	Bytecode []string `arg:"" optional:"" name:"bytecode" placeholder:"BYTECODE" help:"Bytecode input: BYTECODE for a single host-architecture image, or linux/arch=BYTECODE for a multi-architecture image."`
 
+	// CiliumEBPFProject points at a directory of cilium/ebpf bpf2go object
+	// files to package as the bytecode source instead of explicit
+	// positional inputs; supplying it together with bytecode arguments is
+	// an error.
 	CiliumEBPFProject string `short:"c" name:"cilium-ebpf-project" placeholder:"DIR" help:"Directory containing cilium/ebpf bpf2go object files."`
 }
 
+// AllowRootless reports that the image build command may run without
+// root: it only builds and pushes an image and touches no kernel or
+// bpffs state, so the CLI's root requirement is waived for it.
 func (c *ImageBuildCmd) AllowRootless() bool { return true }
 
 // ImageGenerateBuildArgsCmd prints the bytecode image build contract.
 type ImageGenerateBuildArgsCmd struct {
-	Output   string   `short:"o" name:"output" placeholder:"FORMAT" enum:"text,json" default:"text" help:"Output format: text or json."`
+	// Output selects the rendering of the build contract: "text" (default)
+	// or "json".
+	Output string `short:"o" name:"output" placeholder:"FORMAT" enum:"text,json" default:"text" help:"Output format: text or json."`
+
+	// Bytecode lists the bytecode inputs. A single bare BYTECODE path
+	// describes a host-architecture image; one or more linux/arch=BYTECODE
+	// entries describe a multi-architecture image. Mutually exclusive with
+	// --cilium-ebpf-project.
 	Bytecode []string `arg:"" optional:"" name:"bytecode" placeholder:"BYTECODE" help:"Bytecode input: BYTECODE for a single host-architecture image, or linux/arch=BYTECODE for a multi-architecture image."`
 
+	// CiliumEBPFProject points at a directory of cilium/ebpf bpf2go object
+	// files to use as the bytecode source instead of explicit positional
+	// inputs; supplying it together with bytecode arguments is an error.
 	CiliumEBPFProject string `short:"c" name:"cilium-ebpf-project" placeholder:"DIR" help:"Directory containing cilium/ebpf bpf2go object files."`
 }
 
+// AllowRootless reports that the generate-build-args command may run
+// without root: it is pure computation over the bytecode inputs and
+// touches no kernel or bpffs state, so the CLI's root requirement is
+// waived for it.
 func (c *ImageGenerateBuildArgsCmd) AllowRootless() bool { return true }
 
 // ImageInspectCmd inspects an OCI bytecode image.
 type ImageInspectCmd struct {
+	// ImageURL is the OCI image reference to fetch and inspect.
 	ImageURL string `arg:"" name:"image" placeholder:"IMAGE" help:"OCI image reference to inspect."`
 }
 
+// AllowRootless reports that the image inspect command may run without
+// root: it only reads remote image metadata and touches no kernel or
+// bpffs state, so the CLI's root requirement is waived for it.
 func (c *ImageInspectCmd) AllowRootless() bool { return true }
 
-// Run executes the image build command.
+// Run builds the bytecode image plan from the configured inputs,
+// publishes the resulting OCI image to ImageURL, and prints the pinned
+// (digest-qualified) reference of the published image.
 func (c *ImageBuildCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	plan, err := c.plan()
 	if err != nil {
@@ -67,7 +113,9 @@ func (c *ImageBuildCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	return cli.PrintOutf("published: %s\n", published.PinnedReference)
 }
 
-// Run executes the image generate-build-args command.
+// Run computes the bytecode image build plan from the configured inputs
+// and prints the build contract (labels and build arguments) in the
+// format selected by --output, without building or pushing an image.
 func (c *ImageGenerateBuildArgsCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	plan, err := c.plan()
 	if err != nil {
@@ -82,7 +130,8 @@ func (c *ImageGenerateBuildArgsCmd) Run(cli *runtime.CLI, ctx context.Context) e
 	return cli.PrintOut(output)
 }
 
-// Run executes the image inspect command.
+// Run fetches the OCI image named by ImageURL and prints its bpfman
+// bytecode metadata as indented JSON.
 func (c *ImageInspectCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	inspection, err := oci.InspectBytecodeImage(ctx, c.ImageURL)
 	if err != nil {
@@ -176,27 +225,55 @@ func parsePlatformBytecodeInput(arg string) (imagebuild.BytecodeInput, bool, err
 
 // ImageVerifyCmd verifies the signature of an OCI image.
 type ImageVerifyCmd struct {
+	// ImageURL is the OCI image reference whose signature is verified.
 	ImageURL string `arg:"" name:"image" placeholder:"IMAGE" help:"OCI image reference (e.g., quay.io/bpfman-bytecode/xdp_pass:latest)."`
 
-	// Signing configuration
-	AllowUnsigned               *bool   `name:"allow-unsigned" help:"Allow unsigned images (overrides config file)."`
-	CertificateIdentity         *string `name:"certificate-identity" help:"Expected signing certificate identity (overrides config file)."`
-	CertificateOIDCIssuer       *string `name:"certificate-oidc-issuer" help:"Expected signing certificate OIDC issuer (overrides config file)."`
-	CertificateIdentityRegexp   *string `name:"certificate-identity-regexp" help:"Expected signing certificate identity regexp (overrides config file)."`
+	// AllowUnsigned, when set, overrides the config file's allow-unsigned
+	// setting so an unsigned image is accepted by policy rather than
+	// rejected. Nil leaves the configured value untouched.
+	AllowUnsigned *bool `name:"allow-unsigned" help:"Allow unsigned images (overrides config file)."`
+
+	// CertificateIdentity overrides the expected signing certificate
+	// identity from the config file's trusted identities. Mutually
+	// exclusive with CertificateIdentityRegexp.
+	CertificateIdentity *string `name:"certificate-identity" help:"Expected signing certificate identity (overrides config file)."`
+
+	// CertificateOIDCIssuer overrides the expected signing certificate
+	// OIDC issuer from the config file's trusted identities. Mutually
+	// exclusive with CertificateOIDCIssuerRegexp.
+	CertificateOIDCIssuer *string `name:"certificate-oidc-issuer" help:"Expected signing certificate OIDC issuer (overrides config file)."`
+
+	// CertificateIdentityRegexp overrides the expected signing certificate
+	// identity with a regular expression. Mutually exclusive with
+	// CertificateIdentity.
+	CertificateIdentityRegexp *string `name:"certificate-identity-regexp" help:"Expected signing certificate identity regexp (overrides config file)."`
+
+	// CertificateOIDCIssuerRegexp overrides the expected signing
+	// certificate OIDC issuer with a regular expression. Mutually
+	// exclusive with CertificateOIDCIssuer.
 	CertificateOIDCIssuerRegexp *string `name:"certificate-oidc-issuer-regexp" help:"Expected signing certificate OIDC issuer regexp (overrides config file)."`
 
-	// Registry authentication
+	// RegistryAuth carries base64-encoded "username:password" registry
+	// credentials for pulling the image manifest. Prefer the
+	// BPFMAN_REGISTRY_AUTH environment variable so the credentials do not
+	// appear in process listings.
 	RegistryAuth string `name:"registry-auth" env:"BPFMAN_REGISTRY_AUTH" help:"Base64-encoded registry auth (username:password). Prefer BPFMAN_REGISTRY_AUTH env var to avoid exposing credentials in process listings."`
 }
 
+// AllowRootless reports that the image verify command may run without
+// root: it only fetches and checks a signature and touches no kernel or
+// bpffs state, so the CLI's root requirement is waived for it.
 func (c *ImageVerifyCmd) AllowRootless() bool { return true }
 
-// Run executes the image verify command.
+// Run loads the signing configuration, applies the command's CLI
+// overrides (allow-unsigned and the certificate-identity/issuer trusted
+// identity), forces verification on, verifies the signature of the image
+// named by ImageURL, and prints the resulting verification status.
 func (c *ImageVerifyCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	logger := cli.Logger()
 	logger.Info("verifying image signature", "image", c.ImageURL)
 
-	// Load configuration (use CLI's config, not the deprecated --config flag)
+	// Load configuration from the shared --config flag (or its default).
 	cfg, err := cli.LoadConfig()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)

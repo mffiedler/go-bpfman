@@ -1,6 +1,3 @@
-// Package logging provides structured logging with per-component level control.
-// Log levels can be specified via CLI flags or config files using a spec format
-// like "info,manager=debug,server=warn".
 package logging
 
 import (
@@ -37,12 +34,16 @@ func ParseFormat(s string) (Format, error) {
 type Options struct {
 	// EnvSpec is the log spec from environment variable (highest precedence).
 	EnvSpec string
+
 	// CLISpec is the log spec from command line flag.
 	CLISpec string
+
 	// ConfigSpec is the log spec from config file (lowest precedence).
 	ConfigSpec string
+
 	// Format is the output format (text or json).
 	Format Format
+
 	// Output is the writer for log output. Defaults to os.Stdout.
 	Output io.Writer
 }
@@ -92,7 +93,7 @@ func New(opts Options) (*slog.Logger, error) {
 	return slog.New(filteringHandler), nil
 }
 
-// Default creates a logger with default settings (info level, text format, stdout).
+// Default creates a logger with default settings (warn level, text format, stdout).
 func Default() *slog.Logger {
 	logger, _ := New(Options{})
 	return logger

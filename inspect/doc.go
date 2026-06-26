@@ -18,7 +18,7 @@
 // # Snapshot
 //
 // [Snapshot] builds a point-in-time [Observation] by reading from all three
-// sources in parallel. The returned Observation contains every known BPF
+// sources. The returned Observation contains every known BPF
 // object, correlated by kernel ID:
 //
 //   - [ProgramView]: programs with store record, kernel info, and

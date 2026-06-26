@@ -33,13 +33,32 @@ type CLI struct {
 
 	kctx *kong.Context `kong:"-"`
 
-	Program    ProgramCmd    `cmd:"" group:"resources" help:"Manage BPF programs."`
-	Link       LinkCmd       `cmd:"" group:"resources" help:"Manage BPF links."`
+	// Program groups the program subcommands (load, unload, get,
+	// list, delete).
+	Program ProgramCmd `cmd:"" group:"resources" help:"Manage BPF programs."`
+
+	// Link groups the link subcommands (attach, detach, get, list,
+	// delete).
+	Link LinkCmd `cmd:"" group:"resources" help:"Manage BPF links."`
+
+	// Dispatcher groups the dispatcher inspection and management
+	// subcommands.
 	Dispatcher DispatcherCmd `cmd:"" group:"resources" help:"Manage dispatchers."`
-	Image      ImageCmd      `cmd:"" group:"infra" help:"Image operations (verify signatures)."`
-	Serve      ServeCmd      `cmd:"" group:"infra" help:"Start the gRPC daemon."`
-	Version    VersionCmd    `cmd:"" group:"infra" help:"Print version information."`
-	Get        GetCmd        `cmd:"" hidden:"" help:"Verb-noun compatibility alias (Rust bpfman style)."`
+
+	// Image groups the OCI image subcommands (build, inspect, verify
+	// signatures).
+	Image ImageCmd `cmd:"" group:"infra" help:"Image operations (verify signatures)."`
+
+	// Serve starts the gRPC daemon.
+	Serve ServeCmd `cmd:"" group:"infra" help:"Start the gRPC daemon."`
+
+	// Version prints version information.
+	Version VersionCmd `cmd:"" group:"infra" help:"Print version information."`
+
+	// Get is a hidden verb-noun compatibility alias (Rust bpfman
+	// style) routing "get link" and "get program" to the native
+	// noun-verb subcommands.
+	Get GetCmd `cmd:"" hidden:"" help:"Verb-noun compatibility alias (Rust bpfman style)."`
 }
 
 // daemonMarkerFlag identifies the bpfman-operator's daemonset
@@ -72,7 +91,7 @@ func maybeInjectServe(args []string) []string {
 // daemon starts; see maybeInjectServe.
 //
 // Note: Namespace helper mode (bpfman-ns) must be checked before calling NewCLI
-// via RunNamespaceHelper(), as it uses a completely separate CLI structure.
+// via runner.Run() (see main), as it uses a completely separate CLI structure.
 func NewCLI() (*CLI, error) {
 	os.Args = maybeInjectServe(os.Args)
 

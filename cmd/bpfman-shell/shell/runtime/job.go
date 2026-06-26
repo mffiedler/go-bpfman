@@ -45,9 +45,12 @@ type Job struct {
 	// no separate lock.
 	Mu sync.Mutex
 
-	// Stdout and Stderr hold the captured output. Settled before
+	// Stdout holds the captured standard output. Settled before
 	// Done is closed.
 	Stdout string
+
+	// Stderr holds the captured standard error. Settled before Done
+	// is closed.
 	Stderr string
 
 	// ExitCode is the process exit status. Settled before Done

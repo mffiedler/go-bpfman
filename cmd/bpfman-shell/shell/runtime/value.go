@@ -51,10 +51,26 @@ type Presence struct {
 	state presenceState
 }
 
-func (p Presence) Value() Value    { return p.value }
+// Value returns the value the path resolved to. It is the zero
+// Value when the path was missing and the explicit-null carrier
+// when the path resolved to JSON null.
+func (p Presence) Value() Value { return p.value }
+
+// IsMissing reports whether the path did not resolve in the value
+// tree (an intermediate or terminal field is absent from the shape).
 func (p Presence) IsMissing() bool { return p.state == presenceMissing }
-func (p Presence) IsNull() bool    { return p.state == presenceNull }
-func (p Presence) HasValue() bool  { return p.state == presenceValue }
+
+// IsNull reports whether the path resolved and its terminal value
+// is JSON null.
+func (p Presence) IsNull() bool { return p.state == presenceNull }
+
+// HasValue reports whether the path resolved to a concrete,
+// non-null value.
+func (p Presence) HasValue() bool { return p.state == presenceValue }
+
+// IsPresent reports whether the path resolved at all, i.e. to either
+// a concrete value or an explicit null. It is the negation of
+// IsMissing.
 func (p Presence) IsPresent() bool { return p.state != presenceMissing }
 
 // Value wraps a JSON-compatible dynamic value for use as a shell

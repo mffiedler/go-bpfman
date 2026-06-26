@@ -24,6 +24,8 @@
 //   - Detach: detach a program from its hook point
 //   - List: enumerate programs with optional metadata filtering
 //   - Get: retrieve a single program by ID
+//   - ListLinks: enumerate links, optionally filtered by program ID
+//   - GetLink: retrieve a single link by ID
 //   - PullBytecode: pre-pull an OCI image without loading
 //
 // Each handler converts protobuf types to domain types (convert.go),
@@ -41,8 +43,8 @@
 // Mutating handlers (Unload, Attach, Detach) acquire the global
 // file-based writer lock (lock/) per request via withWriterLock and
 // pass the resulting writer scope into the manager call. Read-only
-// handlers (List, Get, ListLinks, PullBytecode) run lockless and
-// rely on the store and kernel adapter for safe concurrent access.
+// handlers (List, Get, ListLinks, GetLink, PullBytecode) run lockless
+// and rely on the store and kernel adapter for safe concurrent access.
 // Load also runs without a server-level lock; the manager
 // conditionally acquires the writer flock for explicit map-owner joins
 // and LIBBPF_PIN_BY_NAME maps (see Manager.Load). There is no

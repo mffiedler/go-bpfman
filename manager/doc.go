@@ -44,13 +44,19 @@
 // involve I/O (store queries, image pulls, program discovery) but
 // produces no side effects that require rollback.
 //
-// Variations exist: AttachXDP() and AttachTC() interleave kernel I/O
-// between fetch and compute because dispatcher creation/reuse must be
-// observed before slot selection can be computed; AttachTCX() computes
-// ordering before kernel attach because it depends on existing link
-// state; Detach() queries after execution to determine dispatcher
-// cleanup needs. These deviations are driven by kernel observability:
-// some decisions can only be made after observing post-operation state.
+// One manager-level variation remains. AttachTCX() observes the
+// existing TCX links on the interface and computes the new program's
+// chain position before the kernel attach, because the order depends
+// on that pre-attach link state. The dispatcher paths (AttachXDP(),
+// AttachTC(), Detach()) instead push their cross-subsystem
+// observe-decide-act into the rebuild executor actions
+// (RebuildXDPDispatcher, RebuildTCDispatcher,
+// RebuildDispatcherForDetach): the manager does only its lightweight
+// fetch -- resolving the interface for an attach, extracting the
+// dispatcher key for a detach -- then emits a single rebuild action
+// that queries the dispatcher snapshot, recomputes membership, and
+// persists atomically. At manager level those paths follow the
+// standard phasing.
 //
 // Read-only methods (Get, ListPrograms, GetLink, etc.) are fetch-only
 // and do not build plans, since they are purely observational.
@@ -61,22 +67,29 @@
 // # Atomic Load Model
 //
 // Load operations provide atomic semantics: either a program is fully
-// loaded with metadata persisted, or nothing is left behind. The load
-// plan emits four actions through the executor:
+// loaded with metadata persisted, or nothing is left behind. The
+// per-program load plan emits two actions through the executor:
 //
 //  1. LoadProgram -- load into kernel and pin to bpffs
-//  2. CheckProgramNotInStore -- verify no stale entry exists
-//  3. PublishBytecode -- copy object file to per-program directory
-//  4. SaveProgram -- persist metadata to store
+//  2. PublishBytecode -- copy object file to per-program directory
 //
-// On failure the plan interpreter rolls back completed actions in
-// reverse order (UnloadProgram, RemoveProgramDir). On success,
-// programs only appear in the store after the full sequence
-// completes. Crash residue (kernel program plus bpffs pin plus
-// bytecode directory without a matching store row) is benign: the
-// kernel keeps the program alive while the pin holds, so the
-// kernel ID cannot be recycled. Operators clean up manually with
-// bpftool plus rm under the bytecode directory.
+// The store work -- verifying no stale row exists, persisting the
+// metadata, and recording shared-map references -- is batched into a
+// single sqlite transaction once every program's plan has run (see
+// loadBody's phase B), so a whole multi-program batch commits or aborts
+// together. These store steps run directly against the transaction
+// rather than through the executor, whose own SaveProgram handler would
+// open a nested transaction.
+//
+// On failure the plan interpreter rolls back the completed per-program
+// actions in reverse order (RemoveProgramDir, then UnloadProgram and
+// RemoveMapsPins); a phase-B commit failure unwinds the batch by
+// unloading each already-loaded program. On success, programs only
+// appear in the store after the full sequence completes. Crash residue
+// (kernel program plus bpffs pin plus bytecode directory without a
+// matching store row) is benign: the kernel keeps the program alive
+// while the pin holds, so the kernel ID cannot be recycled. Operators
+// clean up manually with bpftool plus rm under the bytecode directory.
 //
 // # Rollback and Error Reporting
 //
@@ -91,7 +104,7 @@
 // from earlier steps.
 //
 // The executor handles rollback within a single action. Deep actions
-// such as EnsureXDPDispatcher and EnsureTCDispatcher perform a
+// such as RebuildXDPDispatcher and RebuildTCDispatcher perform a
 // mini-transaction internally: kernel I/O followed by a store
 // persist. If the persist fails, the executor rolls back the kernel
 // artefacts before returning an error. The plan interpreter never

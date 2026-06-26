@@ -68,9 +68,9 @@ type NetPair struct {
 	Released bool
 }
 
-// MarkReleased sets the lifecycle latch and reports whether this
-// call was the one that flipped it. The first caller observes
-// (false, _) -> (true, true); subsequent callers observe true and
+// MarkReleased sets the lifecycle latch and reports whether it was
+// already set. The first caller observes false and flips it,
+// proceeding with the teardown; subsequent callers observe true and
 // can short-circuit the teardown.
 func (p *NetPair) MarkReleased() (wasReleased bool) {
 	p.Mu.Lock()

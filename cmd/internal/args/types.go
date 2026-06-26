@@ -13,6 +13,7 @@ import (
 
 // ProgramID wraps a program ID with hex support.
 type ProgramID struct {
+	// Value is the parsed kernel program ID.
 	Value kernel.ProgramID
 }
 
@@ -45,6 +46,7 @@ func ParseProgramID(s string) (ProgramID, error) {
 
 // LinkID wraps a link ID with hex support.
 type LinkID struct {
+	// Value is the parsed link ID.
 	Value bpfman.LinkID
 }
 
@@ -77,7 +79,10 @@ func ParseLinkID(s string) (LinkID, error) {
 
 // KeyValue represents a KEY=VALUE metadata pair.
 type KeyValue struct {
-	Key   string
+	// Key is the metadata key, trimmed of surrounding whitespace.
+	Key string
+
+	// Value is the metadata value, taken verbatim from after the first "=".
 	Value string
 }
 
@@ -101,7 +106,10 @@ func ParseKeyValue(s string) (KeyValue, error) {
 
 // GlobalData represents a NAME=HEX global data pair.
 type GlobalData struct {
+	// Name is the global variable name, trimmed of surrounding whitespace.
 	Name string
+
+	// Data is the decoded bytes parsed from the hex value (an optional 0x prefix is stripped before decoding).
 	Data []byte
 }
 
@@ -135,6 +143,7 @@ func ParseGlobalData(s string) (GlobalData, error) {
 
 // ObjectPath wraps a path to a BPF object file, validated for existence.
 type ObjectPath struct {
+	// Path is the filesystem path to an existing, non-directory BPF object file.
 	Path string
 }
 
@@ -187,9 +196,14 @@ func GlobalDataMap(gds []GlobalData) map[string][]byte {
 // ProgramSpec represents a TYPE:NAME[:ATTACH_FUNC] program specification for loading.
 // For fentry and fexit, the attach function is required.
 type ProgramSpec struct {
-	Type       bpfman.ProgramType // Validated program type
-	Name       string             // Program name within the ELF
-	AttachFunc string             // Attach function (required for fentry/fexit)
+	// Type is the validated program type parsed from the spec's first component.
+	Type bpfman.ProgramType
+
+	// Name is the program name within the ELF object, taken from the spec's second component.
+	Name string
+
+	// AttachFunc is the optional attach function from the spec's third component; it is required for fentry and fexit.
+	AttachFunc string
 }
 
 // ParseProgramSpec parses a TYPE:NAME or TYPE:NAME:ATTACH_FUNC string.
@@ -244,6 +258,7 @@ func ParseProgramSpec(s string) (ProgramSpec, error) {
 
 // ImagePullPolicy represents a CLI-friendly pull policy string.
 type ImagePullPolicy struct {
+	// Value is the pull policy, one of Always, IfNotPresent, or Never; it defaults to IfNotPresent when unset.
 	Value string
 }
 

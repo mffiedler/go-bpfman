@@ -11,25 +11,44 @@ import (
 
 // DeleteProgramsOpts configures program deletion.
 type DeleteProgramsOpts struct {
+	// Recursive, when true, also deletes the map-owner dependants of
+	// each target program (the programs that share its maps via
+	// map_owner_id), ordered dependant-first.
 	Recursive bool
-	All       bool
+
+	// All, when true, selects every managed program as a target; the
+	// explicit id list is ignored. It also implies dependant expansion.
+	All bool
 }
 
 // DeleteProgramResult records the outcome for one requested program.
 type DeleteProgramResult struct {
+	// ProgramID is the program the result refers to.
 	ProgramID kernel.ProgramID
-	Err       error
+
+	// Err is nil when the program was deleted (or was already removed
+	// earlier in the batch as a dependant), otherwise it carries the
+	// failure for this program.
+	Err error
 }
 
 // DeleteLinksOpts configures link deletion.
 type DeleteLinksOpts struct {
+	// Recursive, when true and the detach leaves the owning program
+	// without links, also deletes that orphaned program's map-owner
+	// dependants before unloading it.
 	Recursive bool
 }
 
 // DeleteLinkResult records the outcome for one requested link.
 type DeleteLinkResult struct {
+	// LinkID is the link the result refers to.
 	LinkID bpfman.LinkID
-	Err    error
+
+	// Err is nil when the link was detached (or was already removed
+	// earlier in the batch), otherwise it carries the failure for this
+	// link.
+	Err error
 }
 
 // ResolveDeleteProgramIDs resolves the user-facing delete target into

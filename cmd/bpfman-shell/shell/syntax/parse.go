@@ -78,8 +78,8 @@ func validateLocs(prog *Program) error {
 }
 
 // NodeSpan returns the source.Span value embedded in n. Every AST type
-// embeds shell.Span as an anonymous struct field; reflect over
-// n to find that field. Used by validateSpans to enforce the
+// embeds source.Span as an anonymous struct field; reflect over
+// n to find that field. Used by validateLocs to enforce the
 // position-completeness invariant; the rest of the code reaches
 // source.Span through concrete-type access.
 func NodeSpan(n Node) source.Span {
@@ -2715,11 +2715,20 @@ func (p *parser) appendMatchesBlockTokens(buf []Token) ([]Token, error) {
 // errors.As and pull the source.Span directly so the rust-frame caret
 // underlines the actual region.
 type SyntaxError struct {
-	Span  source.Span
-	Msg   string
+	// Span is the source region the diagnostic points at.
+	Span source.Span
+
+	// Msg is the human-readable message.
+	Msg string
+
+	// Cause is the optional underlying error, exposed via Unwrap so
+	// errors.Is and errors.As reach any sentinel beneath the
+	// wrapper.
 	Cause error
 }
 
+// Error renders the diagnostic as "line:col: message", or just the
+// message when no source position is set.
 func (e *SyntaxError) Error() string {
 	if e.Span.Pos.Line == 0 {
 		return e.Msg

@@ -70,15 +70,24 @@ type LinkWriter interface {
 }
 
 // LinkReader reads link metadata from the store.
-// GetLink performs a two-phase lookup: registry then type-specific details.
 type LinkReader interface {
+	// GetLink returns the link record for linkID with its
+	// type-specific details populated. It performs a two-phase
+	// lookup -- link registry, then the per-kind detail table --
+	// and returns ErrRecordNotFound if no link has that ID.
 	GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkRecord, error)
 }
 
 // LinkLister lists links from the store.
 type LinkLister interface {
+	// ListLinks returns every link record with its type-specific
+	// details populated. The iteration order is unspecified.
 	ListLinks(ctx context.Context) ([]bpfman.LinkRecord, error)
+
+	// ListLinksByProgram returns every link attached to programID,
+	// with type-specific details populated.
 	ListLinksByProgram(ctx context.Context, programID kernel.ProgramID) ([]bpfman.LinkRecord, error)
+
 	// ListTCXLinksByInterface returns all TCX links for a given interface/direction/namespace.
 	// Used for computing attach order based on priority.
 	ListTCXLinksByInterface(ctx context.Context, nsid uint64, ifindex uint32, direction string) ([]bpfman.TCXLinkInfo, error)
@@ -166,35 +175,66 @@ type Store interface {
 // transaction does, not the calling context's internal phase
 // organisation.
 type Transactional interface {
+	// RunInTransaction runs fn inside a single transaction,
+	// committing when fn returns nil and rolling back when it
+	// returns an error. The Store passed to fn participates in that
+	// transaction. name classifies the transaction for the store's
+	// timing instrumentation.
 	RunInTransaction(ctx context.Context, name string, fn func(Store) error) error
 }
 
 // ProgramReader reads program metadata from the store.
-// Get returns ErrRecordNotFound if the program does not exist.
 type ProgramReader interface {
+	// Get returns the program record for programID, or
+	// ErrRecordNotFound if no such program exists.
 	Get(ctx context.Context, programID kernel.ProgramID) (bpfman.ProgramRecord, error)
 }
 
 // ProgramWriter writes program metadata to the store.
 type ProgramWriter interface {
+	// Save persists program metadata for programID with
+	// last-write-wins upsert semantics: an existing row is
+	// overwritten rather than rejected, because the kernel recycles
+	// program IDs aggressively after unload.
 	Save(ctx context.Context, programID kernel.ProgramID, metadata bpfman.ProgramRecord) error
+
+	// Delete removes the program record for programID, returning
+	// ErrRecordNotFound if no such program exists.
 	Delete(ctx context.Context, programID kernel.ProgramID) error
 }
 
 // ProgramLister lists all program metadata from the store.
 type ProgramLister interface {
+	// List returns every program record keyed by kernel ID. The
+	// map's iteration order is unspecified.
 	List(ctx context.Context) (map[kernel.ProgramID]bpfman.ProgramRecord, error)
 }
 
 // ProgramFinder finds programs by criteria.
 type ProgramFinder any
 
-// MapOwnershipReader provides access to map ownership information.
+// MapOwnershipReader queries map-sharing relationships. A map set is
+// the group of pinned maps owned by one program and identified by that
+// program's kernel ID; other programs that share those maps reference
+// the same set.
 type MapOwnershipReader interface {
+	// CountMapSets returns the number of map sets currently recorded.
 	CountMapSets(ctx context.Context) (int, error)
+
+	// CountMapSetUsers returns the number of programs that reference
+	// the map set identified by mapSetID, including its owner.
 	CountMapSetUsers(ctx context.Context, mapSetID kernel.ProgramID) (int, error)
+
+	// ListMapSetUsers returns the kernel IDs of the programs that
+	// reference the map set identified by mapSetID, in ascending
+	// order.
 	ListMapSetUsers(ctx context.Context, mapSetID kernel.ProgramID) ([]kernel.ProgramID, error)
+
+	// MapSetExists reports whether a map set with the given ID exists.
 	MapSetExists(ctx context.Context, mapSetID kernel.ProgramID) (bool, error)
+
+	// DeleteMapSet removes the map set identified by mapSetID,
+	// returning ErrRecordNotFound if no such map set exists.
 	DeleteMapSet(ctx context.Context, mapSetID kernel.ProgramID) error
 }
 
@@ -209,12 +249,34 @@ type ProgramStore interface {
 
 // KernelSource provides access to kernel BPF objects.
 type KernelSource interface {
+	// Programs returns an iterator over all BPF programs currently
+	// loaded in the kernel. Each step yields a program or an
+	// enumeration error.
 	Programs(ctx context.Context) iter.Seq2[kernel.Program, error]
+
+	// GetProgramByID returns the kernel-reported information for the
+	// program with the given ID.
 	GetProgramByID(ctx context.Context, id kernel.ProgramID) (kernel.Program, error)
+
+	// GetProgramStatsByID returns runtime statistics for the program
+	// with the given ID, or nil if statistics are unavailable (for
+	// example when kernel.bpf_stats_enabled is 0).
 	GetProgramStatsByID(ctx context.Context, id kernel.ProgramID) (*kernel.ProgramStats, error)
+
+	// GetLinkByID returns the kernel-reported information for the
+	// link with the given ID.
 	GetLinkByID(ctx context.Context, id kernel.LinkID) (kernel.Link, error)
+
+	// GetMapByID returns the kernel-reported information for the map
+	// with the given ID.
 	GetMapByID(ctx context.Context, id kernel.MapID) (kernel.Map, error)
+
+	// Maps returns an iterator over all BPF maps currently loaded in
+	// the kernel.
 	Maps(ctx context.Context) iter.Seq2[kernel.Map, error]
+
+	// Links returns an iterator over all BPF links currently present
+	// in the kernel.
 	Links(ctx context.Context) iter.Seq2[kernel.Link, error]
 }
 
@@ -238,7 +300,12 @@ type ProgramLoader interface {
 
 // ProgramUnloader removes BPF programs from the kernel.
 type ProgramUnloader interface {
+	// Unload removes a BPF program from the kernel by unpinning it
+	// at pinPath. It handles both a single-directory pin layout and
+	// a split layout (separate program pin and maps directory), and
+	// treats a missing path as success.
 	Unload(ctx context.Context, pinPath string) error
+
 	// UnloadProgram removes a program and its maps using the upstream pin layout.
 	UnloadProgram(ctx context.Context, progPinPath bpfman.ProgPinPath, mapsDir string) error
 }
@@ -247,6 +314,7 @@ type ProgramUnloader interface {
 type PinInspector interface {
 	// ListPinDir scans a bpffs directory and returns its contents.
 	ListPinDir(ctx context.Context, pinDir string, includeMaps bool) (*kernel.PinDirContents, error)
+
 	// GetPinned loads and returns info about a pinned program.
 	GetPinned(ctx context.Context, pinPath string) (*kernel.PinnedProgram, error)
 }
@@ -257,17 +325,21 @@ type PinInspector interface {
 type ProgramAttacher interface {
 	// AttachTracepoint attaches a pinned program to a tracepoint.
 	AttachTracepoint(ctx context.Context, progPinPath bpfman.ProgPinPath, group, name string, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error)
+
 	// AttachXDP attaches a pinned XDP program to a network interface.
 	AttachXDP(ctx context.Context, progPinPath bpfman.ProgPinPath, ifindex int, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error)
+
 	// AttachKprobe attaches a pinned program to a kernel function.
 	// If retprobe is true, attaches as a kretprobe instead of kprobe.
 	AttachKprobe(ctx context.Context, progPinPath bpfman.ProgPinPath, fnName string, offset uint64, retprobe bool, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error)
+
 	// AttachUprobeLocal attaches a pinned program to a user-space function
 	// in the current namespace. Does not spawn a helper, so no lock scope needed.
 	// target is the path to the binary or library (e.g., /usr/lib/libc.so.6).
 	// pid > 0 scopes the probe to that process; 0 traces all processes.
 	// If retprobe is true, attaches as a uretprobe instead of uprobe.
 	AttachUprobeLocal(ctx context.Context, progPinPath bpfman.ProgPinPath, target, fnName string, offset uint64, pid int32, retprobe bool, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error)
+
 	// AttachUprobeContainer attaches a pinned program to a user-space function
 	// in a container's mount namespace. Spawns bpfman-ns helper, so requires
 	// lock scope to pass fd.
@@ -276,9 +348,11 @@ type ProgramAttacher interface {
 	// If retprobe is true, attaches as a uretprobe instead of uprobe.
 	// containerPid identifies the target container.
 	AttachUprobeContainer(ctx context.Context, scope lock.WriterScope, progPinPath bpfman.ProgPinPath, target, fnName string, offset uint64, pid int32, retprobe bool, linkPinPath bpfman.LinkPath, containerPid int32) (bpfman.AttachOutput, error)
+
 	// AttachFentry attaches a pinned program to a kernel function entry point.
 	// The fnName was specified at load time and stored with the program.
 	AttachFentry(ctx context.Context, progPinPath bpfman.ProgPinPath, fnName string, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error)
+
 	// AttachFexit attaches a pinned program to a kernel function exit point.
 	// The fnName was specified at load time and stored with the program.
 	AttachFexit(ctx context.Context, progPinPath bpfman.ProgPinPath, fnName string, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error)
@@ -286,10 +360,20 @@ type ProgramAttacher interface {
 
 // XDPDispatcherResult holds the result of loading an XDP dispatcher.
 type XDPDispatcherResult struct {
-	DispatcherID  kernel.ProgramID   // Kernel program ID of the dispatcher
-	KernelLinkID  kernel.LinkID      // Kernel link ID
-	DispatcherPin bpfman.ProgPinPath // Pin path for dispatcher program
-	LinkPin       bpfman.LinkPath    // Pin path for link
+	// DispatcherID is the kernel program ID of the loaded dispatcher
+	// program.
+	DispatcherID kernel.ProgramID
+
+	// KernelLinkID is the kernel link ID of the XDP link binding the
+	// dispatcher to the interface.
+	KernelLinkID kernel.LinkID
+
+	// DispatcherPin is the bpffs path at which the dispatcher program
+	// is pinned.
+	DispatcherPin bpfman.ProgPinPath
+
+	// LinkPin is the bpffs path at which the XDP link is pinned.
+	LinkPin bpfman.LinkPath
 }
 
 // TCDispatcherResult holds the result of loading a TC dispatcher.
@@ -297,10 +381,20 @@ type XDPDispatcherResult struct {
 // links, so there is no link ID or link pin. Instead the kernel
 // assigns a handle that identifies the filter for later removal.
 type TCDispatcherResult struct {
-	DispatcherID  kernel.ProgramID   // Kernel program ID of the dispatcher
-	DispatcherPin bpfman.ProgPinPath // Pin path for dispatcher program
-	Handle        uint32             // Kernel-assigned tc filter handle
-	Priority      uint16             // tc filter priority (typically 50)
+	// DispatcherID is the kernel program ID of the loaded dispatcher
+	// program.
+	DispatcherID kernel.ProgramID
+
+	// DispatcherPin is the bpffs path at which the dispatcher program
+	// is pinned.
+	DispatcherPin bpfman.ProgPinPath
+
+	// Handle is the exact tc filter handle the kernel assigned, used
+	// to target this filter for later removal.
+	Handle uint32
+
+	// Priority is the tc filter priority (typically 50).
+	Priority uint16
 }
 
 // ExtensionLinkInfo is the kernel-reported state of a pinned freplace
@@ -308,10 +402,20 @@ type TCDispatcherResult struct {
 // to verify each freplace's trampoline is observably installed before
 // the dispatcher swap.
 type ExtensionLinkInfo struct {
-	KernelLinkID kernel.LinkID    // Kernel link ID
-	TargetProgID kernel.ProgramID // Kernel program ID of the dispatcher being replaced into
-	TargetBtfID  uint32           // BTF type ID of the stub function being replaced
-	AttachType   uint32           // Kernel attach type
+	// KernelLinkID is the kernel link ID of the freplace extension
+	// link.
+	KernelLinkID kernel.LinkID
+
+	// TargetProgID is the kernel program ID of the dispatcher program
+	// the extension is replacing into.
+	TargetProgID kernel.ProgramID
+
+	// TargetBtfID is the BTF type ID of the dispatcher stub function
+	// being replaced.
+	TargetBtfID uint32
+
+	// AttachType is the kernel attach type reported for the link.
+	AttachType uint32
 }
 
 // DispatcherAttacher attaches dispatcher programs for multi-program chaining.
@@ -452,19 +556,34 @@ type KernelOperations interface {
 // boundary: the manager owns it, and the gRPC server and CLI pass
 // interface names through untouched.
 type InterfaceResolver interface {
+	// InterfaceByName resolves the interface name to its kernel
+	// ifindex within the namespace at netnsPath, returning
+	// ErrInterfaceNotFound when the name or namespace cannot be
+	// resolved.
 	InterfaceByName(ctx context.Context, name, netnsPath string) (ifindex int, err error)
 }
 
 // ImageRef describes an OCI image to pull.
 type ImageRef struct {
-	URL        string
+	// URL is the OCI image reference to pull (for example
+	// quay.io/org/repo:tag).
+	URL string
+
+	// PullPolicy governs whether the image is fetched from the
+	// registry or served from the local cache (Always, IfNotPresent,
+	// or Never).
 	PullPolicy bpfman.ImagePullPolicy
-	Auth       *ImageAuth // nil for anonymous access
+
+	// Auth carries registry credentials, or nil for anonymous access.
+	Auth *ImageAuth
 }
 
 // ImageAuth contains credentials for authenticating to an OCI registry.
 type ImageAuth struct {
+	// Username is the registry account name for basic auth.
 	Username string
+
+	// Password is the registry password or token for basic auth.
 	Password string
 }
 
@@ -477,14 +596,19 @@ func (a *ImageAuth) Complete() bool {
 type PulledImage struct {
 	// ObjectPath is the path to the extracted ELF bytecode file.
 	ObjectPath string
+
 	// Programs maps program names to their types from the io.ebpf.programs label.
 	Programs map[string]string
+
 	// Maps maps map names to their types from the io.ebpf.maps label.
 	Maps map[string]string
+
 	// URL is the OCI image reference that was pulled.
 	URL string
+
 	// Digest is the resolved image digest.
 	Digest string
+
 	// PullPolicy is the policy that was used when pulling.
 	PullPolicy bpfman.ImagePullPolicy
 }
@@ -501,6 +625,8 @@ type ImagePuller interface {
 // policy.
 type SignatureVerificationStatus string
 
+// The signature-verification outcomes: verification disabled, the
+// signature verified, or an unsigned image accepted by policy.
 const (
 	SignatureVerificationDisabled         SignatureVerificationStatus = "disabled"
 	SignatureVerificationVerified         SignatureVerificationStatus = "verified"
@@ -510,14 +636,21 @@ const (
 // SignatureVerification is the result of a successful signature policy
 // decision.
 type SignatureVerification struct {
+	// Status describes how the image satisfied signature policy
+	// (verification disabled, signature verified, or unsigned image
+	// accepted).
 	Status SignatureVerificationStatus
 }
 
 // SignatureVerificationRequest describes an OCI image signature policy
 // check.
 type SignatureVerificationRequest struct {
+	// ImageRef is the OCI image reference whose signature is checked.
 	ImageRef string
-	Auth     *ImageAuth // nil for anonymous/default registry access
+
+	// Auth carries registry credentials, or nil for
+	// anonymous/default registry access.
+	Auth *ImageAuth
 }
 
 // SignatureVerifier verifies OCI image signatures.
@@ -531,17 +664,31 @@ type SignatureVerifier interface {
 
 // DiscoveredProgram represents a program found in a BPF object file.
 type DiscoveredProgram struct {
-	Name        string
+	// Name is the program's function/symbol name as defined in the
+	// ELF object.
+	Name string
+
+	// SectionName is the ELF section the program was defined in (for
+	// example "fentry/vfs_read").
 	SectionName string
-	Type        bpfman.ProgramType
-	AttachFunc  string // For fentry/fexit, extracted from section name (e.g., "fentry/vfs_read" -> "vfs_read")
+
+	// Type is the attach-oriented program type inferred from the
+	// section name.
+	Type bpfman.ProgramType
+
+	// AttachFunc is the target function extracted from the section
+	// name for fentry/fexit programs (e.g. "fentry/vfs_read" ->
+	// "vfs_read"). It is empty for other program types.
+	AttachFunc string
 }
 
 // ProgramDiscoverer discovers programs in BPF object files.
 type ProgramDiscoverer interface {
-	// DiscoverPrograms scans a BPF object file and returns all loadable
-	// programs. Programs with fentry/fexit types are skipped because they
-	// require an explicit attach function.
+	// DiscoverPrograms scans a BPF object file and returns every
+	// program whose section name maps to a recognised type; a
+	// section with no known type is skipped. fentry and fexit
+	// programs are included, each carrying the attach function
+	// extracted from its section name.
 	DiscoverPrograms(objectPath string) ([]DiscoveredProgram, error)
 
 	// ValidatePrograms checks that all specified program names exist in

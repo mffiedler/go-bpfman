@@ -26,6 +26,8 @@ import (
 // Tests that only exercise expression evaluation can leave both
 // unset.
 type Env struct {
+	// Session is the variable and def store the evaluator reads and
+	// writes throughout a run.
 	Session *Session
 
 	// ExecCommand runs a top-level syntax.CommandStmt. span is the
@@ -102,7 +104,7 @@ type Env struct {
 	// silently.
 	HandleJobLeak func(*Job)
 
-	// defers is the active defer scope's stack. evalDeferStmt
+	// defers is the active defer scope's stack. execRegisterDefer
 	// appends; runDefers drains LIFO at scope exit. The
 	// top-level program and def bodies establish new scopes by
 	// saving and replacing the field; if/foreach/retry blocks
@@ -136,11 +138,15 @@ type Env struct {
 	// place the user sees the timeout summary.
 	RenderPollFailure func(span source.Span, timeout, every time.Duration, attempts int, lastRetry string)
 
-	// Now and Sleep are the clock hooks the retrying constructs
-	// consult. Drivers leave them nil to use time.Now and
-	// time.Sleep; tests override them to make timeout boundaries
-	// deterministic without package-global state.
-	Now   func() time.Time
+	// Now is the clock hook the retrying constructs consult.
+	// Drivers leave it nil to use time.Now; tests override it to
+	// make timeout boundaries deterministic without package-global
+	// state.
+	Now func() time.Time
+
+	// Sleep is the delay hook the retrying constructs consult.
+	// Drivers leave it nil to use time.Sleep; tests override it
+	// alongside Now so timeout boundaries stay deterministic.
 	Sleep func(time.Duration)
 
 	// defCallDepth counts the def-call frames currently active
@@ -186,6 +192,9 @@ func (e *Env) exitPoll() {
 	}
 }
 
+// InPoll reports whether a poll construct is currently executing.
+// Helper bodies can observe this even when the helper text is not
+// itself nested directly inside a poll block.
 func (e *Env) InPoll() bool {
 	return e != nil && e.activePolls > 0
 }
@@ -463,16 +472,10 @@ type deferEntry struct {
 	trace func(pos source.Pos, rendered string)
 }
 
-// evalDeferStmt evaluates the deferred command's arguments now
-// (so values are captured at register time, not at scope exit)
-// and appends the entry to the active defer scope's stack. A
-// missing scope is a runtime error; the parser does not enforce
-// that defer is reachable, so a malformed driver could trip this
-// check.
-// runDefers drains stack in LIFO order, dispatching each entry
-// via env.ExecBind. A non-ok rc is rendered through
-// RenderDeferFailure (when set) and counted via Session so the
-// script's exit code reflects the failure; cleanup continues
+// runDefers drains the active defer scope's stack in LIFO order,
+// dispatching each entry via env.ExecBind. A non-ok rc is rendered
+// through RenderDeferFailure (when set) and counted via Session so
+// the script's exit code reflects the failure; cleanup continues
 // across failures. Structural errors from ExecBind are rare;
 // they are rendered with an empty-rc envelope so the user still
 // sees a labelled block.
@@ -676,17 +679,6 @@ func reportJobLeaks(env *Env, jobs []*Job) {
 	}
 }
 
-// dispatchBindHead resolves args[0] to either a def call or
-// the external bind-dispatch path. Used by every bind-position
-// site (evalBindStmt, bind-collect producer, runDefers) so the
-// def-vs-external precedence is one rule applied at one site
-// rather than three.
-//
-// The helper returns the BindResult and error verbatim. source.Span
-// framing is left to the caller because the relevant span
-// differs per site (the bind statement, the producer command,
-// the defer entry); a helper-side syntax.FrameAt would either
-// over-fit one site or lose context.
 // dispatchBindByPolicy runs the shell-level head-resolution rule
 // named by policy. Today the only bind-position policy is
 // def-first fallback to ExecBind, but keeping the policy
@@ -746,12 +738,6 @@ func lookupDefHead(args []Arg, env *Env) (*defValue, bool) {
 	return env.Session.getDef(name)
 }
 
-// applyBindResult installs result into the syntax.BindStmt's named slots
-// or halts via GuardFailure on a non-ok envelope under the guard
-// form. Shared between the def-dispatch and ExecBind paths so the
-// caller-visible binding semantics stay identical no matter how
-// the BindResult was produced.
-
 // ErrRequireFailed is the sentinel error chained under a
 // *RequireFailure so `errors.Is(err, ErrRequireFailed)` at
 // script-loop boundaries recognises a failed `require`. The
@@ -768,12 +754,25 @@ var ErrRequireFailed = errors.New("require failed")
 // failed and the Primary name (the bind target the user wrote)
 // for the diagnostic.
 type GuardFailure struct {
+	// Span is the source extent of the offending guard bind, so the
+	// renderer can cite the failing statement.
 	source.Span
-	Primary  string
-	Args     []Arg
+
+	// Primary is the bind target the user wrote ("_" for a
+	// throwaway bind), named in the diagnostic.
+	Primary string
+
+	// Args is the resolved argument list of the failed command, so
+	// the renderer can show the command line that failed.
+	Args []Arg
+
+	// Envelope is the captured non-ok result, carrying the exit
+	// code, stdout, and stderr.
 	Envelope Envelope
 }
 
+// Error renders the guard failure as "guard <target>: command failed
+// (exit N)", appending the captured stderr when present.
 func (e *GuardFailure) Error() string {
 	target := e.Primary
 	if target == "" || target == "_" {
@@ -793,11 +792,19 @@ func (e *GuardFailure) Error() string {
 // environment-or-programmer mistakes that propagate as untyped
 // errors and remain fatal under retrying constructs.
 type CommandFailure struct {
+	// Span is the source extent of the failing command statement.
 	source.Span
-	Args     []Arg
+
+	// Args is the resolved argument list of the failed command.
+	Args []Arg
+
+	// Envelope is the captured non-ok result, carrying the exit
+	// code, stdout, and stderr.
 	Envelope Envelope
 }
 
+// Error renders the command failure as "command failed (exit N)",
+// appending the captured stderr when present.
 func (e *CommandFailure) Error() string {
 	if e.Envelope.Stderr != "" {
 		return fmt.Sprintf("command failed (exit %d): %s",
@@ -810,10 +817,16 @@ func (e *CommandFailure) Error() string {
 // condition did not hold. Tests and helper hooks use it directly
 // when they need a concrete assertion-failure value.
 type AssertFailure struct {
+	// Span is the source extent of the failing assert statement.
 	source.Span
+
+	// Expr is the rendered assertion expression, or empty when the
+	// caller supplied no expression text.
 	Expr string
 }
 
+// Error renders the failure as "assert failed", appending the
+// expression text when Expr is non-empty.
 func (e *AssertFailure) Error() string {
 	if e.Expr == "" {
 		return "assert failed"
@@ -827,10 +840,16 @@ func (e *AssertFailure) Error() string {
 // halts at the same script-loop boundaries that already check
 // for the sentinel.
 type RequireFailure struct {
+	// Span is the source extent of the failing require statement.
 	source.Span
+
+	// Expr is the rendered predicate expression, or empty when the
+	// caller supplied no expression text.
 	Expr string
 }
 
+// Error renders the failure as "require failed", appending the
+// expression text when Expr is non-empty.
 func (e *RequireFailure) Error() string {
 	if e.Expr == "" {
 		return "require failed"
@@ -838,6 +857,9 @@ func (e *RequireFailure) Error() string {
 	return "require failed: " + e.Expr
 }
 
+// Unwrap returns ErrRequireFailed so errors.Is(err, ErrRequireFailed)
+// halts at the same script-loop boundaries that already check for the
+// sentinel.
 func (e *RequireFailure) Unwrap() error { return ErrRequireFailed }
 
 // commandHeadName extracts the command name from the first argument

@@ -20,10 +20,13 @@ type LinkID uint64
 type TCXAttachOrder struct {
 	// First attaches at the head of the chain (runs before all others).
 	First bool `json:"first"`
+
 	// Last attaches at the tail of the chain (runs after all others).
 	Last bool `json:"last"`
+
 	// BeforeProgID attaches before the program with this kernel ID. Zero means not set.
 	BeforeProgID kernel.ProgramID `json:"before_prog_id"`
+
 	// AfterProgID attaches after the program with this kernel ID. Zero means not set.
 	AfterProgID kernel.ProgramID `json:"after_prog_id"`
 }
@@ -110,27 +113,43 @@ func NewLinkPath[P ~string](s P) *LinkPath {
 // The interface is sealed via the unexported linkDetails() method -
 // only types in this package can implement it.
 type LinkDetails interface {
-	linkDetails()   // unexported - only our types can implement
-	Kind() LinkKind // returns the kind for this detail type
+	// linkDetails is an unexported marker; only types in this package
+	// can implement LinkDetails.
+	linkDetails()
+
+	// Kind returns the LinkKind for this detail type.
+	Kind() LinkKind
 }
 
 // TracepointDetails contains fields specific to tracepoint attachments.
 type TracepointDetails struct {
+	// Group is the tracepoint group (the directory under events/).
 	Group string `json:"group"`
-	Name  string `json:"name"`
+
+	// Name is the tracepoint name within the group.
+	Name string `json:"name"`
 }
 
-func (TracepointDetails) linkDetails()   {}
+func (TracepointDetails) linkDetails() {}
+
+// Kind returns LinkKindTracepoint.
 func (TracepointDetails) Kind() LinkKind { return LinkKindTracepoint }
 
 // KprobeDetails contains fields specific to kprobe/kretprobe attachments.
 type KprobeDetails struct {
-	FnName   string `json:"fn_name"`
-	Offset   uint64 `json:"offset"`
-	Retprobe bool   `json:"retprobe"`
+	// FnName is the kernel function the probe attaches to.
+	FnName string `json:"fn_name"`
+
+	// Offset is the byte offset into the function at which to attach.
+	Offset uint64 `json:"offset"`
+
+	// Retprobe selects the return variant (kretprobe) when set.
+	Retprobe bool `json:"retprobe"`
 }
 
 func (KprobeDetails) linkDetails() {}
+
+// Kind returns LinkKindKretprobe when Retprobe is set, otherwise LinkKindKprobe.
 func (d KprobeDetails) Kind() LinkKind {
 	if d.Retprobe {
 		return LinkKindKretprobe
@@ -144,15 +163,28 @@ func (d KprobeDetails) Kind() LinkKind {
 // within Target. PID 0 means attach system-wide; a non-zero PID restricts
 // the probe to that process. ContainerPid 0 means not container-scoped.
 type UprobeDetails struct {
-	Target       string `json:"target"`
-	FnName       string `json:"fn_name"`
-	Offset       uint64 `json:"offset"`
-	PID          int32  `json:"pid"`
-	Retprobe     bool   `json:"retprobe"`
-	ContainerPid int32  `json:"container_pid"`
+	// Target is the executable or library the probe attaches to.
+	Target string `json:"target"`
+
+	// FnName is the symbol to attach by; empty selects offset-based attachment.
+	FnName string `json:"fn_name"`
+
+	// Offset is the byte offset within Target to attach at when FnName is empty.
+	Offset uint64 `json:"offset"`
+
+	// PID restricts the probe to that process; 0 means attach system-wide.
+	PID int32 `json:"pid"`
+
+	// Retprobe selects the return variant (uretprobe) when set.
+	Retprobe bool `json:"retprobe"`
+
+	// ContainerPid scopes the probe to a container; 0 means not container-scoped.
+	ContainerPid int32 `json:"container_pid"`
 }
 
 func (UprobeDetails) linkDetails() {}
+
+// Kind returns LinkKindUretprobe when Retprobe is set, otherwise LinkKindUprobe.
 func (d UprobeDetails) Kind() LinkKind {
 	if d.Retprobe {
 		return LinkKindUretprobe
@@ -162,35 +194,62 @@ func (d UprobeDetails) Kind() LinkKind {
 
 // FentryDetails contains fields specific to fentry attachments.
 type FentryDetails struct {
+	// FnName is the kernel function the fentry program traces.
 	FnName string `json:"fn_name"`
 }
 
-func (FentryDetails) linkDetails()   {}
+func (FentryDetails) linkDetails() {}
+
+// Kind returns LinkKindFentry.
 func (FentryDetails) Kind() LinkKind { return LinkKindFentry }
 
 // FexitDetails contains fields specific to fexit attachments.
 type FexitDetails struct {
+	// FnName is the kernel function the fexit program traces.
 	FnName string `json:"fn_name"`
 }
 
-func (FexitDetails) linkDetails()   {}
+func (FexitDetails) linkDetails() {}
+
+// Kind returns LinkKindFexit.
 func (FexitDetails) Kind() LinkKind { return LinkKindFexit }
 
 // XDPDetails contains fields specific to XDP attachments.
 // Netns empty means the root network namespace.
 type XDPDetails struct {
-	Interface    string           `json:"interface"`
-	Ifindex      uint32           `json:"ifindex"`
-	Priority     int32            `json:"priority"`
-	Position     int32            `json:"position"`
-	ProceedOn    []int32          `json:"proceed_on"`
-	Netns        string           `json:"netns"`
-	Nsid         uint64           `json:"nsid"`
+	// Interface is the name of the network interface the program attaches to.
+	Interface string `json:"interface"`
+
+	// Ifindex is the index of that network interface.
+	Ifindex uint32 `json:"ifindex"`
+
+	// Priority is the attach priority used to order the program within the
+	// dispatcher chain.
+	Priority int32 `json:"priority"`
+
+	// Position is the 0-based slot index within the dispatcher chain.
+	Position int32 `json:"position"`
+
+	// ProceedOn is the set of kernel return codes on which the dispatcher
+	// proceeds to the next program.
+	ProceedOn []int32 `json:"proceed_on"`
+
+	// Netns is the network namespace path; empty means the root network namespace.
+	Netns string `json:"netns"`
+
+	// Nsid is the network namespace ID the dispatcher runs in.
+	Nsid uint64 `json:"nsid"`
+
+	// DispatcherID is the kernel ID of the owning dispatcher program.
 	DispatcherID kernel.ProgramID `json:"dispatcher_id"`
-	Revision     uint32           `json:"revision"`
+
+	// Revision is the dispatcher revision this link belongs to.
+	Revision uint32 `json:"revision"`
 }
 
-func (XDPDetails) linkDetails()   {}
+func (XDPDetails) linkDetails() {}
+
+// Kind returns LinkKindXDP.
 func (XDPDetails) Kind() LinkKind { return LinkKindXDP }
 
 // TCDirection represents the direction of TC traffic (ingress or egress).
@@ -202,6 +261,7 @@ func (XDPDetails) Kind() LinkKind { return LinkKindXDP }
 // bpfman's own stored records.
 type TCDirection string
 
+// The known TC attach directions.
 const (
 	TCDirectionIngress TCDirection = "ingress"
 	TCDirectionEgress  TCDirection = "egress"
@@ -232,49 +292,96 @@ func ParseTCDirection(s string) (TCDirection, error) {
 	}
 }
 
+// String returns the direction as a string.
 func (d TCDirection) String() string { return string(d) }
 
 // TCDetails contains fields specific to TC attachments.
 // Netns empty means the root network namespace.
 type TCDetails struct {
-	Interface    string           `json:"interface"`
-	Ifindex      uint32           `json:"ifindex"`
-	Direction    TCDirection      `json:"direction"`
-	Priority     int32            `json:"priority"`
-	Position     int32            `json:"position"`
-	ProceedOn    []int32          `json:"proceed_on"`
-	Netns        string           `json:"netns"`
-	Nsid         uint64           `json:"nsid"`
+	// Interface is the name of the network interface the program attaches to.
+	Interface string `json:"interface"`
+
+	// Ifindex is the index of that network interface.
+	Ifindex uint32 `json:"ifindex"`
+
+	// Direction is the traffic direction (ingress or egress).
+	Direction TCDirection `json:"direction"`
+
+	// Priority is the attach priority used to order the program within the
+	// dispatcher chain.
+	Priority int32 `json:"priority"`
+
+	// Position is the 0-based slot index within the dispatcher chain.
+	Position int32 `json:"position"`
+
+	// ProceedOn is the set of kernel return codes on which the dispatcher
+	// proceeds to the next program.
+	ProceedOn []int32 `json:"proceed_on"`
+
+	// Netns is the network namespace path; empty means the root network namespace.
+	Netns string `json:"netns"`
+
+	// Nsid is the network namespace ID the dispatcher runs in.
+	Nsid uint64 `json:"nsid"`
+
+	// DispatcherID is the kernel ID of the owning dispatcher program.
 	DispatcherID kernel.ProgramID `json:"dispatcher_id"`
-	Revision     uint32           `json:"revision"`
+
+	// Revision is the dispatcher revision this link belongs to.
+	Revision uint32 `json:"revision"`
 }
 
-func (TCDetails) linkDetails()   {}
+func (TCDetails) linkDetails() {}
+
+// Kind returns LinkKindTC.
 func (TCDetails) Kind() LinkKind { return LinkKindTC }
 
 // TCXDetails contains fields specific to TCX attachments.
 // Netns empty means the root network namespace.
 type TCXDetails struct {
-	Interface string      `json:"interface"`
-	Ifindex   uint32      `json:"ifindex"`
+	// Interface is the name of the network interface the program attaches to.
+	Interface string `json:"interface"`
+
+	// Ifindex is the index of that network interface.
+	Ifindex uint32 `json:"ifindex"`
+
+	// Direction is the traffic direction (ingress or egress).
 	Direction TCDirection `json:"direction"`
-	Priority  int32       `json:"priority"`
-	Position  int32       `json:"position"`
-	Netns     string      `json:"netns"`
-	Nsid      uint64      `json:"nsid"`
+
+	// Priority is the attach priority used to order the program in the
+	// kernel's TCX chain.
+	Priority int32 `json:"priority"`
+
+	// Position is the 0-based position in the kernel's TCX program chain.
+	Position int32 `json:"position"`
+
+	// Netns is the network namespace path; empty means the root network namespace.
+	Netns string `json:"netns"`
+
+	// Nsid is the network namespace ID the program runs in.
+	Nsid uint64 `json:"nsid"`
 }
 
-func (TCXDetails) linkDetails()   {}
+func (TCXDetails) linkDetails() {}
+
+// Kind returns LinkKindTCX.
 func (TCXDetails) Kind() LinkKind { return LinkKindTCX }
 
 // TCXLinkInfo combines link summary with TCX-specific details.
 // Used for computing attach order based on priority, and for
 // naming the offending link when a duplicate attach is rejected.
 type TCXLinkInfo struct {
-	LinkID          LinkID           `json:"link_id"`
-	KernelLinkID    kernel.LinkID    `json:"kernel_link_id"`
+	// LinkID is the bpfman management handle for the link.
+	LinkID LinkID `json:"link_id"`
+
+	// KernelLinkID is the kernel bpf_link ID for the attachment.
+	KernelLinkID kernel.LinkID `json:"kernel_link_id"`
+
+	// KernelProgramID is the kernel ID of the attached program.
 	KernelProgramID kernel.ProgramID `json:"kernel_program_id"`
-	Priority        int32            `json:"priority"`
+
+	// Priority is the attach priority, used to compute attach order.
+	Priority int32 `json:"priority"`
 }
 
 // LinkKind is bpfman's discriminator for link types. It is distinct
@@ -286,6 +393,7 @@ type TCXLinkInfo struct {
 // bpfman's own stored records.
 type LinkKind string
 
+// The known link kinds.
 const (
 	LinkKindTracepoint LinkKind = "tracepoint"
 	LinkKindKprobe     LinkKind = "kprobe"
@@ -327,6 +435,7 @@ func LinkKindNames() []string {
 	return names
 }
 
+// String returns the link kind as a string.
 func (k LinkKind) String() string { return string(k) }
 
 // Valid reports whether k is one of the known link kinds. Strict
@@ -370,33 +479,57 @@ func ParseLinkKind(s string) (LinkKind, error) {
 // LinkSpec is the requested managed-link row before the store has allocated a
 // bpfman LinkID.
 type LinkSpec struct {
-	ProgramID    kernel.ProgramID  `json:"program_id"`
-	KernelLinkID *kernel.LinkID    `json:"kernel_link_id"`
-	Kind         LinkKind          `json:"kind"`
-	PinPath      *LinkPath         `json:"pin_path"`
-	Details      LinkDetails       `json:"details"`
-	Metadata     map[string]string `json:"metadata"` // user key/value labels, for selection; nil means none
+	// ProgramID is the kernel ID of the program this link attaches to.
+	ProgramID kernel.ProgramID `json:"program_id"`
+
+	// KernelLinkID is the captured kernel bpf_link ID, nil when none was observed.
+	KernelLinkID *kernel.LinkID `json:"kernel_link_id"`
+
+	// Kind is the link kind; it must equal Details.Kind() when Details is set.
+	Kind LinkKind `json:"kind"`
+
+	// PinPath is the bpffs link pin, nil for an ephemeral link.
+	PinPath *LinkPath `json:"pin_path"`
+
+	// Details holds the type-specific link details.
+	Details LinkDetails `json:"details"`
+
+	// Metadata holds user key/value labels for selection; nil means none.
+	Metadata map[string]string `json:"metadata"`
 }
 
 // LinkRecord is the stored record of an attached link. ID is the bpfman-owned
 // management handle. KernelLinkID is the captured kernel bpf_link ID, if the
 // attach path observed one.
 type LinkRecord struct {
-	ID           LinkID           `json:"id"`
-	ProgramID    kernel.ProgramID `json:"program_id"` // program this attaches to
-	KernelLinkID *kernel.LinkID   `json:"kernel_link_id"`
-	Kind         LinkKind         `json:"kind"`
+	// ID is the bpfman-owned management handle for this link.
+	ID LinkID `json:"id"`
+
+	// ProgramID is the kernel ID of the program this link attaches to.
+	ProgramID kernel.ProgramID `json:"program_id"`
+
+	// KernelLinkID is the captured kernel bpf_link ID, nil when the attach
+	// path observed none.
+	KernelLinkID *kernel.LinkID `json:"kernel_link_id"`
+
+	// Kind is the link kind. When Details is non-nil it must equal
+	// Details.Kind(); constructors enforce this.
+	Kind LinkKind `json:"kind"`
+
 	// PinPath nil distinguishes an ephemeral link from one with a pin. Always
 	// emitted as JSON null in the ephemeral case so the consumer schema is stable.
 	PinPath *LinkPath `json:"pin_path"`
+
 	// Details nil means "no per-kind detail available"; always emitted as JSON
 	// null in that case.
-	Details   LinkDetails `json:"details"`
-	CreatedAt time.Time   `json:"created_at"`
+	Details LinkDetails `json:"details"`
+
+	// CreatedAt is when the link record was created.
+	CreatedAt time.Time `json:"created_at"`
+
 	// Metadata holds user-supplied key/value labels attached at attach time,
 	// used for selection by `link list`. Empty (or nil) means none.
 	Metadata map[string]string `json:"metadata"`
-	// Note: When Details is non-nil, Kind must equal Details.Kind(); constructors enforce this
 }
 
 // newLinkDetails returns a fresh pointer to the concrete
@@ -540,6 +673,7 @@ func (r *LinkRecord) UnmarshalJSON(data []byte) error {
 
 // LinkListResult wraps link list output for consistent JSON structure.
 type LinkListResult struct {
+	// Links is the list of link records.
 	Links []LinkRecord `json:"links"`
 }
 
@@ -610,14 +744,20 @@ type LinkStatus struct {
 	// bpfman did not capture a kernel link ID for this managed attachment.
 	// Always emitted as JSON null in that case; a present pointer carries the
 	// kernel-reported view.
-	Kernel     *kernel.Link `json:"kernel"`
-	KernelSeen bool         `json:"kernel_seen"` // true if kernel enumeration succeeded (distinguishes "not found" from "unknown")
-	PinPresent bool         `json:"pin_present"` // true if pin path exists on filesystem
+	Kernel *kernel.Link `json:"kernel"`
+
+	// KernelSeen is true if kernel enumeration succeeded, distinguishing
+	// "not found" from "unknown".
+	KernelSeen bool `json:"kernel_seen"`
+
+	// PinPresent is true if the pin path exists on the filesystem.
+	PinPresent bool `json:"pin_present"`
 }
 
 // HasLinkID is a capability interface for domain objects that carry a bpfman
 // management handle.
 type HasLinkID interface {
+	// LinkID returns the bpfman management handle.
 	LinkID() LinkID
 }
 
@@ -631,7 +771,10 @@ var (
 // Record comes from the store (what bpfman manages).
 // Status comes from observation (kernel enumeration + filesystem checks).
 type Link struct {
+	// Record is the stored link record (what bpfman manages).
 	Record LinkRecord `json:"record"`
+
+	// Status is the observed link state (kernel enumeration + filesystem checks).
 	Status LinkStatus `json:"status"`
 }
 
@@ -648,9 +791,14 @@ func (r LinkRecord) LinkID() LinkID { return r.ID }
 // AttachOutput parallels LoadOutput for programs: it captures what the
 // kernel returned without mixing in user-provided metadata.
 type AttachOutput struct {
-	KernelLinkID *kernel.LinkID // captured kernel link ID, if observed
-	KernelLink   *kernel.Link   // kernel info, nil when no kernel ID was captured
-	PinPath      LinkPath       // actual bpffs link pin, empty if none was created
+	// KernelLinkID is the captured kernel link ID, if observed.
+	KernelLinkID *kernel.LinkID
+
+	// KernelLink is the kernel link info, nil when no kernel ID was captured.
+	KernelLink *kernel.Link
+
+	// PinPath is the actual bpffs link pin, empty if none was created.
+	PinPath LinkPath
 }
 
 // NewPinnedLinkSpec creates a fully-detailed spec for a pinned link.

@@ -15,7 +15,11 @@ import (
 // assertion policy needs when routing a predicate through
 // assert/require rather than through expression evaluation.
 type AssertPredicateResult struct {
-	Pass    bool
+	// Pass reports whether the predicate held.
+	Pass bool
+
+	// Message is the human-readable explanation reported when the
+	// predicate is used as an assertion and Pass is false.
 	Message string
 }
 

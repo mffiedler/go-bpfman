@@ -28,7 +28,7 @@
 //   - [Layout]: validated filesystem layout, constructed via [New].
 //     All path methods panic on zero-value receivers to catch
 //     programmer errors.
-//   - [Context]: proves that directories exist and bpffs is
+//   - [Runtime]: proves that directories exist and bpffs is
 //     mounted. Obtained from fs/runtime.New() and required by
 //     manager.New().
 //   - [EnsuredImageCache]: proves that the OCI image cache directory

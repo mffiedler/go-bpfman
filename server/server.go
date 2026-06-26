@@ -42,14 +42,37 @@ const (
 
 // RunConfig configures the server daemon.
 type RunConfig struct {
-	Layout       fs.Layout
-	ImageCache   fs.EnsuredImageCache // Capability token proving cache directory exists
-	TCPAddress   string               // Optional TCP address (e.g., ":50051") for remote access
-	CSISupport   bool
-	PprofAddress string // Optional address for pprof HTTP server (e.g., "localhost:2026")
-	SocketPath   string // Optional override for Unix socket path (defaults to layout.SocketPath())
-	Logger       *slog.Logger
-	Config       config.Config
+	// Layout is the bpfman filesystem layout the daemon operates on.
+	Layout fs.Layout
+
+	// ImageCache is a capability token proving the OCI image cache
+	// directory exists; the image puller is built from it.
+	ImageCache fs.EnsuredImageCache
+
+	// TCPAddress is an optional TCP listen address (e.g. ":50051") for
+	// remote access. Empty disables the TCP listener; the Unix socket
+	// is always served.
+	TCPAddress string
+
+	// CSISupport starts the Kubernetes CSI driver alongside the gRPC
+	// server when true.
+	CSISupport bool
+
+	// PprofAddress is an optional address for the pprof HTTP server
+	// (e.g. "localhost:2026"). Empty disables pprof.
+	PprofAddress string
+
+	// SocketPath overrides the Unix socket path; empty defaults to
+	// Layout.SocketPath().
+	SocketPath string
+
+	// Logger is the structured logger used by the daemon and its
+	// subsystems.
+	Logger *slog.Logger
+
+	// Config is the parsed bpfman configuration, supplying signature
+	// verification settings.
+	Config config.Config
 }
 
 // Run starts the bpfman daemon with the given configuration.
@@ -197,8 +220,8 @@ func Run(ctx context.Context, cfg RunConfig) error {
 // in-process serialisation. Mutating handlers (Unload, Attach,
 // Detach) wrap their body in withWriterLock to acquire the
 // file-based writer lock from the lock package; read handlers
-// (List, Get, ListLinks, PullBytecode) run lockless and rely on
-// the store and kernel adapter for safe concurrent access. The
+// (List, Get, ListLinks, GetLink, PullBytecode) run lockless and rely
+// on the store and kernel adapter for safe concurrent access. The
 // Load handler also takes no server-level lock; the manager handles
 // its own conditional flock acquisition for explicit map-owner joins
 // and LIBBPF_PIN_BY_NAME loads. Cross-process serialisation for

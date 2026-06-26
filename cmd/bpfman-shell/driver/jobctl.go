@@ -29,7 +29,7 @@ import (
 
 // FgJob holds the state needed to give and reclaim the
 // terminal's foreground group around a single child invocation.
-// The zero value (ttyFD == -1) means "no TTY in play"; every
+// The disabled value (ttyFD == -1) means "no TTY in play"; every
 // method short-circuits and the call sites do not need to
 // special-case the non-TTY path.
 type FgJob struct {
@@ -44,7 +44,7 @@ func (f FgJob) Enabled() bool {
 
 // NewFgJob inspects stdin. If it is a TTY, returns an FgJob
 // ready to grant the terminal to a child via Grant. Otherwise
-// returns the disabled zero value: every FgJob method becomes
+// returns the disabled value: every FgJob method becomes
 // a no-op so the caller writes the same code path for both
 // the TTY and the non-TTY case.
 func NewFgJob() FgJob {

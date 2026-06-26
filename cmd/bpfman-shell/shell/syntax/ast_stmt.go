@@ -14,7 +14,9 @@ import (
 // Program is the root of a parsed source unit: an ordered sequence
 // of statements with the source location of the first token.
 type Program struct {
+	// Stmts is the ordered top-level statement sequence.
 	Stmts []Stmt
+
 	source.Span
 }
 
@@ -32,15 +34,22 @@ type Stmt interface {
 // bare string so the syntax tree preserves both the interpreter-facing
 // name and the editor/diagnostic-facing source location.
 type Ident struct {
+	// Text is the identifier spelling exactly as it appeared in
+	// source.
 	Text string
+
 	source.Span
 }
 
 // LetStmt binds the result of evaluating RHS to Name. Name is
 // guaranteed to be a valid identifier by the parser.
 type LetStmt struct {
+	// Name is the identifier being bound.
 	Name Ident
-	RHS  Expr
+
+	// RHS is the expression whose evaluated result is bound to Name.
+	RHS Expr
+
 	source.Span
 }
 
@@ -52,8 +61,14 @@ type LetStmt struct {
 // duplicate real names, and all-underscore name lists; runtime
 // errors fire when RHS is not a list or its length does not match.
 type LetDestructureStmt struct {
+	// Names is the fixed-length list of target identifiers; each
+	// non-"_" name binds the element at its position.
 	Names []Ident
-	RHS   Expr
+
+	// RHS is the expression that must evaluate to a list of length
+	// len(Names).
+	RHS Expr
+
 	source.Span
 }
 
@@ -81,34 +96,64 @@ type LetDestructureStmt struct {
 // Exactly one of Cmd and Collect is non-nil. "_" as a target name
 // discards the bind result.
 type BindStmt struct {
-	Target  Ident
-	Cmd     *CommandStmt
+	// Target is the identifier receiving the bind result; "_"
+	// discards it.
+	Target Ident
+
+	// Cmd is the command form whose result is bound; nil when
+	// Collect is set.
+	Cmd *CommandStmt
+
+	// Collect is the bind-collect foreach loop that produces the
+	// bound collection; nil when Cmd is set.
 	Collect *ForEachStmt
-	Guard   bool
+
+	// Guard is true for the `guard NAME <- ...` form, which binds the
+	// unwrapped declared value and halts on failure; false for the
+	// `let NAME <- ...` form, which binds the operation outcome.
+	Guard bool
+
 	source.Span
 }
 
 // IfBranch pairs a condition expression with a block body. Used
 // for the primary branch and each elif.
 type IfBranch struct {
+	// Cond is the condition evaluated to decide whether Body runs.
 	Cond Expr
+
+	// Body is the statements executed when Cond is true.
 	Body []Stmt
+
 	source.Span
 }
 
 // IfStmt is an if-elif-else conditional.
 type IfStmt struct {
-	Cond  Expr
-	Then  []Stmt
+	// Cond is the primary branch condition.
+	Cond Expr
+
+	// Then is the body run when Cond is true.
+	Then []Stmt
+
+	// Elifs is the ordered elif branches, tried in turn when Cond
+	// and all preceding elif conditions are false.
 	Elifs []IfBranch
-	Else  []Stmt
+
+	// Else is the body run when Cond and every elif condition are
+	// false; nil when there is no else.
+	Else []Stmt
+
 	source.Span
 }
 
 // CommandStmt is a plain command invocation. The first element of
 // Args names the command.
 type CommandStmt struct {
+	// Args is the command and its arguments; the first element names
+	// the command to run.
 	Args []Expr
+
 	source.Span
 }
 
@@ -123,7 +168,10 @@ type CommandStmt struct {
 // only purpose is the side effect of evaluation (a pure call, a
 // command substitution that runs for its rc envelope, etc.).
 type ExprStmt struct {
+	// Expr is the expression evaluated for its side effect; its value
+	// is discarded.
 	Expr Expr
+
 	source.Span
 }
 
@@ -134,9 +182,19 @@ type ExprStmt struct {
 // any prior binding of a name is restored on exit and a name that
 // did not exist before the loop disappears again.
 type ForEachStmt struct {
+	// Names is the loop variable(s) bound on each iteration; with
+	// more than one name each element is destructured positionally
+	// across them.
 	Names []Ident
-	List  Expr
-	Body  []Stmt
+
+	// List is the expression evaluated to the structured list
+	// iterated over.
+	List Expr
+
+	// Body is the statements run once per element, with Names bound
+	// for the duration of each iteration.
+	Body []Stmt
+
 	source.Span
 }
 
@@ -152,9 +210,16 @@ type ContinueStmt struct{ source.Span }
 // PollStmt retries a block until it reaches the end without an
 // explicit retry, or until its timeout budget is exhausted.
 type PollStmt struct {
+	// Timeout is the total budget after which polling gives up.
 	Timeout time.Duration
-	Every   time.Duration
-	Body    []Stmt
+
+	// Every is the delay between attempts.
+	Every time.Duration
+
+	// Body is the statements run on each attempt; reaching the end
+	// without an explicit retry stops polling.
+	Body []Stmt
+
 	source.Span
 }
 
@@ -163,22 +228,37 @@ type PollStmt struct {
 // Message is optional; Unless is optional and gates the retry so
 // `retry unless EXPR` becomes a no-op when EXPR is true.
 type RetryStmt struct {
+	// Message is the optional diagnostic shown when the poll budget
+	// is exhausted; nil when omitted.
 	Message Expr
-	Unless  Expr
+
+	// Unless is the optional guard expression; when it evaluates to
+	// true the retry is a no-op. nil when omitted.
+	Unless Expr
+
 	source.Span
 }
 
 // AssertStmt is the syntax-owned assertion statement.
 type AssertStmt struct {
+	// IsRequire distinguishes `require` (true: a failure halts the
+	// script) from `assert` (false).
 	IsRequire bool
-	Clause    AssertClause
+
+	// Clause is the assertion body: an expression clause or a
+	// command-status clause.
+	Clause AssertClause
+
 	source.Span
 }
 
 // DeferStmt registers a cleanup command for the enclosing defer
 // scope.
 type DeferStmt struct {
+	// Cmd is the cleanup command registered to run when the
+	// enclosing defer scope unwinds.
 	Cmd *CommandStmt
+
 	source.Span
 }
 
@@ -189,7 +269,11 @@ type DeferStmt struct {
 // untyped baseline (words bind as strings, variables keep their
 // value kinds).
 type DefParam struct {
+	// Name is the parameter identifier.
 	Name Ident
+
+	// Type is the optional annotation, one of DefParamTypes; empty
+	// for an untyped parameter.
 	Type string
 }
 
@@ -237,15 +321,24 @@ func IsIntegralJSONNumber(text string) bool {
 
 // DefStmt declares a user-defined command.
 type DefStmt struct {
-	Name   Ident
+	// Name is the command name being defined.
+	Name Ident
+
+	// Params is the ordered parameter list.
 	Params []DefParam
-	Body   []Stmt
+
+	// Body is the statements run when the command is invoked.
+	Body []Stmt
+
 	source.Span
 }
 
 // ReturnStmt is the value-publishing exit from a def body.
 type ReturnStmt struct {
+	// Expr is the value published as the def's result. The parser
+	// requires it; bare `return` is rejected.
 	Expr Expr
+
 	source.Span
 }
 

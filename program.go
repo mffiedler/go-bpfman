@@ -27,6 +27,7 @@ import (
 // records rather than revalidating them.
 type ProgramType string
 
+// The known program types.
 const (
 	ProgramTypeXDP        ProgramType = "xdp"
 	ProgramTypeTC         ProgramType = "tc"
@@ -130,13 +131,16 @@ func ParseProgramType(s string) (ProgramType, error) {
 // ProgramHandles contains stable filesystem handles for management.
 // These are outputs of load, used for lifecycle operations.
 type ProgramHandles struct {
+	// PinPath is where the program is pinned in the bpffs.
 	PinPath ProgPinPath `json:"pin_path"`
+
 	// MapsDir is the directory where this program's maps are pinned
 	// (per-program when the program owns its maps, the owner's
 	// MapsDir when the program shares maps via map_owner_id).
 	// JSON tag preserved as map_pin_path for compatibility with
 	// existing on-disk records.
 	MapsDir MapDir `json:"map_pin_path"`
+
 	// MapOwnerID nil means this program is not a shared-map consumer of another
 	// program; emitted as JSON null in that case so the consumer schema is stable.
 	MapOwnerID *kernel.ProgramID `json:"map_owner_id"`
@@ -145,13 +149,20 @@ type ProgramHandles struct {
 // ProgramMeta contains operator-facing management metadata.
 // Searchable/editable without affecting the loaded program.
 type ProgramMeta struct {
-	Name        string `json:"name"`        // human-readable label
-	Owner       string `json:"owner"`       // who manages this; empty means unassigned
-	Description string `json:"description"` // empty means no description
-	// Metadata is always emitted: {} when the operator supplied none, otherwise
-	// the user's key/value pairs. nil and empty map collapse to the empty map at
-	// marshal time so consumers see a stable shape.
-	Metadata map[string]string `json:"metadata"` // arbitrary key/value for selection
+	// Name is a human-readable label for the program.
+	Name string `json:"name"`
+
+	// Owner is who manages this program; empty means unassigned.
+	Owner string `json:"owner"`
+
+	// Description is a free-text description; empty means none.
+	Description string `json:"description"`
+
+	// Metadata holds arbitrary key/value pairs for selection. It is always
+	// emitted: {} when the operator supplied none, otherwise the user's
+	// key/value pairs. nil and empty map collapse to the empty map at marshal
+	// time so consumers see a stable shape.
+	Metadata map[string]string `json:"metadata"`
 }
 
 // ProgramRecord is the stored record of a loaded program (DB-backed).
@@ -161,17 +172,33 @@ type ProgramMeta struct {
 // a program (validated input), while ProgramRecord describes a loaded program's
 // stored state (output). They share some fields but serve different purposes.
 type ProgramRecord struct {
-	// Identity - ProgramID is the DB primary key and user-facing ID
+	// ProgramID is the kernel program ID: the DB primary key and the
+	// user-facing identity.
 	ProgramID kernel.ProgramID `json:"program_id"`
-	Load      LoadSpec         `json:"load"`
-	// License and GPLCompatible are discovered at load time from the ELF.
-	// They live on ProgramRecord (not LoadSpec) because they're properties
-	// of the loaded program, not part of the load request.
-	License       string         `json:"license"` // empty when not discovered (enumerated rather than loaded)
-	GPLCompatible bool           `json:"gpl_compatible"`
-	Handles       ProgramHandles `json:"handles"`
-	Meta          ProgramMeta    `json:"meta"`
-	CreatedAt     time.Time      `json:"created_at"`
+
+	// Load is the validated load request the program was loaded from.
+	Load LoadSpec `json:"load"`
+
+	// License is the program licence discovered at load time from the ELF.
+	// It lives on ProgramRecord (not LoadSpec) because it is a property of
+	// the loaded program, not part of the load request. Empty when not
+	// discovered (enumerated rather than loaded).
+	License string `json:"license"`
+
+	// GPLCompatible reports whether License is GPL-compatible, discovered at
+	// load time from the ELF. It lives on ProgramRecord (not LoadSpec)
+	// because it is a property of the loaded program, not the load request.
+	GPLCompatible bool `json:"gpl_compatible"`
+
+	// Handles holds the stable filesystem handles used for lifecycle operations.
+	Handles ProgramHandles `json:"handles"`
+
+	// Meta holds operator-facing management metadata.
+	Meta ProgramMeta `json:"meta"`
+
+	// CreatedAt is when the program record was created.
+	CreatedAt time.Time `json:"created_at"`
+
 	// UpdatedAt is nil when the record has never been updated
 	// since creation, distinct from CreatedAt. The pointer +
 	// JSON null encoding keeps "created at T, never updated" and
@@ -195,13 +222,31 @@ type ProgramRecord struct {
 // not collected (kernel.bpf_stats_enabled=0, observation skipped,
 // or fetch failed).
 type ProgramStatus struct {
-	Kernel   *kernel.Program      `json:"kernel"`
-	Stats    *kernel.ProgramStats `json:"stats"`
-	ProgPin  ProgPinPath          `json:"prog_pin"`
-	MapDir   MapDir               `json:"map_dir"`
-	Bytecode string               `json:"bytecode"`
-	Links    []Link               `json:"links"` // [] when none
-	Maps     []MapStatus          `json:"maps"`  // [] when none
+	// Kernel is the kernel-observed program info, nil when the program is
+	// not loaded.
+	Kernel *kernel.Program `json:"kernel"`
+
+	// Stats is the kernel-observed run statistics, nil when stats were not
+	// collected.
+	Stats *kernel.ProgramStats `json:"stats"`
+
+	// ProgPin is the canonical bpffs path the program would be pinned at.
+	ProgPin ProgPinPath `json:"prog_pin"`
+
+	// MapDir is the canonical bpffs directory the program's maps would be
+	// pinned under.
+	MapDir MapDir `json:"map_dir"`
+
+	// Bytecode is the canonical filesystem path of the program's stored
+	// bytecode.
+	Bytecode string `json:"bytecode"`
+
+	// Links is the program's links; [] when none.
+	Links []Link `json:"links"`
+
+	// Maps is the program's maps; [] when none.
+	Maps []MapStatus `json:"maps"`
+
 	// MapUsedBy is the set of managed kernel program ids whose records point
 	// at this program's map set, including this program when it is live.
 	MapUsedBy []kernel.ProgramID `json:"map_used_by"`
@@ -212,6 +257,7 @@ type ProgramStatus struct {
 // parsers use this to extract a program ID from an origin-backed
 // structured value without depending on a concrete type.
 type HasKernelProgramID interface {
+	// KernelProgramID returns the kernel-assigned program ID.
 	KernelProgramID() kernel.ProgramID
 }
 
@@ -225,7 +271,10 @@ var (
 // Record comes from the store (what bpfman manages).
 // Status comes from observation (kernel enumeration + filesystem checks).
 type Program struct {
+	// Record is the stored program record (what bpfman manages).
 	Record ProgramRecord `json:"record"`
+
+	// Status is the observed program state (kernel enumeration + filesystem checks).
 	Status ProgramStatus `json:"status"`
 }
 
@@ -268,9 +317,14 @@ func (r ProgramRecord) KernelProgramID() kernel.ProgramID { return r.ProgramID }
 // MapStatus represents observed map state: kernel info plus
 // filesystem pin path and presence.
 type MapStatus struct {
+	// Map is the kernel-reported map info.
 	kernel.Map
+
+	// PinPath is the map's bpffs pin path.
 	PinPath MapPinPath `json:"pin_path"`
-	Present bool       `json:"present"`
+
+	// Present is true when the pin path exists on the filesystem.
+	Present bool `json:"present"`
 }
 
 // ToMapStatus converts kernel maps to MapStatus values with zero-
@@ -297,12 +351,24 @@ func (p ProgramRecord) WithDescription(desc string) ProgramRecord {
 // LoadOutput is the raw result of kernel.Load().
 // This is transient I/O boundary data, not stored in the DB.
 type LoadOutput struct {
-	PinPath        ProgPinPath     // where program was pinned
-	MapsDir        MapDir          // where maps were pinned
-	Program        *kernel.Program // kernel info (ID, MapIDs, etc)
-	License        string          // from ELF, for GPL check
-	InferredType   ProgramType     // inferred from ELF if user didn't specify
-	SharedMapNames []string        // PinByName map names (for reference counting)
+	// PinPath is where the program was pinned.
+	PinPath ProgPinPath
+
+	// MapsDir is where the program's maps were pinned.
+	MapsDir MapDir
+
+	// Program is the kernel-reported program info (ID, MapIDs, etc).
+	Program *kernel.Program
+
+	// License is the licence string from the ELF, for the GPL check.
+	License string
+
+	// InferredType is the program type inferred from the ELF when the user
+	// did not specify one.
+	InferredType ProgramType
+
+	// SharedMapNames is the list of PinByName map names, for reference counting.
+	SharedMapNames []string
 }
 
 // IsGPLCompatible checks if a license string is GPL compatible.
@@ -339,15 +405,30 @@ func TestLoadSpecWithPath(programType ProgramType, objectPath string) LoadSpec {
 // is present only for managed programs; Kernel is present whenever the
 // program was observed in the kernel.
 type ProgramListEntry struct {
-	ProgramID    kernel.ProgramID `json:"program_id"`
-	Managed      bool             `json:"managed"`
-	Application  string           `json:"application"`
-	Type         string           `json:"type"`
-	FunctionName string           `json:"function_name"`
-	Links        []LinkID         `json:"links"`
+	// ProgramID is the kernel program ID.
+	ProgramID kernel.ProgramID `json:"program_id"`
+
+	// Managed reports whether bpfman manages this program.
+	Managed bool `json:"managed"`
+
+	// Application is the application label from the program's metadata;
+	// empty when unset.
+	Application string `json:"application"`
+
+	// Type is the program type name.
+	Type string `json:"type"`
+
+	// FunctionName is the program's entry function name (the stored ELF name
+	// for managed programs, the kernel name otherwise).
+	FunctionName string `json:"function_name"`
+
+	// Links is the bpfman link handles attached to this program; [] when none.
+	Links []LinkID `json:"links"`
+
 	// Record is the managed store record, non-nil only when Managed is
 	// true; it is null for kernel-only programs.
 	Record *ProgramRecord `json:"record"`
+
 	// Kernel is the kernel observation, non-nil when the program is
 	// loaded in the kernel.
 	Kernel *kernel.Program `json:"kernel"`
@@ -359,6 +440,7 @@ type ProgramListEntry struct {
 // managed programs so the listing can include kernel-only rows (under
 // --all) without a synthetic Program.
 type ProgramListResult struct {
+	// Programs is the list of program summary entries.
 	Programs []ProgramListEntry `json:"programs"`
 }
 
@@ -369,6 +451,8 @@ type ProgramListResult struct {
 // Programs are returned in the same order as the input ProgramSpec
 // slice. Tests rely on this ordering contract; do not break it.
 type LoadResult struct {
+	// Programs holds the loaded programs, in the same order as the input
+	// ProgramSpec slice.
 	Programs []Program `json:"programs"`
 }
 

@@ -21,15 +21,38 @@ type LoadImageCmd struct {
 	MetadataFlags
 	GlobalDataFlags
 
-	ImageURL     string                 `arg:"" name:"image" help:"OCI image reference (e.g., quay.io/bpfman-bytecode/xdp_pass:latest)."`
-	Programs     []args.ProgramSpec     `name:"programs" sep:"," help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (comma-separated or repeated). For fentry/fexit, ATTACH_FUNC is required. If not specified, all programs in the image are loaded."`
-	PullPolicy   bpfman.ImagePullPolicy `short:"p" name:"pull-policy" help:"Image pull policy (Always, IfNotPresent, Never)." default:"IfNotPresent"`
-	RegistryAuth string                 `name:"registry-auth" env:"BPFMAN_REGISTRY_AUTH" help:"Base64-encoded registry auth (username:password). Prefer BPFMAN_REGISTRY_AUTH env var to avoid exposing credentials in process listings."`
-	Application  string                 `short:"a" name:"application" help:"Application name to group programs (stored as bpfman.io/application metadata)."`
-	MapOwnerID   kernel.ProgramID       `name:"map-owner-id" help:"Program ID of another program to share maps with."`
+	// ImageURL is the OCI image reference to pull the bytecode from.
+	ImageURL string `arg:"" name:"image" help:"OCI image reference (e.g., quay.io/bpfman-bytecode/xdp_pass:latest)."`
+
+	// Programs selects which programs in the image to load, each given as
+	// TYPE:NAME or TYPE:NAME:ATTACH_FUNC (comma-separated or repeated). For
+	// fentry/fexit the ATTACH_FUNC component is required. When empty, every
+	// program in the image is loaded.
+	Programs []args.ProgramSpec `name:"programs" sep:"," help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (comma-separated or repeated). For fentry/fexit, ATTACH_FUNC is required. If not specified, all programs in the image are loaded."`
+
+	// PullPolicy controls when the image is pulled (Always, IfNotPresent,
+	// or Never); it defaults to IfNotPresent.
+	PullPolicy bpfman.ImagePullPolicy `short:"p" name:"pull-policy" help:"Image pull policy (Always, IfNotPresent, Never)." default:"IfNotPresent"`
+
+	// RegistryAuth carries base64-encoded "username:password" registry
+	// credentials for pulling the image. Prefer the BPFMAN_REGISTRY_AUTH
+	// environment variable so the credentials do not appear in process
+	// listings.
+	RegistryAuth string `name:"registry-auth" env:"BPFMAN_REGISTRY_AUTH" help:"Base64-encoded registry auth (username:password). Prefer BPFMAN_REGISTRY_AUTH env var to avoid exposing credentials in process listings."`
+
+	// Application groups the loaded programs under an application name,
+	// stored as the bpfman.io/application metadata key.
+	Application string `short:"a" name:"application" help:"Application name to group programs (stored as bpfman.io/application metadata)."`
+
+	// MapOwnerID is the kernel program ID of an already-loaded program
+	// whose maps these programs should share instead of creating their own.
+	MapOwnerID kernel.ProgramID `name:"map-owner-id" help:"Program ID of another program to share maps with."`
 }
 
-// Run executes the load image command.
+// Run pulls the OCI image at ImageURL (honouring the pull policy and any
+// registry credentials), loads the selected programs from it (applying
+// metadata, global data, application grouping and any map-owner share),
+// and renders the loaded programs in the chosen output format.
 func (c *LoadImageCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	format, err := c.OutputFlags.Format()
 	if err != nil {

@@ -21,11 +21,22 @@ import (
 // Mutable is bpfman's opened runtime state for callers that may
 // mutate it.
 type Mutable struct {
-	FS         fs.Runtime
-	Store      platform.Store
-	Kernel     platform.KernelOperations
+	// FS is the ensured runtime filesystem, including the bpffs mount.
+	FS fs.Runtime
+
+	// Store is the opened SQLite-backed program and link store.
+	Store platform.Store
+
+	// Kernel is the cilium/ebpf-backed adapter used to load, attach,
+	// and unload programs.
+	Kernel platform.KernelOperations
+
+	// Discoverer enumerates the loadable programs contained in a BPF
+	// object file.
 	Discoverer platform.ProgramDiscoverer
-	Logger     *slog.Logger
+
+	// Logger is the structured logger shared by the runtime adapters.
+	Logger *slog.Logger
 }
 
 // SnapshotReader reads a snapshot of bpfman's runtime state. It

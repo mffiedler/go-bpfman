@@ -71,9 +71,17 @@ const RootNetns = "root"
 // on whichever goroutine created the interface, which by
 // definition is the goroutine that knows what netns it intended.
 type TestInterface struct {
-	Name    string
+	// Name is the kernel-visible interface name programs attach by.
+	Name string
+
+	// Ifindex is the kernel interface index programs attach by.
 	Ifindex int
-	Nsid    uint64
+
+	// Nsid is the inode of the netns the interface was created
+	// in, captured at construction so it does not drift when the
+	// test goroutine later moves between OS threads or switches
+	// netns.
+	Nsid uint64
 }
 
 var testNameSeq atomic.Uint64
@@ -303,10 +311,17 @@ func NewTestInterface(t *testing.T) TestInterface {
 // namespace); traffic is generated from interface B (test
 // namespace).
 type TestVethPair struct {
-	A          TestInterface // root namespace, attach programs here
-	B          TestInterface // test namespace, generate traffic here
-	Netns      string        // network namespace name
-	PingTarget string        // A's IP address (ping destination from B)
+	// A is the root-namespace end of the pair; attach programs here.
+	A TestInterface
+
+	// B is the test-namespace end of the pair; generate traffic here.
+	B TestInterface
+
+	// Netns is the name of the test network namespace holding B.
+	Netns string
+
+	// PingTarget is A's IP address, the ping destination from B.
+	PingTarget string
 }
 
 // vethConfig captures NewTestVethPair's tunable behaviour.

@@ -23,8 +23,19 @@ import "sort"
 // receives a runtime field error rather than a silent empty
 // string.
 type FireKind struct {
-	Mode        string
-	Summary     string
+	// Mode is the BPFMAN_SHELL_MODE value passed to the spawned
+	// bpfman-shell to select this fire worker.
+	Mode string
+
+	// Summary is the short description shown in help and
+	// completion.
+	Summary string
+
+	// NeedsBinary reports whether the resulting Job carries a
+	// target_binary path. When true the kind targets a symbol in
+	// the running bpfman-shell ELF and exposes it as
+	// $work.target_binary; when false the kind's effect is a syscall
+	// or signal and target_binary is not exposed.
 	NeedsBinary bool
 }
 

@@ -27,7 +27,7 @@ import (
 	"github.com/frobware/go-bpfman/version"
 )
 
-// CLI is the root command structure for bpfman-runtime. The binary is
+// CLI is the root command structure for bpfman-shell. The binary is
 // a script runner and inspection tool: with a positional Script it
 // runs the named file; with no positional argument (or Script="-")
 // it reads one whole program from stdin; with --check it parses
@@ -37,19 +37,62 @@ type CLI struct {
 
 	kctx *kong.Context `kong:"-"`
 
-	Scripts     []string `arg:"" optional:"" name:"script" help:"Script file to run; '-' reads a whole program from stdin; omit to read a whole program from stdin. With --list-scripts, accepts files or directories."`
-	Directory   string   `name:"directory" short:"C" help:"Change to this directory before doing anything else, like make -C dir. The script path, imported libraries, spawned subprocesses, and external commands all see the new working directory."`
-	Check       bool     `name:"check" short:"c" help:"Parse input without evaluating; report syntax errors and exit."`
-	NoCheck     bool     `name:"no-check" help:"Skip the static-analysis pre-flight before script evaluation. Default is to run Check first and refuse on errors."`
-	AST         bool     `name:"ast" help:"Parse input and print the AST tree of the whole program to stdout; do not evaluate."`
-	Fmt         bool     `name:"fmt" help:"Format input as canonical bpfman-shell source and print it to stdout; do not evaluate."`
-	FmtWrite    bool     `name:"write" short:"w" help:"Write formatted output back to the script file when used with fmt."`
-	Lowered     bool     `name:"lowered" help:"Parse input, lower it to the canonical IR, and print the lowered form to stdout; do not evaluate."`
-	Symbols     bool     `name:"symbols" help:"Parse input and print a JSON symbol table for editor tooling; do not evaluate."`
-	ListScripts bool     `name:"list-scripts" help:"Print script paths whose header labels match --selector; does not run scripts or open bpfman state."`
-	Selector    string   `name:"selector" help:"Kubernetes-style label selector for --list-scripts, for example 'program in (tc,xdp),external'."`
-	Trace       bool     `name:"trace" short:"x" help:"Trace each statement to stderr with interpolations resolved, like bash -x. Equivalent to running 'trace on' at script start; toggle with 'trace on' / 'trace off' from within a session."`
-	Version     bool     `name:"version" short:"V" help:"Print version information and exit."`
+	// Scripts names the script file to run. A single "-", or an
+	// empty list, reads one whole program from stdin. With
+	// ListScripts it accepts files or directories to enumerate.
+	Scripts []string `arg:"" optional:"" name:"script" help:"Script file to run; '-' reads a whole program from stdin; omit to read a whole program from stdin. With --list-scripts, accepts files or directories."`
+
+	// Directory changes to this directory before anything else
+	// runs, like make -C dir, so the script path, imported
+	// libraries, spawned subprocesses, and external commands all
+	// see the new working directory.
+	Directory string `name:"directory" short:"C" help:"Change to this directory before doing anything else, like make -C dir. The script path, imported libraries, spawned subprocesses, and external commands all see the new working directory."`
+
+	// Check parses the input without evaluating it, reporting
+	// syntax errors and exiting.
+	Check bool `name:"check" short:"c" help:"Parse input without evaluating; report syntax errors and exit."`
+
+	// NoCheck skips the static-analysis pre-flight before script
+	// evaluation; the default runs Check first and refuses on
+	// errors.
+	NoCheck bool `name:"no-check" help:"Skip the static-analysis pre-flight before script evaluation. Default is to run Check first and refuse on errors."`
+
+	// AST parses the input and prints the AST tree of the whole
+	// program to stdout without evaluating.
+	AST bool `name:"ast" help:"Parse input and print the AST tree of the whole program to stdout; do not evaluate."`
+
+	// Fmt formats the input as canonical bpfman-shell source and
+	// prints it to stdout without evaluating.
+	Fmt bool `name:"fmt" help:"Format input as canonical bpfman-shell source and print it to stdout; do not evaluate."`
+
+	// FmtWrite writes the formatted output back to the script file;
+	// valid only together with Fmt.
+	FmtWrite bool `name:"write" short:"w" help:"Write formatted output back to the script file when used with fmt."`
+
+	// Lowered parses the input, lowers it to the canonical IR, and
+	// prints the lowered form to stdout without evaluating.
+	Lowered bool `name:"lowered" help:"Parse input, lower it to the canonical IR, and print the lowered form to stdout; do not evaluate."`
+
+	// Symbols parses the input and prints a JSON symbol table for
+	// editor tooling without evaluating.
+	Symbols bool `name:"symbols" help:"Parse input and print a JSON symbol table for editor tooling; do not evaluate."`
+
+	// ListScripts prints the script paths whose header labels match
+	// Selector; it runs no scripts and opens no bpfman state.
+	ListScripts bool `name:"list-scripts" help:"Print script paths whose header labels match --selector; does not run scripts or open bpfman state."`
+
+	// Selector is the Kubernetes-style label selector applied by
+	// ListScripts, for example 'program in (tc,xdp),external'.
+	Selector string `name:"selector" help:"Kubernetes-style label selector for --list-scripts, for example 'program in (tc,xdp),external'."`
+
+	// Trace traces each statement to stderr with interpolations
+	// resolved, like bash -x. It is equivalent to running
+	// 'trace on' at script start; toggle within a session with
+	// 'trace on' / 'trace off'.
+	Trace bool `name:"trace" short:"x" help:"Trace each statement to stderr with interpolations resolved, like bash -x. Equivalent to running 'trace on' at script start; toggle with 'trace on' / 'trace off' from within a session."`
+
+	// Version prints version information and exits.
+	Version bool `name:"version" short:"V" help:"Print version information and exit."`
 }
 
 // NewCLI creates and initialises a CLI instance by parsing

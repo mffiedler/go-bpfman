@@ -69,9 +69,18 @@ const (
 // time. source.Pos points at the segment's first byte in the enclosing
 // input so diagnostics cite the right column.
 type InterpSegment struct {
+	// Literal is the verbatim text of a literal segment; it is
+	// unused when IsLit is false.
 	Literal string
-	Inner   string
+
+	// Inner is the raw source of an "${...}" interpolation, without
+	// the '${' and '}' delimiters; it is unused when IsLit is true.
+	Inner string
+
 	source.Span
+
+	// IsLit is true for a literal-text segment and false for an
+	// interpolation segment.
 	IsLit bool
 }
 
@@ -81,12 +90,29 @@ type InterpSegment struct {
 // promoted fields -- tok.Pos for the start, tok.Line / tok.Col,
 // tok.End for the end -- match the AST-node pattern.
 type Token struct {
-	Kind     TokenKind
-	Text     string          // content (stripped quotes for TokenQuoted)
-	VarName  string          // variable name for TokenVarRef and TokenAdapterRef
-	VarPath  string          // field path for TokenVarRef and TokenAdapterRef (empty if bare)
-	Adapter  string          // adapter name for TokenAdapterRef (e.g. "file")
-	Segments []InterpSegment // literal/interp pieces for TokenInterpString
+	// Kind is the lexical class of the token.
+	Kind TokenKind
+
+	// Text is the token's content, with surrounding quotes stripped
+	// for TokenQuoted.
+	Text string
+
+	// VarName is the variable name for TokenVarRef and
+	// TokenAdapterRef, empty for other kinds.
+	VarName string
+
+	// VarPath is the field path for TokenVarRef and TokenAdapterRef,
+	// empty when the reference is bare.
+	VarPath string
+
+	// Adapter is the adapter name for TokenAdapterRef (for example
+	// "file"), empty for other kinds.
+	Adapter string
+
+	// Segments is the alternation of literal and interpolation
+	// pieces for TokenInterpString, nil for other kinds.
+	Segments []InterpSegment
+
 	source.Span
 }
 

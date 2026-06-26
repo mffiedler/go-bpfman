@@ -56,7 +56,11 @@ type defValue struct {
 // language-facing shape rather than on the runtime's internal def
 // storage.
 type DefSignature struct {
-	Name   string
+	// Name is the registered def's name.
+	Name string
+
+	// Params lists the parameter declarations in order, each
+	// rendered as it appeared in the def header.
 	Params []string
 }
 

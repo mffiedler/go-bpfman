@@ -16,6 +16,8 @@ type TCAction struct {
 	code int32
 }
 
+// The known TC actions, each pairing a name with its kernel TC_ACT_*
+// return code.
 var (
 	TCActionUnspec           = TCAction{"unspec", -1}
 	TCActionOK               = TCAction{"ok", 0}
@@ -64,10 +66,17 @@ var tcActionByCode = func() map[int32]TCAction {
 	return m
 }()
 
-func (a TCAction) String() string               { return a.name }
-func (a TCAction) Int32() int32                 { return a.code }
+// String returns the action name.
+func (a TCAction) String() string { return a.name }
+
+// Int32 returns the kernel TC_ACT_* return code.
+func (a TCAction) Int32() int32 { return a.code }
+
+// MarshalText implements encoding.TextMarshaler, encoding the action as its name.
 func (a TCAction) MarshalText() ([]byte, error) { return []byte(a.name), nil }
 
+// UnmarshalText implements encoding.TextUnmarshaler, parsing the action
+// name case-insensitively.
 func (a *TCAction) UnmarshalText(b []byte) error {
 	parsed, err := ParseTCAction(string(b))
 	if err != nil {

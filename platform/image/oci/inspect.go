@@ -13,32 +13,77 @@ import (
 )
 
 // ImageInspection is the registry-visible metadata for an OCI bytecode image.
+// Programs/Maps and Layers describe a single-platform image; Manifests is
+// populated instead when the reference resolves to an image index.
 type ImageInspection struct {
-	Reference string              `json:"reference"`
-	Digest    string              `json:"digest"`
-	MediaType string              `json:"media_type"`
-	Programs  map[string]string   `json:"programs,omitempty"`
-	Maps      map[string]string   `json:"maps,omitempty"`
-	Layers    []DescriptorSummary `json:"layers,omitempty"`
-	Manifests []ManifestSummary   `json:"manifests,omitempty"`
+	// Reference is the fully qualified image reference that was
+	// inspected.
+	Reference string `json:"reference"`
+
+	// Digest is the resolved content digest of the image or index.
+	Digest string `json:"digest"`
+
+	// MediaType is the OCI media type of the resolved descriptor (an
+	// image manifest or an image index).
+	MediaType string `json:"media_type"`
+
+	// Programs maps program name to type, decoded from the
+	// io.ebpf.programs label. It is populated only for a
+	// single-platform image; nil for an image index.
+	Programs map[string]string `json:"programs,omitempty"`
+
+	// Maps maps map name to type, decoded from the io.ebpf.maps label.
+	// It is populated only for a single-platform image; nil for an
+	// image index.
+	Maps map[string]string `json:"maps,omitempty"`
+
+	// Layers summarises the image's layer descriptors. It is populated
+	// only for a single-platform image; nil for an image index.
+	Layers []DescriptorSummary `json:"layers,omitempty"`
+
+	// Manifests summarises the child manifests when the reference
+	// resolves to an image index; nil for a single-platform image.
+	Manifests []ManifestSummary `json:"manifests,omitempty"`
 }
 
 // ManifestSummary describes one child manifest in an image index.
 type ManifestSummary struct {
-	Digest    string              `json:"digest"`
-	MediaType string              `json:"media_type"`
-	Size      int64               `json:"size"`
-	Platform  string              `json:"platform,omitempty"`
-	Programs  map[string]string   `json:"programs,omitempty"`
-	Maps      map[string]string   `json:"maps,omitempty"`
-	Layers    []DescriptorSummary `json:"layers,omitempty"`
+	// Digest is the content digest of the child manifest.
+	Digest string `json:"digest"`
+
+	// MediaType is the OCI media type of the child manifest.
+	MediaType string `json:"media_type"`
+
+	// Size is the size in bytes of the child manifest.
+	Size int64 `json:"size"`
+
+	// Platform is the OS/architecture string of the child manifest
+	// (for example "linux/amd64"); empty when the index entry carries
+	// no platform.
+	Platform string `json:"platform,omitempty"`
+
+	// Programs maps program name to type, decoded from the
+	// io.ebpf.programs label of the child image.
+	Programs map[string]string `json:"programs,omitempty"`
+
+	// Maps maps map name to type, decoded from the io.ebpf.maps label
+	// of the child image.
+	Maps map[string]string `json:"maps,omitempty"`
+
+	// Layers summarises the child image's layer descriptors.
+	Layers []DescriptorSummary `json:"layers,omitempty"`
 }
 
 // DescriptorSummary describes one OCI descriptor relevant to image inspection.
 type DescriptorSummary struct {
-	Digest    string `json:"digest"`
+	// Digest is the content digest of the descriptor.
+	Digest string `json:"digest"`
+
+	// MediaType is the OCI media type of the descriptor.
 	MediaType string `json:"media_type"`
-	Size      int64  `json:"size"`
+
+	// Size is the size in bytes of the descriptor's content.
+	Size int64 `json:"size"`
 }
 
 // InspectBytecodeImage reads image metadata from a registry without pulling

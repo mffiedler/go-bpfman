@@ -13,11 +13,19 @@ import (
 // Consumers match on this type to produce command-specific error
 // messages.
 type OriginMismatchError struct {
+	// VarName is the offending variable's name, or empty when the
+	// value came from an expression with no originating variable.
 	VarName string
-	Got     semantics.OriginKind
-	Want    []semantics.OriginKind
+
+	// Got is the actual origin kind of the value.
+	Got semantics.OriginKind
+
+	// Want is the set of origin kinds the command parser accepts.
+	Want []semantics.OriginKind
 }
 
+// Error renders the mismatch as "variable %q is a <got>; expected
+// <want>", listing the accepted kinds when more than one is allowed.
 func (e *OriginMismatchError) Error() string {
 	var sb strings.Builder
 	if e.VarName != "" {

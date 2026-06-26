@@ -16,6 +16,8 @@ type Executor interface {
 	// Actions that produce no value return (nil, error).
 	ExecuteResult(ctx context.Context, a Action) (any, error)
 
+	// ExecuteAll runs the actions in order, stopping on the first
+	// error and returning it.
 	ExecuteAll(ctx context.Context, actions []Action) error
 }
 
@@ -23,6 +25,10 @@ type Executor interface {
 // Manager can type-assert to this interface if it needs result info.
 type ExecutorWithResult interface {
 	Executor
+
+	// ExecuteAllWithResult runs the actions in order, stopping on
+	// the first error, and reports what completed and where it
+	// failed via the returned ExecutionResult.
 	ExecuteAllWithResult(ctx context.Context, actions []Action) ExecutionResult
 }
 

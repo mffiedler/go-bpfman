@@ -19,9 +19,20 @@ import (
 // through map ownership (map_owner_id). With --all, every managed
 // program is deleted.
 type ProgramDeleteCmd struct {
+	// OutputFlags carries the -o/--output flag selecting text or
+	// JSON rendering.
 	cliformat.OutputFlags
-	Recursive  bool             `short:"r" name:"recursive" help:"Also delete programs that share maps with the target (map_owner_id dependents)."`
-	All        bool             `name:"all" help:"Delete all managed programs."`
+
+	// Recursive also deletes programs that depend on the targets
+	// through shared maps (map_owner_id dependents).
+	Recursive bool `short:"r" name:"recursive" help:"Also delete programs that share maps with the target (map_owner_id dependents)."`
+
+	// All deletes every managed program; mutually exclusive with
+	// explicit program IDs.
+	All bool `name:"all" help:"Delete all managed programs."`
+
+	// ProgramIDs are the kernel IDs of the programs to delete;
+	// omitted when --all is given.
 	ProgramIDs []args.ProgramID `arg:"" name:"program-id" optional:"" help:"Program IDs to delete."`
 }
 
@@ -105,9 +116,17 @@ func executeDeletePrograms(ctx context.Context, cli *runtime.CLI, mgr *manager.M
 // has no remaining links. With --recursive, also removes programs
 // that depend on the orphaned program through map ownership.
 type LinkDeleteCmd struct {
+	// OutputFlags carries the -o/--output flag selecting text or
+	// JSON rendering.
 	cliformat.OutputFlags
-	Recursive bool          `short:"r" name:"recursive" help:"Also delete programs that share maps with orphaned programs (map_owner_id dependents)."`
-	LinkIDs   []args.LinkID `arg:"" name:"link-id" help:"Link IDs to delete." required:""`
+
+	// Recursive also deletes programs that share maps with programs
+	// orphaned by the detach (map_owner_id dependents).
+	Recursive bool `short:"r" name:"recursive" help:"Also delete programs that share maps with orphaned programs (map_owner_id dependents)."`
+
+	// LinkIDs are the IDs of the links to delete; at least one is
+	// required.
+	LinkIDs []args.LinkID `arg:"" name:"link-id" help:"Link IDs to delete." required:""`
 }
 
 // Run executes the link delete command with cascading cleanup.

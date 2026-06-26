@@ -11,15 +11,24 @@ import (
 // package-level variables or ParseDispatcherType.
 type DispatcherType struct{ v string }
 
+// The three dispatcher types. XDP dispatchers attach via a BPF link;
+// the TC variants attach via a netlink tc filter on the named
+// direction.
 var (
 	DispatcherTypeXDP       = DispatcherType{"xdp"}
 	DispatcherTypeTCIngress = DispatcherType{"tc-ingress"}
 	DispatcherTypeTCEgress  = DispatcherType{"tc-egress"}
 )
 
-func (d DispatcherType) String() string               { return d.v }
+// String returns the dispatcher type's canonical name ("xdp",
+// "tc-ingress", or "tc-egress").
+func (d DispatcherType) String() string { return d.v }
+
+// MarshalText implements encoding.TextMarshaler, encoding the type as its name.
 func (d DispatcherType) MarshalText() ([]byte, error) { return []byte(d.v), nil }
 
+// UnmarshalText implements encoding.TextUnmarshaler, parsing the type
+// name via ParseDispatcherType.
 func (d *DispatcherType) UnmarshalText(b []byte) error {
 	parsed, err := ParseDispatcherType(string(b))
 	if err != nil {

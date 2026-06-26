@@ -36,13 +36,27 @@ import (
 // (file:line: argv: exit N) instead of the rust-compiler frame
 // reserved for parser/checker diagnostics.
 type ExecFailure struct {
-	Argv     []string
+	// Argv is the resolved command and arguments as spawned.
+	Argv []string
+
+	// ExitCode is the non-zero status the subprocess reported.
 	ExitCode int
-	Span     source.Span
-	Stdout   string
-	Stderr   string
+
+	// Span is the source extent of the statement that ran the
+	// subprocess, used to cite the failing line.
+	Span source.Span
+
+	// Stdout holds the subprocess's standard output when the failing
+	// path captured it; empty when stdio was inherited.
+	Stdout string
+
+	// Stderr holds the subprocess's standard error when the failing
+	// path captured it; empty when stdio was inherited.
+	Stderr string
 }
 
+// Error returns the argv joined by spaces followed by the non-zero
+// exit status.
 func (e *ExecFailure) Error() string {
 	return fmt.Sprintf("%s: exit status %d", strings.Join(e.Argv, " "), e.ExitCode)
 }
@@ -58,10 +72,16 @@ func (e *ExecFailure) SourceSpan() source.Span { return e.Span }
 // the later arguments. The span-carrying error contract keeps it out of the syntax-error
 // frame: the source is well-formed, the name just does not resolve.
 type CommandNotFound struct {
+	// Name is the first word that resolved to no executable on
+	// $PATH.
 	Name string
+
+	// Span is the source extent of the command, used to cite the
+	// failing line.
 	Span source.Span
 }
 
+// Error reports that the named command was not found.
 func (e *CommandNotFound) Error() string {
 	return fmt.Sprintf("%s: command not found", e.Name)
 }
@@ -76,10 +96,15 @@ func (e *CommandNotFound) SourceSpan() source.Span { return e.Span }
 // well-formed; the runtime value just does not compose with what
 // the executor needs.
 type ExecArgError struct {
-	Msg  string
+	// Msg describes why an argument could not be flattened into
+	// argv text.
+	Msg string
+
+	// Span is the source extent of the offending argument.
 	Span source.Span
 }
 
+// Error returns the argument-flatten failure message.
 func (e *ExecArgError) Error() string { return e.Msg }
 
 // SourceSpan implements the internal span-carrying error contract.
@@ -92,10 +117,14 @@ func (e *ExecArgError) SourceSpan() source.Span { return e.Span }
 // individual shell builtins can opt in when their failure is
 // genuinely runtime-outcome rather than usage-error.
 type RuntimeError struct {
-	Msg  string
+	// Msg is the runtime failure description.
+	Msg string
+
+	// Span is the source extent of the construct that failed.
 	Span source.Span
 }
 
+// Error returns the runtime failure message.
 func (e *RuntimeError) Error() string { return e.Msg }
 
 // SourceSpan implements the internal span-carrying error contract.
@@ -142,9 +171,16 @@ func RunExecStatement(ctx context.Context, cli *cli.CLI, args []runtime.Arg, spa
 // as a Go error from RunExternal and never appears as an
 // ExecCapture.
 type ExecCapture struct {
-	Argv     []string
-	Stdout   string
-	Stderr   string
+	// Argv is the command and arguments as constructed and run.
+	Argv []string
+
+	// Stdout is the captured standard output.
+	Stdout string
+
+	// Stderr is the captured standard error.
+	Stderr string
+
+	// ExitCode is the process exit status; 0 on success.
 	ExitCode int
 }
 

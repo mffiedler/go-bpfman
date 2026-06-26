@@ -15,6 +15,10 @@ func FormatExprSource(expr Expr) string {
 	return dumpExprSource(expr)
 }
 
+// FormatExprSourceIndented renders expr in the shell's compact
+// source-like form, laying a matches block out across multiple lines
+// at the given indentation depth. Expressions other than a matches
+// render the same as FormatExprSource.
 func FormatExprSourceIndented(expr Expr, indent int) string {
 	if expr == nil {
 		return "nil"

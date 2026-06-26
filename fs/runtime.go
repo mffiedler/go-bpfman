@@ -24,12 +24,24 @@ const (
 // alongside bytecode.o as a diagnostic trace; never read on
 // operational code paths.
 type Provenance struct {
-	Version     int              `json:"version"`
-	ProgramID   kernel.ProgramID `json:"program_id"`
-	ProgramName string           `json:"program_name"`
-	Source      string           `json:"source"`
-	SourceKind  string           `json:"source_kind"` // "file", "image", "unknown"
-	LoadedAt    time.Time        `json:"loaded_at"`   // RFC 3339 UTC
+	// Version is the schema version of this provenance record.
+	Version int `json:"version"`
+
+	// ProgramID is the kernel program ID the bytecode was loaded as.
+	ProgramID kernel.ProgramID `json:"program_id"`
+
+	// ProgramName is the BPF program name within the bytecode.
+	ProgramName string `json:"program_name"`
+
+	// Source is the origin descriptor: a file path or an image
+	// reference, depending on SourceKind.
+	Source string `json:"source"`
+
+	// SourceKind classifies Source as "file", "image", or "unknown".
+	SourceKind string `json:"source_kind"`
+
+	// LoadedAt is when the bytecode was obtained, in RFC 3339 UTC.
+	LoadedAt time.Time `json:"loaded_at"`
 }
 
 // Bytecode provides regular-filesystem operations for bytecode
@@ -257,9 +269,16 @@ func (rt Bytecode) RemoveStagingDir(path string) error {
 
 // ProgramDirEntry represents a directory under <base>/programs/.
 type ProgramDirEntry struct {
-	Path      string           // Full path to the directory
-	ProgramID kernel.ProgramID // Parsed program ID; 0 if name is not numeric
-	Numeric   bool             // True if directory name is a valid numeric program ID
+	// Path is the full path to the directory.
+	Path string
+
+	// ProgramID is the program ID parsed from the directory name; 0
+	// when the name is not numeric (Numeric is false).
+	ProgramID kernel.ProgramID
+
+	// Numeric reports whether the directory name parsed as a valid
+	// numeric program ID.
+	Numeric bool
 }
 
 // ScanProgramDirs returns all directories under <base>/programs/.

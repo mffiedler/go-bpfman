@@ -11,10 +11,23 @@ import (
 // program to a dispatcher slot. The extension program is loaded from its
 // bpffs pin rather than re-read from the original ELF file.
 type XDPExtensionAttachSpec struct {
-	DispatcherPinPath bpfman.ProgPinPath `json:"dispatcher_pin_path"` // pinned dispatcher program
-	ProgPinPath       bpfman.ProgPinPath `json:"prog_pin_path"`       // pinned extension program
-	ProgramName       string             `json:"program_name"`        // program name for slot derivation
-	Position          int                `json:"position"`            // dispatcher slot [0, MaxPrograms)
+	// DispatcherPinPath is the bpffs pin of the dispatcher program the
+	// extension attaches into.
+	DispatcherPinPath bpfman.ProgPinPath `json:"dispatcher_pin_path"`
+
+	// ProgPinPath is the bpffs pin of the extension program; it is
+	// loaded from this pin rather than re-read from the original ELF.
+	ProgPinPath bpfman.ProgPinPath `json:"prog_pin_path"`
+
+	// ProgramName is the extension program's name. The dispatcher slot
+	// the extension attaches into is selected by Position (see
+	// SlotName), not by this name.
+	ProgramName string `json:"program_name"`
+
+	// Position is the dispatcher slot to attach into, in the range
+	// [0, MaxPrograms).
+	Position int `json:"position"`
+
 	// LinkPinPath empty means the extension link is ephemeral (not pinned); the
 	// empty string is the discriminator for ephemeral versus pinned extensions.
 	LinkPinPath bpfman.LinkPath `json:"link_pin_path,omitempty"`
@@ -41,10 +54,23 @@ func (s XDPExtensionAttachSpec) Validate() error {
 // program to a dispatcher slot. The extension program is loaded from its
 // bpffs pin rather than re-read from the original ELF file.
 type TCExtensionAttachSpec struct {
-	DispatcherPinPath bpfman.ProgPinPath `json:"dispatcher_pin_path"` // pinned dispatcher program
-	ProgPinPath       bpfman.ProgPinPath `json:"prog_pin_path"`       // pinned extension program
-	ProgramName       string             `json:"program_name"`        // program name for slot derivation
-	Position          int                `json:"position"`            // dispatcher slot [0, MaxPrograms)
+	// DispatcherPinPath is the bpffs pin of the dispatcher program the
+	// extension attaches into.
+	DispatcherPinPath bpfman.ProgPinPath `json:"dispatcher_pin_path"`
+
+	// ProgPinPath is the bpffs pin of the extension program; it is
+	// loaded from this pin rather than re-read from the original ELF.
+	ProgPinPath bpfman.ProgPinPath `json:"prog_pin_path"`
+
+	// ProgramName is the extension program's name. The dispatcher slot
+	// the extension attaches into is selected by Position (see
+	// SlotName), not by this name.
+	ProgramName string `json:"program_name"`
+
+	// Position is the dispatcher slot to attach into, in the range
+	// [0, MaxPrograms).
+	Position int `json:"position"`
+
 	// LinkPinPath empty means the extension link is ephemeral (not pinned); the
 	// empty string is the discriminator for ephemeral versus pinned extensions.
 	LinkPinPath bpfman.LinkPath `json:"link_pin_path,omitempty"`

@@ -14,9 +14,17 @@ import (
 
 // DetachCmd detaches links.
 type DetachCmd struct {
+	// OutputFlags carries the -o/--output flag selecting text or
+	// JSON rendering.
 	cliformat.OutputFlags
-	LinkIDs       []args.LinkID `arg:"" name:"link-id" help:"Link IDs to detach." required:""`
-	IgnoreMissing bool          `name:"ignore-missing" help:"Treat 'link not found' as success rather than an error; useful for idempotent cleanup (e.g. defer)."`
+
+	// LinkIDs are the IDs of the links to detach; at least one is
+	// required.
+	LinkIDs []args.LinkID `arg:"" name:"link-id" help:"Link IDs to detach." required:""`
+
+	// IgnoreMissing treats a "link not found" error as success,
+	// making a repeated detach (e.g. from a defer) idempotent.
+	IgnoreMissing bool `name:"ignore-missing" help:"Treat 'link not found' as success rather than an error; useful for idempotent cleanup (e.g. defer)."`
 }
 
 // Run executes the detach command: mutation under lock, output outside.

@@ -251,15 +251,6 @@ func (m *Manager) attachTCXPlan(
 	)
 }
 
-// computeTCXAttachOrder determines where to insert a new TCX program in the chain
-// based on its priority relative to existing programs. Lower priority values run first.
-//
-// The algorithm:
-// 1. If no existing links, attach at head (first)
-// 2. Find the first existing link with priority > newPriority, attach before it
-// 3. If all existing links have priority <= newPriority, attach after the last one
-//
-// This ensures programs are ordered by priority, with ties broken by insertion order.
 // filterLiveTCXLinks returns the subset of links whose program is still
 // live in the kernel, as reported by isLive. isLive is queried at most
 // once per distinct kernel program ID. It exists because the link store
@@ -282,6 +273,15 @@ func filterLiveTCXLinks(links []bpfman.TCXLinkInfo, isLive func(kernel.ProgramID
 	return live
 }
 
+// computeTCXAttachOrder determines where to insert a new TCX program in the chain
+// based on its priority relative to existing programs. Lower priority values run first.
+//
+// The algorithm:
+// 1. If no existing links, attach at head (first)
+// 2. Find the first existing link with priority > newPriority, attach before it
+// 3. If all existing links have priority <= newPriority, attach after the last one
+//
+// This ensures programs are ordered by priority, with ties broken by insertion order.
 func computeTCXAttachOrder(existingLinks []bpfman.TCXLinkInfo, newPriority int32) bpfman.TCXAttachOrder {
 	if len(existingLinks) == 0 {
 		// No existing links, attach at head

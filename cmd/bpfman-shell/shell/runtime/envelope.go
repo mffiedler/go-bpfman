@@ -37,13 +37,36 @@ import (
 // The provider's typed payload (the primary) lives in its own
 // slot, not on the envelope. See BindResult.
 type Envelope struct {
+	// ExitCode is the subprocess exit code, or 0/1 for an in-process
+	// command. A signalled process follows the shell convention of
+	// 128+signum (SIGTERM yields 143), unless a trap exits with its
+	// own status. OK derives ok from ExitCode == 0.
 	ExitCode int
-	Stdout   string
-	Stderr   string
-	Killed   bool
-	Signal   string
-	HasPID   bool
-	PID      int
+
+	// Stdout is the captured standard output, or the in-process
+	// renderable result.
+	Stdout string
+
+	// Stderr is the captured standard error, or the in-process error
+	// message.
+	Stderr string
+
+	// Killed is true when the script called 'kill $job' against this
+	// job, letting the script distinguish a requested termination
+	// from a real failure.
+	Killed bool
+
+	// Signal is the short name of the signal that ended the process
+	// (TERM, KILL, USR1, ...), or empty when the process exited
+	// normally.
+	Signal string
+
+	// HasPID reports whether PID is meaningful. When false the pid
+	// field is omitted from the wrapped Value's path-walkable shape.
+	HasPID bool
+
+	// PID is the process id, valid only when HasPID is true.
+	PID int
 }
 
 // OK reports whether the operation succeeded. ExitCode is the single
@@ -175,7 +198,14 @@ func FailEnvelopeFromError(err error) Envelope {
 // inspect. On failure for typed-payload providers, Primary is the
 // zero Value.
 type BindResult struct {
-	Rc      Envelope
+	// Rc is the result envelope carrying the execution metadata
+	// (ok/exit code, captured streams, kill state).
+	Rc Envelope
+
+	// Primary is the provider's primary result. For typed-payload
+	// providers it is the typed Value (the zero Value on failure);
+	// for providers with no separate payload it is
+	// ValueFromEnvelope(Rc).
 	Primary Value
 }
 

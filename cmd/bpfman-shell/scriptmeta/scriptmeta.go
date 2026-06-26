@@ -17,14 +17,26 @@ const (
 	// the top of the file, not buried in executable script body.
 	HeaderLines = 20
 
+	// PragmaMarker is the line prefix that introduces a script
+	// metadata directive.
 	PragmaMarker = "#pragma"
+
+	// LabelsPragma is the pragma keyword whose value declares the
+	// script's header labels.
 	LabelsPragma = "labels"
 )
 
+// Mode is the header metadata read from a script's leading pragma
+// lines.
 type Mode struct {
+	// Labels is the set of header labels declared via
+	// `#pragma labels=...`, matched against a selector to decide
+	// whether the script runs.
 	Labels k8slabels.Set
 }
 
+// Read opens the script at path and returns the header metadata
+// parsed from its leading pragma lines.
 func Read(path string) (Mode, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -35,6 +47,9 @@ func Read(path string) (Mode, error) {
 	return Scan(f, path)
 }
 
+// Scan reads the first HeaderLines lines of f and returns the
+// metadata declared by its `#pragma` lines. path is used only for
+// error messages.
 func Scan(f *os.File, path string) (Mode, error) {
 	mode := Mode{Labels: make(k8slabels.Set)}
 	scanner := bufio.NewScanner(f)
@@ -53,6 +68,9 @@ func Scan(f *os.File, path string) (Mode, error) {
 	return mode, nil
 }
 
+// ParsePragma parses one `#pragma` line, merging any `labels=...`
+// declaration into labels. Lines that are not a labels pragma are
+// ignored.
 func ParsePragma(path, line string, labels k8slabels.Set) error {
 	body := strings.TrimSpace(strings.TrimPrefix(line, PragmaMarker))
 	raw, ok := strings.CutPrefix(body, LabelsPragma+"=")
@@ -68,6 +86,10 @@ func ParsePragma(path, line string, labels k8slabels.Set) error {
 	return nil
 }
 
+// ParseLabelPragma parses the right-hand side of a `labels=` pragma.
+// It accepts a JSON object (key/value labels), a JSON string array
+// (each entry becomes a key set to "true"), or a JSON string holding a
+// comma-separated list.
 func ParseLabelPragma(path, raw string) (k8slabels.Set, error) {
 	var labelMap map[string]string
 	if err := json.Unmarshal([]byte(raw), &labelMap); err == nil {
@@ -87,6 +109,8 @@ func ParseLabelPragma(path, raw string) (k8slabels.Set, error) {
 	return LabelsToSet(SplitLabelList(csv)), nil
 }
 
+// SplitLabelList splits a comma-separated label list and normalises
+// each entry, returning nil for the empty string.
 func SplitLabelList(raw string) []string {
 	if raw == "" {
 		return nil
@@ -94,6 +118,8 @@ func SplitLabelList(raw string) []string {
 	return NormaliseLabels(strings.Split(raw, ","))
 }
 
+// LabelsToSet turns a list of label keys into a label set with every
+// value set to "true".
 func LabelsToSet(labels []string) k8slabels.Set {
 	out := make(k8slabels.Set, len(labels))
 	for _, label := range labels {
@@ -102,6 +128,8 @@ func LabelsToSet(labels []string) k8slabels.Set {
 	return out
 }
 
+// NormaliseLabelMap lower-cases and trims each key and value, dropping
+// entries whose key is empty after trimming.
 func NormaliseLabelMap(labels map[string]string) k8slabels.Set {
 	out := make(k8slabels.Set, len(labels))
 	for key, value := range labels {
@@ -114,6 +142,8 @@ func NormaliseLabelMap(labels map[string]string) k8slabels.Set {
 	return out
 }
 
+// NormaliseLabels lower-cases and trims each label, dropping blanks
+// and duplicates while preserving first-seen order.
 func NormaliseLabels(labels []string) []string {
 	out := make([]string, 0, len(labels))
 	seen := make(map[string]bool, len(labels))

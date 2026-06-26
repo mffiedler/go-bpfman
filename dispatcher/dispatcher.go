@@ -24,24 +24,72 @@ var xdpDispatcherBytes []byte
 var tcDispatcherBytes []byte
 
 // XDPConfig configures the XDP dispatcher.
-// This must match struct xdp_dispatcher_conf in xdp_dispatcher_v2.bpf.c.
+// This must match struct xdp_dispatcher_conf in xdp_dispatcher_v2.bpf.c:
+// the value is copied verbatim into the dispatcher program's "conf"
+// variable, so field order, widths, and padding are load-bearing.
 type XDPConfig struct {
-	Magic             uint8
+	// Magic is the ABI tag the dispatcher program checks to confirm the
+	// config layout it was handed. NewXDPConfig sets it to 236
+	// (xdpDispatcherMagic).
+	Magic uint8
+
+	// DispatcherVersion is the dispatcher ABI version. NewXDPConfig sets
+	// it to 2 (xdpDispatcherVersion).
 	DispatcherVersion uint8
-	NumProgsEnabled   uint8
-	IsXDPFrags        uint8
-	ChainCallActions  [MaxPrograms]uint32
-	RunPrios          [MaxPrograms]uint32
-	ProgramFlags      [MaxPrograms]uint32
+
+	// NumProgsEnabled is the number of chained extension programs the
+	// dispatcher runs, in the range [1, MaxPrograms]. Only the first
+	// NumProgsEnabled slots of the per-slot arrays are meaningful.
+	NumProgsEnabled uint8
+
+	// IsXDPFrags, when nonzero, marks the dispatcher as XDP-fragments
+	// aware. This codebase never sets it, so it stays zero; the field
+	// exists only to mirror the C struct layout.
+	IsXDPFrags uint8
+
+	// ChainCallActions holds the per-slot proceed-on bitmask: element i
+	// applies to slot i, and when the program in that slot returns one
+	// of the encoded actions the dispatcher proceeds to the next slot.
+	// See ProceedOnMask for the bit encoding.
+	ChainCallActions [MaxPrograms]uint32
+
+	// RunPrios holds the per-slot run priority. NewXDPConfig fills every
+	// element with DispatcherRunPriority. It mirrors Rust bpfman's
+	// config but does not determine chain order: slots are ordered by
+	// stored priority and position before the config is built.
+	RunPrios [MaxPrograms]uint32
+
+	// ProgramFlags holds the per-slot program flags. This codebase never
+	// sets it, so it stays zero; the field exists only to mirror the C
+	// struct layout.
+	ProgramFlags [MaxPrograms]uint32
 }
 
 // TCConfig configures the TC dispatcher.
-// This must match struct tc_dispatcher_config in tc_dispatcher.bpf.c.
+// This must match struct tc_dispatcher_config in tc_dispatcher.bpf.c:
+// the value is copied verbatim into the dispatcher program's "CONFIG"
+// variable, so field order, widths, and padding are load-bearing.
 type TCConfig struct {
-	NumProgsEnabled  uint8
-	_                [3]uint8 // padding for alignment
+	// NumProgsEnabled is the number of chained extension programs the
+	// dispatcher runs, in the range [1, MaxPrograms]. Only the first
+	// NumProgsEnabled slots of the per-slot arrays are meaningful.
+	NumProgsEnabled uint8
+
+	// _ pads the struct so ChainCallActions is 4-byte aligned, matching
+	// the C layout.
+	_ [3]uint8
+
+	// ChainCallActions holds the per-slot proceed-on bitmask: element i
+	// applies to slot i, and when the program in that slot returns one
+	// of the encoded actions the dispatcher proceeds to the next slot.
+	// See ProceedOnMask for the bit encoding.
 	ChainCallActions [MaxPrograms]uint32
-	RunPrios         [MaxPrograms]uint32
+
+	// RunPrios holds the per-slot run priority. NewTCConfig fills every
+	// element with DispatcherRunPriority. It mirrors Rust bpfman's
+	// config but does not determine chain order: slots are ordered by
+	// stored priority and position before the config is built.
+	RunPrios [MaxPrograms]uint32
 }
 
 const (

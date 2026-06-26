@@ -40,6 +40,11 @@ func ParseTracepoint(s string) (Tracepoint, error) {
 	return Tracepoint{group: group, name: name}, nil
 }
 
-func (t Tracepoint) Group() string  { return t.group }
-func (t Tracepoint) Name() string   { return t.name }
+// Group returns the tracepoint group, such as "sched".
+func (t Tracepoint) Group() string { return t.group }
+
+// Name returns the tracepoint name, such as "sched_switch".
+func (t Tracepoint) Name() string { return t.name }
+
+// String returns the tracepoint in "group/name" form.
 func (t Tracepoint) String() string { return t.group + "/" + t.name }

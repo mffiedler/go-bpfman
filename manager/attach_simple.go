@@ -165,8 +165,9 @@ func (m *Manager) simpleAttachPlan(p attachParams) operation.Plan {
 
 // saveLinkNode builds a Produce node that constructs a LinkSpec,
 // persists it via CreateLink, and returns the completed bpfman.Link.
-// The extract closure reads bindings to supply the four variable
-// parts: link ID, link details, pin path, and attach output.
+// The extract closure reads bindings to supply the two variable parts
+// -- the link details and the kernel attach output -- from which the
+// LinkSpec takes the kernel link ID, kind, and pin path.
 func saveLinkNode(
 	programID kernel.ProgramID,
 	metadata map[string]string,

@@ -148,6 +148,9 @@ type pollTimeoutError struct {
 	LastRetry string
 }
 
+// Error renders the poll-timeout message, citing the configured
+// timeout, the number of attempts, and the last retry reason when one
+// was recorded.
 func (e *pollTimeoutError) Error() string {
 	if e == nil {
 		return "poll timed out"
@@ -169,6 +172,8 @@ type pollRetrySignal struct {
 	LastRetry string
 }
 
+// Error renders the retry signal's message, appending the last retry
+// reason when one was recorded.
 func (s *pollRetrySignal) Error() string {
 	if s == nil || s.LastRetry == "" {
 		return "poll retry"

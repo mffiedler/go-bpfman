@@ -21,6 +21,9 @@ import (
 // environment variable, and the C code calls setns(CLONE_NEWNS) while still
 // single-threaded.
 type NSCmd struct {
+	// Uprobe is the "uprobe" subcommand: it opens a target binary in
+	// the entered container mount namespace and returns its fd to the
+	// parent.
 	Uprobe NSUprobeCmd `cmd:"" help:"Attach a uprobe program in the given container."`
 }
 
@@ -38,6 +41,9 @@ type NSCmd struct {
 // needed here -- the parent owns the attach -- so the child takes only the
 // target path.
 type NSUprobeCmd struct {
+	// Target is the path of the binary to open. It resolves against the
+	// container's filesystem because the C constructor already switched
+	// the process into the target mount namespace before parsing.
 	Target string `arg:"" help:"Target binary path (resolved in container namespace)."`
 }
 
@@ -153,6 +159,8 @@ func (cmd *NSUprobeCmd) Run() error {
 // invocation. This is used when a binary re-execs itself to attach uprobes
 // inside container mount namespaces.
 type NamespaceHelperInvocation struct {
+	// Args holds the helper command line with argv[0] removed, ready to
+	// hand to the bpfman-ns argument parser.
 	Args []string
 }
 

@@ -6,23 +6,48 @@ import "github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
 type SymbolKind string
 
 const (
-	SymbolDef         SymbolKind = "def"
-	SymbolParam       SymbolKind = "param"
-	SymbolLet         SymbolKind = "let"
+	// SymbolDef is a user-defined command name introduced by `def`.
+	SymbolDef SymbolKind = "def"
+
+	// SymbolParam is a parameter declared in a `def` parameter list.
+	SymbolParam SymbolKind = "param"
+
+	// SymbolLet is a name bound by `let NAME = EXPR`.
+	SymbolLet SymbolKind = "let"
+
+	// SymbolDestructure is one name bound by a destructuring `let (a
+	// b) = EXPR`.
 	SymbolDestructure SymbolKind = "destructure"
-	SymbolBind        SymbolKind = "bind"
-	SymbolBindRC      SymbolKind = "bind-rc"
-	SymbolForEach     SymbolKind = "foreach"
+
+	// SymbolBind is the target of a `let NAME <- CMD` or `guard NAME
+	// <- CMD` bind.
+	SymbolBind SymbolKind = "bind"
+
+	// SymbolBindRC marks a bind target capturing a command's
+	// result-code envelope. It is defined for completeness; the
+	// current walker classifies every `<-` bind target as
+	// SymbolBind.
+	SymbolBindRC SymbolKind = "bind-rc"
+
+	// SymbolForEach is a loop variable introduced by `foreach`.
+	SymbolForEach SymbolKind = "foreach"
 )
 
-// Symbol is one named binding in a parsed program. Def points at the
-// identifier token that introduced the name. Scope is the source range
-// where the binding is visible according to the syntax-level scope
-// model used by editor tooling.
+// Symbol is one named binding in a parsed program, as surfaced to
+// editor tooling.
 type Symbol struct {
-	Name  string
-	Kind  SymbolKind
-	Def   source.Pos
+	// Name is the bound identifier's spelling.
+	Name string
+
+	// Kind classifies the binding site that introduced Name.
+	Kind SymbolKind
+
+	// Def is the position of the identifier token that introduced
+	// the name.
+	Def source.Pos
+
+	// Scope is the source range over which the binding is visible
+	// according to the syntax-level scope model.
 	Scope source.Span
 }
 

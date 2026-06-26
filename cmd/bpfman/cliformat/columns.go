@@ -14,22 +14,35 @@ import (
 
 // ColumnSpec defines a single column for tabular output.
 type ColumnSpec struct {
-	Name        string
-	Extract     func(bpfman.Program) string
+	// Name is the column header shown in tabular output.
+	Name string
+
+	// Extract produces this column's cell value for a program row.
+	Extract func(bpfman.Program) string
+
+	// ExtractLink produces this column's cell value for a link row.
 	ExtractLink func(bpfman.LinkRecord) string
 }
 
 // ColumnSet holds multiple column specifications.
 type ColumnSet struct {
+	// Columns are the column specifications, in display order.
 	Columns []ColumnSpec
 }
 
 // ColumnInfo describes a column in the registry for documentation
 // and selection purposes.
 type ColumnInfo struct {
-	Name        string
+	// Name is the column's identifier and header text.
+	Name string
+
+	// Description is the human-readable explanation of the column, shown when listing the available columns.
 	Description string
-	Extract     func(bpfman.Program) string
+
+	// Extract produces this column's cell value for a program row.
+	Extract func(bpfman.Program) string
+
+	// ExtractLink produces this column's cell value for a link row.
 	ExtractLink func(bpfman.LinkRecord) string
 }
 

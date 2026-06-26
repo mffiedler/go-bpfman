@@ -12,8 +12,15 @@ import (
 
 // DispatcherCmd groups dispatcher management subcommands.
 type DispatcherCmd struct {
-	List   ListDispatchersCmd  `cmd:"" default:"withargs" help:"List dispatchers."`
-	Get    GetDispatcherCmd    `cmd:"" help:"Get dispatcher details."`
+	// List lists dispatchers; it is the default subcommand when none
+	// is given.
+	List ListDispatchersCmd `cmd:"" default:"withargs" help:"List dispatchers."`
+
+	// Get shows the details of a single dispatcher by its key.
+	Get GetDispatcherCmd `cmd:"" help:"Get dispatcher details."`
+
+	// Delete removes a dispatcher by its key; hidden because
+	// dispatcher lifecycle is normally managed automatically.
 	Delete DeleteDispatcherCmd `cmd:"" hidden:"" help:"Delete a dispatcher."`
 }
 
@@ -21,10 +28,19 @@ type DispatcherCmd struct {
 // unfiltered: nsid 0 and ifindex 0 never identify a real dispatcher,
 // matching the zero DispatcherType sentinel.
 type ListDispatchersCmd struct {
+	// OutputFlags carries the -o/--output flag selecting text or
+	// JSON rendering.
 	cliformat.OutputFlags
-	Type    dispatcher.DispatcherType `name:"type" help:"Filter by dispatcher type (xdp, tc-ingress, tc-egress)."`
-	Nsid    uint64                    `name:"nsid" help:"Filter by network namespace ID."`
-	Ifindex uint32                    `name:"ifindex" help:"Filter by interface index."`
+
+	// Type filters the listing to one dispatcher type (xdp,
+	// tc-ingress, tc-egress); the zero value lists all types.
+	Type dispatcher.DispatcherType `name:"type" help:"Filter by dispatcher type (xdp, tc-ingress, tc-egress)."`
+
+	// Nsid filters by network namespace ID; 0 means unfiltered.
+	Nsid uint64 `name:"nsid" help:"Filter by network namespace ID."`
+
+	// Ifindex filters by interface index; 0 means unfiltered.
+	Ifindex uint32 `name:"ifindex" help:"Filter by interface index."`
 }
 
 // Run executes the list dispatchers command.
@@ -64,10 +80,21 @@ func (c *ListDispatchersCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 
 // GetDispatcherCmd gets details of a dispatcher by its key.
 type GetDispatcherCmd struct {
+	// OutputFlags carries the -o/--output flag selecting text or
+	// JSON rendering.
 	cliformat.OutputFlags
-	Type    dispatcher.DispatcherType `arg:"" help:"Dispatcher type (xdp, tc-ingress, tc-egress)."`
-	Nsid    uint64                    `arg:"" help:"Network namespace ID."`
-	Ifindex uint32                    `arg:"" help:"Interface index."`
+
+	// Type is the dispatcher type (xdp, tc-ingress, tc-egress); part
+	// of the key identifying the dispatcher.
+	Type dispatcher.DispatcherType `arg:"" help:"Dispatcher type (xdp, tc-ingress, tc-egress)."`
+
+	// Nsid is the network namespace ID; part of the key identifying
+	// the dispatcher.
+	Nsid uint64 `arg:"" help:"Network namespace ID."`
+
+	// Ifindex is the interface index; part of the key identifying
+	// the dispatcher.
+	Ifindex uint32 `arg:"" help:"Interface index."`
 }
 
 // Run executes the get dispatcher command.
@@ -95,9 +122,17 @@ func (c *GetDispatcherCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 
 // DeleteDispatcherCmd deletes a dispatcher by its key.
 type DeleteDispatcherCmd struct {
-	Type    dispatcher.DispatcherType `arg:"" help:"Dispatcher type (xdp, tc-ingress, tc-egress)."`
-	Nsid    uint64                    `arg:"" help:"Network namespace ID."`
-	Ifindex uint32                    `arg:"" help:"Interface index."`
+	// Type is the dispatcher type (xdp, tc-ingress, tc-egress); part
+	// of the key identifying the dispatcher.
+	Type dispatcher.DispatcherType `arg:"" help:"Dispatcher type (xdp, tc-ingress, tc-egress)."`
+
+	// Nsid is the network namespace ID; part of the key identifying
+	// the dispatcher.
+	Nsid uint64 `arg:"" help:"Network namespace ID."`
+
+	// Ifindex is the interface index; part of the key identifying
+	// the dispatcher.
+	Ifindex uint32 `arg:"" help:"Interface index."`
 }
 
 // Run executes the delete dispatcher command.

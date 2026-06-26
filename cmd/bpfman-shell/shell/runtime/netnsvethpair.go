@@ -24,10 +24,14 @@ import (
 // Concurrency: Mu guards Released. The endpoint identity fields
 // are read-only after construction so they need no lock.
 type NetnsVethPair struct {
-	// A and B are the two endpoints. Set once by
-	// NewNetnsVethPair, which also installs their back-pointers;
-	// never rewritten.
+	// A is the first endpoint of the pair. Set once by
+	// NewNetnsVethPair, which also installs its back-pointer; never
+	// rewritten.
 	A *NetnsVethEndpoint
+
+	// B is the second endpoint of the pair. Set once by
+	// NewNetnsVethPair, which also installs its back-pointer; never
+	// rewritten.
 	B *NetnsVethEndpoint
 
 	// Mu guards Released.

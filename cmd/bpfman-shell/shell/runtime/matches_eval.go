@@ -15,14 +15,23 @@ import (
 // label/report the failure, but the matching semantics and the
 // mismatch set live in shell.
 type MatchesResult struct {
-	Matched    bool
+	// Matched reports whether the whole matches block matched the
+	// target.
+	Matched bool
+
+	// Mismatches lists the failing entries and exhaustive-coverage
+	// problems; empty when Matched is true.
 	Mismatches []MatchMismatch
 }
 
 // MatchMismatch is one failing entry (or exhaustive-coverage
 // problem) from a matches block evaluation.
 type MatchMismatch struct {
-	Pos     source.Pos
+	// Pos is the source position of the failing entry.
+	Pos source.Pos
+
+	// Message is the human-readable description of why the entry
+	// failed.
 	Message string
 }
 

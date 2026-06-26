@@ -20,14 +20,23 @@ import (
 // ErrProgramRequiresReconciliation is returned when a program has a
 // store record but the corresponding kernel object is absent.
 type ErrProgramRequiresReconciliation struct {
+	// ProgramID is the program present in the store but missing from
+	// the kernel.
 	ProgramID kernel.ProgramID
-	Cause     error
+
+	// Cause is the underlying kernel-lookup error that revealed the
+	// absence; returned by Unwrap.
+	Cause error
 }
 
+// Error reports that the program exists in the store but not in the
+// kernel, and so requires reconciliation.
 func (e ErrProgramRequiresReconciliation) Error() string {
 	return fmt.Sprintf("program %d exists in store but not in kernel (requires reconciliation)", e.ProgramID)
 }
 
+// Unwrap returns the underlying kernel-lookup error that revealed the
+// missing program.
 func (e ErrProgramRequiresReconciliation) Unwrap() error {
 	return e.Cause
 }

@@ -17,6 +17,8 @@ var topLevelNouns = map[string]bool{
 	"audit":      true,
 }
 
+// HelpDetail is the multi-paragraph long help listing every bpfman
+// subcommand, registered as the bpfman builtin's Detail text.
 const HelpDetail = `Subcommands:
 
   Program management:
@@ -64,10 +66,18 @@ func init() {
 	})
 }
 
+// IsTopLevelNoun reports whether name is a bpfman domain noun
+// (program, show, image, link, dispatcher, audit) that must follow a
+// "bpfman" prefix. The statement and bind fallbacks use it to emit the
+// "domain commands require a bpfman prefix" diagnostic.
 func IsTopLevelNoun(name string) bool {
 	return topLevelNouns[name]
 }
 
+// Handle runs a "bpfman <subcommand> ..." invocation and returns the
+// subcommand's assignable value. A dispatch failure is wrapped as a
+// *driver.RuntimeError carrying the call site's span so the renderer
+// cites the source line.
 func Handle(c driver.Ctx) (runtime.Value, error) {
 	val, err := dispatch(c.Ctx, c.Args)
 	if err != nil {

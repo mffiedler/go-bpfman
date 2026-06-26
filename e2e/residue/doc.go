@@ -5,7 +5,7 @@
 // network namespaces that the e2e harness names with the
 // `B<hex>N[ab]?` convention.
 //
-// Two consumers share the package. The cmd/bpfman-cleanup CLI
+// Two consumers share the package. The cmd/bpfman-e2e-cleanup CLI
 // uses it to drain a host before a re-run; the e2e suite uses it
 // to clean up stale state at TestMain entry. Both go through the
 // same Residue value and the same Apply path so the two stay in

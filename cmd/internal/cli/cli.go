@@ -20,12 +20,16 @@ import (
 // binary's Kong root, or in a binary-specific wrapper that adds
 // more global flags.
 type CLI struct {
+	// Config is the path to the bpfman TOML config file, set via --config or the BPFMAN_CONFIG environment variable. An empty value means the default /etc/bpfman/bpfman.toml.
 	Config string `name:"config" placeholder:"FILE" group:"global" help:"Config file path (default: /etc/bpfman/bpfman.toml)." env:"BPFMAN_CONFIG"`
-	Log    string `name:"log" placeholder:"SPEC" group:"global" help:"Log spec (e.g., 'info,manager=debug')." env:"BPFMAN_LOG"`
+
+	// Log is the logging spec, set via --log or the BPFMAN_LOG environment variable, e.g. "info,manager=debug". An empty value defaults to warn for CLI invocations.
+	Log string `name:"log" placeholder:"SPEC" group:"global" help:"Log spec (e.g., 'info,manager=debug')." env:"BPFMAN_LOG"`
 
 	// Out is the writer for command output. Defaults to os.Stdout
 	// when DefaultWriters is called. Injected for testability.
 	Out io.Writer `kong:"-"`
+
 	// Err is the writer for error output. Defaults to os.Stderr
 	// when DefaultWriters is called. Injected for testability.
 	Err io.Writer `kong:"-"`

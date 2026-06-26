@@ -54,9 +54,17 @@ const (
 type LogLevel string
 
 const (
-	LogLevelNone  LogLevel = "none"
+	// LogLevelNone silences the C nsexec code entirely.
+	LogLevelNone LogLevel = "none"
+
+	// LogLevelError logs only errors. It is the default verbosity when
+	// CommandOptions.LogLevel is left empty.
 	LogLevelError LogLevel = "error"
-	LogLevelInfo  LogLevel = "info"
+
+	// LogLevelInfo logs errors plus high-level progress.
+	LogLevelInfo LogLevel = "info"
+
+	// LogLevelDebug logs everything, including per-step detail.
 	LogLevelDebug LogLevel = "debug"
 )
 

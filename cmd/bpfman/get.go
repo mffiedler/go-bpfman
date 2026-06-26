@@ -16,13 +16,21 @@ import (
 // the bpfman-operator integration tests -- reach the same Run
 // methods as the native noun-verb form (`bpfman link get <id>`).
 type GetCmd struct {
-	Link    GetLinkCmd    `cmd:"" help:"Get details of a link by link ID."`
+	// Link shows the details of a link by link ID.
+	Link GetLinkCmd `cmd:"" help:"Get details of a link by link ID."`
+
+	// Program shows the details of a managed program by program ID.
 	Program GetProgramCmd `cmd:"" help:"Get details of a managed program by program ID."`
 }
 
 // GetProgramCmd gets details of a managed program by program ID.
 type GetProgramCmd struct {
+	// OutputFlags carries the -o/--output flag selecting text or
+	// JSON rendering.
 	cliformat.OutputFlags
+
+	// ProgramID is the kernel ID of the program to show; accepts
+	// decimal or 0x-prefixed hex.
 	ProgramID args.ProgramID `arg:"" name:"program-id" help:"Program ID (supports hex with 0x prefix)."`
 }
 
@@ -49,7 +57,11 @@ func (c *GetProgramCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 
 // GetLinkCmd gets details of a link by link ID.
 type GetLinkCmd struct {
+	// OutputFlags carries the -o/--output flag selecting text or
+	// JSON rendering.
 	cliformat.OutputFlags
+
+	// LinkID is the ID of the link to show.
 	LinkID args.LinkID `arg:"" name:"link-id" help:"Link ID."`
 }
 

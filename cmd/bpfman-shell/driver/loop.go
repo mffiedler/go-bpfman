@@ -30,11 +30,24 @@ import (
 // framework has no use for the hooks outside the program-execution
 // path, so they are not stored on the context.
 type RunHooks struct {
-	Fallback     FallbackFunc
+	// Fallback dispatches a statement-position command that no
+	// registered builtin matched.
+	Fallback FallbackFunc
+
+	// BindFallback dispatches a bind-position ("<-") command that no
+	// registered builtin matched.
 	BindFallback BindFallbackFunc
-	MakeAssert   MakeAssertFunc
-	Now          func() time.Time
-	Sleep        func(time.Duration)
+
+	// MakeAssert builds the lowered-assert evaluator wired into
+	// Env.ExecAssert; nil disables runtime assert evaluation.
+	MakeAssert MakeAssertFunc
+
+	// Now overrides the clock used for poll deadlines; nil means
+	// real wall-clock time.
+	Now func() time.Time
+
+	// Sleep overrides the poll cadence sleep; nil means real time.
+	Sleep func(time.Duration)
 }
 
 // Config bundles the call-site options Run needs. The embedding
@@ -53,8 +66,7 @@ type Config struct {
 	Session *runtime.Session
 
 	// File is the diagnostic name for the input ("script.bpfman",
-	// "<stdin>", ""). Loop uses it for source-location prefixes
-	// and for source-location prefixes.
+	// "<stdin>", ""). Loop uses it for source-location prefixes.
 	File string
 
 	// NoCheck disables the static pre-flight pass for script
@@ -83,11 +95,15 @@ type Config struct {
 	// nil disables lowered assert evaluation at runtime.
 	MakeAssert MakeAssertFunc
 
-	// Now and Sleep override the clock the runtime uses for poll
-	// deadlines and the poll cadence. Both nil (the production
-	// default) means real wall-clock time; tests inject a fake
-	// clock so poll is deterministic regardless of host load.
-	Now   func() time.Time
+	// Now overrides the clock the runtime uses for poll deadlines.
+	// nil (the production default) means real wall-clock time; tests
+	// inject a fake clock so poll is deterministic regardless of
+	// host load.
+	Now func() time.Time
+
+	// Sleep overrides the poll cadence sleep. nil (the production
+	// default) means real time; tests inject a fake sleep so poll is
+	// deterministic regardless of host load.
 	Sleep func(time.Duration)
 }
 

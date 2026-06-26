@@ -338,11 +338,12 @@ func removeTempFiles(paths []string) {
 // non-ok envelope. Scope-exit uses Managed to distinguish
 // observed jobs from leaked ones.
 //
-// Killed jobs report ok: true in the envelope: a script that
-// explicitly kills its own background work is performing a
-// clean cleanup, not signalling failure. A non-zero exit on a
-// job the script did not kill is a failure the consumer can
-// act on through guard or by inspecting $rc.exit_code.
+// A killed job reports ok: false in the envelope: ok is tied to
+// exit_code == 0, and a job ended by SIGTERM exits 143, not zero.
+// The script distinguishes "I asked for this" from "real failure"
+// via $r.killed (paired with $r.signal), not by overloading $r.ok.
+// A non-zero exit on a job the script did not kill is a failure the
+// consumer can act on through guard or by inspecting $rc.exit_code.
 func WaitEnvelope(ctx context.Context, args []runtime.Arg) (runtime.Envelope, error) {
 	if len(args) != 1 {
 		return runtime.Envelope{}, fmt.Errorf("wait requires exactly one argument: a $job")

@@ -63,10 +63,12 @@ type writerScope struct {
 
 func (*writerScope) writerScopeMarker() {}
 
+// FD returns the raw lock file descriptor.
 func (s *writerScope) FD() int {
 	return int(s.f.Fd())
 }
 
+// DupFD duplicates the lock fd for passing to a child process.
 func (s *writerScope) DupFD() (*os.File, error) {
 	dup, err := syscall.Dup(s.FD())
 	if err != nil {
@@ -167,10 +169,15 @@ func runWithTiming(acquireCtx, workCtx context.Context, lockPath string, logger 
 // TimeoutError reports that a writer lock was not acquired before
 // the configured timeout elapsed.
 type TimeoutError struct {
-	Path    string
+	// Path is the lock file path whose acquisition timed out.
+	Path string
+
+	// Timeout is the wait budget that elapsed before the lock could be
+	// acquired.
 	Timeout time.Duration
 }
 
+// Error returns a message naming the lock path and the elapsed timeout.
 func (e *TimeoutError) Error() string {
 	return fmt.Sprintf("timed out waiting for lock %s after %v", e.Path, e.Timeout)
 }

@@ -10,9 +10,11 @@ import (
 // ErrLinkNotFound is returned when attempting to operate on a link
 // that does not exist in either the kernel or bpfman's store.
 type ErrLinkNotFound struct {
+	// LinkID is the bpfman link handle that was not found.
 	LinkID LinkID `json:"link_id"`
 }
 
+// Error implements the error interface.
 func (e ErrLinkNotFound) Error() string {
 	return fmt.Sprintf("link %d does not exist", e.LinkID)
 }
@@ -20,9 +22,11 @@ func (e ErrLinkNotFound) Error() string {
 // ErrProgramNotManaged is returned when attempting to operate on a program
 // that exists in the kernel but is not managed by bpfman.
 type ErrProgramNotManaged struct {
+	// ID is the kernel program ID that bpfman does not manage.
 	ID kernel.ProgramID `json:"id"`
 }
 
+// Error implements the error interface.
 func (e ErrProgramNotManaged) Error() string {
 	return fmt.Sprintf("program %d exists in kernel but is not managed by bpfman", e.ID)
 }
@@ -30,9 +34,11 @@ func (e ErrProgramNotManaged) Error() string {
 // ErrProgramNotFound is returned when attempting to operate on a program
 // that does not exist in either the kernel or bpfman's store.
 type ErrProgramNotFound struct {
+	// ID is the kernel program ID that was not found.
 	ID kernel.ProgramID `json:"id"`
 }
 
+// Error implements the error interface.
 func (e ErrProgramNotFound) Error() string {
 	return fmt.Sprintf("program %d does not exist", e.ID)
 }
@@ -46,12 +52,20 @@ func (e ErrProgramNotFound) Error() string {
 // that verb legitimately serves (two for the probe verbs, which cover
 // both the entry and return variants, one for every other verb).
 type ErrAttachKindMismatch struct {
-	ProgramID  kernel.ProgramID `json:"program_id"`
-	ActualType ProgramType      `json:"actual_type"`
-	AttachKind string           `json:"attach_kind"`
-	Accepts    []ProgramType    `json:"accepts"`
+	// ProgramID is the kernel program ID of the targeted program.
+	ProgramID kernel.ProgramID `json:"program_id"`
+
+	// ActualType is the loaded program's bpfman type.
+	ActualType ProgramType `json:"actual_type"`
+
+	// AttachKind is the user-facing attach verb (kprobe, uprobe, fentry, ...).
+	AttachKind string `json:"attach_kind"`
+
+	// Accepts is the set of program types the attach verb legitimately serves.
+	Accepts []ProgramType `json:"accepts"`
 }
 
+// Error implements the error interface.
 func (e ErrAttachKindMismatch) Error() string {
 	accepts := make([]string, len(e.Accepts))
 	for i, t := range e.Accepts {
@@ -75,11 +89,18 @@ func (e ErrAttachKindMismatch) Error() string {
 // the manager; empty when nothing close enough was found or when the
 // kernel could not be consulted.
 type ErrTracepointNotFound struct {
-	Group       string   `json:"group"`
-	Name        string   `json:"name"`
+	// Group is the tracepoint group (the directory under events/).
+	Group string `json:"group"`
+
+	// Name is the tracepoint name within the group.
+	Name string `json:"name"`
+
+	// Suggestions holds up to a few nearest-match tracepoints; empty when
+	// nothing close enough was found or the kernel could not be consulted.
 	Suggestions []string `json:"suggestions,omitempty"`
 }
 
+// Error implements the error interface.
 func (e ErrTracepointNotFound) Error() string {
 	msg := fmt.Sprintf("tracepoint %q not found", e.Group+"/"+e.Name)
 	if len(e.Suggestions) == 0 {

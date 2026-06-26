@@ -48,7 +48,7 @@ const poolAcquirePollInterval = 25 * time.Millisecond
 // can run in parallel.
 const defaultPoolRoot = "/run/bpfman-net-pool"
 
-// poolSubnet is the host part of the TEST-NET-2 /24 the pool
+// poolSubnetPrefix is the network prefix of the TEST-NET-2 /24 the pool
 // allocates inside. Slot n occupies n's /30 at base 4*(n-1):
 // host = base+1, peer = base+2, broadcast = base+3.
 const poolSubnetPrefix = "198.51.100."

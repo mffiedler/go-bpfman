@@ -28,6 +28,8 @@ func NoSign() platform.SignatureVerifier {
 
 type noSignVerifier struct{}
 
+// Verify accepts the image unconditionally and reports that signature
+// verification is disabled.
 func (noSignVerifier) Verify(ctx context.Context, req platform.SignatureVerificationRequest) (platform.SignatureVerification, error) {
 	return platform.SignatureVerification{
 		Status: platform.SignatureVerificationDisabled,

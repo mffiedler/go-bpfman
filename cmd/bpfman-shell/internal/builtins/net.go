@@ -39,7 +39,7 @@ func init() {
 		Name:     "net",
 		Handler:  handleNet,
 		Category: driver.CategoryJobs,
-		Usage: "net veth-pair --ns=NS --host-link=NAME --host-addr=CIDR --peer-link=NAME --peer-addr=CIDR [--no-routes]  |  " +
+		Usage: "net veth-pair --ns=NS --host-link=NAME --host-addr=CIDR --peer-link=NAME --peer-addr=CIDR  |  " +
 			"net netns-veth-pair  |  " +
 			"net release $pair  |  net exec $pair CMD ARGS...  |  net start $pair CMD ARGS...",
 		Summary: "Paired-veth topology fixtures for TC / TCX / XDP dispatcher tests.",

@@ -17,9 +17,14 @@ import (
 type CLI struct {
 	cli.CLI
 
-	RuntimeDir    string        `name:"runtime-dir" placeholder:"DIR" group:"global" help:"Root directory for runtime files." default:"${default_runtime_dir}"`
-	ImageCacheDir string        `name:"image-cache-dir" placeholder:"DIR" group:"global" help:"Root directory for OCI image cache." default:"${default_image_cache_dir}"`
-	LockTimeout   time.Duration `name:"lock-timeout" placeholder:"DURATION" group:"global" help:"Timeout for acquiring the global writer lock (0 for indefinite)." default:"30s" env:"BPFMAN_LOCK_TIMEOUT"`
+	// RuntimeDir is the root directory for bpfman runtime files (--runtime-dir), used to derive the filesystem layout and the writer-lock path. It defaults to the standard runtime root (/run/bpfman).
+	RuntimeDir string `name:"runtime-dir" placeholder:"DIR" group:"global" help:"Root directory for runtime files." default:"${default_runtime_dir}"`
+
+	// ImageCacheDir is the root directory for the OCI image cache (--image-cache-dir). It defaults to /var/cache/bpfman.
+	ImageCacheDir string `name:"image-cache-dir" placeholder:"DIR" group:"global" help:"Root directory for OCI image cache." default:"${default_image_cache_dir}"`
+
+	// LockTimeout bounds how long to wait when acquiring the global writer lock (--lock-timeout or BPFMAN_LOCK_TIMEOUT); zero waits indefinitely. It defaults to 30s.
+	LockTimeout time.Duration `name:"lock-timeout" placeholder:"DURATION" group:"global" help:"Timeout for acquiring the global writer lock (0 for indefinite)." default:"30s" env:"BPFMAN_LOCK_TIMEOUT"`
 }
 
 // Layout returns the filesystem layout for the configured runtime directory.

@@ -40,6 +40,7 @@ const (
 	sourceLdSoCache
 )
 
+// String returns a human-readable name for the resolution tier.
 func (s resolutionSource) String() string {
 	switch s {
 	case sourceProcMaps:

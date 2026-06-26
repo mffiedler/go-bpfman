@@ -65,13 +65,27 @@ const (
 // how to describe itself to tooling. Pointer-free because the
 // registry is read-only at runtime.
 type Builtin struct {
-	Name    string
+	// Name is the command word that selects this builtin during
+	// dispatch.
+	Name string
+
+	// Handler runs the builtin, receiving the dispatch Ctx and
+	// returning the assignable primary value, or runtime.Value{}
+	// when the builtin binds nothing.
 	Handler func(Ctx) (runtime.Value, error)
 
-	Category string // Category* constant; ungrouped if empty
-	Usage    string // one-line syntax
-	Summary  string // one-line description
-	Detail   string // multi-paragraph long help; optional
+	// Category groups the builtin in help output; it is one of the
+	// Category* constants, or empty when ungrouped.
+	Category string
+
+	// Usage is the one-line syntax shown in help.
+	Usage string
+
+	// Summary is the one-line description shown in help.
+	Summary string
+
+	// Detail is the optional multi-paragraph long help.
+	Detail string
 }
 
 // builtinRegistry is the dispatcher's source of truth. Populated

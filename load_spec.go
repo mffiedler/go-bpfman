@@ -116,17 +116,44 @@ func NewAttachLoadSpec(objectPath, programName string, programType ProgramType, 
 // is the canonical location bpfman reads from afterwards. Round
 // tripping a load response back through a comparison against the
 // caller's original path operand will not match by design.
-func (s LoadSpec) ObjectPath() string               { return s.objectPath }
-func (s LoadSpec) ProgramName() string              { return s.programName }
-func (s LoadSpec) ProgramType() ProgramType         { return s.programType }
-func (s LoadSpec) GlobalData() map[string][]byte    { return s.globalData }
-func (s LoadSpec) ImageURL() string                 { return s.imageURL }
-func (s LoadSpec) ImageDigest() string              { return s.imageDigest }
+func (s LoadSpec) ObjectPath() string { return s.objectPath }
+
+// ProgramName returns the program (function) name selected within the object.
+func (s LoadSpec) ProgramName() string { return s.programName }
+
+// ProgramType returns the program type.
+func (s LoadSpec) ProgramType() ProgramType { return s.programType }
+
+// GlobalData returns the global-data overrides applied at load, keyed
+// by variable name; nil when none were set.
+func (s LoadSpec) GlobalData() map[string][]byte { return s.globalData }
+
+// ImageURL returns the OCI image reference the program was loaded from,
+// or empty for a file load.
+func (s LoadSpec) ImageURL() string { return s.imageURL }
+
+// ImageDigest returns the resolved image digest, or empty when unknown
+// or file-loaded.
+func (s LoadSpec) ImageDigest() string { return s.imageDigest }
+
+// ImagePullPolicy returns the image pull policy.
 func (s LoadSpec) ImagePullPolicy() ImagePullPolicy { return s.imagePullPolicy }
-func (s LoadSpec) ImageUsername() string            { return s.imageUsername }
-func (s LoadSpec) ImagePassword() string            { return s.imagePassword }
-func (s LoadSpec) AttachFunc() string               { return s.attachFunc }
-func (s LoadSpec) MapOwnerID() kernel.ProgramID     { return s.mapOwnerID }
+
+// ImageUsername returns the registry username for image authentication,
+// or empty when none was set.
+func (s LoadSpec) ImageUsername() string { return s.imageUsername }
+
+// ImagePassword returns the registry password for image authentication,
+// or empty when none was set.
+func (s LoadSpec) ImagePassword() string { return s.imagePassword }
+
+// AttachFunc returns the attach function for fentry/fexit programs, or
+// empty for program types that do not use one.
+func (s LoadSpec) AttachFunc() string { return s.attachFunc }
+
+// MapOwnerID returns the kernel ID of the program whose maps this
+// program shares, or 0 when it owns its maps.
+func (s LoadSpec) MapOwnerID() kernel.ProgramID { return s.mapOwnerID }
 
 // HasImageAuth returns true if this LoadSpec has registry authentication configured.
 func (s LoadSpec) HasImageAuth() bool { return s.imageUsername != "" }

@@ -1,4 +1,3 @@
-// Package oci implements OCI image pulling for BPF bytecode.
 package oci
 
 import (

@@ -7,6 +7,11 @@ import (
 	"github.com/frobware/go-bpfman/kernel"
 )
 
+// ErrInvalidAttachSpec is the sentinel wrapped by attach-spec
+// construction errors that reject an out-of-range numeric field -- a
+// negative priority, pid, or container pid; match it with errors.Is.
+// The required-field checks (missing programID, ifname, and the like)
+// return plain errors that do not wrap it.
 var ErrInvalidAttachSpec = errors.New("invalid attach spec")
 
 // AttachSpec is a sealed interface satisfied by all concrete attach
@@ -14,7 +19,10 @@ var ErrInvalidAttachSpec = errors.New("invalid attach spec")
 // from implementing it, so the set of valid types is closed.
 type AttachSpec interface {
 	attachSpec() // sealed marker
+
+	// ProgramID returns the kernel ID of the program to attach.
 	ProgramID() kernel.ProgramID
+
 	// Metadata returns user-supplied key/value link labels, nil when none.
 	Metadata() map[string]string
 }
@@ -71,10 +79,16 @@ func NewTracepointAttachSpecFromString(programID kernel.ProgramID, tracepoint st
 	return NewTracepointAttachSpec(programID, tp)
 }
 
-func (TracepointAttachSpec) attachSpec()                   {}
+func (TracepointAttachSpec) attachSpec() {}
+
+// ProgramID returns the kernel ID of the program to attach.
 func (s TracepointAttachSpec) ProgramID() kernel.ProgramID { return s.programID }
-func (s TracepointAttachSpec) Group() string               { return s.group }
-func (s TracepointAttachSpec) Name() string                { return s.name }
+
+// Group returns the tracepoint group, such as "sched".
+func (s TracepointAttachSpec) Group() string { return s.group }
+
+// Name returns the tracepoint name, such as "sched_switch".
+func (s TracepointAttachSpec) Name() string { return s.name }
 
 // KprobeAttachSpec specifies how to attach a kprobe/kretprobe.
 // Note: retprobe is NOT part of the spec - it's derived from the program type.
@@ -96,10 +110,17 @@ func NewKprobeAttachSpec(programID kernel.ProgramID, fnName string) (KprobeAttac
 	return KprobeAttachSpec{programID: programID, fnName: fnName}, nil
 }
 
-func (KprobeAttachSpec) attachSpec()                   {}
+func (KprobeAttachSpec) attachSpec() {}
+
+// ProgramID returns the kernel ID of the program to attach.
 func (s KprobeAttachSpec) ProgramID() kernel.ProgramID { return s.programID }
-func (s KprobeAttachSpec) FnName() string              { return s.fnName }
-func (s KprobeAttachSpec) Offset() uint64              { return s.offset }
+
+// FnName returns the kernel function the probe attaches to.
+func (s KprobeAttachSpec) FnName() string { return s.fnName }
+
+// Offset returns the byte offset from the function entry at which to
+// probe; 0 means the function entry itself.
+func (s KprobeAttachSpec) Offset() uint64 { return s.offset }
 
 // WithOffset returns a new KprobeAttachSpec with the offset set.
 func (s KprobeAttachSpec) WithOffset(offset uint64) KprobeAttachSpec {
@@ -139,13 +160,27 @@ func NewUprobeAttachSpec(programID kernel.ProgramID, target string, pid, contain
 	return UprobeAttachSpec{programID: programID, target: target, pid: pid, containerPid: containerPid}, nil
 }
 
-func (UprobeAttachSpec) attachSpec()                   {}
+func (UprobeAttachSpec) attachSpec() {}
+
+// ProgramID returns the kernel ID of the program to attach.
 func (s UprobeAttachSpec) ProgramID() kernel.ProgramID { return s.programID }
-func (s UprobeAttachSpec) Target() string              { return s.target }
-func (s UprobeAttachSpec) FnName() string              { return s.fnName }
-func (s UprobeAttachSpec) Offset() uint64              { return s.offset }
-func (s UprobeAttachSpec) Pid() int32                  { return s.pid }
-func (s UprobeAttachSpec) ContainerPid() int32         { return s.containerPid }
+
+// Target returns the executable or shared library the probe attaches to.
+func (s UprobeAttachSpec) Target() string { return s.target }
+
+// FnName returns the symbol the probe attaches to; empty when probing
+// by offset alone.
+func (s UprobeAttachSpec) FnName() string { return s.fnName }
+
+// Offset returns the byte offset within the target at which to probe.
+func (s UprobeAttachSpec) Offset() uint64 { return s.offset }
+
+// Pid returns the process the probe is scoped to, or 0 for all processes.
+func (s UprobeAttachSpec) Pid() int32 { return s.pid }
+
+// ContainerPid returns the PID whose mount namespace the probe attaches
+// in, or 0 to attach in the host namespace.
+func (s UprobeAttachSpec) ContainerPid() int32 { return s.containerPid }
 
 // WithFnName returns a new UprobeAttachSpec with the function name set.
 func (s UprobeAttachSpec) WithFnName(fnName string) UprobeAttachSpec {
@@ -174,7 +209,9 @@ func NewFentryAttachSpec(programID kernel.ProgramID) (FentryAttachSpec, error) {
 	return FentryAttachSpec{programID: programID}, nil
 }
 
-func (FentryAttachSpec) attachSpec()                   {}
+func (FentryAttachSpec) attachSpec() {}
+
+// ProgramID returns the kernel ID of the program to attach.
 func (s FentryAttachSpec) ProgramID() kernel.ProgramID { return s.programID }
 
 // FexitAttachSpec specifies how to attach fexit.
@@ -192,7 +229,9 @@ func NewFexitAttachSpec(programID kernel.ProgramID) (FexitAttachSpec, error) {
 	return FexitAttachSpec{programID: programID}, nil
 }
 
-func (FexitAttachSpec) attachSpec()                   {}
+func (FexitAttachSpec) attachSpec() {}
+
+// ProgramID returns the kernel ID of the program to attach.
 func (s FexitAttachSpec) ProgramID() kernel.ProgramID { return s.programID }
 
 // XDPAttachSpec specifies how to attach XDP.
@@ -226,12 +265,24 @@ func NewXDPAttachSpec(programID kernel.ProgramID, ifname string, priority int) (
 	return XDPAttachSpec{programID: programID, ifname: ifname, priority: prio}, nil
 }
 
-func (XDPAttachSpec) attachSpec()                   {}
+func (XDPAttachSpec) attachSpec() {}
+
+// ProgramID returns the kernel ID of the program to attach.
 func (s XDPAttachSpec) ProgramID() kernel.ProgramID { return s.programID }
-func (s XDPAttachSpec) Ifname() string              { return s.ifname }
-func (s XDPAttachSpec) Priority() int               { return s.priority }
-func (s XDPAttachSpec) ProceedOn() []int32          { return s.proceedOn }
-func (s XDPAttachSpec) Netns() string               { return s.netns }
+
+// Ifname returns the name of the interface to attach to.
+func (s XDPAttachSpec) Ifname() string { return s.ifname }
+
+// Priority returns the dispatcher run priority; lower values run first.
+func (s XDPAttachSpec) Priority() int { return s.priority }
+
+// ProceedOn returns the kernel return codes on which the dispatcher
+// continues to the next program in the chain.
+func (s XDPAttachSpec) ProceedOn() []int32 { return s.proceedOn }
+
+// Netns returns the network namespace path to attach in, or empty for
+// the current namespace.
+func (s XDPAttachSpec) Netns() string { return s.netns }
 
 // WithProceedOnActions returns a new XDPAttachSpec with the proceed-on
 // actions set from parsed domain values.
@@ -303,13 +354,27 @@ func NewTCAttachSpecFromString(programID kernel.ProgramID, ifname, direction str
 	return NewTCAttachSpec(programID, ifname, dir, priority)
 }
 
-func (TCAttachSpec) attachSpec()                   {}
+func (TCAttachSpec) attachSpec() {}
+
+// ProgramID returns the kernel ID of the program to attach.
 func (s TCAttachSpec) ProgramID() kernel.ProgramID { return s.programID }
-func (s TCAttachSpec) Ifname() string              { return s.ifname }
-func (s TCAttachSpec) Direction() TCDirection      { return s.direction }
-func (s TCAttachSpec) Priority() int               { return s.priority }
-func (s TCAttachSpec) ProceedOn() []int32          { return s.proceedOn }
-func (s TCAttachSpec) Netns() string               { return s.netns }
+
+// Ifname returns the name of the interface to attach to.
+func (s TCAttachSpec) Ifname() string { return s.ifname }
+
+// Direction returns the traffic direction the program attaches to.
+func (s TCAttachSpec) Direction() TCDirection { return s.direction }
+
+// Priority returns the dispatcher run priority; lower values run first.
+func (s TCAttachSpec) Priority() int { return s.priority }
+
+// ProceedOn returns the kernel return codes on which the dispatcher
+// continues to the next program in the chain.
+func (s TCAttachSpec) ProceedOn() []int32 { return s.proceedOn }
+
+// Netns returns the network namespace path to attach in, or empty for
+// the current namespace.
+func (s TCAttachSpec) Netns() string { return s.netns }
 
 // WithProceedOnActions returns a new TCAttachSpec with the proceed-on
 // actions set from parsed domain values.
@@ -379,12 +444,23 @@ func NewTCXAttachSpecFromString(programID kernel.ProgramID, ifname, direction st
 	return NewTCXAttachSpec(programID, ifname, dir, priority)
 }
 
-func (TCXAttachSpec) attachSpec()                   {}
+func (TCXAttachSpec) attachSpec() {}
+
+// ProgramID returns the kernel ID of the program to attach.
 func (s TCXAttachSpec) ProgramID() kernel.ProgramID { return s.programID }
-func (s TCXAttachSpec) Ifname() string              { return s.ifname }
-func (s TCXAttachSpec) Direction() TCDirection      { return s.direction }
-func (s TCXAttachSpec) Priority() int               { return s.priority }
-func (s TCXAttachSpec) Netns() string               { return s.netns }
+
+// Ifname returns the name of the interface to attach to.
+func (s TCXAttachSpec) Ifname() string { return s.ifname }
+
+// Direction returns the traffic direction the program attaches to.
+func (s TCXAttachSpec) Direction() TCDirection { return s.direction }
+
+// Priority returns the TCX run priority; lower values run first.
+func (s TCXAttachSpec) Priority() int { return s.priority }
+
+// Netns returns the network namespace path to attach in, or empty for
+// the current namespace.
+func (s TCXAttachSpec) Netns() string { return s.netns }
 
 // WithNetns returns a new TCXAttachSpec with the network namespace path set.
 // If non-empty, attachment is performed in that network namespace.
@@ -396,43 +472,52 @@ func (s TCXAttachSpec) WithNetns(netns string) TCXAttachSpec {
 // WithMetadata builders attach user key/value labels to a spec. They are
 // grouped here because the body is identical for every attach kind (set
 // the embedded attachMetadata field, return the concrete type); each
-// returns its own type so it composes with the other WithX builders.
+// returns its own type so it composes with the other WithX builders. The
+// returns-a-copy contract is shared, so the per-method comments are brief.
 
+// WithMetadata returns a copy of s with the given link labels set.
 func (s TracepointAttachSpec) WithMetadata(md map[string]string) TracepointAttachSpec {
 	s.metadata = md
 	return s
 }
 
+// WithMetadata returns a copy of s with the given link labels set.
 func (s KprobeAttachSpec) WithMetadata(md map[string]string) KprobeAttachSpec {
 	s.metadata = md
 	return s
 }
 
+// WithMetadata returns a copy of s with the given link labels set.
 func (s UprobeAttachSpec) WithMetadata(md map[string]string) UprobeAttachSpec {
 	s.metadata = md
 	return s
 }
 
+// WithMetadata returns a copy of s with the given link labels set.
 func (s FentryAttachSpec) WithMetadata(md map[string]string) FentryAttachSpec {
 	s.metadata = md
 	return s
 }
 
+// WithMetadata returns a copy of s with the given link labels set.
 func (s FexitAttachSpec) WithMetadata(md map[string]string) FexitAttachSpec {
 	s.metadata = md
 	return s
 }
 
+// WithMetadata returns a copy of s with the given link labels set.
 func (s XDPAttachSpec) WithMetadata(md map[string]string) XDPAttachSpec {
 	s.metadata = md
 	return s
 }
 
+// WithMetadata returns a copy of s with the given link labels set.
 func (s TCAttachSpec) WithMetadata(md map[string]string) TCAttachSpec {
 	s.metadata = md
 	return s
 }
 
+// WithMetadata returns a copy of s with the given link labels set.
 func (s TCXAttachSpec) WithMetadata(md map[string]string) TCXAttachSpec {
 	s.metadata = md
 	return s

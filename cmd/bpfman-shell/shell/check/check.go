@@ -39,7 +39,11 @@ import (
 // reported in a single Check invocation; severity is
 // implicit: every Issue is an error.
 type Issue struct {
+	// Span is the source extent the issue is reported against; its
+	// start position drives the "line:col:" prefix Error renders.
 	source.Span
+
+	// Msg is the human-readable description of the finding.
 	Msg string
 }
 
@@ -48,9 +52,23 @@ type Issue struct {
 // (for example, imported libraries checked in the context of
 // defs already made visible by the importing script).
 type DefStaticInfo struct {
-	Arity       int
-	DeclPos     source.Pos
-	HasReturn   bool
+	// Arity is the def's declared parameter count, used to validate
+	// call sites against the seeded definition.
+	Arity int
+
+	// DeclPos is the def's declaration site, cited by arity and
+	// duplicate-def diagnostics.
+	DeclPos source.Pos
+
+	// HasReturn reports whether the def body contains a return
+	// anywhere in its tree. When true the def publishes a value, so
+	// a bind RHS whose head is this def infers ReturnShape rather
+	// than the default envelope shape.
+	HasReturn bool
+
+	// ReturnShape is the inferred shape the def produces, propagated
+	// into downstream bindings. Meaningful only when HasReturn is
+	// true.
 	ReturnShape semantics.Shape
 }
 
@@ -1049,11 +1067,10 @@ func (c *checker) checkDefLiteralArgs(head string, args []syntax.Expr, paramOffs
 }
 
 // primaryNameForHint picks a placeholder for the bind-target
-// slot in the diagnostic suggestion. The user's original name
-// is reused when one was supplied; the tuple target is
-// approximated by the primary slot's name when present;
-// otherwise a generic "x" reads cleanly in the rewritten form
-// the hint suggests.
+// slot in the diagnostic suggestion. The bind target's name is
+// reused when it names a real binding (non-empty and not the
+// "_" discard); otherwise a generic "x" reads cleanly in the
+// rewritten form the hint suggests.
 func primaryNameForHint(n *syntax.BindStmt) string {
 	if n.Target.Text != "" && n.Target.Text != "_" {
 		return n.Target.Text
@@ -1637,12 +1654,14 @@ func quoteAll(ss []string) []string {
 }
 
 // checkJobLeaks reports started-but-never-managed jobs. A
-// 'let X <- start ...' or 'guard X <- start ...' creates a
-// job named X; a later 'kill $X', 'wait $X', or 'defer kill
-// $X' marks it managed. An unmanaged job at script end is
-// the static analogue of the runtime leak walk: same rule,
-// caught one pass earlier so the user sees it before any
-// side effects fire.
+// 'guard X <- start ...' creates a job named X; a later 'kill
+// $X', 'wait $X', or 'defer kill $X' marks it managed. Only the
+// guard form is tracked: a plain 'let X <- start ...' binds an
+// outcome envelope rather than the job handle, so $X cannot be
+// killed or waited and is outside the leak rule. An unmanaged
+// job at script end is the static analogue of the runtime leak
+// walk: same rule, caught one pass earlier so the user sees it
+// before any side effects fire.
 //
 // The check is intentionally conservative: a 'kill $X' or
 // 'wait $X' anywhere in the program counts, even inside a
@@ -2044,11 +2063,12 @@ func (c *checker) checkThreadDefArity(prog *syntax.Program) {
 // (anything starting with '--') are skipped so the count
 // reflects only the positional args the runtime cares about.
 //
-// Coupling: the builtin names and their arities are
-// duplicated here from cmd/bpfman-semantics. The set is small and
-// stable; if a new lifecycle verb lands, the entry adds in
-// one place. Driver-side dispatch and static check stay in
-// step via convention rather than a shared registry.
+// Coupling: the builtin names and their arities are duplicated
+// here from the driver-side dispatch in cmd/bpfman-shell. The
+// set is small and stable; if a new lifecycle verb lands, the
+// entry adds in one place. Driver-side dispatch and static
+// check stay in step via convention rather than a shared
+// registry.
 func (c *checker) checkBuiltinArity(prog *syntax.Program) {
 	type aritySpec struct {
 		min, max int // -1 max means unbounded

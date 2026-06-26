@@ -12,29 +12,66 @@ import (
 // BytecodeInput is one object file that can be copied into a bytecode
 // image build context.
 type BytecodeInput struct {
+	// Platform is the OCI platform string (for example "linux/amd64")
+	// this object targets. It is empty for a single host-architecture
+	// input.
 	Platform string
+
+	// BuildArg is the Docker build-arg name that carries this object's
+	// path into the image build context (for example "BC_AMD64_EL", or
+	// "BYTECODE_FILE" for a single host input).
 	BuildArg string
-	Endian   elf.Data
-	Path     string
+
+	// Endian is the ELF byte order the object must have. Inspection
+	// rejects a mismatch; the zero value disables the check.
+	Endian elf.Data
+
+	// Path is the filesystem path of the object file to copy in.
+	Path string
 }
 
 // Arch identifies one architecture/endian bytecode image slot.
 type Arch string
 
 const (
-	Arch386EL      Arch = "386-el"
-	ArchAmd64EL    Arch = "amd64-el"
-	ArchArmEL      Arch = "arm-el"
-	ArchArm64EL    Arch = "arm64-el"
-	ArchLoong64EL  Arch = "loong64-el"
-	ArchMipsEB     Arch = "mips-eb"
-	ArchMipsleEL   Arch = "mipsle-el"
-	ArchMips64EB   Arch = "mips64-eb"
+	// Arch386EL is the linux/386 little-endian slot.
+	Arch386EL Arch = "386-el"
+
+	// ArchAmd64EL is the linux/amd64 little-endian slot.
+	ArchAmd64EL Arch = "amd64-el"
+
+	// ArchArmEL is the linux/arm little-endian slot.
+	ArchArmEL Arch = "arm-el"
+
+	// ArchArm64EL is the linux/arm64 little-endian slot.
+	ArchArm64EL Arch = "arm64-el"
+
+	// ArchLoong64EL is the linux/loong64 little-endian slot.
+	ArchLoong64EL Arch = "loong64-el"
+
+	// ArchMipsEB is the linux/mips big-endian slot.
+	ArchMipsEB Arch = "mips-eb"
+
+	// ArchMipsleEL is the linux/mipsle little-endian slot.
+	ArchMipsleEL Arch = "mipsle-el"
+
+	// ArchMips64EB is the linux/mips64 big-endian slot.
+	ArchMips64EB Arch = "mips64-eb"
+
+	// ArchMips64leEL is the linux/mips64le little-endian slot.
 	ArchMips64leEL Arch = "mips64le-el"
-	ArchPpc64EB    Arch = "ppc64-eb"
-	ArchPpc64leEL  Arch = "ppc64le-el"
-	ArchRiscv64EL  Arch = "riscv64-el"
-	ArchS390xEB    Arch = "s390x-eb"
+
+	// ArchPpc64EB is the linux/ppc64 big-endian slot.
+	ArchPpc64EB Arch = "ppc64-eb"
+
+	// ArchPpc64leEL is the linux/ppc64le little-endian slot.
+	ArchPpc64leEL Arch = "ppc64le-el"
+
+	// ArchRiscv64EL is the linux/riscv64 little-endian slot.
+	ArchRiscv64EL Arch = "riscv64-el"
+
+	// ArchS390xEB is the linux/s390x big-endian slot.
+	ArchS390xEB Arch = "s390x-eb"
 )
 
 type archSpec struct {
@@ -167,8 +204,15 @@ func HostELFData() elf.Data {
 
 // Info is the bytecode metadata needed to label a bytecode image.
 type Info struct {
+	// Programs maps each BPF program name to its bpfman program-type
+	// spelling (for example "xdp", "tc"). It is rendered into the
+	// image's io.ebpf.programs label.
 	Programs map[string]string
-	Maps     map[string]string
+
+	// Maps maps each BPF map name to its normalised map-type spelling
+	// (for example "hash", "array"). It is rendered into the image's
+	// io.ebpf.maps label.
+	Maps map[string]string
 }
 
 // Inspector validates one bytecode input and returns its metadata.
@@ -177,9 +221,17 @@ type Inspector func(path string, expectedEndian elf.Data) (Info, error)
 // Plan is the complete build contract shared by image build and
 // generate-build-args.
 type Plan struct {
+	// Platforms lists the OCI platforms to build, in input order. It is
+	// empty for a single host-architecture build.
 	Platforms []string
+
+	// BuildArgs holds the Docker build args, each of the form NAME=path,
+	// that point the build at every bytecode object.
 	BuildArgs []string
-	Labels    Info
+
+	// Labels is the bytecode metadata, derived from the first input,
+	// used to label the resulting image.
+	Labels Info
 }
 
 // Build computes the image build plan and validates every bytecode

@@ -1,3 +1,24 @@
+// Command go-test-timeline turns a `go test` JSON event stream into
+// Chrome Trace Event JSON, laying each test out on a time axis so you
+// can see which tests ran when, which overlapped, and where the
+// runner sat idle.
+//
+// Input is the event stream from `go test -json` or `go tool
+// test2json -t` (the -t is required: without it the events carry no
+// Time and the tool refuses to run). Events are grouped into one row
+// per package+test; the Action field drives a small state machine
+// that records running and paused intervals, and a terminal
+// pass/fail/skip stamps the outcome. Running intervals are greedily
+// packed into as few parallel tracks as possible, so the track count
+// reflects peak concurrency, and a derived "runner busy" track unions
+// them into maximal spans to expose the idle gaps. Output is Chrome
+// Trace Event JSON loadable by chrome://tracing or
+// https://ui.perfetto.dev, with every timestamp relative to the first
+// event and expressed in microseconds.
+//
+// It is a development aid, deliberately kept out of the production
+// bpfman binary set. See the package README for the flags, the
+// -markers mode, and worked examples.
 package main
 
 import (

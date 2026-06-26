@@ -16,11 +16,21 @@ import (
 // UnloadCmd unloads managed BPF programs by program ID.
 type UnloadCmd struct {
 	cliformat.OutputFlags
-	ProgramIDs    []args.ProgramID `arg:"" name:"program-id" help:"Program IDs to unload (supports hex with 0x prefix)." required:""`
-	IgnoreMissing bool             `name:"ignore-missing" help:"Treat 'program not found' as success rather than an error; useful for idempotent cleanup (e.g. defer)."`
+
+	// ProgramIDs are the kernel program IDs to unload (each accepts decimal
+	// or 0x-prefixed hex); at least one is required.
+	ProgramIDs []args.ProgramID `arg:"" name:"program-id" help:"Program IDs to unload (supports hex with 0x prefix)." required:""`
+
+	// IgnoreMissing treats a "program not found" error as success rather
+	// than a failure, making the command idempotent for cleanup paths such
+	// as defer.
+	IgnoreMissing bool `name:"ignore-missing" help:"Treat 'program not found' as success rather than an error; useful for idempotent cleanup (e.g. defer)."`
 }
 
-// Run executes the unload command: mutation under lock, output outside.
+// Run unloads each requested program ID under the writer lock as a batch
+// mutation, with output emitted outside the lock. When IgnoreMissing is
+// set, an unload that fails because the program is not found is treated
+// as success.
 func (c *UnloadCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	mgr, cleanup, err := newManager(ctx, cli)
 	if err != nil {

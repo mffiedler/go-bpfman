@@ -15,9 +15,14 @@ import (
 // value means "no location" and formats as the empty string, so
 // stdin-driven modes are unaffected.
 type SourceLoc struct {
+	// File is the script file name, or empty for the zero value.
 	File string
+
+	// Line is the 1-based line number.
 	Line int
-	Col  int
+
+	// Col is the 1-based column, or 0 when no column is known.
+	Col int
 }
 
 // String renders the location as `file:line: ` (or

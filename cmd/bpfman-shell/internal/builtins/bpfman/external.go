@@ -1,9 +1,13 @@
 // External `bpfman` dispatch: invoke the bpfman binary as a
-// subprocess, capture stdout (always JSON; the dispatcher
-// appends -o json if the caller did not), and decode into the
-// typed Value shape for the matching (noun, verb). This keeps
-// command parsing and execution in cmd/bpfman; the shell only
-// adapts runtime arguments and decodes the CLI JSON contract.
+// subprocess, capture stdout, and decode into the typed Value
+// shape for the matching (noun, verb). The dispatcher appends -o
+// json unless the command is image build or image inspect, or the
+// caller already passed an output flag; stdout is therefore JSON
+// for the commands that decode a typed payload, whereas image
+// build streams build-log text and decodes to an empty Value.
+// This keeps command parsing and execution in cmd/bpfman; the
+// shell only adapts runtime arguments and decodes the CLI JSON
+// contract.
 
 package bpfmanbuiltin
 
@@ -25,8 +29,9 @@ import (
 )
 
 // dispatchCommandExternal forks the bpfman binary with the
-// command's textual args, appends -o json if absent, captures
-// stdout, and decodes via decodeBpfmanResult.
+// command's textual args, appends -o json when the command
+// supports an output format and the caller did not already pass
+// one, captures stdout, and decodes via decodeBpfmanResult.
 func dispatchCommandExternal(ctx context.Context, args []runtime.Arg) (runtime.Value, error) {
 	if len(args) == 0 {
 		return runtime.Value{}, fmt.Errorf("missing command after \"bpfman\"; try \"bpfman program list\"")
@@ -75,8 +80,9 @@ func displayName(name string) string {
 
 // argToCLIText renders a single runtime.Arg into the textual form
 // the bpfman CLI expects on argv. WordArg / QuotedArg /
-// ScalarValueArg pass straight through; StructuredValueArg
-// dispatches on the value's origin capability:
+// ScalarValueArg pass straight through; AdapterArg renders its
+// value's scalar form; StructuredValueArg dispatches on the
+// value's origin capability:
 //
 //   - HasLinkID          -> the bpfman link ID as decimal text
 //   - HasKernelProgramID -> the program ID as decimal text

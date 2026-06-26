@@ -43,13 +43,19 @@ func (s *Scanner) reportMalformed(path string, err error) {
 
 // ProgPin represents a program pin: {fs}/prog_{program_id}
 type ProgPin struct {
-	Path      string           `json:"path"`
+	// Path is the full path to the pin file.
+	Path string `json:"path"`
+
+	// ProgramID is the kernel program ID parsed from the pin name.
 	ProgramID kernel.ProgramID `json:"program_id"`
 }
 
 // MapDir represents a map directory: {fs}/maps/{program_id}
 type MapDir struct {
-	Path      string           `json:"path"`
+	// Path is the full path to the map directory.
+	Path string `json:"path"`
+
+	// ProgramID is the kernel program ID parsed from the directory name.
 	ProgramID kernel.ProgramID `json:"program_id"`
 }
 
@@ -57,37 +63,74 @@ type MapDir struct {
 // Path: {fs}/{type}/dispatcher_{nsid}_{ifindex}_{revision}
 // LinkCount is derived by counting link_* files in the directory.
 type DispatcherDir struct {
-	Path      string `json:"path"`
-	DispType  string `json:"disp_type"` // "xdp", "tc-ingress", "tc-egress"
-	Nsid      uint64 `json:"nsid"`
-	Ifindex   uint32 `json:"ifindex"`
-	Revision  uint32 `json:"revision"`
-	LinkCount int    `json:"link_count"`
+	// Path is the full path to the dispatcher revision directory.
+	Path string `json:"path"`
+
+	// DispType is the dispatcher type: "xdp", "tc-ingress", or
+	// "tc-egress".
+	DispType string `json:"disp_type"`
+
+	// Nsid is the network namespace ID the dispatcher belongs to.
+	Nsid uint64 `json:"nsid"`
+
+	// Ifindex is the index of the interface the dispatcher is attached
+	// to.
+	Ifindex uint32 `json:"ifindex"`
+
+	// Revision is the dispatcher revision number parsed from the
+	// directory name.
+	Revision uint32 `json:"revision"`
+
+	// LinkCount is the number of link_* files in the directory.
+	LinkCount int `json:"link_count"`
 }
 
 // DispatcherLinkPin represents a dispatcher link pin.
 // Path: {fs}/{type}/dispatcher_{nsid}_{ifindex}_link
 type DispatcherLinkPin struct {
-	Path     string `json:"path"`
+	// Path is the full path to the dispatcher link pin file.
+	Path string `json:"path"`
+
+	// DispType is the dispatcher type: "xdp", "tc-ingress", or
+	// "tc-egress".
 	DispType string `json:"disp_type"`
-	Nsid     uint64 `json:"nsid"`
-	Ifindex  uint32 `json:"ifindex"`
+
+	// Nsid is the network namespace ID the dispatcher belongs to.
+	Nsid uint64 `json:"nsid"`
+
+	// Ifindex is the index of the interface the dispatcher is attached
+	// to.
+	Ifindex uint32 `json:"ifindex"`
 }
 
 // SharedMapPin represents a shared PinByName map pin: {fs}/shared/{map_name}
 type SharedMapPin struct {
-	Path    string `json:"path"`
+	// Path is the full path to the shared map pin file.
+	Path string `json:"path"`
+
+	// MapName is the map name, taken from the pin file's base name.
 	MapName string `json:"map_name"`
 }
 
 // FSState is a materialised snapshot of the filesystem.
 // Use Scanner.Scan() to create, or construct directly in tests.
 type FSState struct {
-	ProgPins           []ProgPin           `json:"prog_pins"`
-	MapDirs            []MapDir            `json:"map_dirs"`
-	DispatcherDirs     []DispatcherDir     `json:"dispatcher_dirs"`
+	// ProgPins are the program pins under {fs}/prog_*.
+	ProgPins []ProgPin `json:"prog_pins"`
+
+	// MapDirs are the per-program map directories under {fs}/maps/.
+	MapDirs []MapDir `json:"map_dirs"`
+
+	// DispatcherDirs are the dispatcher revision directories across the
+	// XDP and TC trees.
+	DispatcherDirs []DispatcherDir `json:"dispatcher_dirs"`
+
+	// DispatcherLinkPins are the dispatcher link pins across the XDP and
+	// TC trees.
 	DispatcherLinkPins []DispatcherLinkPin `json:"dispatcher_link_pins"`
-	SharedMapPins      []SharedMapPin      `json:"shared_map_pins"`
+
+	// SharedMapPins are the shared PinByName map pins under {fs}/shared/.
+	SharedMapPins []SharedMapPin `json:"shared_map_pins"`
 }
 
 // fs returns the bpffs mount point path.

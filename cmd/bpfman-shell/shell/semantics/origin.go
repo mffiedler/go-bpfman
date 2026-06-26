@@ -19,13 +19,41 @@ import (
 type OriginKind int
 
 const (
+	// OriginUnknown is the zero value and the wildcard kind: a
+	// Value with no declared origin (JSON parsed without tagging,
+	// map literals, path-lookup results) passes every ExpectOrigin
+	// check.
 	OriginUnknown OriginKind = iota
+
+	// OriginScalar tags a Value that renders as a single token: a
+	// string, number, or the null marker.
 	OriginScalar
+
+	// OriginBool tags a Value that holds a boolean, as produced by
+	// comparison operators and boolean-returning predicates.
 	OriginBool
+
+	// OriginProgram tags a Value that carries a bpfman Program or
+	// ProgramRecord, so capability dispatch can reach the kernel ID
+	// and metadata.
 	OriginProgram
+
+	// OriginLink tags a Value that carries a bpfman Link or
+	// LinkRecord, so capability dispatch can reach the link ID and
+	// attachment details.
 	OriginLink
+
+	// OriginDispatcher tags a Value that represents a dispatcher.
+	// The kind is reserved: it renders as "dispatcher" in error
+	// messages, but no construction site currently emits a Value
+	// tagged with it.
 	OriginDispatcher
+
+	// OriginMap tags a Value that is an unsealed map/object whose
+	// field set is open, so field access is permitted but not
+	// typo-checked.
 	OriginMap
+
 	// OriginEnvelope tags a Value that wraps a captured-result
 	// Envelope: the structured shape every command form returns,
 	// carrying ok, exit_code, stdout, stderr, the typed payload value,
@@ -155,14 +183,17 @@ type Shape struct {
 	// and a missing Fields map (zero map) means "no fields are
 	// valid at all" (scalar/bool/null leaves).
 	Sealed bool
+
 	// Kind is the OriginKind tag this Shape implies. Used by
 	// the checker so a path traversal can produce a leaf kind
 	// for downstream inference (let q = $r.exit_code -> q has kind
 	// Scalar).
 	Kind OriginKind
+
 	// Fields maps a field name to its child Shape. Only
 	// consulted when Sealed.
 	Fields map[string]Shape
+
 	// Elem describes the shape of a list element when the
 	// surrounding Shape is itself a list. Nil for non-list
 	// Shapes. The walker descends into Elem when a path

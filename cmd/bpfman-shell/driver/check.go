@@ -54,7 +54,7 @@ func SlurpReader(r LineReader) (string, error) {
 
 // PreflightCheck tokenises and parses src, runs the static
 // checker, and writes any issues to errOut as rust-compiler-
-// style multi-line diagnostics with a "  --> file:line:col"
+// style multi-line diagnostics with a " --> file:line:col"
 // citation, the offending source line, and a caret span
 // underlining the region. Returns true when at least one issue
 // was emitted so the caller can refuse to evaluate.

@@ -12,6 +12,7 @@ type XDPAction struct {
 	code int32
 }
 
+// The known XDP actions, each pairing a name with its kernel XDP_* return code.
 var (
 	XDPActionAborted          = XDPAction{"aborted", 0}
 	XDPActionDrop             = XDPAction{"drop", 1}
@@ -39,10 +40,17 @@ var xdpActionByCode = func() map[int32]XDPAction {
 	return m
 }()
 
-func (a XDPAction) String() string               { return a.name }
-func (a XDPAction) Int32() int32                 { return a.code }
+// String returns the action name.
+func (a XDPAction) String() string { return a.name }
+
+// Int32 returns the kernel XDP_* return code.
+func (a XDPAction) Int32() int32 { return a.code }
+
+// MarshalText implements encoding.TextMarshaler, encoding the action as its name.
 func (a XDPAction) MarshalText() ([]byte, error) { return []byte(a.name), nil }
 
+// UnmarshalText implements encoding.TextUnmarshaler, parsing the action
+// name case-insensitively.
 func (a *XDPAction) UnmarshalText(b []byte) error {
 	parsed, err := ParseXDPAction(string(b))
 	if err != nil {

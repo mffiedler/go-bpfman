@@ -282,6 +282,7 @@ func formatAttachDetails(details bpfman.LinkDetails) string {
 
 // LoadedProgramsView is the output view for commands that load programs.
 type LoadedProgramsView struct {
+	// Programs are the programs loaded by the command, one row per program.
 	Programs []bpfman.Program
 }
 
@@ -483,6 +484,7 @@ func formatLoadedProgramsTable(view LoadedProgramsView) string {
 
 // ProgramListView is the output view for program list commands.
 type ProgramListView struct {
+	// Result is the program list to render, including both bpfman-managed and kernel-only programs.
 	Result bpfman.ProgramListResult
 }
 
@@ -558,6 +560,7 @@ func programLinksColumn(links []bpfman.LinkID) string {
 
 // DispatcherListView is the output view for dispatcher list commands.
 type DispatcherListView struct {
+	// Summaries are the dispatcher summaries to render, one row per dispatcher.
 	Summaries []platform.DispatcherSummary
 }
 

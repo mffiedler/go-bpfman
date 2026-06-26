@@ -23,7 +23,13 @@ import (
 // describing them allocates no resources -- so Plan can be built,
 // dedup'd, and reordered without touching the kernel.
 type Action interface {
+	// Describe returns the shell-shaped line shown in dry-run
+	// output: an audit-friendly rendering a reader could, in
+	// principle, run by hand. Pure; allocates no resources.
 	Describe() string
+
+	// Apply executes the step against the live system and returns
+	// any error it produced.
 	Apply() error
 }
 
@@ -50,8 +56,11 @@ func (p Plan) Describe(w io.Writer) {
 // want one line per failure with the action's Describe() as the
 // preamble.
 type ActionFailure struct {
+	// Action is the cleanup step whose Apply returned an error.
 	Action Action
-	Err    error
+
+	// Err is the error that Action's Apply returned.
+	Err error
 }
 
 // Apply executes every action. Per-entry errors are accumulated
@@ -99,6 +108,8 @@ func (p Plan) Dedup() Plan {
 // --wipe path to clear bpfman's runtime FS subtree wholesale,
 // ignoring DB ownership. Missing trees are not an error.
 type RemoveTree struct {
+	// Path is the root of the directory tree to remove
+	// recursively; a missing tree is not an error.
 	Path string
 }
 
@@ -119,6 +130,7 @@ func (a RemoveTree) Apply() error {
 // surface as an Apply failure rather than a silent success
 // because a stale plan entry is worth flagging.
 type UnmountBPFFS struct {
+	// Path is the bpffs mount point to unmount.
 	Path string
 }
 
@@ -138,6 +150,7 @@ func (a UnmountBPFFS) Apply() error {
 // and GC the program; for program / map pins the kernel GCs the
 // object once no FD or other pin keeps it alive.
 type RemovePin struct {
+	// Path is the pin file under the bpf fs to unlink.
 	Path string
 }
 
@@ -157,6 +170,7 @@ func (a RemovePin) Apply() error {
 // kernel detach. If the link is already gone (someone else
 // closed it between scan and apply), Apply succeeds quietly.
 type DetachLink struct {
+	// ID identifies the bpf_link to close by ID.
 	ID link.ID
 }
 
@@ -183,9 +197,15 @@ func (a DetachLink) Apply() error {
 // empty selects the current netns; non-empty enters via setns.
 // NetnsName is only used by Describe.
 type DeleteQdisc struct {
+	// NetnsPath is the netns to enter before deleting the qdisc;
+	// empty selects the current netns, non-empty enters via setns.
 	NetnsPath string
+
+	// NetnsName is the netns name used only by Describe's output.
 	NetnsName string
-	IfName    string
+
+	// IfName is the interface whose clsact qdisc is removed.
+	IfName string
 }
 
 // Describe implements Action.
@@ -232,6 +252,8 @@ func (a DeleteQdisc) Apply() error {
 // end of an `Na` / `Nb` pair tears down the peer wherever it
 // lives.
 type DeleteIface struct {
+	// Name is the interface to delete from the current netns;
+	// deleting one end of a veth pair cascades to its peer.
 	Name string
 }
 
@@ -262,8 +284,12 @@ func (a DeleteIface) Apply() error {
 // using the iproute2 convention without naming it; the scanner
 // fills Dir in explicitly so tests can point at a temp tree.
 type DeleteNetns struct {
+	// Name is the named netns marker file to remove.
 	Name string
-	Dir  string
+
+	// Dir is the directory holding the marker file; empty
+	// defaults to DefaultNetnsDir.
+	Dir string
 }
 
 // Describe implements Action.
@@ -308,6 +334,7 @@ func (a DeleteNetns) Apply() error {
 // destination and table at any preference, so rules installed with
 // a custom BPFMAN_E2E_POLICY_RULE_PREF are swept too.
 type DeleteTestNetRule struct {
+	// Pref is the preference of the policy-routing rule to remove.
 	Pref int
 }
 

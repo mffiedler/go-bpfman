@@ -511,7 +511,7 @@ defer kill $pinger
 `host_addr`, and `peer_addr`. With no flags it auto-names and auto-
 addresses from a shared pool; the full explicit form is `net veth-pair
 --ns=NS --host-link=NAME --host-addr=CIDR --peer-link=NAME
---peer-addr=CIDR [--no-routes]`.
+--peer-addr=CIDR`.
 
 The isolated topology takes no flags and returns a pair of two
 symmetric endpoints, `$pair.a` and `$pair.b`, each carrying `ns`,

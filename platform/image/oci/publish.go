@@ -35,8 +35,15 @@ var defaultImageTimestamp = time.Unix(0, 0).UTC()
 
 // PublishedImage describes the image reference written to the registry.
 type PublishedImage struct {
-	Reference       string
-	Digest          string
+	// Reference is the tag form of the published image, for example
+	// registry/repo:tag.
+	Reference string
+
+	// Digest is the content digest of the published image or index.
+	Digest string
+
+	// PinnedReference is the digest-pinned form of the reference, for
+	// example registry/repo@sha256:...
 	PinnedReference string
 }
 

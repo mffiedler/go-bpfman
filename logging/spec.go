@@ -18,6 +18,7 @@ import (
 type Spec struct {
 	// BaseLevel is the default level for all components.
 	BaseLevel Level `json:"base_level"`
+
 	// Components maps component names to their specific levels.
 	Components map[string]Level `json:"components,omitempty"`
 }

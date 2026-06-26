@@ -20,41 +20,64 @@ var ErrNotFound = errors.New("not found")
 
 // StoreLister is the subset of platform.Store needed by Snapshot.
 type StoreLister interface {
+	// List returns every program record keyed by kernel ID.
 	List(ctx context.Context) (map[kernel.ProgramID]bpfman.ProgramRecord, error)
+
+	// ListLinks returns every link record with its type-specific details populated.
 	ListLinks(ctx context.Context) ([]bpfman.LinkRecord, error)
+
+	// ListDispatcherSummaries returns lightweight summaries of all dispatchers, including member counts.
 	ListDispatcherSummaries(ctx context.Context) ([]platform.DispatcherSummary, error)
 }
 
 // KernelLister is the subset of platform.KernelSource needed by Snapshot.
 type KernelLister interface {
+	// Programs returns an iterator over all BPF programs currently loaded in the kernel.
 	Programs(ctx context.Context) iter.Seq2[kernel.Program, error]
+
+	// Links returns an iterator over all BPF links currently present in the kernel.
 	Links(ctx context.Context) iter.Seq2[kernel.Link, error]
 }
 
 // LinkGetter is the subset of platform.Store needed by GetLink.
 type LinkGetter interface {
+	// GetLink returns the link record for linkID with its type-specific details populated, or platform.ErrRecordNotFound if no link has that ID.
 	GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkRecord, error)
 }
 
 // KernelLinkGetter is the subset of platform.KernelSource needed by GetLink.
 type KernelLinkGetter interface {
+	// GetLinkByID returns the kernel-reported information for the link with the given ID.
 	GetLinkByID(ctx context.Context, id kernel.LinkID) (kernel.Link, error)
 }
 
 // LinkInfo is the result of GetLink, containing record and presence.
 type LinkInfo struct {
+	// Record is the store-recorded link record, with its type-specific
+	// details populated.
 	Record bpfman.LinkRecord `json:"record"`
+
 	// Kernel nil means this link is not present in the kernel's link list;
 	// pointer + omitempty encodes that absence.
-	Kernel   *kernel.Link `json:"kernel,omitempty"`
-	Presence Presence     `json:"presence"`
+	Kernel *kernel.Link `json:"kernel,omitempty"`
+
+	// Presence reports which of store, kernel, and filesystem the link
+	// was found in.
+	Presence Presence `json:"presence"`
 }
 
 // Presence indicates where an object exists across the three sources.
 type Presence struct {
-	InStore  bool `json:"in_store"`
+	// InStore reports whether bpfman has a stored record for the object.
+	InStore bool `json:"in_store"`
+
+	// InKernel reports whether the object is currently present in the
+	// kernel.
 	InKernel bool `json:"in_kernel"`
-	InFS     bool `json:"in_fs"`
+
+	// InFS reports whether the object has a backing pin or directory on
+	// bpffs.
+	InFS bool `json:"in_fs"`
 }
 
 // Managed returns true if the object is tracked in the store.
@@ -68,6 +91,8 @@ func (p Presence) KernelOnly() bool { return p.InKernel && !p.InStore }
 
 // ProgramView is a correlation view of a program across store, kernel, and FS.
 type ProgramView struct {
+	// ProgramID is the kernel program ID that correlates this view's
+	// store, kernel, and FS observations.
 	ProgramID kernel.ProgramID `json:"program_id"`
 
 	// Managed nil means the program is not recorded in the store (kernel-only or
@@ -78,12 +103,17 @@ type ProgramView struct {
 	// Pointer + omitempty encodes that absence.
 	Kernel *kernel.Program `json:"kernel,omitempty"`
 
-	// FS fields
-	FSPinPath   string `json:"fs_pin_path"`  // empty when no bpffs pin was found
-	MapsPresent bool   `json:"maps_present"` // true if map pin directory exists
+	// FSPinPath is the bpffs program pin backing this program; empty
+	// when no pin was found.
+	FSPinPath string `json:"fs_pin_path"`
 
-	// Links attached to this program (correlated from Observation.Links)
-	Links []LinkRow `json:"links"` // [] when the program has no links
+	// MapsPresent reports whether a map pin directory exists for this
+	// program on bpffs.
+	MapsPresent bool `json:"maps_present"`
+
+	// Links are the links attached to this program, correlated from
+	// Observation.Links; empty when the program has none.
+	Links []LinkRow `json:"links"`
 
 	// MapUsedBy is the sorted set of managed program ids sharing this
 	// program's map set, derived once over the store records (see
@@ -91,6 +121,8 @@ type ProgramView struct {
 	// not store-managed and so belong to no map set.
 	MapUsedBy []kernel.ProgramID `json:"map_used_by"`
 
+	// Presence reports which of store, kernel, and filesystem the
+	// program was found in.
 	Presence Presence `json:"presence"`
 }
 
@@ -168,6 +200,8 @@ type LinkRow struct {
 	// located.
 	FSPinPath string `json:"fs_pin_path,omitempty"`
 
+	// Presence reports which of store, kernel, and filesystem the link
+	// was found in.
 	Presence Presence `json:"presence"`
 }
 
@@ -232,46 +266,81 @@ func (r LinkRow) AsLink() (bpfman.Link, bool) {
 
 // DispatcherRow is a store-first view of a dispatcher with presence annotations.
 type DispatcherRow struct {
-	// Key fields
+	// DispType is the dispatcher type: "xdp", "tc-ingress", or
+	// "tc-egress". Together with Nsid and Ifindex it forms the
+	// dispatcher's identity key.
 	DispType string `json:"disp_type"`
-	Nsid     uint64 `json:"nsid"`
-	Ifindex  uint32 `json:"ifindex"`
+
+	// Nsid is the network namespace ID the dispatcher belongs to.
+	Nsid uint64 `json:"nsid"`
+
+	// Ifindex is the index of the interface the dispatcher is attached
+	// to.
+	Ifindex uint32 `json:"ifindex"`
 
 	// Managed nil means the dispatcher is not recorded in the store (an orphan
 	// dispatcher observed only on the filesystem). Pointer + omitempty encodes
 	// that absence.
-	Managed      *platform.DispatcherSummary `json:"managed,omitempty"`
-	Revision     uint32                      `json:"revision"`
-	ProgramID    kernel.ProgramID            `json:"program_id"`
-	KernelLinkID kernel.LinkID               `json:"kernel_link_id"`
-	Priority     uint32                      `json:"priority"`
+	Managed *platform.DispatcherSummary `json:"managed,omitempty"`
 
-	// Presence tracks where the dispatcher's components exist
-	ProgPresence Presence `json:"prog_presence"` // dispatcher program
-	LinkPresence Presence `json:"link_presence"` // XDP link (for XDP dispatchers)
+	// Revision is the dispatcher's current revision number.
+	Revision uint32 `json:"revision"`
 
-	// FS-derived
-	FSLinkCount int `json:"fs_link_count"` // count of link_* files in revision dir (-1 if unknown)
+	// ProgramID is the kernel program ID of the dispatcher program.
+	ProgramID kernel.ProgramID `json:"program_id"`
+
+	// KernelLinkID is the XDP dispatcher's kernel link ID; 0 for TC
+	// dispatchers.
+	KernelLinkID kernel.LinkID `json:"kernel_link_id"`
+
+	// Priority is the TC filter priority; 0 for XDP dispatchers.
+	Priority uint32 `json:"priority"`
+
+	// ProgPresence reports which of store, kernel, and filesystem the
+	// dispatcher program was found in.
+	ProgPresence Presence `json:"prog_presence"`
+
+	// LinkPresence reports which of store, kernel, and filesystem the
+	// XDP link was found in (for XDP dispatchers).
+	LinkPresence Presence `json:"link_presence"`
+
+	// FSLinkCount is the count of link_* files in the revision
+	// directory, or -1 when unknown (no dispatcher directory on bpffs).
+	FSLinkCount int `json:"fs_link_count"`
 }
 
 // SnapshotMeta contains metadata about the snapshot.
 type SnapshotMeta struct {
 	// ObservedAt is when the snapshot was taken.
 	ObservedAt time.Time `json:"observed_at"`
-	// Errors encountered during snapshot (non-fatal)
-	Errors []error `json:"-"` // errors don't serialise well to JSON
+
+	// Errors are the non-fatal errors encountered while taking the
+	// snapshot. They are excluded from JSON output (errors do not
+	// serialise meaningfully).
+	Errors []error `json:"-"`
+
 	// ProgramEnumErrors counts errors during kernel program enumeration.
 	ProgramEnumErrors int `json:"program_enum_errors"`
+
 	// LinkEnumErrors counts errors during kernel link enumeration.
 	LinkEnumErrors int `json:"link_enum_errors"`
 }
 
 // Observation is a point-in-time correlated view of bpfman's state across all sources.
 type Observation struct {
-	Programs    []ProgramView   `json:"programs"`
-	Links       []LinkRow       `json:"links"`
+	// Programs are the correlated program views, sorted by program ID.
+	Programs []ProgramView `json:"programs"`
+
+	// Links are the correlated link rows, sorted by bpfman link ID.
+	Links []LinkRow `json:"links"`
+
+	// Dispatchers are the correlated dispatcher rows, sorted by type,
+	// namespace, then interface index.
 	Dispatchers []DispatcherRow `json:"dispatchers"`
-	Meta        SnapshotMeta    `json:"meta"`
+
+	// Meta carries the snapshot timestamp and any non-fatal enumeration
+	// errors.
+	Meta SnapshotMeta `json:"meta"`
 }
 
 // ManagedPrograms returns only store-managed programs.

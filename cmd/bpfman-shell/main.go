@@ -1,6 +1,6 @@
 // bpfman-shell is the development / test / ops companion to bpfman.
 // It hosts the DSL script runner, inspection modes, and the
-// test scaffolding subcommands (veth, reap, lease). Production
+// test scaffolding subcommands (net, fire, reap). Production
 // deployments ship only bin/bpfman; bin/bpfman-shell is for dev and CI.
 package main
 

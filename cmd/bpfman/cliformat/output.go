@@ -7,6 +7,7 @@ import (
 // OutputFormat represents the output format type.
 type OutputFormat string
 
+// The supported output formats.
 const (
 	OutputFormatText OutputFormat = "text"
 	OutputFormatJSON OutputFormat = "json"
@@ -15,12 +16,16 @@ const (
 // OutputValue wraps an output format string and tracks whether it has been set.
 // This allows detection of multiple -o flags, which is an error.
 type OutputValue struct {
+	// Value is the requested format string, normally "text" or "json".
 	Value string
+
+	// IsSet reports whether the -o flag was supplied, used to reject a repeated flag.
 	IsSet bool
 }
 
 // OutputFlags provides output formatting flags.
 type OutputFlags struct {
+	// Output selects the output format (text or json) via the -o/--output flag; it defaults to text.
 	Output OutputValue `short:"o" help:"Output format: text, json." default:"text"`
 }
 

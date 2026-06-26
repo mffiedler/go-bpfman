@@ -5,9 +5,14 @@ import "github.com/frobware/go-bpfman/kernel"
 // Key uniquely identifies a dispatcher by its type, network namespace,
 // and interface index.
 type Key struct {
-	Type    DispatcherType `json:"type"`
-	Nsid    uint64         `json:"nsid"`
-	Ifindex uint32         `json:"ifindex"`
+	// Type is the dispatcher type (xdp, tc-ingress, tc-egress).
+	Type DispatcherType `json:"type"`
+
+	// Nsid is the network namespace inode number.
+	Nsid uint64 `json:"nsid"`
+
+	// Ifindex is the network interface index.
+	Ifindex uint32 `json:"ifindex"`
 }
 
 // NewKey constructs a dispatcher key from already parsed domain
@@ -26,8 +31,16 @@ func NewKey(typ DispatcherType, nsid uint64, ifindex uint32) Key {
 // namespace inodes and interface indices from 1), matching the zero
 // DispatcherType sentinel.
 type KeyFilter struct {
-	Type    DispatcherType
-	Nsid    uint64
+	// Type filters by dispatcher type; the zero DispatcherType matches
+	// any type.
+	Type DispatcherType
+
+	// Nsid filters by network namespace inode number; 0 matches any
+	// namespace.
+	Nsid uint64
+
+	// Ifindex filters by network interface index; 0 matches any
+	// interface.
 	Ifindex uint32
 }
 

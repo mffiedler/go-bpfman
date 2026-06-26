@@ -17,18 +17,23 @@ import (
 // Table output renders the created link details. Structured output
 // continues to expose the created link object for machine consumers.
 type LinkAttachView struct {
+	// Link is the attachment created by the command, rendered as table or JSON.
 	Link bpfman.Link
 }
 
 // LinkGetView is the output view for get-link commands. ProgramName is
 // a presentation-only join resolved by the caller from Link.Record.ProgramID.
 type LinkGetView struct {
-	Link        bpfman.Link
+	// Link is the attachment being displayed.
+	Link bpfman.Link
+
+	// ProgramName is the presentation-only program name, resolved by the caller from Link.Record.ProgramID and shown only in table output.
 	ProgramName string
 }
 
 // LinkListView is the output view for link list commands.
 type LinkListView struct {
+	// Links are the attachment records to display, one row per link.
 	Links []bpfman.LinkRecord
 }
 

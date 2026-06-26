@@ -32,13 +32,34 @@ var (
 
 // Info contains structured version information.
 type Info struct {
-	Version   string `json:"version"`
+	// Version is the semantic version tag stamped via -ldflags -X, or
+	// "(devel)" when the binary was built without one.
+	Version string `json:"version"`
+
+	// GitCommit is the full git commit hash the binary was built from,
+	// stamped via -ldflags -X. Empty when not stamped.
 	GitCommit string `json:"git_commit"`
+
+	// GitBranch is the git branch name the binary was built from,
+	// stamped via -ldflags -X. Empty when not stamped.
 	GitBranch string `json:"git_branch"`
-	GitState  string `json:"git_state"`
+
+	// GitState is "clean" or "dirty", recording whether the working
+	// tree had uncommitted changes at build time. Stamped via -ldflags
+	// -X; empty when not stamped.
+	GitState string `json:"git_state"`
+
+	// BuildDate is the ISO 8601 build timestamp, stamped via -ldflags
+	// -X. Empty when not stamped.
 	BuildDate string `json:"build_date"`
+
+	// GoVersion is the Go toolchain version, taken from
+	// runtime.Version() at the time Get is called.
 	GoVersion string `json:"go_version"`
-	Platform  string `json:"platform"`
+
+	// Platform is the build's "GOOS/GOARCH" pair, taken from runtime at
+	// the time Get is called.
+	Platform string `json:"platform"`
 
 	// Attestation is the cosign verify command for the image
 	// this binary was published from. Empty unless the binary

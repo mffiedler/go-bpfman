@@ -14,7 +14,12 @@ import (
 
 // LoadCmd loads a BPF program from an object file or OCI image.
 type LoadCmd struct {
-	File  LoadFileCmd  `cmd:"" default:"withargs" help:"Load from a local object file."`
+	// File loads programs from a local object file; it is the default
+	// subcommand when "load" is given no further verb.
+	File LoadFileCmd `cmd:"" default:"withargs" help:"Load from a local object file."`
+
+	// Image loads programs from an OCI container image holding the
+	// bytecode.
 	Image LoadImageCmd `cmd:"" help:"Load from an OCI container image."`
 }
 
@@ -24,10 +29,22 @@ type LoadFileCmd struct {
 	MetadataFlags
 	GlobalDataFlags
 
-	Path        string             `arg:"" name:"path" help:"Path to the BPF object file (.o)."`
-	Programs    []args.ProgramSpec `name:"programs" sep:"," help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (comma-separated or repeated). For fentry/fexit, ATTACH_FUNC is required. If not specified, all programs in the object file are loaded."`
-	Application string             `short:"a" name:"application" help:"Application name to group programs (stored as bpfman.io/application metadata)."`
-	MapOwnerID  kernel.ProgramID   `name:"map-owner-id" help:"Program ID of another program to share maps with."`
+	// Path is the filesystem path to the BPF object file (.o) to load.
+	Path string `arg:"" name:"path" help:"Path to the BPF object file (.o)."`
+
+	// Programs selects which programs in the object to load, each given as
+	// TYPE:NAME or TYPE:NAME:ATTACH_FUNC (comma-separated or repeated). For
+	// fentry/fexit the ATTACH_FUNC component is required. When empty, every
+	// program in the object file is loaded.
+	Programs []args.ProgramSpec `name:"programs" sep:"," help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (comma-separated or repeated). For fentry/fexit, ATTACH_FUNC is required. If not specified, all programs in the object file are loaded."`
+
+	// Application groups the loaded programs under an application name,
+	// stored as the bpfman.io/application metadata key.
+	Application string `short:"a" name:"application" help:"Application name to group programs (stored as bpfman.io/application metadata)."`
+
+	// MapOwnerID is the kernel program ID of an already-loaded program
+	// whose maps these programs should share instead of creating their own.
+	MapOwnerID kernel.ProgramID `name:"map-owner-id" help:"Program ID of another program to share maps with."`
 }
 
 // loadFileResult captures the result of a load file operation.
@@ -35,7 +52,10 @@ type loadFileResult struct {
 	Programs []bpfman.Program
 }
 
-// Run executes the load file command.
+// Run loads the selected programs from the local object file at Path
+// (applying metadata, global data, application grouping and any
+// map-owner share) and renders the loaded programs in the chosen output
+// format.
 func (c *LoadFileCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	format, err := c.OutputFlags.Format()
 	if err != nil {

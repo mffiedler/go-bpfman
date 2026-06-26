@@ -18,21 +18,6 @@ import (
 	"github.com/frobware/go-bpfman/kernel"
 )
 
-// Load loads a BPF program into the kernel.
-//
-// Load loads a BPF program and pins it using program ID-based paths.
-//
-// Pin paths follow the upstream bpfman convention, computed via bpffs methods:
-//   - Program: bpffs.ProgPinPath(program_id)
-//   - Maps: bpffs.MapPinDir(program_id)/<map_name>
-//
-// On failure, all successfully pinned objects are cleaned up.
-//
-// Map sharing: If spec.MapOwnerID() is non-zero, this program will share maps
-// with the owner program instead of creating its own. The owner's maps directory
-// must exist and contain the required pinned maps. This is used when loading
-// multiple programs from the same image (e.g., via the bpfman-operator) where
-// all programs should share the same map instances.
 // applyGlobalData sets the user-supplied global variables on the
 // collection spec before load. A key that names no variable in the
 // object fails, matching Rust bpfman, which calls aya's set_global
@@ -71,6 +56,20 @@ func (k *kernelAdapter) HasPinByName(spec bpfman.LoadSpec) (bool, error) {
 	return false, nil
 }
 
+// Load loads a BPF program into the kernel and pins it using program
+// ID-based paths.
+//
+// Pin paths follow the upstream bpfman convention, computed via bpffs methods:
+//   - Program: bpffs.ProgPinPath(program_id)
+//   - Maps: bpffs.MapPinDir(program_id)/<map_name>
+//
+// On failure, all successfully pinned objects are cleaned up.
+//
+// Map sharing: If spec.MapOwnerID() is non-zero, this program will share maps
+// with the owner program instead of creating its own. The owner's maps directory
+// must exist and contain the required pinned maps. This is used when loading
+// multiple programs from the same image (e.g., via the bpfman-operator) where
+// all programs should share the same map instances.
 func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs.BPFFS) (bpfman.LoadOutput, error) {
 	// Load the collection from the object file
 	collSpec, err := ebpf.LoadCollectionSpec(spec.ObjectPath())

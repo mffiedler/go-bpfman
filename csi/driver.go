@@ -21,8 +21,8 @@ import (
 type ProgramFinder interface {
 	// FindLoadedProgramByMetadata finds a program by a metadata key/value pair.
 	// Only programs that exist in both the database and the kernel are considered.
-	// Returns an error if multiple programs match (data inconsistency) or if
-	// no matching program is found.
+	// When several programs match, the one with the lowest kernel program ID is
+	// returned. An error is returned when no program matches.
 	FindLoadedProgramByMetadata(ctx context.Context, key, value string) (bpfman.ProgramRecord, kernel.ProgramID, error)
 }
 

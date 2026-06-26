@@ -94,7 +94,8 @@
 // The driver returns appropriate gRPC status codes:
 //
 //   - NotFound: Program not yet loaded (operator may be starting up)
-//   - FailedPrecondition: Multiple programs match, or bpfman not configured
+//   - FailedPrecondition: bpfman not configured, or the target path is
+//     already mounted by another filesystem
 //   - InvalidArgument: Missing required volume attributes
 //   - Internal: Filesystem or kernel operation failed
 //

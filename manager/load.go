@@ -91,43 +91,93 @@ func buildProgramRecord(
 // LoadSource describes where to load BPF programs from.
 // Exactly one of FilePath or Image must be set.
 type LoadSource struct {
-	FilePath string             // local ELF object file
-	Image    *platform.ImageRef // OCI image to pull
+	// FilePath is the path of a local ELF object file. Set when
+	// loading from a file; empty when loading from an image.
+	FilePath string
+
+	// Image is the OCI image to pull the bytecode from. Set when
+	// loading from an image; nil when loading from a file.
+	Image *platform.ImageRef
 }
 
 // ProgramSpec describes a program to load from an ELF object file.
 // It is source-agnostic.
 type ProgramSpec struct {
-	Name       string
-	Type       bpfman.ProgramType
-	AttachFunc string            // required for fentry/fexit
-	GlobalData map[string][]byte // per-program overrides (optional)
-	MapOwnerID kernel.ProgramID  // explicit external map owner (0 = none)
+	// Name is the program (ELF section/function) name to load from
+	// the source.
+	Name string
+
+	// Type is the program's bpfman type (xdp, tc, kprobe, fentry,
+	// ...).
+	Type bpfman.ProgramType
+
+	// AttachFunc is the kernel function the program attaches to;
+	// required for fentry/fexit and empty for other types.
+	AttachFunc string
+
+	// GlobalData holds per-program global-data overrides. When
+	// non-nil it replaces the batch-level LoadOpts.GlobalData for
+	// this program; when nil the batch-level value applies.
+	GlobalData map[string][]byte
+
+	// MapOwnerID names an external program whose maps this program
+	// shares; 0 means the program owns its own maps.
+	MapOwnerID kernel.ProgramID
 }
 
 // LoadOpts configures a Load operation.
 type LoadOpts struct {
+	// UserMetadata holds arbitrary operator key/value pairs recorded
+	// on every program loaded in the batch, used for selection.
 	UserMetadata map[string]string
-	GlobalData   map[string][]byte // batch-level, overridden per-program
-	Owner        string
+
+	// GlobalData is the batch-level global data applied to every
+	// program, unless a ProgramSpec supplies its own non-nil
+	// GlobalData, which overrides it for that program.
+	GlobalData map[string][]byte
+
+	// Owner is the owner label recorded on every program in the
+	// batch; empty means unassigned.
+	Owner string
 }
 
 // LoadRequest carries an already parsed load request across a
 // front-end boundary.
 type LoadRequest struct {
-	Source   LoadSource
+	// Source identifies where the bytecode is loaded from (a file
+	// path or an image reference).
+	Source LoadSource
+
+	// Programs lists the programs to load from Source. Empty means
+	// auto-discover and load every program in the ELF.
 	Programs []ProgramSpec
-	Opts     LoadOpts
+
+	// Opts carries the batch-level metadata, global data, and owner.
+	Opts LoadOpts
 }
 
 // LoadRequestOpts configures construction of a LoadRequest from
 // front-end inputs.
 type LoadRequestOpts struct {
+	// UserMetadata holds arbitrary operator key/value metadata for
+	// the loaded programs.
 	UserMetadata map[string]string
-	GlobalData   map[string][]byte
-	Application  string
-	MapOwnerID   kernel.ProgramID
-	Owner        string
+
+	// GlobalData is the batch-level global data for the load.
+	GlobalData map[string][]byte
+
+	// Application is the application name to group the loaded
+	// programs under; NewLoadRequest folds it into UserMetadata
+	// under ApplicationMetadataKey. Empty adds no grouping key.
+	Application string
+
+	// MapOwnerID is the default external map owner applied to every
+	// ProgramSpec that does not already name one; 0 means none.
+	MapOwnerID kernel.ProgramID
+
+	// Owner is the owner label for the loaded programs; empty means
+	// unassigned.
+	Owner string
 }
 
 // NewLoadRequest applies manager-owned load defaults and returns a

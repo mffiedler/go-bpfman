@@ -11,6 +11,7 @@ func NewProgramType(s string) ProgramType {
 	return ProgramType(strings.ToLower(s))
 }
 
+// String returns the program type as a string.
 func (t ProgramType) String() string { return string(t) }
 
 // MapType represents a kernel BPF map type.
@@ -22,4 +23,5 @@ func NewMapType(s string) MapType {
 	return MapType(strings.ToLower(s))
 }
 
+// String returns the map type as a string.
 func (t MapType) String() string { return string(t) }

@@ -12,6 +12,8 @@ import "github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
 // originating $name reference). ArgSpan extracts the source.Span via a
 // type switch since Go interfaces cannot share embedded fields.
 type Arg interface {
+	// isArg is an unexported marker; only types in this package can
+	// implement Arg.
 	isArg()
 }
 
@@ -43,7 +45,11 @@ func ArgSpan(a Arg) source.Span {
 // names, flags, paths, numeric IDs. It was never a variable
 // reference.
 type WordArg struct {
+	// Text is the literal command text exactly as the user typed
+	// it.
 	Text string
+
+	// Span is the source extent of the word token.
 	source.Span
 }
 
@@ -60,6 +66,9 @@ type WordArg struct {
 // downstream "this command can't take null" diagnostic frames at
 // the right token.
 type NilArg struct {
+	// Span is the originating $name reference's source extent, so a
+	// downstream "this command can't take null" diagnostic frames
+	// at the right token.
 	source.Span
 }
 
@@ -76,15 +85,24 @@ type NilArg struct {
 // that do not meaningfully accept missing fields surface their
 // own diagnostic when they encounter MissingArg.
 type MissingArg struct {
-	Name string // bare variable name without "$"
-	Path string // dotted/indexed path expression after the name
+	// Name is the bare variable name without the leading "$".
+	Name string
+
+	// Path is the dotted/indexed path expression after the name.
+	Path string
+
+	// Span is the originating $name reference's source extent.
 	source.Span
 }
 
 // QuotedArg preserves user quoting as a distinct syntactic form.
 // A quoted path with spaces is distinct from an unquoted flag.
 type QuotedArg struct {
+	// Text is the quoted literal's contents with the surrounding
+	// quotes removed.
 	Text string
+
+	// Span is the source extent of the quoted token.
 	source.Span
 }
 
@@ -108,9 +126,21 @@ type QuotedArg struct {
 // resolved string Value through untouched even if its text form
 // is not valid JSON. Adapters check HasValue first.
 type ScalarValueArg struct {
-	Text     string
-	Value    Value
+	// Text is the argv-style string the originating variable
+	// reference resolved to.
+	Text string
+
+	// Value is the originating shell Value, preserved so consumers
+	// that care about its type (jq, typed adapters) can recover it
+	// without re-parsing Text. Valid only when HasValue is true.
+	Value Value
+
+	// HasValue reports whether Value carries the resolved Value;
+	// adapters that re-interpret scalars check it before reaching
+	// for Value.
 	HasValue bool
+
+	// Span is the originating $name reference's source extent.
 	source.Span
 }
 
@@ -119,8 +149,14 @@ type ScalarValueArg struct {
 // (e.g. extract .record.program_id). Name holds the variable name
 // without the $ prefix. source.Span is the originating $name reference.
 type StructuredValueArg struct {
-	Name  string
+	// Name is the originating variable name without the "$" prefix.
+	Name string
+
+	// Value is the resolved structured shell value handed to the
+	// command; the command parser decides how to use it.
 	Value Value
+
+	// Span is the originating $name reference's source extent.
 	source.Span
 }
 
@@ -130,10 +166,21 @@ type StructuredValueArg struct {
 // structured), and Name/Path are retained for display. source.Span covers
 // the adapter:$var.path expression.
 type AdapterArg struct {
+	// Adapter is the adapter name (the part before the colon in
+	// adapter:$var.path).
 	Adapter string
-	Name    string
-	Path    string
-	Value   Value
+
+	// Name is the resolved variable's name, retained for display.
+	Name string
+
+	// Path is the dotted path after the variable name, retained for
+	// display.
+	Path string
+
+	// Value is the resolved shell value, scalar or structured.
+	Value Value
+
+	// Span covers the whole adapter:$var.path expression.
 	source.Span
 }
 
