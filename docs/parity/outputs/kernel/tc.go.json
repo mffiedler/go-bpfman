@@ -1,0 +1,25 @@
+{
+  "program": {
+    "type": "ext",
+    "name": "stats",
+    "tag": "ddaa0f8c90c60f04",
+    "gpl_compatible": true
+  },
+  "maps": [
+    {
+      "type": "percpu_array",
+      "name": "tc_stats_map",
+      "bytes_key": 4,
+      "bytes_value": 16,
+      "max_entries": 8,
+      "flags": 0
+    }
+  ],
+  "link": [
+    {
+      "type": "tracing",
+      "prog_type": "ext",
+      "attach_type": "cgroup_inet_ingress"
+    }
+  ]
+}

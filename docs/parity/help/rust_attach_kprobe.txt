@@ -1,0 +1,27 @@
+$ bpfman-rs attach kprobe --help
+Install a kprobe or kretprobe eBPF probe
+
+Usage: bpfman-rs attach <PROGRAM_ID> kprobe [OPTIONS] --fn-name <FN_NAME>
+
+Options:
+  -f, --fn-name <FN_NAME>
+          Required: Function to attach the kprobe to
+
+  -o, --offset <OFFSET>
+          Optional: Offset added to the address of the function for kprobe.
+          Not allowed for kretprobes.
+
+  -c, --container-pid <CONTAINER_PID>
+          Optional: Host PID of container to attach the kprobe in. (NOT CURRENTLY SUPPORTED)
+
+  -m, --metadata <METADATA>
+          Optional: Specify Key/Value metadata to be attached to a link when it
+          is loaded by bpfman.
+          Format: <KEY>=<VALUE>
+          
+          This can later be used to list a certain subset of links which contain
+          the specified metadata.
+          Example: --metadata owner=acme
+
+  -h, --help
+          Print help (see a summary with '-h')

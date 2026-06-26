@@ -1,0 +1,27 @@
+{
+  "program": {
+    "type": "kprobe",
+    "name": "uprobe_counter",
+    "tag": "7a2dd52cbef12658",
+    "gpl_compatible": true
+  },
+  "maps": [
+    {
+      "type": "percpu_array",
+      "name": "uprobe_stats_ma",
+      "bytes_key": 4,
+      "bytes_value": 8,
+      "max_entries": 1,
+      "flags": 0
+    }
+  ],
+  "link": [
+    {
+      "type": "perf_event",
+      "retprobe": true,
+      "file": "/nix/store/l0l2ll1lmylczj1ihqn351af2kyp5x19-glibc-2.42-51/lib/libc.so.6",
+      "offset": 718768,
+      "ref_ctr_offset": 0
+    }
+  ]
+}

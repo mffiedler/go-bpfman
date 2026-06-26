@@ -1,0 +1,306 @@
+# Curated manifest driving the generated Rust parity section of the
+# repository README. Edit this file (and the transcripts under
+# outputs/) and re-run `make parity-readme`; do not hand-edit the README
+# between the parity markers.
+#
+# Tables and prose come from the fields below. Each anchor's inline
+# command output is extracted live from the named transcript, so the
+# numbers in the README are real captured values, not typed by hand.
+
+meta:
+  rust_revision: 8e5a9d29
+  rust_version: bpfman 0.6.0
+  go_revision: c392521a
+  kernel: 6.18.33
+
+# At-a-glance coverage, for gauging remaining work. State is the
+# scannable column: `proven` = parity is computed and gated by
+# cmd/parity-compare; `not tested` = no parity evidence here yet (the
+# remaining work). The not-tested surfaces exist in both implementations;
+# `not tested` is about evidence, not whether go-bpfman implements them.
+coverage:
+  - {area: 'CLI program lifecycle (10 program types)', state: proven, verdict: 'parity; Go ahead on kretprobe/uretprobe'}
+  - {area: 'Dispatcher ordering, slot reuse and exhaustion', state: proven, verdict: parity}
+  - {area: 'Load/attach flags (metadata, application, global, proceed-on, direction, priority, netns, offset, pid)', state: proven, verdict: 'parity; global 0x and tie-break unclear'}
+  - {area: 'Error handling and idempotency', state: proven, verdict: 'parity on failure class; exit codes differ'}
+  - {area: '`--map-owner-id` map sharing', state: proven, verdict: 'Go ahead (Rust bug)'}
+  - {area: '`--container-pid`', state: proven, verdict: 'Go-only (Rust unsupported)'}
+  - {area: 'Image load and `--pull-policy`', state: proven, verdict: parity}
+  - {area: 'Image build / inspect / sign', state: 'not tested', verdict: '--'}
+  - {area: 'gRPC daemon (`serve`)', state: 'not tested', verdict: '--'}
+  - {area: 'CSI driver', state: 'not tested', verdict: '--'}
+  - {area: 'Library / embedding API', state: 'not tested', verdict: '--'}
+
+# Quick-scan support table, one row per program type.
+programs:
+  - {type: xdp,        go: pass, rust: pass,       flags: covered, gaps: 'Rust rejects `SEC("xdp/<name>")` objects'}
+  - {type: tc,         go: pass, rust: pass,       flags: covered, gaps: none}
+  - {type: tcx,        go: pass, rust: pass,       flags: covered, gaps: 'duplicate attach to one hook rejected (native mprog)'}
+  - {type: tracepoint, go: pass, rust: pass,       flags: covered, gaps: none}
+  - {type: kprobe,     go: pass, rust: pass,       flags: covered, gaps: none}
+  - {type: kretprobe,  go: pass, rust: downgraded, flags: partial, gaps: 'Rust loads `kretprobe:` as a plain kprobe'}
+  - {type: uprobe,     go: pass, rust: pass,       flags: covered, gaps: '`--container-pid` is Go-only'}
+  - {type: uretprobe,  go: pass, rust: downgraded, flags: partial, gaps: 'Rust loads `uretprobe:` as a plain uprobe'}
+  - {type: fentry,     go: pass, rust: pass,       flags: covered, gaps: none}
+  - {type: fexit,      go: pass, rust: pass,       flags: covered, gaps: none}
+
+# Flag-coverage table.
+flag_coverage:
+  - {area: 'output format', status: 'Go `-o json`/`text`; Rust `get`/`list` are text-only'}
+  - {area: 'load and attach `--metadata`', status: parity}
+  - {area: '`--application` grouping and list filter', status: parity}
+  - {area: '`--global`', status: 'parity for bare hex; Rust rejects the `0x` prefix'}
+  - {area: '`--map-owner-id`', status: 'Go shares the kernel map; Rust does not (Rust bug)'}
+  - {area: 'priority and ordering (xdp/tc/tcx)', status: 'parity (dispatcher and native mprog)'}
+  - {area: 'proceed-on (default and custom)', status: parity}
+  - {area: 'TC/TCX direction (ingress/egress)', status: parity}
+  - {area: '`--netns` (xdp/tc/tcx)', status: parity}
+  - {area: 'kprobe `--offset`, uprobe `--pid`, uprobe offset-only', status: parity}
+  - {area: '`--container-pid`', status: 'Go-only (Rust unsupported)'}
+  - {area: 'image load and `--pull-policy`', status: parity}
+  - {area: '`--registry-auth`', status: 'not yet exercised'}
+
+# Known differences, rendered as a bullet list.
+differences:
+  - 'kretprobe / uretprobe: Rust accepts the `kretprobe:` / `uretprobe:` token but loads an entry probe, so no return-probe attachment is made.'
+  - '`--map-owner-id`: Rust records the owner but loads a fresh map, so the programs do not share a kernel map (Go does); this is a Rust bug.'
+  - '`--container-pid`: implemented in Go, unsupported in Rust.'
+  - 'XDP section format: Rust requires bare `SEC("xdp")`; Go also accepts `SEC("xdp/<name>")`.'
+  - 'Error exit codes differ for some failure classes, though both fail.'
+
+# Kernel-judged cases. The capture script records each program's
+# kernel + bpffs footprint as bpftool sees it (program tag/type, map
+# shape, link semantics), for both implementations, under
+# outputs/kernel/<case>.<impl>.json. parity-compare diffs Go's footprint
+# against Rust's and checks the result against `expect` here, so the
+# verdict is computed from kernel state, not asserted. A mismatch
+# between the kernel and the declared expectation fails the build.
+kernel_cases:
+  - {case: xdp,        expect: match}
+  - {case: tc,         expect: match}
+  - {case: tcx,        expect: match}
+  - {case: tracepoint, expect: match}
+  - {case: kprobe,     expect: match}
+  - {case: kretprobe,  expect: differ, on: ['link[0].retprobe']}
+  - {case: uprobe,     expect: match}
+  - {case: uretprobe,  expect: differ, on: ['link[0].retprobe']}
+  - {case: fentry,     expect: match}
+  - {case: fexit,      expect: match}
+
+# Behavioural cases. Each is a captured observation (exit codes, chain
+# positions, kernel map sharing as bpftool sees it, ordering determinism
+# over repeated runs) under outputs/behaviour/<case>.<impl>.json, diffed
+# and judged the same way as the kernel cases. "differ" with `on` lists
+# exactly the fields expected to diverge, so any unexpected divergence
+# (or a newly-fixed one) fails the build.
+behaviour_cases:
+  - {case: errors-wrong-kind,     expect: differ, on: ['exit']}
+  - {case: errors-missing-object, expect: match}
+  - {case: errors-malformed,      expect: differ, on: ['exit']}
+  - {case: errors-bad-id,         expect: match}
+  - {case: section-format,        expect: differ, on: ['load_exit', 'loaded']}
+  - {case: global-prefix,         expect: differ, on: ['prefixed_0x_loaded']}
+  - {case: map-owner,             expect: differ, on: ['shares_kernel_map']}
+  - {case: container-pid,         expect: differ, on: ['accepted', 'attach_exit']}
+  - {case: idempotency,           expect: match}
+  - {case: priority-zero,         expect: match}
+  - {case: slot-exhaustion,       expect: match}
+  - {case: ordering-xdp,          expect: match}
+  - {case: tiebreak,              expect: differ, on: ['deterministic', 'distinct_orders']}
+
+# Inline proof anchors. For each step the generator displays the curated
+# go_cmd / rust_cmd, then locates the matching command block in the
+# transcript (by go_locate / rust_locate) and shows the lines matching
+# go_fields / rust_fields. A field that no longer appears is a hard
+# error, so a stale transcript fails the build.
+anchors:
+  - id: xdp baseline
+    object: e2e/testdata/bpf/xdp_pass.bpf.o
+    intro: 'program `xdp:pass`, attached to a throwaway veth (`sudo ip link add bpfmanpar0 type veth peer name bpfmanpar0p && sudo ip link set bpfmanpar0 up`).'
+    result: pass
+    go_transcript: outputs/xdp-baseline.go.out
+    rust_transcript: outputs/xdp-baseline.rust.out
+    steps:
+      - go_cmd: './bin/go-bpfman program load file e2e/testdata/bpf/xdp_pass.bpf.o --programs xdp:pass -o json'
+        go_locate: 'program load file e2e/testdata/bpf/xdp_pass.bpf.o'
+        go_fields: ['"program_id"', '"program_type"']
+        rust_cmd: './bin/bpfman-rs load file --path e2e/testdata/bpf/xdp_pass.bpf.o --programs xdp:pass'
+        rust_locate: 'load file --path e2e/testdata/bpf/xdp_pass.bpf.o'
+        rust_fields: ['Program ID:', 'BPF Function:', 'Program Type:']
+      - go_cmd: './bin/go-bpfman link attach xdp <program-id> bpfmanpar0 --priority 100 -o json'
+        go_locate: 'link attach xdp'
+        go_fields: ['"id":', '"interface"', '"priority"', '"position"']
+        rust_cmd: './bin/bpfman-rs attach <program-id> xdp --iface bpfmanpar0 --priority 100'
+        rust_locate: 'xdp --iface bpfmanpar0 --priority 100'
+        rust_fields: ['Link ID:', 'Interface:', 'Priority:', 'Position:']
+  - id: tc baseline
+    object: e2e/testdata/bpf/tc_counter.bpf.o
+    intro: 'program `tc:stats`, attached ingress to a throwaway veth.'
+    result: pass
+    go_transcript: outputs/tc-baseline.go.out
+    rust_transcript: outputs/tc-baseline.rust.out
+    steps:
+      - go_cmd: './bin/go-bpfman program load file e2e/testdata/bpf/tc_counter.bpf.o --programs tc:stats -o json'
+        go_locate: 'program load file e2e/testdata/bpf/tc_counter.bpf.o'
+        go_fields: ['"program_id"', '"program_type"']
+        rust_cmd: './bin/bpfman-rs load file --path e2e/testdata/bpf/tc_counter.bpf.o --programs tc:stats'
+        rust_locate: 'load file --path e2e/testdata/bpf/tc_counter.bpf.o'
+        rust_fields: ['Program ID:', 'Program Type:']
+      - go_cmd: './bin/go-bpfman link attach tc <program-id> bpfmanpar0 ingress --priority 100 -o json'
+        go_locate: 'link attach tc'
+        go_fields: ['"id":', '"direction"', '"priority"', '"position"']
+        rust_cmd: './bin/bpfman-rs attach <program-id> tc --direction ingress --iface bpfmanpar0 --priority 100'
+        rust_locate: 'tc --direction ingress'
+        rust_fields: ['Link ID:', 'Direction:', 'Priority:', 'Position:']
+  - id: tcx baseline
+    object: e2e/testdata/bpf/tcx_counter.bpf.o
+    intro: 'program `tcx:tcx_stats`, attached ingress to a throwaway veth (native mprog ordering).'
+    result: pass
+    go_transcript: outputs/tcx-baseline.go.out
+    rust_transcript: outputs/tcx-baseline.rust.out
+    steps:
+      - go_cmd: './bin/go-bpfman program load file e2e/testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats -o json'
+        go_locate: 'program load file e2e/testdata/bpf/tcx_counter.bpf.o'
+        go_fields: ['"program_id"', '"program_type"']
+        rust_cmd: './bin/bpfman-rs load file --path e2e/testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats'
+        rust_locate: 'load file --path e2e/testdata/bpf/tcx_counter.bpf.o'
+        rust_fields: ['Program ID:', 'Program Type:']
+      - go_cmd: './bin/go-bpfman link attach tcx <program-id> bpfmanpar0 ingress --priority 100 -o json'
+        go_locate: 'link attach tcx'
+        go_fields: ['"id":', '"direction"', '"priority"', '"position"']
+        rust_cmd: './bin/bpfman-rs attach <program-id> tcx --direction ingress --iface bpfmanpar0 --priority 100'
+        rust_locate: 'tcx --direction ingress'
+        rust_fields: ['Link ID:', 'Direction:', 'Priority:', 'Position:']
+  - id: tracepoint baseline
+    object: e2e/testdata/bpf/tracepoint_counter.bpf.o
+    intro: 'program `tracepoint:tracepoint_kill_recorder`, attached to the `syscalls/sys_enter_kill` tracepoint.'
+    result: pass
+    go_transcript: outputs/tracepoint-baseline.go.out
+    rust_transcript: outputs/tracepoint-baseline.rust.out
+    steps:
+      - go_cmd: './bin/go-bpfman program load file e2e/testdata/bpf/tracepoint_counter.bpf.o --programs tracepoint:tracepoint_kill_recorder -o json'
+        go_locate: 'program load file e2e/testdata/bpf/tracepoint_counter.bpf.o'
+        go_fields: ['"program_id"', '"program_type"']
+        rust_cmd: './bin/bpfman-rs load file --path e2e/testdata/bpf/tracepoint_counter.bpf.o --programs tracepoint:tracepoint_kill_recorder'
+        rust_locate: 'load file --path e2e/testdata/bpf/tracepoint_counter.bpf.o'
+        rust_fields: ['Program ID:', 'Program Type:']
+      - go_cmd: './bin/go-bpfman link attach tracepoint <program-id> syscalls/sys_enter_kill -o json'
+        go_locate: 'link attach tracepoint'
+        go_fields: ['"id":', '"group"', '"name"']
+        rust_cmd: './bin/bpfman-rs attach <program-id> tracepoint --tracepoint syscalls/sys_enter_kill'
+        rust_locate: 'tracepoint --tracepoint'
+        rust_fields: ['Link ID:', 'Tracepoint:']
+  - id: kprobe baseline
+    object: e2e/testdata/bpf/kprobe_counter.bpf.o
+    intro: 'program `kprobe:kprobe_counter`, attached to the kernel function `vfs_read`.'
+    result: pass
+    go_transcript: outputs/kprobe-baseline.go.out
+    rust_transcript: outputs/kprobe-baseline.rust.out
+    steps:
+      - go_cmd: './bin/go-bpfman program load file e2e/testdata/bpf/kprobe_counter.bpf.o --programs kprobe:kprobe_counter -o json'
+        go_locate: 'program load file e2e/testdata/bpf/kprobe_counter.bpf.o'
+        go_fields: ['"program_id"', '"program_type"']
+        rust_cmd: './bin/bpfman-rs load file --path e2e/testdata/bpf/kprobe_counter.bpf.o --programs kprobe:kprobe_counter'
+        rust_locate: 'load file --path e2e/testdata/bpf/kprobe_counter.bpf.o'
+        rust_fields: ['Program ID:', 'Program Type:']
+      - go_cmd: './bin/go-bpfman link attach kprobe <program-id> vfs_read -o json'
+        go_locate: 'link attach kprobe'
+        go_fields: ['"id":', '"fn_name"', '"offset"', '"retprobe"']
+        rust_cmd: './bin/bpfman-rs attach <program-id> kprobe --fn-name vfs_read'
+        rust_locate: 'kprobe --fn-name vfs_read'
+        rust_fields: ['Link ID:', 'Attach Function:', 'Offset:']
+  - id: kretprobe baseline
+    object: e2e/testdata/bpf/kprobe_counter.bpf.o
+    intro: 'program `kretprobe:kprobe_counter`, attached to `vfs_read` -- the same object as the kprobe case, loaded as a return probe.'
+    result: 'Go yields a kretprobe (retprobe true); Rust loads it as a plain kprobe (ISSUE-2)'
+    go_transcript: outputs/kretprobe-baseline.go.out
+    rust_transcript: outputs/kretprobe-baseline.rust.out
+    steps:
+      - go_cmd: './bin/go-bpfman program load file e2e/testdata/bpf/kprobe_counter.bpf.o --programs kretprobe:kprobe_counter -o json'
+        go_locate: 'program load file e2e/testdata/bpf/kprobe_counter.bpf.o'
+        go_fields: ['"program_id"', '"program_type"']
+        rust_cmd: './bin/bpfman-rs load file --path e2e/testdata/bpf/kprobe_counter.bpf.o --programs kretprobe:kprobe_counter'
+        rust_locate: 'load file --path e2e/testdata/bpf/kprobe_counter.bpf.o'
+        rust_fields: ['Program ID:', 'Program Type:']
+      - go_cmd: './bin/go-bpfman link attach kprobe <program-id> vfs_read -o json'
+        go_locate: 'link attach kprobe'
+        go_fields: ['"id":', '"kind"', '"fn_name"', '"retprobe"']
+        rust_cmd: './bin/bpfman-rs attach <program-id> kprobe --fn-name vfs_read'
+        rust_locate: 'kprobe --fn-name vfs_read'
+        rust_fields: ['Link ID:', 'Attach Function:', 'Offset:']
+  - id: uprobe baseline
+    object: e2e/testdata/bpf/uprobe_counter.bpf.o
+    intro: 'program `uprobe:uprobe_counter`, attached to `malloc` in the host C library.'
+    result: pass
+    go_transcript: outputs/uprobe-baseline.go.out
+    rust_transcript: outputs/uprobe-baseline.rust.out
+    steps:
+      - go_cmd: './bin/go-bpfman program load file e2e/testdata/bpf/uprobe_counter.bpf.o --programs uprobe:uprobe_counter -o json'
+        go_locate: 'program load file e2e/testdata/bpf/uprobe_counter.bpf.o'
+        go_fields: ['"program_id"', '"program_type"']
+        rust_cmd: './bin/bpfman-rs load file --path e2e/testdata/bpf/uprobe_counter.bpf.o --programs uprobe:uprobe_counter'
+        rust_locate: 'load file --path e2e/testdata/bpf/uprobe_counter.bpf.o'
+        rust_fields: ['Program ID:', 'Program Type:']
+      - go_cmd: './bin/go-bpfman link attach uprobe <program-id> <libc> --fn-name malloc -o json'
+        go_locate: 'link attach uprobe'
+        go_fields: ['"id":', '"target"', '"fn_name"', '"retprobe"']
+        rust_cmd: './bin/bpfman-rs attach <program-id> uprobe --target <libc> --fn-name malloc'
+        rust_locate: 'uprobe --target'
+        rust_fields: ['Link ID:', 'Target:', 'Attach Function:', 'Offset:']
+  - id: uretprobe baseline
+    object: e2e/testdata/bpf/uprobe_counter.bpf.o
+    intro: 'program `uretprobe:uprobe_counter`, attached to `malloc` -- the same object as the uprobe case, loaded as a return probe.'
+    result: 'Go yields a uretprobe (retprobe true); Rust loads it as a plain uprobe (ISSUE-2)'
+    go_transcript: outputs/uretprobe-baseline.go.out
+    rust_transcript: outputs/uretprobe-baseline.rust.out
+    steps:
+      - go_cmd: './bin/go-bpfman program load file e2e/testdata/bpf/uprobe_counter.bpf.o --programs uretprobe:uprobe_counter -o json'
+        go_locate: 'program load file e2e/testdata/bpf/uprobe_counter.bpf.o'
+        go_fields: ['"program_id"', '"program_type"']
+        rust_cmd: './bin/bpfman-rs load file --path e2e/testdata/bpf/uprobe_counter.bpf.o --programs uretprobe:uprobe_counter'
+        rust_locate: 'load file --path e2e/testdata/bpf/uprobe_counter.bpf.o'
+        rust_fields: ['Program ID:', 'Program Type:']
+      - go_cmd: './bin/go-bpfman link attach uprobe <program-id> <libc> --fn-name malloc -o json'
+        go_locate: 'link attach uprobe'
+        go_fields: ['"id":', '"kind"', '"target"', '"fn_name"', '"retprobe"']
+        rust_cmd: './bin/bpfman-rs attach <program-id> uprobe --target <libc> --fn-name malloc'
+        rust_locate: 'uprobe --target'
+        rust_fields: ['Link ID:', 'Target:', 'Attach Function:', 'Offset:']
+  - id: fentry baseline
+    object: e2e/testdata/bpf/fentry_counter.bpf.o
+    intro: 'program `fentry:test_fentry:do_unlinkat` (the attach function is given at load time).'
+    result: pass
+    go_transcript: outputs/fentry-baseline.go.out
+    rust_transcript: outputs/fentry-baseline.rust.out
+    steps:
+      - go_cmd: './bin/go-bpfman program load file e2e/testdata/bpf/fentry_counter.bpf.o --programs fentry:test_fentry:do_unlinkat -o json'
+        go_locate: 'program load file e2e/testdata/bpf/fentry_counter.bpf.o'
+        go_fields: ['"program_id"', '"program_type"']
+        rust_cmd: './bin/bpfman-rs load file --path e2e/testdata/bpf/fentry_counter.bpf.o --programs fentry:test_fentry:do_unlinkat'
+        rust_locate: 'load file --path e2e/testdata/bpf/fentry_counter.bpf.o'
+        rust_fields: ['Program ID:', 'Program Type:']
+      - go_cmd: './bin/go-bpfman link attach fentry <program-id> -o json'
+        go_locate: 'link attach fentry'
+        go_fields: ['"id":', '"kind"', '"fn_name"']
+        rust_cmd: './bin/bpfman-rs attach <program-id> fentry'
+        rust_locate: 'fentry --metadata'
+        rust_fields: ['Link ID:', 'Attach Function:']
+  - id: fexit baseline
+    object: e2e/testdata/bpf/fentry_counter.bpf.o
+    intro: 'program `fexit:test_fexit:do_unlinkat` (the attach function is given at load time).'
+    result: pass
+    go_transcript: outputs/fexit-baseline.go.out
+    rust_transcript: outputs/fexit-baseline.rust.out
+    steps:
+      - go_cmd: './bin/go-bpfman program load file e2e/testdata/bpf/fentry_counter.bpf.o --programs fexit:test_fexit:do_unlinkat -o json'
+        go_locate: 'program load file e2e/testdata/bpf/fentry_counter.bpf.o'
+        go_fields: ['"program_id"', '"program_type"']
+        rust_cmd: './bin/bpfman-rs load file --path e2e/testdata/bpf/fentry_counter.bpf.o --programs fexit:test_fexit:do_unlinkat'
+        rust_locate: 'load file --path e2e/testdata/bpf/fentry_counter.bpf.o'
+        rust_fields: ['Program ID:', 'Program Type:']
+      - go_cmd: './bin/go-bpfman link attach fexit <program-id> -o json'
+        go_locate: 'link attach fexit'
+        go_fields: ['"id":', '"kind"', '"fn_name"']
+        rust_cmd: './bin/bpfman-rs attach <program-id> fexit'
+        rust_locate: 'fexit --metadata'
+        rust_fields: ['Link ID:', 'Attach Function:']

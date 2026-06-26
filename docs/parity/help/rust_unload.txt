@@ -1,0 +1,10 @@
+$ bpfman-rs unload --help
+Unload an eBPF program using the Program Id
+
+Usage: bpfman-rs unload <PROGRAM_ID>
+
+Arguments:
+  <PROGRAM_ID>  Required: Program Id to be unloaded
+
+Options:
+  -h, --help  Print help

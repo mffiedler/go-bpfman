@@ -1,0 +1,23 @@
+$ go-bpfman link attach fentry --help
+Usage: bpfman link attach fentry <program-id> [flags]
+
+Attach a program to a function entry tracing point.
+
+Arguments:
+  <program-id>    Program ID to attach.
+
+Flags:
+  -h, --help                     Show help (-h for compact, --help for full).
+
+  -o, --output=text              Output format: text, json.
+  -m, --metadata=METADATA,...    KEY=VALUE link metadata (can be repeated).
+
+Global Flags:
+  --config=FILE              Config file path (default: /etc/bpfman/bpfman.toml)
+                             ($BPFMAN_CONFIG).
+  --log=SPEC                 Log spec (e.g., 'info,manager=debug')
+                             ($BPFMAN_LOG).
+  --runtime-dir=DIR          Root directory for runtime files.
+  --image-cache-dir=DIR      Root directory for OCI image cache.
+  --lock-timeout=DURATION    Timeout for acquiring the global writer lock (0 for
+                             indefinite) ($BPFMAN_LOCK_TIMEOUT).

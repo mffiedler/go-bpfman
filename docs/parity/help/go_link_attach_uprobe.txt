@@ -1,0 +1,31 @@
+$ go-bpfman link attach uprobe --help
+Usage: bpfman link attach uprobe <program-id> <target> [flags]
+
+Attach a program to a user-space probe.
+
+Arguments:
+  <program-id>    Program ID to attach.
+  <target>        Absolute path to the target binary or library, or a bare
+                  library name (e.g. libc) resolved like the dynamic linker.
+
+Flags:
+  -h, --help                     Show help (-h for compact, --help for full).
+
+  -o, --output=text              Output format: text, json.
+  -m, --metadata=METADATA,...    KEY=VALUE link metadata (can be repeated).
+  -f, --fn-name=STRING           Function name to attach to.
+      --offset=0                 Offset within the function.
+      --pid=INT-32               Only trace this process ID (0 traces all
+                                 processes).
+      --container-pid=INT-32     Container PID for namespace-aware uprobe
+                                 attachment.
+
+Global Flags:
+  --config=FILE              Config file path (default: /etc/bpfman/bpfman.toml)
+                             ($BPFMAN_CONFIG).
+  --log=SPEC                 Log spec (e.g., 'info,manager=debug')
+                             ($BPFMAN_LOG).
+  --runtime-dir=DIR          Root directory for runtime files.
+  --image-cache-dir=DIR      Root directory for OCI image cache.
+  --lock-timeout=DURATION    Timeout for acquiring the global writer lock (0 for
+                             indefinite) ($BPFMAN_LOCK_TIMEOUT).

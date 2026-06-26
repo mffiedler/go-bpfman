@@ -1,0 +1,34 @@
+$ go-bpfman program load file --help
+Usage: bpfman program load file <path> [flags]
+
+Load from a local object file.
+
+Arguments:
+  <path>    Path to the BPF object file (.o).
+
+Flags:
+  -h, --help                       Show help (-h for compact, --help for full).
+
+  -o, --output=text                Output format: text, json.
+  -m, --metadata=METADATA,...      KEY=VALUE metadata to attach (can be
+                                   repeated).
+  -g, --global=GLOBAL,...          NAME=HEX global data (can be repeated).
+      --programs=PROGRAMS,...      TYPE:NAME or TYPE:NAME:ATTACH_FUNC program
+                                   to load (comma-separated or repeated).
+                                   For fentry/fexit, ATTACH_FUNC is required.
+                                   If not specified, all programs in the object
+                                   file are loaded.
+  -a, --application=STRING         Application name to group programs (stored as
+                                   bpfman.io/application metadata).
+      --map-owner-id=PROGRAM-ID    Program ID of another program to share maps
+                                   with.
+
+Global Flags:
+  --config=FILE              Config file path (default: /etc/bpfman/bpfman.toml)
+                             ($BPFMAN_CONFIG).
+  --log=SPEC                 Log spec (e.g., 'info,manager=debug')
+                             ($BPFMAN_LOG).
+  --runtime-dir=DIR          Root directory for runtime files.
+  --image-cache-dir=DIR      Root directory for OCI image cache.
+  --lock-timeout=DURATION    Timeout for acquiring the global writer lock (0 for
+                             indefinite) ($BPFMAN_LOCK_TIMEOUT).

@@ -1,0 +1,367 @@
+$ gobpf program load file e2e/testdata/bpf/tracepoint_counter.bpf.o --programs tracepoint:tracepoint_kill_recorder --metadata parity=go -o json
+{
+  "programs": [
+    {
+      "record": {
+        "program_id": 260616,
+        "load": {
+          "object_path": "/run/bpfman-parity-go/programs/260616/bytecode.o",
+          "program_name": "tracepoint_kill_recorder",
+          "program_type": "tracepoint",
+          "global_data": {},
+          "image_source": null,
+          "attach_func": null,
+          "map_owner_id": null
+        },
+        "license": "Dual BSD/GPL",
+        "gpl_compatible": true,
+        "handles": {
+          "pin_path": "/run/bpfman-parity-go/fs/prog_260616",
+          "map_pin_path": "/run/bpfman-parity-go/fs/maps/260616",
+          "map_owner_id": null
+        },
+        "meta": {
+          "name": "tracepoint_kill_recorder",
+          "owner": "",
+          "description": "",
+          "metadata": {
+            "parity": "go"
+          }
+        },
+        "created_at": "2026-06-26T15:50:52Z",
+        "updated_at": null
+      },
+      "status": {
+        "kernel": {
+          "id": 260616,
+          "name": "tracepoint_kill",
+          "program_type": "tracepoint",
+          "tag": "7a2dd52cbef12658",
+          "loaded_at": "2026-06-26T15:50:52Z",
+          "uid": 0,
+          "has_uid": true,
+          "btf_id": 775199,
+          "has_btf_id": true,
+          "map_ids": [
+            417228
+          ],
+          "has_map_ids": true,
+          "jited_size": 114,
+          "xlated_size": 168,
+          "verified_insns": 12,
+          "memlock": 4096,
+          "has_memlock": true,
+          "restricted": false
+        },
+        "stats": null,
+        "prog_pin": "/run/bpfman-parity-go/fs/prog_260616",
+        "map_dir": "/run/bpfman-parity-go/fs/maps/260616",
+        "bytecode": "/run/bpfman-parity-go/programs/260616/bytecode.o",
+        "links": [],
+        "maps": [
+          {
+            "id": 417228,
+            "name": "tracepoint_stat",
+            "map_type": "percpuarray",
+            "key_size": 4,
+            "value_size": 8,
+            "max_entries": 1,
+            "flags": 0,
+            "btf_id": 775198,
+            "has_btf_id": true,
+            "map_extra": 0,
+            "has_map_extra": false,
+            "memlock": 440,
+            "has_memlock": true,
+            "frozen": false,
+            "pin_path": "",
+            "present": false
+          }
+        ],
+        "map_used_by": [
+          260616
+        ]
+      }
+    }
+  ]
+}
+[exit 0]
+
+$ gobpf program get 260616 -o json
+{
+  "record": {
+    "program_id": 260616,
+    "load": {
+      "object_path": "/run/bpfman-parity-go/programs/260616/bytecode.o",
+      "program_name": "tracepoint_kill_recorder",
+      "program_type": "tracepoint",
+      "global_data": {},
+      "image_source": null,
+      "attach_func": null,
+      "map_owner_id": null
+    },
+    "license": "Dual BSD/GPL",
+    "gpl_compatible": true,
+    "handles": {
+      "pin_path": "/run/bpfman-parity-go/fs/prog_260616",
+      "map_pin_path": "/run/bpfman-parity-go/fs/maps/260616",
+      "map_owner_id": null
+    },
+    "meta": {
+      "name": "tracepoint_kill_recorder",
+      "owner": "",
+      "description": "",
+      "metadata": {
+        "parity": "go"
+      }
+    },
+    "created_at": "2026-06-26T15:50:52Z",
+    "updated_at": null
+  },
+  "status": {
+    "kernel": {
+      "id": 260616,
+      "name": "tracepoint_kill",
+      "program_type": "tracepoint",
+      "tag": "7a2dd52cbef12658",
+      "loaded_at": "2026-06-26T15:50:52Z",
+      "uid": 0,
+      "has_uid": true,
+      "btf_id": 775199,
+      "has_btf_id": true,
+      "map_ids": [
+        417228
+      ],
+      "has_map_ids": true,
+      "jited_size": 114,
+      "xlated_size": 168,
+      "verified_insns": 12,
+      "memlock": 4096,
+      "has_memlock": true,
+      "restricted": false
+    },
+    "stats": {
+      "runtime": 0,
+      "run_count": 0,
+      "recursion_misses": 0
+    },
+    "prog_pin": "/run/bpfman-parity-go/fs/prog_260616",
+    "map_dir": "/run/bpfman-parity-go/fs/maps/260616",
+    "bytecode": "/run/bpfman-parity-go/programs/260616/bytecode.o",
+    "links": [],
+    "maps": [
+      {
+        "id": 417228,
+        "name": "tracepoint_stat",
+        "map_type": "percpuarray",
+        "key_size": 4,
+        "value_size": 8,
+        "max_entries": 1,
+        "flags": 0,
+        "btf_id": 775198,
+        "has_btf_id": true,
+        "map_extra": 0,
+        "has_map_extra": false,
+        "memlock": 440,
+        "has_memlock": true,
+        "frozen": false,
+        "pin_path": "/run/bpfman-parity-go/fs/maps/260616/tracepoint_stats_map",
+        "present": true
+      }
+    ],
+    "map_used_by": [
+      260616
+    ]
+  }
+}
+[exit 0]
+
+$ gobpf link attach tracepoint 260616 syscalls/sys_enter_kill --metadata owner=parity -o json
+{
+  "record": {
+    "id": 2123456951,
+    "program_id": 260616,
+    "kernel_link_id": 371387,
+    "kind": "tracepoint",
+    "pin_path": "/run/bpfman-parity-go/fs/links/2123456951",
+    "details": {
+      "group": "syscalls",
+      "name": "sys_enter_kill"
+    },
+    "created_at": "2026-06-26T15:50:53Z",
+    "metadata": {
+      "owner": "parity"
+    }
+  },
+  "status": {
+    "kernel": {
+      "id": 371387,
+      "program_id": 260616,
+      "link_type": "perf_event",
+      "attach_type": "",
+      "ifindex": 0,
+      "target_obj_id": 0,
+      "target_btf_id": 0,
+      "cgroup_id": 0,
+      "netns_ino": 0,
+      "netfilter_pf": 0,
+      "netfilter_hooknum": 0,
+      "netfilter_priority": 0,
+      "netfilter_flags": 0,
+      "kprobe_multi_count": 0,
+      "kprobe_multi_flags": 0,
+      "kprobe_multi_missed": 0,
+      "kprobe_address": 0,
+      "kprobe_missed": 0
+    },
+    "kernel_seen": true,
+    "pin_present": true
+  }
+}
+[exit 0]
+
+$ gobpf link get 2123456951 -o json
+{
+  "record": {
+    "id": 2123456951,
+    "program_id": 260616,
+    "kernel_link_id": 371387,
+    "kind": "tracepoint",
+    "pin_path": "/run/bpfman-parity-go/fs/links/2123456951",
+    "details": {
+      "group": "syscalls",
+      "name": "sys_enter_kill"
+    },
+    "created_at": "2026-06-26T15:50:53Z",
+    "metadata": {
+      "owner": "parity"
+    }
+  },
+  "status": {
+    "kernel": {
+      "id": 371387,
+      "program_id": 260616,
+      "link_type": "perf_event",
+      "attach_type": "",
+      "ifindex": 0,
+      "target_obj_id": 0,
+      "target_btf_id": 0,
+      "cgroup_id": 0,
+      "netns_ino": 0,
+      "netfilter_pf": 0,
+      "netfilter_hooknum": 0,
+      "netfilter_priority": 0,
+      "netfilter_flags": 0,
+      "kprobe_multi_count": 0,
+      "kprobe_multi_flags": 0,
+      "kprobe_multi_missed": 0,
+      "kprobe_address": 0,
+      "kprobe_missed": 0
+    },
+    "kernel_seen": true,
+    "pin_present": true
+  }
+}
+[exit 0]
+
+$ gobpf link list -o json
+{
+  "links": [
+    {
+      "id": 2123456951,
+      "program_id": 260616,
+      "kernel_link_id": 371387,
+      "kind": "tracepoint",
+      "pin_path": "/run/bpfman-parity-go/fs/links/2123456951",
+      "details": {
+        "group": "syscalls",
+        "name": "sys_enter_kill"
+      },
+      "created_at": "2026-06-26T15:50:53Z",
+      "metadata": {
+        "owner": "parity"
+      }
+    }
+  ]
+}
+[exit 0]
+
+$ gobpf program list -o json
+{
+  "programs": [
+    {
+      "program_id": 260616,
+      "managed": true,
+      "application": "",
+      "type": "tracepoint",
+      "function_name": "tracepoint_kill_recorder",
+      "links": [
+        2123456951
+      ],
+      "record": {
+        "program_id": 260616,
+        "load": {
+          "object_path": "/run/bpfman-parity-go/programs/260616/bytecode.o",
+          "program_name": "tracepoint_kill_recorder",
+          "program_type": "tracepoint",
+          "global_data": {},
+          "image_source": null,
+          "attach_func": null,
+          "map_owner_id": null
+        },
+        "license": "Dual BSD/GPL",
+        "gpl_compatible": true,
+        "handles": {
+          "pin_path": "/run/bpfman-parity-go/fs/prog_260616",
+          "map_pin_path": "/run/bpfman-parity-go/fs/maps/260616",
+          "map_owner_id": null
+        },
+        "meta": {
+          "name": "tracepoint_kill_recorder",
+          "owner": "",
+          "description": "",
+          "metadata": {
+            "parity": "go"
+          }
+        },
+        "created_at": "2026-06-26T15:50:52Z",
+        "updated_at": null
+      },
+      "kernel": {
+        "id": 260616,
+        "name": "tracepoint_kill",
+        "program_type": "tracepoint",
+        "tag": "7a2dd52cbef12658",
+        "loaded_at": "2026-06-26T15:50:52Z",
+        "uid": 0,
+        "has_uid": true,
+        "btf_id": 775199,
+        "has_btf_id": true,
+        "map_ids": [
+          417228
+        ],
+        "has_map_ids": true,
+        "jited_size": 114,
+        "xlated_size": 168,
+        "verified_insns": 12,
+        "memlock": 4096,
+        "has_memlock": true,
+        "restricted": false
+      }
+    }
+  ]
+}
+[exit 0]
+
+$ gobpf link detach 2123456951
+
+[exit 0]
+
+$ gobpf program unload 260616
+
+[exit 0]
+
+$ gobpf program get 260616 -o json
+bpfman: error: record not found
+[exit 1]
+

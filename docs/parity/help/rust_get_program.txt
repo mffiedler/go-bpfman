@@ -1,0 +1,10 @@
+$ bpfman-rs get program --help
+Get a loaded eBPF program using the Program Id
+
+Usage: bpfman-rs get program <PROGRAM_ID>
+
+Arguments:
+  <PROGRAM_ID>  Required: Program Id to get
+
+Options:
+  -h, --help  Print help

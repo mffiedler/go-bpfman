@@ -1,0 +1,106 @@
+$ rsbpf load file --path e2e/testdata/bpf/uprobe_counter.bpf.o --programs uretprobe:uprobe_counter --metadata parity=rust
+ Bpfman State                                         
+ BPF Function:  uprobe_counter                        
+ Program Type:  uprobe                                
+ Path:          e2e/testdata/bpf/uprobe_counter.bpf.o 
+ Global:        None                                  
+ Metadata:      parity=rust                           
+ Map Pin Path:  /run/bpfman/fs/maps/260790            
+ Map Owner ID:  None                                  
+ Maps Used By:  260790                                
+ Links:         None                                  
+
+ Kernel State                                               
+ Program ID:                       260790                   
+ BPF Function:                     uprobe_counter           
+ Kernel Type:                      probe                    
+ Loaded At:                        2026-06-26T16:50:57+0100 
+ Tag:                              7a2dd52cbef12658         
+ GPL Compatible:                   true                     
+ Map IDs:                          [417318]                 
+ BTF ID:                           775404                   
+ Size Translated (bytes):          168                      
+ JITted:                           true                     
+ Size JITted:                      114                      
+ Kernel Allocated Memory (bytes):  4096                     
+ Verified Instruction Count:       12                       
+[exit 0]
+
+$ rsbpf get program 260790
+ Bpfman State                                         
+ BPF Function:  uprobe_counter                        
+ Program Type:  uprobe                                
+ Path:          e2e/testdata/bpf/uprobe_counter.bpf.o 
+ Global:        None                                  
+ Metadata:      parity=rust                           
+ Map Pin Path:  /run/bpfman/fs/maps/260790            
+ Map Owner ID:  None                                  
+ Maps Used By:  260790                                
+ Links:         None                                  
+
+ Kernel State                                               
+ Program ID:                       260790                   
+ BPF Function:                     uprobe_counter           
+ Kernel Type:                      probe                    
+ Loaded At:                        2026-06-26T16:50:57+0100 
+ Tag:                              7a2dd52cbef12658         
+ GPL Compatible:                   true                     
+ Map IDs:                          [417318]                 
+ BTF ID:                           775404                   
+ Size Translated (bytes):          168                      
+ JITted:                           true                     
+ Size JITted:                      114                      
+ Kernel Allocated Memory (bytes):  4096                     
+ Verified Instruction Count:       12                       
+[exit 0]
+
+$ rsbpf attach 260790 uprobe --target /nix/store/l0l2ll1lmylczj1ihqn351af2kyp5x19-glibc-2.42-51/lib/libc.so.6 --fn-name malloc --metadata owner=parity
+ Bpfman State                                                                              
+ BPF Function:     uprobe_counter                                                          
+ Program Type:     uprobe                                                                  
+ Program ID:       260790                                                                  
+ Link ID:          3595333628                                                              
+ Target:           /nix/store/l0l2ll1lmylczj1ihqn351af2kyp5x19-glibc-2.42-51/lib/libc.so.6 
+ Attach Function:  malloc                                                                  
+ Offset:           0                                                                       
+ PID:              None                                                                    
+ Container PID:    None                                                                    
+ Metadata:         owner=parity                                                            
+[exit 0]
+
+$ rsbpf get link 3595333628
+ Bpfman State                                                                              
+ BPF Function:     uprobe_counter                                                          
+ Program Type:     uprobe                                                                  
+ Program ID:       260790                                                                  
+ Link ID:          3595333628                                                              
+ Target:           /nix/store/l0l2ll1lmylczj1ihqn351af2kyp5x19-glibc-2.42-51/lib/libc.so.6 
+ Attach Function:  malloc                                                                  
+ Offset:           0                                                                       
+ PID:              None                                                                    
+ Container PID:    None                                                                    
+ Metadata:         owner=parity                                                            
+[exit 0]
+
+$ rsbpf list programs
+ Program ID  Application  Type    Function Name   Links          
+ 260790                   uprobe  uprobe_counter  (1) 3595333628 
+[exit 0]
+
+$ rsbpf list links
+ Program ID  Link ID     Application  Type    Function Name   Attachment                                                                     
+ 260790      3595333628               uprobe  uprobe_counter  /nix/store/l0l2ll1lmylczj1ihqn351af2kyp5x19-glibc-2.42-51/lib/libc.so.6 malloc 
+[exit 0]
+
+$ rsbpf detach 3595333628
+
+[exit 0]
+
+$ rsbpf unload 260790
+
+[exit 0]
+
+$ rsbpf get program 260790
+Error: get error: An error occurred. Program 260790 does not exist
+[exit 1]
+

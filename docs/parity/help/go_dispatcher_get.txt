@@ -1,0 +1,24 @@
+$ go-bpfman dispatcher get --help
+Usage: bpfman dispatcher get <type> <nsid> <ifindex> [flags]
+
+Get dispatcher details.
+
+Arguments:
+  <type>       Dispatcher type (xdp, tc-ingress, tc-egress).
+  <nsid>       Network namespace ID.
+  <ifindex>    Interface index.
+
+Flags:
+  -h, --help           Show help (-h for compact, --help for full).
+
+  -o, --output=text    Output format: text, json.
+
+Global Flags:
+  --config=FILE              Config file path (default: /etc/bpfman/bpfman.toml)
+                             ($BPFMAN_CONFIG).
+  --log=SPEC                 Log spec (e.g., 'info,manager=debug')
+                             ($BPFMAN_LOG).
+  --runtime-dir=DIR          Root directory for runtime files.
+  --image-cache-dir=DIR      Root directory for OCI image cache.
+  --lock-timeout=DURATION    Timeout for acquiring the global writer lock (0 for
+                             indefinite) ($BPFMAN_LOCK_TIMEOUT).

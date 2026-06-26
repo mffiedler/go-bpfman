@@ -1,0 +1,175 @@
+$ gobpf link attach xdp 261058 nsveth0p --netns /var/run/netns/bpfmanns --priority 100 -o json
+{
+  "record": {
+    "id": 2123456960,
+    "program_id": 261058,
+    "kernel_link_id": 371407,
+    "kind": "xdp",
+    "pin_path": "/run/bpfman-parity-go/fs/xdp/dispatcher_4026534491_25243_1/link_0",
+    "details": {
+      "interface": "nsveth0p",
+      "ifindex": 25243,
+      "priority": 100,
+      "position": 0,
+      "proceed_on": [
+        2,
+        31
+      ],
+      "netns": "",
+      "nsid": 4026534491,
+      "dispatcher_id": 261059,
+      "revision": 1
+    },
+    "created_at": "0001-01-01T00:00:00Z",
+    "metadata": null
+  },
+  "status": {
+    "kernel": {
+      "id": 371407,
+      "program_id": 261058,
+      "link_type": "tracing",
+      "attach_type": "0",
+      "ifindex": 0,
+      "target_obj_id": 261059,
+      "target_btf_id": 3,
+      "cgroup_id": 0,
+      "netns_ino": 0,
+      "netfilter_pf": 0,
+      "netfilter_hooknum": 0,
+      "netfilter_priority": 0,
+      "netfilter_flags": 0,
+      "kprobe_multi_count": 0,
+      "kprobe_multi_flags": 0,
+      "kprobe_multi_missed": 0,
+      "kprobe_address": 0,
+      "kprobe_missed": 0
+    },
+    "kernel_seen": true,
+    "pin_present": true
+  }
+}
+[exit 0]
+
+$ gobpf link get 2123456960 -o json
+{
+  "record": {
+    "id": 2123456960,
+    "program_id": 261058,
+    "kernel_link_id": 371407,
+    "kind": "xdp",
+    "pin_path": "/run/bpfman-parity-go/fs/xdp/dispatcher_4026534491_25243_1/link_0",
+    "details": {
+      "interface": "nsveth0p",
+      "ifindex": 25243,
+      "priority": 100,
+      "position": 0,
+      "proceed_on": [
+        2,
+        31
+      ],
+      "netns": "/var/run/netns/bpfmanns",
+      "nsid": 4026534491,
+      "dispatcher_id": 261059,
+      "revision": 1
+    },
+    "created_at": "2026-06-26T16:02:29Z",
+    "metadata": null
+  },
+  "status": {
+    "kernel": {
+      "id": 371407,
+      "program_id": 261058,
+      "link_type": "tracing",
+      "attach_type": "0",
+      "ifindex": 0,
+      "target_obj_id": 261059,
+      "target_btf_id": 3,
+      "cgroup_id": 0,
+      "netns_ino": 0,
+      "netfilter_pf": 0,
+      "netfilter_hooknum": 0,
+      "netfilter_priority": 0,
+      "netfilter_flags": 0,
+      "kprobe_multi_count": 0,
+      "kprobe_multi_flags": 0,
+      "kprobe_multi_missed": 0,
+      "kprobe_address": 0,
+      "kprobe_missed": 0
+    },
+    "kernel_seen": true,
+    "pin_present": true
+  }
+}
+[exit 0]
+
+$ sudo ip netns del bpfmanns   # delete the namespace path
+[exit 0]
+
+$ gobpf link get 2123456960 -o json
+{
+  "record": {
+    "id": 2123456960,
+    "program_id": 261058,
+    "kernel_link_id": 371407,
+    "kind": "xdp",
+    "pin_path": "/run/bpfman-parity-go/fs/xdp/dispatcher_4026534491_25243_1/link_0",
+    "details": {
+      "interface": "nsveth0p",
+      "ifindex": 25243,
+      "priority": 100,
+      "position": 0,
+      "proceed_on": [
+        2,
+        31
+      ],
+      "netns": "/var/run/netns/bpfmanns",
+      "nsid": 4026534491,
+      "dispatcher_id": 261059,
+      "revision": 1
+    },
+    "created_at": "2026-06-26T16:02:29Z",
+    "metadata": null
+  },
+  "status": {
+    "kernel": {
+      "id": 371407,
+      "program_id": 261058,
+      "link_type": "tracing",
+      "attach_type": "0",
+      "ifindex": 0,
+      "target_obj_id": 261059,
+      "target_btf_id": 3,
+      "cgroup_id": 0,
+      "netns_ino": 0,
+      "netfilter_pf": 0,
+      "netfilter_hooknum": 0,
+      "netfilter_priority": 0,
+      "netfilter_flags": 0,
+      "kprobe_multi_count": 0,
+      "kprobe_multi_flags": 0,
+      "kprobe_multi_missed": 0,
+      "kprobe_address": 0,
+      "kprobe_missed": 0
+    },
+    "kernel_seen": true,
+    "pin_present": true
+  }
+}
+[exit 0]
+
+$ gobpf link detach 2123456960
+
+[exit 0]
+
+$ gobpf link get 2123456960 -o json
+bpfman: error: not found
+[exit 1]
+
+$ gobpf program unload 261058
+
+[exit 0]
+
+$ gobpf program get 261058 -o json
+bpfman: error: record not found
+[exit 1]
+

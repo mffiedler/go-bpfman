@@ -1,0 +1,61 @@
+$ bpfman-rs load file --help
+Load an eBPF program from a local .o file
+
+Usage: bpfman-rs load file [OPTIONS] --programs <PROGRAMS>... --path <PATH>
+
+Options:
+      --programs <PROGRAMS>...
+          Required: The program type and eBPF function name that is the entry point
+          for the eBPF program.
+          Format <TYPE>:<FUNC_NAME>
+          
+          For fentry and fexit, the function that is being attached to is also
+          required at load time, so the format for fentry and fexit includes attach
+          function.
+          Format <TYPE>:<FUNC_NAME>:<ATTACH_FUNC>
+          
+          If the bytecode file contains multiple eBPF programs that need to be
+          loaded, multiple eBPF programs can be entered by separating each
+          <TYPE>:<FUNC_NAME> pair with a space.
+          Example: --programs xdp:xdp_stats kprobe:kprobe_counter
+          Example: --programs fentry:test_fentry:do_unlinkat
+          
+          [possible values for <TYPE>: fentry, fexit, kprobe, tc, tcx, tracepoint,
+                                       uprobe, xdp]
+
+  -p, --path <PATH>
+          Required: Location of local bytecode file
+          Example: --path /run/bpfman/examples/go-xdp-counter/bpf_x86_bpfel.o
+
+  -g, --global <GLOBAL>...
+          Optional: Global variables to be set when program is loaded.
+          Format: <NAME>=<Hex Value>
+          
+          This is a very low level primitive. The caller is responsible for formatting
+          the byte string appropriately considering such things as size, endianness,
+          alignment and packing of data structures. Multiple values can be enter by
+          separating each <NAME>=<Hex Value> pair with a space.
+          Example: -g GLOBAL_u8=01 GLOBAL_u32=0A0B0C0D
+
+  -a, --application <APPLICATION>
+          Optional: Application is used to group multiple programs that are loaded together
+          under the same load command. This actually creates a special <KEY>=<VALUE> in the
+          metadata parameter. It can be used to filer on list commands.
+          Example: --application TestEbpfApp
+
+  -m, --metadata <METADATA>
+          Optional: Specify Key/Value metadata to be attached to a program when it
+          is loaded by bpfman.
+          Format: <KEY>=<VALUE>
+          
+          This can later be used to `list` a certain subset of programs which contain
+          the specified metadata.
+          Example: --metadata owner=acme
+
+      --map-owner-id <MAP_OWNER_ID>
+          Optional: Program Id of loaded eBPF program this eBPF program will share a map with.
+          Only used when multiple eBPF programs need to share a map.
+          Example: --map-owner-id 63178
+
+  -h, --help
+          Print help (see a summary with '-h')

@@ -1,0 +1,51 @@
+$ go-bpfman  --help
+Usage: bpfman <command> [flags]
+
+BPF program manager with integrated CSI driver.
+
+Flags:
+  -h, --help    Show help (-h for compact, --help for full).
+
+Global Flags:
+  --config=FILE              Config file path (default: /etc/bpfman/bpfman.toml)
+                             ($BPFMAN_CONFIG).
+  --log=SPEC                 Log spec (e.g., 'info,manager=debug')
+                             ($BPFMAN_LOG).
+  --runtime-dir=DIR          Root directory for runtime files.
+  --image-cache-dir=DIR      Root directory for OCI image cache.
+  --lock-timeout=DURATION    Timeout for acquiring the global writer lock (0 for
+                             indefinite) ($BPFMAN_LOCK_TIMEOUT).
+
+BPF Resources:
+  program load file         Load from a local object file.
+  program load image        Load from an OCI container image.
+  program unload            Unload a managed BPF program.
+  program get               Get details of a program by program ID.
+  program list              List managed programs.
+  program delete            Delete a program with cascading cleanup.
+  link attach xdp           Attach an XDP program to a network interface.
+  link attach tc            Attach a TC program to a network interface.
+  link attach tcx           Attach a TCX program to a network interface.
+  link attach tracepoint    Attach a program to a tracepoint.
+  link attach kprobe        Attach a program to a kernel probe.
+  link attach uprobe        Attach a program to a user-space probe.
+  link attach fentry        Attach a program to a function entry tracing point.
+  link attach fexit         Attach a program to a function exit tracing point.
+  link detach               Detach a link.
+  link get                  Get details of a link by link ID.
+  link list                 List managed links.
+  link delete               Delete a link with cascading cleanup.
+  dispatcher list           List dispatchers.
+  dispatcher get            Get dispatcher details.
+
+Infrastructure:
+  image build                  Build and push an OCI image containing BPF
+                               bytecode.
+  image generate-build-args    Generate OCI image build arguments for BPF
+                               bytecode.
+  image inspect                Inspect OCI image metadata for BPF bytecode.
+  image verify                 Verify an OCI image signature.
+  serve                        Start the gRPC daemon.
+  version                      Print version information.
+
+Run "bpfman <command> --help" for more information on a command.

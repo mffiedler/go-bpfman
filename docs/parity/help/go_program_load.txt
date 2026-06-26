@@ -1,0 +1,5 @@
+$ go-bpfman program load --help
+Usage: bpfman <command> [flags]
+Run "bpfman --help" for more information.
+
+bpfman: error: unexpected argument program load

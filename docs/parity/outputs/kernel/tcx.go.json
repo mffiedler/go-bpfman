@@ -1,0 +1,25 @@
+{
+  "program": {
+    "type": "sched_cls",
+    "name": "tcx_stats",
+    "tag": "7a2dd52cbef12658",
+    "gpl_compatible": true
+  },
+  "maps": [
+    {
+      "type": "percpu_array",
+      "name": "tcx_stats_map",
+      "bytes_key": 4,
+      "bytes_value": 8,
+      "max_entries": 1,
+      "flags": 0
+    }
+  ],
+  "link": [
+    {
+      "type": "tcx",
+      "devname": "bpfmanpar0",
+      "attach_type": "tcx_ingress"
+    }
+  ]
+}

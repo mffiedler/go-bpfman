@@ -1,0 +1,160 @@
+$ gobpf link attach tcx 261113 nsveth0p ingress --netns /var/run/netns/bpfmanns --priority 100 -o json
+{
+  "record": {
+    "id": 2123456962,
+    "program_id": 261113,
+    "kernel_link_id": 371413,
+    "kind": "tcx",
+    "pin_path": "/run/bpfman-parity-go/fs/tcx-ingress/link_4026534491_25251_261113",
+    "details": {
+      "interface": "nsveth0p",
+      "ifindex": 25251,
+      "direction": "ingress",
+      "priority": 100,
+      "position": 0,
+      "netns": "/var/run/netns/bpfmanns",
+      "nsid": 4026534491
+    },
+    "created_at": "2026-06-26T16:02:31Z",
+    "metadata": null
+  },
+  "status": {
+    "kernel": {
+      "id": 371413,
+      "program_id": 261113,
+      "link_type": "tcx",
+      "attach_type": "46",
+      "ifindex": 25251,
+      "target_obj_id": 0,
+      "target_btf_id": 0,
+      "cgroup_id": 0,
+      "netns_ino": 0,
+      "netfilter_pf": 0,
+      "netfilter_hooknum": 0,
+      "netfilter_priority": 0,
+      "netfilter_flags": 0,
+      "kprobe_multi_count": 0,
+      "kprobe_multi_flags": 0,
+      "kprobe_multi_missed": 0,
+      "kprobe_address": 0,
+      "kprobe_missed": 0
+    },
+    "kernel_seen": true,
+    "pin_present": true
+  }
+}
+[exit 0]
+
+$ gobpf link get 2123456962 -o json
+{
+  "record": {
+    "id": 2123456962,
+    "program_id": 261113,
+    "kernel_link_id": 371413,
+    "kind": "tcx",
+    "pin_path": "/run/bpfman-parity-go/fs/tcx-ingress/link_4026534491_25251_261113",
+    "details": {
+      "interface": "nsveth0p",
+      "ifindex": 25251,
+      "direction": "ingress",
+      "priority": 100,
+      "position": 0,
+      "netns": "/var/run/netns/bpfmanns",
+      "nsid": 4026534491
+    },
+    "created_at": "2026-06-26T16:02:31Z",
+    "metadata": null
+  },
+  "status": {
+    "kernel": {
+      "id": 371413,
+      "program_id": 261113,
+      "link_type": "tcx",
+      "attach_type": "46",
+      "ifindex": 25251,
+      "target_obj_id": 0,
+      "target_btf_id": 0,
+      "cgroup_id": 0,
+      "netns_ino": 0,
+      "netfilter_pf": 0,
+      "netfilter_hooknum": 0,
+      "netfilter_priority": 0,
+      "netfilter_flags": 0,
+      "kprobe_multi_count": 0,
+      "kprobe_multi_flags": 0,
+      "kprobe_multi_missed": 0,
+      "kprobe_address": 0,
+      "kprobe_missed": 0
+    },
+    "kernel_seen": true,
+    "pin_present": true
+  }
+}
+[exit 0]
+
+$ sudo ip netns del bpfmanns   # delete the namespace path
+[exit 0]
+
+$ gobpf link get 2123456962 -o json
+{
+  "record": {
+    "id": 2123456962,
+    "program_id": 261113,
+    "kernel_link_id": 371413,
+    "kind": "tcx",
+    "pin_path": "/run/bpfman-parity-go/fs/tcx-ingress/link_4026534491_25251_261113",
+    "details": {
+      "interface": "nsveth0p",
+      "ifindex": 25251,
+      "direction": "ingress",
+      "priority": 100,
+      "position": 0,
+      "netns": "/var/run/netns/bpfmanns",
+      "nsid": 4026534491
+    },
+    "created_at": "2026-06-26T16:02:31Z",
+    "metadata": null
+  },
+  "status": {
+    "kernel": {
+      "id": 371413,
+      "program_id": 261113,
+      "link_type": "tcx",
+      "attach_type": "46",
+      "ifindex": 0,
+      "target_obj_id": 0,
+      "target_btf_id": 0,
+      "cgroup_id": 0,
+      "netns_ino": 0,
+      "netfilter_pf": 0,
+      "netfilter_hooknum": 0,
+      "netfilter_priority": 0,
+      "netfilter_flags": 0,
+      "kprobe_multi_count": 0,
+      "kprobe_multi_flags": 0,
+      "kprobe_multi_missed": 0,
+      "kprobe_address": 0,
+      "kprobe_missed": 0
+    },
+    "kernel_seen": true,
+    "pin_present": true
+  }
+}
+[exit 0]
+
+$ gobpf link detach 2123456962
+
+[exit 0]
+
+$ gobpf link get 2123456962 -o json
+bpfman: error: not found
+[exit 1]
+
+$ gobpf program unload 261113
+
+[exit 0]
+
+$ gobpf program get 261113 -o json
+bpfman: error: record not found
+[exit 1]
+

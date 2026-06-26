@@ -1,0 +1,17 @@
+$ bpfman-rs attach fentry --help
+Install a fentry eBPF probe
+
+Usage: bpfman-rs attach <PROGRAM_ID> fentry [OPTIONS]
+
+Options:
+  -m, --metadata <METADATA>
+          Optional: Specify Key/Value metadata to be attached to a link when it
+          is loaded by bpfman.
+          Format: <KEY>=<VALUE>
+          
+          This can later be used to list a certain subset of links which contain
+          the specified metadata.
+          Example: --metadata owner=acme
+
+  -h, --help
+          Print help (see a summary with '-h')

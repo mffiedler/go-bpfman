@@ -1,0 +1,6 @@
+{
+  "detach_first_ok": true,
+  "detach_second_fails": true,
+  "unload_first_ok": true,
+  "unload_second_fails": true
+}

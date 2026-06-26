@@ -1,0 +1,43 @@
+$ go-bpfman program load image --help
+Usage: bpfman program load image <image> [flags]
+
+Load from an OCI container image.
+
+Arguments:
+  <image>    OCI image reference (e.g.,
+             quay.io/bpfman-bytecode/xdp_pass:latest).
+
+Flags:
+  -h, --help                       Show help (-h for compact, --help for full).
+
+  -o, --output=text                Output format: text, json.
+  -m, --metadata=METADATA,...      KEY=VALUE metadata to attach (can be
+                                   repeated).
+  -g, --global=GLOBAL,...          NAME=HEX global data (can be repeated).
+      --programs=PROGRAMS,...      TYPE:NAME or TYPE:NAME:ATTACH_FUNC program
+                                   to load (comma-separated or repeated).
+                                   For fentry/fexit, ATTACH_FUNC is required.
+                                   If not specified, all programs in the image
+                                   are loaded.
+  -p, --pull-policy="IfNotPresent"
+                                   Image pull policy (Always, IfNotPresent,
+                                   Never).
+      --registry-auth=STRING       Base64-encoded registry auth
+                                   (username:password). Prefer
+                                   BPFMAN_REGISTRY_AUTH env var to avoid
+                                   exposing credentials in process listings
+                                   ($BPFMAN_REGISTRY_AUTH).
+  -a, --application=STRING         Application name to group programs (stored as
+                                   bpfman.io/application metadata).
+      --map-owner-id=PROGRAM-ID    Program ID of another program to share maps
+                                   with.
+
+Global Flags:
+  --config=FILE              Config file path (default: /etc/bpfman/bpfman.toml)
+                             ($BPFMAN_CONFIG).
+  --log=SPEC                 Log spec (e.g., 'info,manager=debug')
+                             ($BPFMAN_LOG).
+  --runtime-dir=DIR          Root directory for runtime files.
+  --image-cache-dir=DIR      Root directory for OCI image cache.
+  --lock-timeout=DURATION    Timeout for acquiring the global writer lock (0 for
+                             indefinite) ($BPFMAN_LOCK_TIMEOUT).

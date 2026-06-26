@@ -1,0 +1,227 @@
+$ rsbpf load file --path e2e/testdata/bpf/tc_counter.bpf.o --programs tc:stats
+ Bpfman State                                     
+ BPF Function:  stats                             
+ Program Type:  tc                                
+ Path:          e2e/testdata/bpf/tc_counter.bpf.o 
+ Global:        None                              
+ Metadata:      None                              
+ Map Pin Path:  /run/bpfman/fs/maps/259457        
+ Map Owner ID:  None                              
+ Maps Used By:  259457                            
+ Links:         None                              
+
+ Kernel State                                               
+ Program ID:                       259457                   
+ BPF Function:                     stats                    
+ Kernel Type:                      tc                       
+ Loaded At:                        2026-06-26T16:35:51+0100 
+ Tag:                              ddaa0f8c90c60f04         
+ GPL Compatible:                   true                     
+ Map IDs:                          [416490]                 
+ BTF ID:                           773589                   
+ Size Translated (bytes):          240                      
+ JITted:                           true                     
+ Size JITted:                      162                      
+ Kernel Allocated Memory (bytes):  4096                     
+ Verified Instruction Count:       23                       
+[exit 0]
+
+$ rsbpf attach 259457 tc --direction ingress --iface bpfmanpar9 --priority 100
+ Bpfman State                                
+ BPF Function:       stats                   
+ Program Type:       tc                      
+ Program ID:         259457                  
+ Link ID:            385716487               
+ Interface:          bpfmanpar9              
+ Direction:          ingress                 
+ Priority:           100                     
+ Position:           0                       
+ Proceed On:         pipe, dispatcher_return 
+ Network Namespace:  None                    
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf attach 259457 tc --direction ingress --iface bpfmanpar9 --priority 200
+ Bpfman State                                
+ BPF Function:       stats                   
+ Program Type:       tc                      
+ Program ID:         259457                  
+ Link ID:            195345317               
+ Interface:          bpfmanpar9              
+ Direction:          ingress                 
+ Priority:           200                     
+ Position:           1                       
+ Proceed On:         pipe, dispatcher_return 
+ Network Namespace:  None                    
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf attach 259457 tc --direction ingress --iface bpfmanpar9 --priority 300
+ Bpfman State                                
+ BPF Function:       stats                   
+ Program Type:       tc                      
+ Program ID:         259457                  
+ Link ID:            1333708248              
+ Interface:          bpfmanpar9              
+ Direction:          ingress                 
+ Priority:           300                     
+ Position:           2                       
+ Proceed On:         pipe, dispatcher_return 
+ Network Namespace:  None                    
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf attach 259457 tc --direction ingress --iface bpfmanpar9 --priority 400
+ Bpfman State                                
+ BPF Function:       stats                   
+ Program Type:       tc                      
+ Program ID:         259457                  
+ Link ID:            4184540884              
+ Interface:          bpfmanpar9              
+ Direction:          ingress                 
+ Priority:           400                     
+ Position:           3                       
+ Proceed On:         pipe, dispatcher_return 
+ Network Namespace:  None                    
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf attach 259457 tc --direction ingress --iface bpfmanpar9 --priority 500
+ Bpfman State                                
+ BPF Function:       stats                   
+ Program Type:       tc                      
+ Program ID:         259457                  
+ Link ID:            2974696175              
+ Interface:          bpfmanpar9              
+ Direction:          ingress                 
+ Priority:           500                     
+ Position:           4                       
+ Proceed On:         pipe, dispatcher_return 
+ Network Namespace:  None                    
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf attach 259457 tc --direction ingress --iface bpfmanpar9 --priority 600
+ Bpfman State                                
+ BPF Function:       stats                   
+ Program Type:       tc                      
+ Program ID:         259457                  
+ Link ID:            1437830056              
+ Interface:          bpfmanpar9              
+ Direction:          ingress                 
+ Priority:           600                     
+ Position:           5                       
+ Proceed On:         pipe, dispatcher_return 
+ Network Namespace:  None                    
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf attach 259457 tc --direction ingress --iface bpfmanpar9 --priority 700
+ Bpfman State                                
+ BPF Function:       stats                   
+ Program Type:       tc                      
+ Program ID:         259457                  
+ Link ID:            1327956166              
+ Interface:          bpfmanpar9              
+ Direction:          ingress                 
+ Priority:           700                     
+ Position:           6                       
+ Proceed On:         pipe, dispatcher_return 
+ Network Namespace:  None                    
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf attach 259457 tc --direction ingress --iface bpfmanpar9 --priority 800
+ Bpfman State                                
+ BPF Function:       stats                   
+ Program Type:       tc                      
+ Program ID:         259457                  
+ Link ID:            3396796951              
+ Interface:          bpfmanpar9              
+ Direction:          ingress                 
+ Priority:           800                     
+ Position:           7                       
+ Proceed On:         pipe, dispatcher_return 
+ Network Namespace:  None                    
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf attach 259457 tc --direction ingress --iface bpfmanpar9 --priority 900
+ Bpfman State                                
+ BPF Function:       stats                   
+ Program Type:       tc                      
+ Program ID:         259457                  
+ Link ID:            1239817311              
+ Interface:          bpfmanpar9              
+ Direction:          ingress                 
+ Priority:           900                     
+ Position:           8                       
+ Proceed On:         pipe, dispatcher_return 
+ Network Namespace:  None                    
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf attach 259457 tc --direction ingress --iface bpfmanpar9 --priority 1000
+ Bpfman State                                
+ BPF Function:       stats                   
+ Program Type:       tc                      
+ Program ID:         259457                  
+ Link ID:            3823100627              
+ Interface:          bpfmanpar9              
+ Direction:          ingress                 
+ Priority:           1000                    
+ Position:           9                       
+ Proceed On:         pipe, dispatcher_return 
+ Network Namespace:  None                    
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf attach 259457 tc --direction ingress --iface bpfmanpar9 --priority 150
+[ERROR bpfman] Error: failed to attach tc program named "stats": No room to attach program. Please remove one and try again.
+Error: No room to attach program. Please remove one and try again.
+[exit 1]
+
+$ rsbpf detach 1239817311
+
+[exit 0]
+
+$ rsbpf detach 1327956166
+
+[exit 0]
+
+$ rsbpf detach 1333708248
+
+[exit 0]
+
+$ rsbpf detach 1437830056
+
+[exit 0]
+
+$ rsbpf detach 195345317
+
+[exit 0]
+
+$ rsbpf detach 2974696175
+
+[exit 0]
+
+$ rsbpf detach 3396796951
+
+[exit 0]
+
+$ rsbpf detach 3823100627
+
+[exit 0]
+
+$ rsbpf detach 385716487
+
+[exit 0]
+
+$ rsbpf detach 4184540884
+
+[exit 0]
+
+$ rsbpf unload 259457
+
+[exit 0]
+

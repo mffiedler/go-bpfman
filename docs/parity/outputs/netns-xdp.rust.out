@@ -1,0 +1,36 @@
+$ rsbpf attach 260432 xdp --iface nsveth0p --netns /var/run/netns/bpfmanns --priority 100
+ Bpfman State                                
+ BPF Function:       pass                    
+ Program Type:       xdp                     
+ Program ID:         260432                  
+ Link ID:            1123628958              
+ Interface:          nsveth0p                
+ Priority:           100                     
+ Position:           0                       
+ Proceed On:         pass, dispatcher_return 
+ Network Namespace:  /var/run/netns/bpfmanns 
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf get link 1123628958
+ Bpfman State                                
+ BPF Function:       pass                    
+ Program Type:       xdp                     
+ Program ID:         260432                  
+ Link ID:            1123628958              
+ Interface:          nsveth0p                
+ Priority:           100                     
+ Position:           0                       
+ Proceed On:         pass, dispatcher_return 
+ Network Namespace:  /var/run/netns/bpfmanns 
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf detach 1123628958
+
+[exit 0]
+
+$ rsbpf unload 260432
+
+[exit 0]
+

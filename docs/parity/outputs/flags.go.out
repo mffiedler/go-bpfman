@@ -1,0 +1,234 @@
+$ gobpf link attach tcx 260107 bpfmanpar0 egress --priority 100 -o json
+{
+  "record": {
+    "id": 2123456932,
+    "program_id": 260107,
+    "kernel_link_id": 371314,
+    "kind": "tcx",
+    "pin_path": "/run/bpfman-parity-go/fs/tcx-egress/link_4026531833_25198_260107",
+    "details": {
+      "interface": "bpfmanpar0",
+      "ifindex": 25198,
+      "direction": "egress",
+      "priority": 100,
+      "position": 0,
+      "netns": "",
+      "nsid": 4026531833
+    },
+    "created_at": "2026-06-26T15:46:32Z",
+    "metadata": null
+  },
+  "status": {
+    "kernel": {
+      "id": 371314,
+      "program_id": 260107,
+      "link_type": "tcx",
+      "attach_type": "47",
+      "ifindex": 25198,
+      "target_obj_id": 0,
+      "target_btf_id": 0,
+      "cgroup_id": 0,
+      "netns_ino": 0,
+      "netfilter_pf": 0,
+      "netfilter_hooknum": 0,
+      "netfilter_priority": 0,
+      "netfilter_flags": 0,
+      "kprobe_multi_count": 0,
+      "kprobe_multi_flags": 0,
+      "kprobe_multi_missed": 0,
+      "kprobe_address": 0,
+      "kprobe_missed": 0
+    },
+    "kernel_seen": true,
+    "pin_present": true
+  }
+}
+[exit 0]
+
+$ gobpf link attach kprobe 260133 vfs_read --offset 0 -o json
+{
+  "record": {
+    "id": 2123456933,
+    "program_id": 260133,
+    "kernel_link_id": 371316,
+    "kind": "kprobe",
+    "pin_path": "/run/bpfman-parity-go/fs/links/2123456933",
+    "details": {
+      "fn_name": "vfs_read",
+      "offset": 0,
+      "retprobe": false
+    },
+    "created_at": "2026-06-26T15:46:32Z",
+    "metadata": null
+  },
+  "status": {
+    "kernel": {
+      "id": 371316,
+      "program_id": 260133,
+      "link_type": "perf_event",
+      "attach_type": "",
+      "ifindex": 0,
+      "target_obj_id": 0,
+      "target_btf_id": 0,
+      "cgroup_id": 0,
+      "netns_ino": 0,
+      "netfilter_pf": 0,
+      "netfilter_hooknum": 0,
+      "netfilter_priority": 0,
+      "netfilter_flags": 0,
+      "kprobe_multi_count": 0,
+      "kprobe_multi_flags": 0,
+      "kprobe_multi_missed": 0,
+      "kprobe_address": 18446744071839876868,
+      "kprobe_missed": 0
+    },
+    "kernel_seen": true,
+    "pin_present": true
+  }
+}
+[exit 0]
+
+$ gobpf link attach uprobe 260160 /nix/store/l0l2ll1lmylczj1ihqn351af2kyp5x19-glibc-2.42-51/lib/libc.so.6 --fn-name malloc --pid 1 -o json
+{
+  "record": {
+    "id": 2123456934,
+    "program_id": 260160,
+    "kernel_link_id": 371318,
+    "kind": "uprobe",
+    "pin_path": "/run/bpfman-parity-go/fs/links/2123456934",
+    "details": {
+      "target": "/nix/store/l0l2ll1lmylczj1ihqn351af2kyp5x19-glibc-2.42-51/lib/libc.so.6",
+      "fn_name": "malloc",
+      "offset": 0,
+      "pid": 1,
+      "retprobe": false,
+      "container_pid": 0
+    },
+    "created_at": "2026-06-26T15:46:33Z",
+    "metadata": null
+  },
+  "status": {
+    "kernel": {
+      "id": 371318,
+      "program_id": 260160,
+      "link_type": "perf_event",
+      "attach_type": "",
+      "ifindex": 0,
+      "target_obj_id": 0,
+      "target_btf_id": 0,
+      "cgroup_id": 0,
+      "netns_ino": 0,
+      "netfilter_pf": 0,
+      "netfilter_hooknum": 0,
+      "netfilter_priority": 0,
+      "netfilter_flags": 0,
+      "kprobe_multi_count": 0,
+      "kprobe_multi_flags": 0,
+      "kprobe_multi_missed": 0,
+      "kprobe_address": 0,
+      "kprobe_missed": 0
+    },
+    "kernel_seen": true,
+    "pin_present": true
+  }
+}
+[exit 0]
+
+$ gobpf link attach uprobe 260165 /nix/store/l0l2ll1lmylczj1ihqn351af2kyp5x19-glibc-2.42-51/lib/libc.so.6 --offset 4096 -o json
+{
+  "record": {
+    "id": 2123456935,
+    "program_id": 260165,
+    "kernel_link_id": 371319,
+    "kind": "uprobe",
+    "pin_path": "/run/bpfman-parity-go/fs/links/2123456935",
+    "details": {
+      "target": "/nix/store/l0l2ll1lmylczj1ihqn351af2kyp5x19-glibc-2.42-51/lib/libc.so.6",
+      "fn_name": "",
+      "offset": 4096,
+      "pid": 0,
+      "retprobe": false,
+      "container_pid": 0
+    },
+    "created_at": "2026-06-26T15:46:33Z",
+    "metadata": null
+  },
+  "status": {
+    "kernel": {
+      "id": 371319,
+      "program_id": 260165,
+      "link_type": "perf_event",
+      "attach_type": "",
+      "ifindex": 0,
+      "target_obj_id": 0,
+      "target_btf_id": 0,
+      "cgroup_id": 0,
+      "netns_ino": 0,
+      "netfilter_pf": 0,
+      "netfilter_hooknum": 0,
+      "netfilter_priority": 0,
+      "netfilter_flags": 0,
+      "kprobe_multi_count": 0,
+      "kprobe_multi_flags": 0,
+      "kprobe_multi_missed": 0,
+      "kprobe_address": 0,
+      "kprobe_missed": 0
+    },
+    "kernel_seen": true,
+    "pin_present": true
+  }
+}
+[exit 0]
+
+$ gobpf link attach uprobe 260170 /nix/store/l0l2ll1lmylczj1ihqn351af2kyp5x19-glibc-2.42-51/lib/libc.so.6 --fn-name malloc --container-pid 1 -o json
+nsexec[258792]: INFO: namespace switch requested
+nsexec[258792]: INFO: calling setns(fd=5, CLONE_NEWNS) for /proc/1/ns/mnt
+nsexec[258792]: INFO: setns succeeded: mount namespace changed 4026531832 -> 4026531832
+nsexec[258792]: INFO: returning to Go runtime in new mount namespace
+time=2026-06-26T16:46:33.404+01:00 level=INFO msg="bpfman-ns uprobe handler started" pid=258792 ppid=258775 current_mnt_ns_inode=4026531832 target=/nix/store/l0l2ll1lmylczj1ihqn351af2kyp5x19-glibc-2.42-51/lib/libc.so.6 socket_fd=3
+time=2026-06-26T16:46:33.404+01:00 level=INFO msg="target fd sent to parent successfully" target=/nix/store/l0l2ll1lmylczj1ihqn351af2kyp5x19-glibc-2.42-51/lib/libc.so.6
+{
+  "record": {
+    "id": 2123456936,
+    "program_id": 260170,
+    "kernel_link_id": 371320,
+    "kind": "uprobe",
+    "pin_path": "/run/bpfman-parity-go/fs/links/2123456936",
+    "details": {
+      "target": "/nix/store/l0l2ll1lmylczj1ihqn351af2kyp5x19-glibc-2.42-51/lib/libc.so.6",
+      "fn_name": "malloc",
+      "offset": 0,
+      "pid": 0,
+      "retprobe": false,
+      "container_pid": 1
+    },
+    "created_at": "2026-06-26T15:46:33Z",
+    "metadata": null
+  },
+  "status": {
+    "kernel": {
+      "id": 371320,
+      "program_id": 260170,
+      "link_type": "perf_event",
+      "attach_type": "",
+      "ifindex": 0,
+      "target_obj_id": 0,
+      "target_btf_id": 0,
+      "cgroup_id": 0,
+      "netns_ino": 0,
+      "netfilter_pf": 0,
+      "netfilter_hooknum": 0,
+      "netfilter_priority": 0,
+      "netfilter_flags": 0,
+      "kprobe_multi_count": 0,
+      "kprobe_multi_flags": 0,
+      "kprobe_multi_missed": 0,
+      "kprobe_address": 0,
+      "kprobe_missed": 0
+    },
+    "kernel_seen": true,
+    "pin_present": true
+  }
+}
+[exit 0]
+

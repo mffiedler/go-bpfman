@@ -1238,6 +1238,26 @@ doc-text:
 	done
 
 # ---------------------------------------------------------------------------
+# Rust parity README.
+#
+# parity-readme regenerates the marker-bounded parity section of the
+# repository README from docs/parity/cases.yaml and the captured
+# transcripts. parity-compare prints the kernel-judged verdict table
+# (bpftool footprints diffed by cmd/parity-compare). parity-check
+# verifies both -- the README is current and every kernel verdict holds
+# its declared expectation -- and is also enforced by go test ./... via
+# the cmd/parity-readme and cmd/parity-compare tests.
+parity-readme:
+	@go run ./cmd/parity-readme
+
+parity-compare:
+	@go run ./cmd/parity-compare
+
+parity-check:
+	@go run ./cmd/parity-readme -check
+	@go run ./cmd/parity-compare -check
+
+# ---------------------------------------------------------------------------
 # bpfman build.
 #
 # Note: bpfman-proto is not a dependency here since pb files are committed.
@@ -1817,7 +1837,7 @@ bpfman-test-grpc: build-image-dev
 .PHONY: build-image build-image-amd64 build-image-arm64 build-image-csi-sanity build-image-dev build-image-nix build-image-openshift build-image-ppc64le build-image-s390x cosign-sign
 .PHONY: ci ci-build ci-check-bpfman-shell-fmt ci-check-fmt ci-check-gofix ci-check-goimports ci-check-vendor ci-check-vet ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-grpc ci-test-e2e-scripts
 .PHONY: coverage clean-coverage coverage-func coverage-html coverage-open
-.PHONY: doc doc-text
+.PHONY: doc doc-text parity-readme parity-compare parity-check
 .PHONY: print-fedora-version print-go-version print-golangci-lint-version
 .PHONY: build-e2e-grpc build-e2e-scripts $(BIN_DIR)/e2e.test $(BIN_DIR)/e2e-grpc.test $(BIN_DIR)/e2e-scripts.test run-e2e-grpc run-e2e-scripts run-e2e-scripts-timeline bpfman-shell-fmt update-lowered-goldens test test-timeline test-all test-e2e test-e2e-grpc test-e2e-scripts test-e2e-scripts-file test-e2e-scripts-image test-e2e-scripts-image-ci test-e2e-published-images test-e2e-scripts-stress test-e2e-scripts-timeline test-examples
 .PHONY: test-bpfman-ns test-bpfman-ns-amd64 test-bpfman-ns-arm64 test-bpfman-ns-cross test-bpfman-ns-ppc64le test-bpfman-ns-s390x

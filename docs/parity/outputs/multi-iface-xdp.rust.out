@@ -1,0 +1,65 @@
+$ rsbpf attach 260389 xdp --iface bpfmanpa --priority 100
+ Bpfman State                                
+ BPF Function:       pass                    
+ Program Type:       xdp                     
+ Program ID:         260389                  
+ Link ID:            1417049110              
+ Interface:          bpfmanpa                
+ Priority:           100                     
+ Position:           0                       
+ Proceed On:         pass, dispatcher_return 
+ Network Namespace:  None                    
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf attach 260389 xdp --iface bpfmanpb --priority 100
+ Bpfman State                                
+ BPF Function:       pass                    
+ Program Type:       xdp                     
+ Program ID:         260389                  
+ Link ID:            537086399               
+ Interface:          bpfmanpb                
+ Priority:           100                     
+ Position:           0                       
+ Proceed On:         pass, dispatcher_return 
+ Network Namespace:  None                    
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf list links
+ Program ID  Link ID     Application  Type  Function Name  Attachment     
+ 260389      1417049110               xdp   pass           bpfmanpa pos-0 
+ 260389      537086399                xdp   pass           bpfmanpb pos-0 
+[exit 0]
+
+$ rsbpf detach 1417049110
+
+[exit 0]
+
+$ rsbpf get link 537086399
+ Bpfman State                                
+ BPF Function:       pass                    
+ Program Type:       xdp                     
+ Program ID:         260389                  
+ Link ID:            537086399               
+ Interface:          bpfmanpb                
+ Priority:           100                     
+ Position:           0                       
+ Proceed On:         pass, dispatcher_return 
+ Network Namespace:  None                    
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf list links
+ Program ID  Link ID    Application  Type  Function Name  Attachment     
+ 260389      537086399               xdp   pass           bpfmanpb pos-0 
+[exit 0]
+
+$ rsbpf detach 537086399
+
+[exit 0]
+
+$ rsbpf unload 260389
+
+[exit 0]
+

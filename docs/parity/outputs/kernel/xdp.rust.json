@@ -1,0 +1,25 @@
+{
+  "program": {
+    "type": "ext",
+    "name": "pass",
+    "tag": "671e1cfa7d68206f",
+    "gpl_compatible": true
+  },
+  "maps": [
+    {
+      "type": "percpu_array",
+      "name": "xdp_pass_stats_",
+      "bytes_key": 4,
+      "bytes_value": 8,
+      "max_entries": 1,
+      "flags": 0
+    }
+  ],
+  "link": [
+    {
+      "type": "tracing",
+      "prog_type": "ext",
+      "attach_type": "cgroup_inet_ingress"
+    }
+  ]
+}

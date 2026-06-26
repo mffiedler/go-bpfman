@@ -1,0 +1,17 @@
+$ rsbpf detach 435137491
+
+[exit 0]
+
+$ rsbpf detach 435137491
+Error: Database entry type does not exist in tree "link_435137491": 
+[exit 1]
+
+$ rsbpf unload 259975
+
+[exit 0]
+
+$ rsbpf unload 259975
+[ERROR bpfman] Error: Request to unload program with id 259975 but id does not exist or was not created by bpfman
+Error: An error occurred. Program 259975 does not exist or was not created by bpfman
+[exit 1]
+

@@ -1,0 +1,100 @@
+$ rsbpf attach 260278 xdp --iface bpfmanpar9 --priority 100
+ Bpfman State                                
+ BPF Function:       pass                    
+ Program Type:       xdp                     
+ Program ID:         260278                  
+ Link ID:            4084727331              
+ Interface:          bpfmanpar9              
+ Priority:           100                     
+ Position:           0                       
+ Proceed On:         pass, dispatcher_return 
+ Network Namespace:  None                    
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf attach 260278 xdp --iface bpfmanpar9 --priority 100
+ Bpfman State                                
+ BPF Function:       pass                    
+ Program Type:       xdp                     
+ Program ID:         260278                  
+ Link ID:            250199732               
+ Interface:          bpfmanpar9              
+ Priority:           100                     
+ Position:           0                       
+ Proceed On:         pass, dispatcher_return 
+ Network Namespace:  None                    
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf attach 260278 xdp --iface bpfmanpar9 --priority 100
+ Bpfman State                                
+ BPF Function:       pass                    
+ Program Type:       xdp                     
+ Program ID:         260278                  
+ Link ID:            2030352210              
+ Interface:          bpfmanpar9              
+ Priority:           100                     
+ Position:           0                       
+ Proceed On:         pass, dispatcher_return 
+ Network Namespace:  None                    
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf get link 4084727331
+ Bpfman State                                
+ BPF Function:       pass                    
+ Program Type:       xdp                     
+ Program ID:         260278                  
+ Link ID:            4084727331              
+ Interface:          bpfmanpar9              
+ Priority:           100                     
+ Position:           1                       
+ Proceed On:         pass, dispatcher_return 
+ Network Namespace:  None                    
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf get link 250199732
+ Bpfman State                                
+ BPF Function:       pass                    
+ Program Type:       xdp                     
+ Program ID:         260278                  
+ Link ID:            250199732               
+ Interface:          bpfmanpar9              
+ Priority:           100                     
+ Position:           2                       
+ Proceed On:         pass, dispatcher_return 
+ Network Namespace:  None                    
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf get link 2030352210
+ Bpfman State                                
+ BPF Function:       pass                    
+ Program Type:       xdp                     
+ Program ID:         260278                  
+ Link ID:            2030352210              
+ Interface:          bpfmanpar9              
+ Priority:           100                     
+ Position:           0                       
+ Proceed On:         pass, dispatcher_return 
+ Network Namespace:  None                    
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf detach 4084727331
+
+[exit 0]
+
+$ rsbpf detach 250199732
+
+[exit 0]
+
+$ rsbpf detach 2030352210
+
+[exit 0]
+
+$ rsbpf unload 260278
+
+[exit 0]
+

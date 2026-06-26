@@ -1,0 +1,220 @@
+$ gobpf program load file e2e/testdata/bpf/tc_exact.bpf.o --programs tc:stats -g weight=0000000000000005 -o json
+{
+  "programs": [
+    {
+      "record": {
+        "program_id": 260008,
+        "load": {
+          "object_path": "/run/bpfman-parity-go/programs/260008/bytecode.o",
+          "program_name": "stats",
+          "program_type": "tc",
+          "global_data": {
+            "weight": "AAAAAAAAAAU="
+          },
+          "image_source": null,
+          "attach_func": null,
+          "map_owner_id": null
+        },
+        "license": "Dual BSD/GPL",
+        "gpl_compatible": true,
+        "handles": {
+          "pin_path": "/run/bpfman-parity-go/fs/prog_260008",
+          "map_pin_path": "/run/bpfman-parity-go/fs/maps/260008",
+          "map_owner_id": null
+        },
+        "meta": {
+          "name": "stats",
+          "owner": "",
+          "description": "",
+          "metadata": {}
+        },
+        "created_at": "2026-06-26T15:46:29Z",
+        "updated_at": null
+      },
+      "status": {
+        "kernel": {
+          "id": 260008,
+          "name": "stats",
+          "program_type": "extension",
+          "tag": "8fcb3a8b7634b7be",
+          "loaded_at": "2026-06-26T15:46:28Z",
+          "uid": 0,
+          "has_uid": true,
+          "btf_id": 774316,
+          "has_btf_id": true,
+          "map_ids": [
+            416824,
+            416825
+          ],
+          "has_map_ids": true,
+          "jited_size": 221,
+          "xlated_size": 352,
+          "verified_insns": 44,
+          "memlock": 4096,
+          "has_memlock": true,
+          "restricted": false
+        },
+        "stats": null,
+        "prog_pin": "/run/bpfman-parity-go/fs/prog_260008",
+        "map_dir": "/run/bpfman-parity-go/fs/maps/260008",
+        "bytecode": "/run/bpfman-parity-go/programs/260008/bytecode.o",
+        "links": [],
+        "maps": [
+          {
+            "id": 416824,
+            "name": "tc_count",
+            "map_type": "array",
+            "key_size": 4,
+            "value_size": 8,
+            "max_entries": 1,
+            "flags": 0,
+            "btf_id": 774314,
+            "has_btf_id": true,
+            "map_extra": 0,
+            "has_map_extra": false,
+            "memlock": 312,
+            "has_memlock": true,
+            "frozen": false,
+            "pin_path": "",
+            "present": false
+          },
+          {
+            "id": 416825,
+            "name": ".rodata",
+            "map_type": "array",
+            "key_size": 4,
+            "value_size": 8,
+            "max_entries": 1,
+            "flags": 1152,
+            "btf_id": 774315,
+            "has_btf_id": true,
+            "map_extra": 0,
+            "has_map_extra": false,
+            "memlock": 8192,
+            "has_memlock": true,
+            "frozen": true,
+            "pin_path": "",
+            "present": false
+          }
+        ],
+        "map_used_by": [
+          260008
+        ]
+      }
+    }
+  ]
+}
+[exit 0]
+
+$ gobpf program load file e2e/testdata/bpf/tc_exact.bpf.o --programs tc:stats -g weight=0x0000000000000005 -o json
+{
+  "programs": [
+    {
+      "record": {
+        "program_id": 260012,
+        "load": {
+          "object_path": "/run/bpfman-parity-go/programs/260012/bytecode.o",
+          "program_name": "stats",
+          "program_type": "tc",
+          "global_data": {
+            "weight": "AAAAAAAAAAU="
+          },
+          "image_source": null,
+          "attach_func": null,
+          "map_owner_id": null
+        },
+        "license": "Dual BSD/GPL",
+        "gpl_compatible": true,
+        "handles": {
+          "pin_path": "/run/bpfman-parity-go/fs/prog_260012",
+          "map_pin_path": "/run/bpfman-parity-go/fs/maps/260012",
+          "map_owner_id": null
+        },
+        "meta": {
+          "name": "stats",
+          "owner": "",
+          "description": "",
+          "metadata": {}
+        },
+        "created_at": "2026-06-26T15:46:29Z",
+        "updated_at": null
+      },
+      "status": {
+        "kernel": {
+          "id": 260012,
+          "name": "stats",
+          "program_type": "extension",
+          "tag": "8fcb3a8b7634b7be",
+          "loaded_at": "2026-06-26T15:46:29Z",
+          "uid": 0,
+          "has_uid": true,
+          "btf_id": 774327,
+          "has_btf_id": true,
+          "map_ids": [
+            416830,
+            416831
+          ],
+          "has_map_ids": true,
+          "jited_size": 221,
+          "xlated_size": 352,
+          "verified_insns": 44,
+          "memlock": 4096,
+          "has_memlock": true,
+          "restricted": false
+        },
+        "stats": null,
+        "prog_pin": "/run/bpfman-parity-go/fs/prog_260012",
+        "map_dir": "/run/bpfman-parity-go/fs/maps/260012",
+        "bytecode": "/run/bpfman-parity-go/programs/260012/bytecode.o",
+        "links": [],
+        "maps": [
+          {
+            "id": 416830,
+            "name": "tc_count",
+            "map_type": "array",
+            "key_size": 4,
+            "value_size": 8,
+            "max_entries": 1,
+            "flags": 0,
+            "btf_id": 774325,
+            "has_btf_id": true,
+            "map_extra": 0,
+            "has_map_extra": false,
+            "memlock": 312,
+            "has_memlock": true,
+            "frozen": false,
+            "pin_path": "",
+            "present": false
+          },
+          {
+            "id": 416831,
+            "name": ".rodata",
+            "map_type": "array",
+            "key_size": 4,
+            "value_size": 8,
+            "max_entries": 1,
+            "flags": 1152,
+            "btf_id": 774326,
+            "has_btf_id": true,
+            "map_extra": 0,
+            "has_map_extra": false,
+            "memlock": 8192,
+            "has_memlock": true,
+            "frozen": true,
+            "pin_path": "",
+            "present": false
+          }
+        ],
+        "map_used_by": [
+          260012
+        ]
+      }
+    }
+  ]
+}
+[exit 0]
+
+$ gobpf program load file e2e/testdata/bpf/tc_exact.bpf.o --programs tc:stats -g boguskey=01 -o json
+bpfman: error: failed to load programs: load program stats: global variable "boguskey" not found in program; available: [weight]
+[exit 1]
+

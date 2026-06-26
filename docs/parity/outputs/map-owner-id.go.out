@@ -1,0 +1,189 @@
+$ gobpf program load file e2e/testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats -o json
+{
+  "programs": [
+    {
+      "record": {
+        "program_id": 260077,
+        "load": {
+          "object_path": "/run/bpfman-parity-go/programs/260077/bytecode.o",
+          "program_name": "tcx_stats",
+          "program_type": "tcx",
+          "global_data": {},
+          "image_source": null,
+          "attach_func": null,
+          "map_owner_id": null
+        },
+        "license": "Dual BSD/GPL",
+        "gpl_compatible": true,
+        "handles": {
+          "pin_path": "/run/bpfman-parity-go/fs/prog_260077",
+          "map_pin_path": "/run/bpfman-parity-go/fs/maps/260077",
+          "map_owner_id": null
+        },
+        "meta": {
+          "name": "tcx_stats",
+          "owner": "",
+          "description": "",
+          "metadata": {}
+        },
+        "created_at": "2026-06-26T15:46:31Z",
+        "updated_at": null
+      },
+      "status": {
+        "kernel": {
+          "id": 260077,
+          "name": "tcx_stats",
+          "program_type": "schedcls",
+          "tag": "7a2dd52cbef12658",
+          "loaded_at": "2026-06-26T15:46:30Z",
+          "uid": 0,
+          "has_uid": true,
+          "btf_id": 774410,
+          "has_btf_id": true,
+          "map_ids": [
+            416865
+          ],
+          "has_map_ids": true,
+          "jited_size": 114,
+          "xlated_size": 168,
+          "verified_insns": 12,
+          "memlock": 4096,
+          "has_memlock": true,
+          "restricted": false
+        },
+        "stats": null,
+        "prog_pin": "/run/bpfman-parity-go/fs/prog_260077",
+        "map_dir": "/run/bpfman-parity-go/fs/maps/260077",
+        "bytecode": "/run/bpfman-parity-go/programs/260077/bytecode.o",
+        "links": [],
+        "maps": [
+          {
+            "id": 416865,
+            "name": "tcx_stats_map",
+            "map_type": "percpuarray",
+            "key_size": 4,
+            "value_size": 8,
+            "max_entries": 1,
+            "flags": 0,
+            "btf_id": 774409,
+            "has_btf_id": true,
+            "map_extra": 0,
+            "has_map_extra": false,
+            "memlock": 440,
+            "has_memlock": true,
+            "frozen": false,
+            "pin_path": "",
+            "present": false
+          }
+        ],
+        "map_used_by": [
+          260077
+        ]
+      }
+    }
+  ]
+}
+[exit 0]
+
+$ gobpf program load file e2e/testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats --map-owner-id 260077 -o json
+{
+  "programs": [
+    {
+      "record": {
+        "program_id": 260080,
+        "load": {
+          "object_path": "/run/bpfman-parity-go/programs/260080/bytecode.o",
+          "program_name": "tcx_stats",
+          "program_type": "tcx",
+          "global_data": {},
+          "image_source": null,
+          "attach_func": null,
+          "map_owner_id": null
+        },
+        "license": "Dual BSD/GPL",
+        "gpl_compatible": true,
+        "handles": {
+          "pin_path": "/run/bpfman-parity-go/fs/prog_260080",
+          "map_pin_path": "/run/bpfman-parity-go/fs/maps/260077",
+          "map_owner_id": 260077
+        },
+        "meta": {
+          "name": "tcx_stats",
+          "owner": "",
+          "description": "",
+          "metadata": {}
+        },
+        "created_at": "2026-06-26T15:46:31Z",
+        "updated_at": null
+      },
+      "status": {
+        "kernel": {
+          "id": 260080,
+          "name": "tcx_stats",
+          "program_type": "schedcls",
+          "tag": "7a2dd52cbef12658",
+          "loaded_at": "2026-06-26T15:46:30Z",
+          "uid": 0,
+          "has_uid": true,
+          "btf_id": 774417,
+          "has_btf_id": true,
+          "map_ids": [
+            416865
+          ],
+          "has_map_ids": true,
+          "jited_size": 114,
+          "xlated_size": 168,
+          "verified_insns": 12,
+          "memlock": 4096,
+          "has_memlock": true,
+          "restricted": false
+        },
+        "stats": null,
+        "prog_pin": "/run/bpfman-parity-go/fs/prog_260080",
+        "map_dir": "/run/bpfman-parity-go/fs/maps/260077",
+        "bytecode": "/run/bpfman-parity-go/programs/260080/bytecode.o",
+        "links": [],
+        "maps": [
+          {
+            "id": 416865,
+            "name": "tcx_stats_map",
+            "map_type": "percpuarray",
+            "key_size": 4,
+            "value_size": 8,
+            "max_entries": 1,
+            "flags": 0,
+            "btf_id": 774409,
+            "has_btf_id": true,
+            "map_extra": 0,
+            "has_map_extra": false,
+            "memlock": 440,
+            "has_memlock": true,
+            "frozen": false,
+            "pin_path": "",
+            "present": false
+          }
+        ],
+        "map_used_by": [
+          260077,
+          260080
+        ]
+      }
+    }
+  ]
+}
+[exit 0]
+
+$ sudo bpftool prog show id 260077
+260077: sched_cls  name tcx_stats  tag 7a2dd52cbef12658  gpl
+	loaded_at 2026-06-26T16:46:31+0100  uid 0
+	xlated 168B  jited 114B  memlock 4096B  map_ids 416865
+	btf_id 774410
+[exit 0]
+
+$ sudo bpftool prog show id 260080
+260080: sched_cls  name tcx_stats  tag 7a2dd52cbef12658  gpl
+	loaded_at 2026-06-26T16:46:31+0100  uid 0
+	xlated 168B  jited 114B  memlock 4096B  map_ids 416865
+	btf_id 774417
+[exit 0]
+

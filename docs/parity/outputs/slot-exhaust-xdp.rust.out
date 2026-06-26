@@ -1,0 +1,217 @@
+$ rsbpf load file --path e2e/testdata/bpf/xdp_pass.bpf.o --programs xdp:pass
+ Bpfman State                                   
+ BPF Function:  pass                            
+ Program Type:  xdp                             
+ Path:          e2e/testdata/bpf/xdp_pass.bpf.o 
+ Global:        None                            
+ Metadata:      None                            
+ Map Pin Path:  /run/bpfman/fs/maps/259267      
+ Map Owner ID:  None                            
+ Maps Used By:  259267                          
+ Links:         None                            
+
+ Kernel State                                               
+ Program ID:                       259267                   
+ BPF Function:                     pass                     
+ Kernel Type:                      xdp                      
+ Loaded At:                        2026-06-26T16:35:47+0100 
+ Tag:                              671e1cfa7d68206f         
+ GPL Compatible:                   true                     
+ Map IDs:                          [416324]                 
+ BTF ID:                           773238                   
+ Size Translated (bytes):          168                      
+ JITted:                           true                     
+ Size JITted:                      117                      
+ Kernel Allocated Memory (bytes):  4096                     
+ Verified Instruction Count:       12                       
+[exit 0]
+
+$ rsbpf attach 259267 xdp --iface bpfmanpar9 --priority 100
+ Bpfman State                                
+ BPF Function:       pass                    
+ Program Type:       xdp                     
+ Program ID:         259267                  
+ Link ID:            2580987383              
+ Interface:          bpfmanpar9              
+ Priority:           100                     
+ Position:           0                       
+ Proceed On:         pass, dispatcher_return 
+ Network Namespace:  None                    
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf attach 259267 xdp --iface bpfmanpar9 --priority 200
+ Bpfman State                                
+ BPF Function:       pass                    
+ Program Type:       xdp                     
+ Program ID:         259267                  
+ Link ID:            2145234813              
+ Interface:          bpfmanpar9              
+ Priority:           200                     
+ Position:           1                       
+ Proceed On:         pass, dispatcher_return 
+ Network Namespace:  None                    
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf attach 259267 xdp --iface bpfmanpar9 --priority 300
+ Bpfman State                                
+ BPF Function:       pass                    
+ Program Type:       xdp                     
+ Program ID:         259267                  
+ Link ID:            1756362784              
+ Interface:          bpfmanpar9              
+ Priority:           300                     
+ Position:           2                       
+ Proceed On:         pass, dispatcher_return 
+ Network Namespace:  None                    
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf attach 259267 xdp --iface bpfmanpar9 --priority 400
+ Bpfman State                                
+ BPF Function:       pass                    
+ Program Type:       xdp                     
+ Program ID:         259267                  
+ Link ID:            263766590               
+ Interface:          bpfmanpar9              
+ Priority:           400                     
+ Position:           3                       
+ Proceed On:         pass, dispatcher_return 
+ Network Namespace:  None                    
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf attach 259267 xdp --iface bpfmanpar9 --priority 500
+ Bpfman State                                
+ BPF Function:       pass                    
+ Program Type:       xdp                     
+ Program ID:         259267                  
+ Link ID:            115579193               
+ Interface:          bpfmanpar9              
+ Priority:           500                     
+ Position:           4                       
+ Proceed On:         pass, dispatcher_return 
+ Network Namespace:  None                    
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf attach 259267 xdp --iface bpfmanpar9 --priority 600
+ Bpfman State                                
+ BPF Function:       pass                    
+ Program Type:       xdp                     
+ Program ID:         259267                  
+ Link ID:            766502390               
+ Interface:          bpfmanpar9              
+ Priority:           600                     
+ Position:           5                       
+ Proceed On:         pass, dispatcher_return 
+ Network Namespace:  None                    
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf attach 259267 xdp --iface bpfmanpar9 --priority 700
+ Bpfman State                                
+ BPF Function:       pass                    
+ Program Type:       xdp                     
+ Program ID:         259267                  
+ Link ID:            1164377905              
+ Interface:          bpfmanpar9              
+ Priority:           700                     
+ Position:           6                       
+ Proceed On:         pass, dispatcher_return 
+ Network Namespace:  None                    
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf attach 259267 xdp --iface bpfmanpar9 --priority 800
+ Bpfman State                                
+ BPF Function:       pass                    
+ Program Type:       xdp                     
+ Program ID:         259267                  
+ Link ID:            2916189143              
+ Interface:          bpfmanpar9              
+ Priority:           800                     
+ Position:           7                       
+ Proceed On:         pass, dispatcher_return 
+ Network Namespace:  None                    
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf attach 259267 xdp --iface bpfmanpar9 --priority 900
+ Bpfman State                                
+ BPF Function:       pass                    
+ Program Type:       xdp                     
+ Program ID:         259267                  
+ Link ID:            1479736649              
+ Interface:          bpfmanpar9              
+ Priority:           900                     
+ Position:           8                       
+ Proceed On:         pass, dispatcher_return 
+ Network Namespace:  None                    
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf attach 259267 xdp --iface bpfmanpar9 --priority 1000
+ Bpfman State                                
+ BPF Function:       pass                    
+ Program Type:       xdp                     
+ Program ID:         259267                  
+ Link ID:            1529781135              
+ Interface:          bpfmanpar9              
+ Priority:           1000                    
+ Position:           9                       
+ Proceed On:         pass, dispatcher_return 
+ Network Namespace:  None                    
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf attach 259267 xdp --iface bpfmanpar9 --priority 150
+[ERROR bpfman] Error: failed to attach xdp program named "pass": No room to attach program. Please remove one and try again.
+Error: No room to attach program. Please remove one and try again.
+[exit 1]
+
+$ rsbpf detach 115579193
+
+[exit 0]
+
+$ rsbpf detach 1164377905
+
+[exit 0]
+
+$ rsbpf detach 1479736649
+
+[exit 0]
+
+$ rsbpf detach 1529781135
+
+[exit 0]
+
+$ rsbpf detach 1756362784
+
+[exit 0]
+
+$ rsbpf detach 2145234813
+
+[exit 0]
+
+$ rsbpf detach 2580987383
+
+[exit 0]
+
+$ rsbpf detach 263766590
+
+[exit 0]
+
+$ rsbpf detach 2916189143
+
+[exit 0]
+
+$ rsbpf detach 766502390
+
+[exit 0]
+
+$ rsbpf unload 259267
+
+[exit 0]
+

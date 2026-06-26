@@ -1,0 +1,432 @@
+$ gobpf link attach xdp 260322 bpfmanpar9 --priority 10 -o json
+{
+  "record": {
+    "id": 2123456940,
+    "program_id": 260322,
+    "kernel_link_id": 371343,
+    "kind": "xdp",
+    "pin_path": "/run/bpfman-parity-go/fs/xdp/dispatcher_4026531833_25204_1/link_0",
+    "details": {
+      "interface": "bpfmanpar9",
+      "ifindex": 25204,
+      "priority": 10,
+      "position": 0,
+      "proceed_on": [
+        2,
+        31
+      ],
+      "netns": "",
+      "nsid": 4026531833,
+      "dispatcher_id": 260323,
+      "revision": 1
+    },
+    "created_at": "0001-01-01T00:00:00Z",
+    "metadata": null
+  },
+  "status": {
+    "kernel": {
+      "id": 371343,
+      "program_id": 260322,
+      "link_type": "tracing",
+      "attach_type": "0",
+      "ifindex": 0,
+      "target_obj_id": 260323,
+      "target_btf_id": 3,
+      "cgroup_id": 0,
+      "netns_ino": 0,
+      "netfilter_pf": 0,
+      "netfilter_hooknum": 0,
+      "netfilter_priority": 0,
+      "netfilter_flags": 0,
+      "kprobe_multi_count": 0,
+      "kprobe_multi_flags": 0,
+      "kprobe_multi_missed": 0,
+      "kprobe_address": 0,
+      "kprobe_missed": 0
+    },
+    "kernel_seen": true,
+    "pin_present": true
+  }
+}
+[exit 0]
+
+$ gobpf link attach xdp 260322 bpfmanpar9 --priority 20 -o json
+{
+  "record": {
+    "id": 2123456941,
+    "program_id": 260322,
+    "kernel_link_id": 371346,
+    "kind": "xdp",
+    "pin_path": "/run/bpfman-parity-go/fs/xdp/dispatcher_4026531833_25204_2/link_1",
+    "details": {
+      "interface": "bpfmanpar9",
+      "ifindex": 25204,
+      "priority": 20,
+      "position": 1,
+      "proceed_on": [
+        2,
+        31
+      ],
+      "netns": "",
+      "nsid": 4026531833,
+      "dispatcher_id": 260324,
+      "revision": 2
+    },
+    "created_at": "0001-01-01T00:00:00Z",
+    "metadata": null
+  },
+  "status": {
+    "kernel": {
+      "id": 371346,
+      "program_id": 260322,
+      "link_type": "tracing",
+      "attach_type": "0",
+      "ifindex": 0,
+      "target_obj_id": 260324,
+      "target_btf_id": 4,
+      "cgroup_id": 0,
+      "netns_ino": 0,
+      "netfilter_pf": 0,
+      "netfilter_hooknum": 0,
+      "netfilter_priority": 0,
+      "netfilter_flags": 0,
+      "kprobe_multi_count": 0,
+      "kprobe_multi_flags": 0,
+      "kprobe_multi_missed": 0,
+      "kprobe_address": 0,
+      "kprobe_missed": 0
+    },
+    "kernel_seen": true,
+    "pin_present": true
+  }
+}
+[exit 0]
+
+$ gobpf link attach xdp 260322 bpfmanpar9 --priority 30 -o json
+{
+  "record": {
+    "id": 2123456942,
+    "program_id": 260322,
+    "kernel_link_id": 371349,
+    "kind": "xdp",
+    "pin_path": "/run/bpfman-parity-go/fs/xdp/dispatcher_4026531833_25204_3/link_2",
+    "details": {
+      "interface": "bpfmanpar9",
+      "ifindex": 25204,
+      "priority": 30,
+      "position": 2,
+      "proceed_on": [
+        2,
+        31
+      ],
+      "netns": "",
+      "nsid": 4026531833,
+      "dispatcher_id": 260325,
+      "revision": 3
+    },
+    "created_at": "0001-01-01T00:00:00Z",
+    "metadata": null
+  },
+  "status": {
+    "kernel": {
+      "id": 371349,
+      "program_id": 260322,
+      "link_type": "tracing",
+      "attach_type": "0",
+      "ifindex": 0,
+      "target_obj_id": 260325,
+      "target_btf_id": 5,
+      "cgroup_id": 0,
+      "netns_ino": 0,
+      "netfilter_pf": 0,
+      "netfilter_hooknum": 0,
+      "netfilter_priority": 0,
+      "netfilter_flags": 0,
+      "kprobe_multi_count": 0,
+      "kprobe_multi_flags": 0,
+      "kprobe_multi_missed": 0,
+      "kprobe_address": 0,
+      "kprobe_missed": 0
+    },
+    "kernel_seen": true,
+    "pin_present": true
+  }
+}
+[exit 0]
+
+$ gobpf link get 2123456940 -o json
+{
+  "record": {
+    "id": 2123456940,
+    "program_id": 260322,
+    "kernel_link_id": 371347,
+    "kind": "xdp",
+    "pin_path": "/run/bpfman-parity-go/fs/xdp/dispatcher_4026531833_25204_3/link_0",
+    "details": {
+      "interface": "bpfmanpar9",
+      "ifindex": 25204,
+      "priority": 10,
+      "position": 0,
+      "proceed_on": [
+        2,
+        31
+      ],
+      "netns": "",
+      "nsid": 4026531833,
+      "dispatcher_id": 260325,
+      "revision": 3
+    },
+    "created_at": "2026-06-26T15:48:21Z",
+    "metadata": null
+  },
+  "status": {
+    "kernel": {
+      "id": 371347,
+      "program_id": 260322,
+      "link_type": "tracing",
+      "attach_type": "0",
+      "ifindex": 0,
+      "target_obj_id": 260325,
+      "target_btf_id": 3,
+      "cgroup_id": 0,
+      "netns_ino": 0,
+      "netfilter_pf": 0,
+      "netfilter_hooknum": 0,
+      "netfilter_priority": 0,
+      "netfilter_flags": 0,
+      "kprobe_multi_count": 0,
+      "kprobe_multi_flags": 0,
+      "kprobe_multi_missed": 0,
+      "kprobe_address": 0,
+      "kprobe_missed": 0
+    },
+    "kernel_seen": true,
+    "pin_present": true
+  }
+}
+[exit 0]
+
+$ gobpf link get 2123456941 -o json
+{
+  "record": {
+    "id": 2123456941,
+    "program_id": 260322,
+    "kernel_link_id": 371348,
+    "kind": "xdp",
+    "pin_path": "/run/bpfman-parity-go/fs/xdp/dispatcher_4026531833_25204_3/link_1",
+    "details": {
+      "interface": "bpfmanpar9",
+      "ifindex": 25204,
+      "priority": 20,
+      "position": 1,
+      "proceed_on": [
+        2,
+        31
+      ],
+      "netns": "",
+      "nsid": 4026531833,
+      "dispatcher_id": 260325,
+      "revision": 3
+    },
+    "created_at": "2026-06-26T15:48:21Z",
+    "metadata": null
+  },
+  "status": {
+    "kernel": {
+      "id": 371348,
+      "program_id": 260322,
+      "link_type": "tracing",
+      "attach_type": "0",
+      "ifindex": 0,
+      "target_obj_id": 260325,
+      "target_btf_id": 4,
+      "cgroup_id": 0,
+      "netns_ino": 0,
+      "netfilter_pf": 0,
+      "netfilter_hooknum": 0,
+      "netfilter_priority": 0,
+      "netfilter_flags": 0,
+      "kprobe_multi_count": 0,
+      "kprobe_multi_flags": 0,
+      "kprobe_multi_missed": 0,
+      "kprobe_address": 0,
+      "kprobe_missed": 0
+    },
+    "kernel_seen": true,
+    "pin_present": true
+  }
+}
+[exit 0]
+
+$ gobpf link get 2123456942 -o json
+{
+  "record": {
+    "id": 2123456942,
+    "program_id": 260322,
+    "kernel_link_id": 371349,
+    "kind": "xdp",
+    "pin_path": "/run/bpfman-parity-go/fs/xdp/dispatcher_4026531833_25204_3/link_2",
+    "details": {
+      "interface": "bpfmanpar9",
+      "ifindex": 25204,
+      "priority": 30,
+      "position": 2,
+      "proceed_on": [
+        2,
+        31
+      ],
+      "netns": "",
+      "nsid": 4026531833,
+      "dispatcher_id": 260325,
+      "revision": 3
+    },
+    "created_at": "2026-06-26T15:48:21Z",
+    "metadata": null
+  },
+  "status": {
+    "kernel": {
+      "id": 371349,
+      "program_id": 260322,
+      "link_type": "tracing",
+      "attach_type": "0",
+      "ifindex": 0,
+      "target_obj_id": 260325,
+      "target_btf_id": 5,
+      "cgroup_id": 0,
+      "netns_ino": 0,
+      "netfilter_pf": 0,
+      "netfilter_hooknum": 0,
+      "netfilter_priority": 0,
+      "netfilter_flags": 0,
+      "kprobe_multi_count": 0,
+      "kprobe_multi_flags": 0,
+      "kprobe_multi_missed": 0,
+      "kprobe_address": 0,
+      "kprobe_missed": 0
+    },
+    "kernel_seen": true,
+    "pin_present": true
+  }
+}
+[exit 0]
+
+$ gobpf link detach 2123456941
+
+[exit 0]
+
+$ gobpf link get 2123456940 -o json
+{
+  "record": {
+    "id": 2123456940,
+    "program_id": 260322,
+    "kernel_link_id": 371350,
+    "kind": "xdp",
+    "pin_path": "/run/bpfman-parity-go/fs/xdp/dispatcher_4026531833_25204_4/link_0",
+    "details": {
+      "interface": "bpfmanpar9",
+      "ifindex": 25204,
+      "priority": 10,
+      "position": 0,
+      "proceed_on": [
+        2,
+        31
+      ],
+      "netns": "",
+      "nsid": 4026531833,
+      "dispatcher_id": 260326,
+      "revision": 4
+    },
+    "created_at": "2026-06-26T15:48:21Z",
+    "metadata": null
+  },
+  "status": {
+    "kernel": {
+      "id": 371350,
+      "program_id": 260322,
+      "link_type": "tracing",
+      "attach_type": "0",
+      "ifindex": 0,
+      "target_obj_id": 260326,
+      "target_btf_id": 3,
+      "cgroup_id": 0,
+      "netns_ino": 0,
+      "netfilter_pf": 0,
+      "netfilter_hooknum": 0,
+      "netfilter_priority": 0,
+      "netfilter_flags": 0,
+      "kprobe_multi_count": 0,
+      "kprobe_multi_flags": 0,
+      "kprobe_multi_missed": 0,
+      "kprobe_address": 0,
+      "kprobe_missed": 0
+    },
+    "kernel_seen": true,
+    "pin_present": true
+  }
+}
+[exit 0]
+
+$ gobpf link get 2123456942 -o json
+{
+  "record": {
+    "id": 2123456942,
+    "program_id": 260322,
+    "kernel_link_id": 371351,
+    "kind": "xdp",
+    "pin_path": "/run/bpfman-parity-go/fs/xdp/dispatcher_4026531833_25204_4/link_1",
+    "details": {
+      "interface": "bpfmanpar9",
+      "ifindex": 25204,
+      "priority": 30,
+      "position": 1,
+      "proceed_on": [
+        2,
+        31
+      ],
+      "netns": "",
+      "nsid": 4026531833,
+      "dispatcher_id": 260326,
+      "revision": 4
+    },
+    "created_at": "2026-06-26T15:48:21Z",
+    "metadata": null
+  },
+  "status": {
+    "kernel": {
+      "id": 371351,
+      "program_id": 260322,
+      "link_type": "tracing",
+      "attach_type": "0",
+      "ifindex": 0,
+      "target_obj_id": 260326,
+      "target_btf_id": 4,
+      "cgroup_id": 0,
+      "netns_ino": 0,
+      "netfilter_pf": 0,
+      "netfilter_hooknum": 0,
+      "netfilter_priority": 0,
+      "netfilter_flags": 0,
+      "kprobe_multi_count": 0,
+      "kprobe_multi_flags": 0,
+      "kprobe_multi_missed": 0,
+      "kprobe_address": 0,
+      "kprobe_missed": 0
+    },
+    "kernel_seen": true,
+    "pin_present": true
+  }
+}
+[exit 0]
+
+$ gobpf link detach 2123456940
+
+[exit 0]
+
+$ gobpf link detach 2123456942
+
+[exit 0]
+
+$ gobpf program unload 260322
+
+[exit 0]
+

@@ -1,0 +1,111 @@
+$ rsbpf load file --path e2e/testdata/bpf/fentry_counter.bpf.o --programs fexit:test_fexit:do_unlinkat --metadata parity=rust
+ Bpfman State                                         
+ BPF Function:  test_fexit                            
+ Program Type:  fexit                                 
+ Path:          e2e/testdata/bpf/fentry_counter.bpf.o 
+ Global:        None                                  
+ Metadata:      parity=rust                           
+ Map Pin Path:  /run/bpfman/fs/maps/260870            
+ Map Owner ID:  None                                  
+ Maps Used By:  260870                                
+ Links:         None                                  
+
+ Kernel State                                               
+ Program ID:                       260870                   
+ BPF Function:                     test_fexit               
+ Kernel Type:                      tracing                  
+ Loaded At:                        2026-06-26T16:50:59+0100 
+ Tag:                              9af58df68492f573         
+ GPL Compatible:                   true                     
+ Map IDs:                          [417358]                 
+ BTF ID:                           775502                   
+ Size Translated (bytes):          168                      
+ JITted:                           true                     
+ Size JITted:                      117                      
+ Kernel Allocated Memory (bytes):  4096                     
+ Verified Instruction Count:       13                       
+[exit 0]
+
+$ rsbpf get program 260870
+ Bpfman State                                         
+ BPF Function:  test_fexit                            
+ Program Type:  fexit                                 
+ Path:          e2e/testdata/bpf/fentry_counter.bpf.o 
+ Global:        None                                  
+ Metadata:      parity=rust                           
+ Map Pin Path:  /run/bpfman/fs/maps/260870            
+ Map Owner ID:  None                                  
+ Maps Used By:  260870                                
+ Links:         None                                  
+
+ Kernel State                                               
+ Program ID:                       260870                   
+ BPF Function:                     test_fexit               
+ Kernel Type:                      tracing                  
+ Loaded At:                        2026-06-26T16:50:59+0100 
+ Tag:                              9af58df68492f573         
+ GPL Compatible:                   true                     
+ Map IDs:                          [417358]                 
+ BTF ID:                           775502                   
+ Size Translated (bytes):          168                      
+ JITted:                           true                     
+ Size JITted:                      117                      
+ Kernel Allocated Memory (bytes):  4096                     
+ Verified Instruction Count:       13                       
+[exit 0]
+
+$ rsbpf attach 260870 fexit --metadata owner=parity
+ Bpfman State                   
+ BPF Function:     test_fexit   
+ Program Type:     fexit        
+ Program ID:       260870       
+ Link ID:          2438365527   
+ Attach Function:  do_unlinkat  
+ Metadata:         owner=parity 
+[exit 0]
+
+$ rsbpf get link 2438365527
+ Bpfman State                   
+ BPF Function:     test_fexit   
+ Program Type:     fexit        
+ Program ID:       260870       
+ Link ID:          2438365527   
+ Attach Function:  do_unlinkat  
+ Metadata:         owner=parity 
+[exit 0]
+
+$ rsbpf list programs
+ Program ID  Application  Type   Function Name  Links          
+ 260870                   fexit  test_fexit     (1) 2438365527 
+[exit 0]
+
+$ rsbpf list links
+ Program ID  Link ID     Application  Type   Function Name  Attachment  
+ 260870      2438365527               fexit  test_fexit     do_unlinkat 
+[exit 0]
+
+$ rsbpf detach 2438365527
+
+[exit 0]
+
+$ rsbpf unload 260870
+
+[exit 0]
+
+$ rsbpf get program 260870
+ Kernel State                                               
+ Program ID:                       260870                   
+ BPF Function:                     test_fexit               
+ Kernel Type:                      tracing                  
+ Loaded At:                        2026-06-26T16:50:59+0100 
+ Tag:                              9af58df68492f573         
+ GPL Compatible:                   true                     
+ Map IDs:                          [417358]                 
+ BTF ID:                           775502                   
+ Size Translated (bytes):          168                      
+ JITted:                           true                     
+ Size JITted:                      117                      
+ Kernel Allocated Memory (bytes):  4096                     
+ Verified Instruction Count:       13                       
+[exit 0]
+

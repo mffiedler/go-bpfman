@@ -1,0 +1,61 @@
+$ rsbpf attach 261121 tcx --direction ingress --iface nsveth0p --netns /var/run/netns/bpfmanns --priority 100
+ Bpfman State                                
+ BPF Function:       tcx_stats               
+ Program Type:       tcx                     
+ Program ID:         261121                  
+ Link ID:            1917355564              
+ Interface:          nsveth0p                
+ Direction:          ingress                 
+ Priority:           100                     
+ Position:           0                       
+ Network Namespace:  /var/run/netns/bpfmanns 
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf get link 1917355564
+ Bpfman State                                
+ BPF Function:       tcx_stats               
+ Program Type:       tcx                     
+ Program ID:         261121                  
+ Link ID:            1917355564              
+ Interface:          nsveth0p                
+ Direction:          ingress                 
+ Priority:           100                     
+ Position:           0                       
+ Network Namespace:  /var/run/netns/bpfmanns 
+ Metadata:           None                    
+[exit 0]
+
+$ sudo ip netns del bpfmanns   # delete the namespace path
+[exit 0]
+
+$ rsbpf get link 1917355564
+ Bpfman State                                
+ BPF Function:       tcx_stats               
+ Program Type:       tcx                     
+ Program ID:         261121                  
+ Link ID:            1917355564              
+ Interface:          nsveth0p                
+ Direction:          ingress                 
+ Priority:           100                     
+ Position:           0                       
+ Network Namespace:  /var/run/netns/bpfmanns 
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf detach 1917355564
+
+[exit 0]
+
+$ rsbpf get link 1917355564
+Error: get error: Database entry type does not exist in tree "link_1917355564": 
+[exit 1]
+
+$ rsbpf unload 261121
+
+[exit 0]
+
+$ rsbpf get program 261121
+Error: get error: An error occurred. Program 261121 does not exist
+[exit 1]
+

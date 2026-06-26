@@ -1,0 +1,182 @@
+$ gobpf program load image quay.io/bpfman-bytecode/xdp_pass:latest --programs xdp:pass --pull-policy Always -o json
+{
+  "programs": [
+    {
+      "record": {
+        "program_id": 260938,
+        "load": {
+          "object_path": "/run/bpfman-parity-go/programs/260938/bytecode.o",
+          "program_name": "pass",
+          "program_type": "xdp",
+          "global_data": {},
+          "image_source": {
+            "url": "quay.io/bpfman-bytecode/xdp_pass:latest",
+            "digest": "sha256:cb812f73c5b07d1f748397b5f752c0a54c62b452317127bada515b7e2ed36951",
+            "pull_policy": "Always"
+          },
+          "attach_func": null,
+          "map_owner_id": null
+        },
+        "license": "Dual BSD/GPL",
+        "gpl_compatible": true,
+        "handles": {
+          "pin_path": "/run/bpfman-parity-go/fs/prog_260938",
+          "map_pin_path": "/run/bpfman-parity-go/fs/maps/260938",
+          "map_owner_id": null
+        },
+        "meta": {
+          "name": "pass",
+          "owner": "",
+          "description": "",
+          "metadata": {}
+        },
+        "created_at": "2026-06-26T15:55:37Z",
+        "updated_at": null
+      },
+      "status": {
+        "kernel": {
+          "id": 260938,
+          "name": "pass",
+          "program_type": "extension",
+          "tag": "48c0ee5069099093",
+          "loaded_at": "2026-06-26T15:55:36Z",
+          "uid": 0,
+          "has_uid": true,
+          "btf_id": 775587,
+          "has_btf_id": true,
+          "map_ids": [
+            417393
+          ],
+          "has_map_ids": true,
+          "jited_size": 79,
+          "xlated_size": 96,
+          "verified_insns": 9,
+          "memlock": 4096,
+          "has_memlock": true,
+          "restricted": false
+        },
+        "stats": null,
+        "prog_pin": "/run/bpfman-parity-go/fs/prog_260938",
+        "map_dir": "/run/bpfman-parity-go/fs/maps/260938",
+        "bytecode": "/run/bpfman-parity-go/programs/260938/bytecode.o",
+        "links": [],
+        "maps": [
+          {
+            "id": 417393,
+            "name": ".rodata",
+            "map_type": "array",
+            "key_size": 4,
+            "value_size": 51,
+            "max_entries": 1,
+            "flags": 1152,
+            "btf_id": 775586,
+            "has_btf_id": true,
+            "map_extra": 0,
+            "has_map_extra": false,
+            "memlock": 8192,
+            "has_memlock": true,
+            "frozen": true,
+            "pin_path": "",
+            "present": false
+          }
+        ],
+        "map_used_by": [
+          260938
+        ]
+      }
+    }
+  ]
+}
+[exit 0]
+
+$ gobpf program get 260938 -o json
+{
+  "record": {
+    "program_id": 260938,
+    "load": {
+      "object_path": "/run/bpfman-parity-go/programs/260938/bytecode.o",
+      "program_name": "pass",
+      "program_type": "xdp",
+      "global_data": {},
+      "image_source": {
+        "url": "quay.io/bpfman-bytecode/xdp_pass:latest",
+        "digest": "sha256:cb812f73c5b07d1f748397b5f752c0a54c62b452317127bada515b7e2ed36951",
+        "pull_policy": "Always"
+      },
+      "attach_func": null,
+      "map_owner_id": null
+    },
+    "license": "Dual BSD/GPL",
+    "gpl_compatible": true,
+    "handles": {
+      "pin_path": "/run/bpfman-parity-go/fs/prog_260938",
+      "map_pin_path": "/run/bpfman-parity-go/fs/maps/260938",
+      "map_owner_id": null
+    },
+    "meta": {
+      "name": "pass",
+      "owner": "",
+      "description": "",
+      "metadata": {}
+    },
+    "created_at": "2026-06-26T15:55:37Z",
+    "updated_at": null
+  },
+  "status": {
+    "kernel": {
+      "id": 260938,
+      "name": "pass",
+      "program_type": "extension",
+      "tag": "48c0ee5069099093",
+      "loaded_at": "2026-06-26T15:55:36Z",
+      "uid": 0,
+      "has_uid": true,
+      "btf_id": 775587,
+      "has_btf_id": true,
+      "map_ids": [
+        417393
+      ],
+      "has_map_ids": true,
+      "jited_size": 79,
+      "xlated_size": 96,
+      "verified_insns": 9,
+      "memlock": 4096,
+      "has_memlock": true,
+      "restricted": false
+    },
+    "stats": {
+      "runtime": 0,
+      "run_count": 0,
+      "recursion_misses": 0
+    },
+    "prog_pin": "/run/bpfman-parity-go/fs/prog_260938",
+    "map_dir": "/run/bpfman-parity-go/fs/maps/260938",
+    "bytecode": "/run/bpfman-parity-go/programs/260938/bytecode.o",
+    "links": [],
+    "maps": [
+      {
+        "id": 417393,
+        "name": ".rodata",
+        "map_type": "array",
+        "key_size": 4,
+        "value_size": 51,
+        "max_entries": 1,
+        "flags": 1152,
+        "btf_id": 775586,
+        "has_btf_id": true,
+        "map_extra": 0,
+        "has_map_extra": false,
+        "memlock": 8192,
+        "has_memlock": true,
+        "frozen": true,
+        "pin_path": "/run/bpfman-parity-go/fs/maps/260938/.rodata",
+        "present": false
+      }
+    ],
+    "map_used_by": [
+      260938
+    ]
+  }
+}
+[exit 0]
+

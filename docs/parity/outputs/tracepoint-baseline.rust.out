@@ -1,0 +1,98 @@
+$ rsbpf load file --path e2e/testdata/bpf/tracepoint_counter.bpf.o --programs tracepoint:tracepoint_kill_recorder --metadata parity=rust
+ Bpfman State                                             
+ BPF Function:  tracepoint_kill_recorder                  
+ Program Type:  tracepoint                                
+ Path:          e2e/testdata/bpf/tracepoint_counter.bpf.o 
+ Global:        None                                      
+ Metadata:      parity=rust                               
+ Map Pin Path:  /run/bpfman/fs/maps/260626                
+ Map Owner ID:  None                                      
+ Maps Used By:  260626                                    
+ Links:         None                                      
+
+ Kernel State                                               
+ Program ID:                       260626                   
+ BPF Function:                     tracepoint_kill          
+ Kernel Type:                      tracepoint               
+ Loaded At:                        2026-06-26T16:50:53+0100 
+ Tag:                              7a2dd52cbef12658         
+ GPL Compatible:                   true                     
+ Map IDs:                          [417234]                 
+ BTF ID:                           775208                   
+ Size Translated (bytes):          168                      
+ JITted:                           true                     
+ Size JITted:                      114                      
+ Kernel Allocated Memory (bytes):  4096                     
+ Verified Instruction Count:       12                       
+[exit 0]
+
+$ rsbpf get program 260626
+ Bpfman State                                             
+ BPF Function:  tracepoint_kill_recorder                  
+ Program Type:  tracepoint                                
+ Path:          e2e/testdata/bpf/tracepoint_counter.bpf.o 
+ Global:        None                                      
+ Metadata:      parity=rust                               
+ Map Pin Path:  /run/bpfman/fs/maps/260626                
+ Map Owner ID:  None                                      
+ Maps Used By:  260626                                    
+ Links:         None                                      
+
+ Kernel State                                               
+ Program ID:                       260626                   
+ BPF Function:                     tracepoint_kill          
+ Kernel Type:                      tracepoint               
+ Loaded At:                        2026-06-26T16:50:53+0100 
+ Tag:                              7a2dd52cbef12658         
+ GPL Compatible:                   true                     
+ Map IDs:                          [417234]                 
+ BTF ID:                           775208                   
+ Size Translated (bytes):          168                      
+ JITted:                           true                     
+ Size JITted:                      114                      
+ Kernel Allocated Memory (bytes):  4096                     
+ Verified Instruction Count:       12                       
+[exit 0]
+
+$ rsbpf attach 260626 tracepoint --tracepoint syscalls/sys_enter_kill --metadata owner=parity
+ Bpfman State                            
+ BPF Function:  tracepoint_kill_recorder 
+ Program Type:  tracepoint               
+ Program ID:    260626                   
+ Link ID:       2110936432               
+ Tracepoint:    syscalls/sys_enter_kill  
+ Metadata:      owner=parity             
+[exit 0]
+
+$ rsbpf get link 2110936432
+ Bpfman State                            
+ BPF Function:  tracepoint_kill_recorder 
+ Program Type:  tracepoint               
+ Program ID:    260626                   
+ Link ID:       2110936432               
+ Tracepoint:    syscalls/sys_enter_kill  
+ Metadata:      owner=parity             
+[exit 0]
+
+$ rsbpf list programs
+ Program ID  Application  Type        Function Name    Links          
+ 260626                   tracepoint  tracepoint_kill  (1) 2110936432 
+[exit 0]
+
+$ rsbpf list links
+ Program ID  Link ID     Application  Type        Function Name    Attachment              
+ 260626      2110936432               tracepoint  tracepoint_kill  syscalls/sys_enter_kill 
+[exit 0]
+
+$ rsbpf detach 2110936432
+
+[exit 0]
+
+$ rsbpf unload 260626
+
+[exit 0]
+
+$ rsbpf get program 260626
+Error: get error: An error occurred. Program 260626 does not exist
+[exit 1]
+

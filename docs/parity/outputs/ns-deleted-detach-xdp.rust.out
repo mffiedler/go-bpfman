@@ -1,0 +1,61 @@
+$ rsbpf attach 261067 xdp --iface nsveth0p --netns /var/run/netns/bpfmanns --priority 100
+ Bpfman State                                
+ BPF Function:       pass                    
+ Program Type:       xdp                     
+ Program ID:         261067                  
+ Link ID:            3389643325              
+ Interface:          nsveth0p                
+ Priority:           100                     
+ Position:           0                       
+ Proceed On:         pass, dispatcher_return 
+ Network Namespace:  /var/run/netns/bpfmanns 
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf get link 3389643325
+ Bpfman State                                
+ BPF Function:       pass                    
+ Program Type:       xdp                     
+ Program ID:         261067                  
+ Link ID:            3389643325              
+ Interface:          nsveth0p                
+ Priority:           100                     
+ Position:           0                       
+ Proceed On:         pass, dispatcher_return 
+ Network Namespace:  /var/run/netns/bpfmanns 
+ Metadata:           None                    
+[exit 0]
+
+$ sudo ip netns del bpfmanns   # delete the namespace path
+[exit 0]
+
+$ rsbpf get link 3389643325
+ Bpfman State                                
+ BPF Function:       pass                    
+ Program Type:       xdp                     
+ Program ID:         261067                  
+ Link ID:            3389643325              
+ Interface:          nsveth0p                
+ Priority:           100                     
+ Position:           0                       
+ Proceed On:         pass, dispatcher_return 
+ Network Namespace:  /var/run/netns/bpfmanns 
+ Metadata:           None                    
+[exit 0]
+
+$ rsbpf detach 3389643325
+
+[exit 0]
+
+$ rsbpf get link 3389643325
+Error: get error: Database entry type does not exist in tree "link_3389643325": 
+[exit 1]
+
+$ rsbpf unload 261067
+
+[exit 0]
+
+$ rsbpf get program 261067
+Error: get error: An error occurred. Program 261067 does not exist
+[exit 1]
+

@@ -1,0 +1,22 @@
+$ rsbpf attach 259955 tc --direction ingress --iface bpfmanpar0 --priority 100
+
+thread 'main' (257094) panicked at bpfman/src/types.rs:401:18:
+Invalid attach info
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+[exit 101]
+
+$ rsbpf load file --path /no/such.o --programs xdp:pass
+[ERROR bpfman] Error: failed to load programs: An error occurred. can't open file: No such file or directory (os error 2)
+Error: An error occurred. can't open file: No such file or directory (os error 2)
+[exit 1]
+
+$ rsbpf load file --path e2e/testdata/bpf/xdp_pass.bpf.o --programs garbage
+error: invalid value 'garbage' for '--programs <PROGRAMS>...': invalid input parameter
+
+For more information, try '--help'.
+[exit 2]
+
+$ rsbpf get program 99999999
+Error: get error: An error occurred. Program 99999999 does not exist
+[exit 1]
+

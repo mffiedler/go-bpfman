@@ -1,0 +1,33 @@
+$ bpfman-rs attach tcx --help
+Install an eBPF program on the TCX hook point for a given interface and direction
+
+Usage: bpfman-rs attach <PROGRAM_ID> tcx [OPTIONS] --direction <DIRECTION> --iface <IFACE> --priority <PRIORITY>
+
+Options:
+  -d, --direction <DIRECTION>
+          Required: Direction to apply program.
+          
+          [possible values: ingress, egress]
+
+  -i, --iface <IFACE>
+          Required: Interface to load program on
+
+  -p, --priority <PRIORITY>
+          Required: Priority to run program in chain. Lower value runs first.
+          [possible values: 1-1000]
+
+  -n, --netns <NETNS>
+          Optional: The file path of the target network namespace.
+          Example: -n /var/run/netns/bpfman-test
+
+  -m, --metadata <METADATA>
+          Optional: Specify Key/Value metadata to be attached to a link when it
+          is loaded by bpfman.
+          Format: <KEY>=<VALUE>
+          
+          This can later be used to list a certain subset of links which contain
+          the specified metadata.
+          Example: --metadata owner=acme
+
+  -h, --help
+          Print help (see a summary with '-h')

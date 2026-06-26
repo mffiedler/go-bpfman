@@ -1,0 +1,26 @@
+{
+  "program": {
+    "type": "kprobe",
+    "name": "kprobe_counter",
+    "tag": "7a2dd52cbef12658",
+    "gpl_compatible": true
+  },
+  "maps": [
+    {
+      "type": "percpu_array",
+      "name": "kprobe_stats_ma",
+      "bytes_key": 4,
+      "bytes_value": 8,
+      "max_entries": 1,
+      "flags": 0
+    }
+  ],
+  "link": [
+    {
+      "type": "perf_event",
+      "retprobe": false,
+      "func": "vfs_read",
+      "offset": 0
+    }
+  ]
+}

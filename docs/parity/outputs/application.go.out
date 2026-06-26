@@ -1,0 +1,188 @@
+$ gobpf program list --application appA -o json
+{
+  "programs": [
+    {
+      "program_id": 260031,
+      "managed": true,
+      "application": "appA",
+      "type": "tcx",
+      "function_name": "tcx_stats",
+      "links": [],
+      "record": {
+        "program_id": 260031,
+        "load": {
+          "object_path": "/run/bpfman-parity-go/programs/260031/bytecode.o",
+          "program_name": "tcx_stats",
+          "program_type": "tcx",
+          "global_data": {},
+          "image_source": null,
+          "attach_func": null,
+          "map_owner_id": null
+        },
+        "license": "Dual BSD/GPL",
+        "gpl_compatible": true,
+        "handles": {
+          "pin_path": "/run/bpfman-parity-go/fs/prog_260031",
+          "map_pin_path": "/run/bpfman-parity-go/fs/maps/260031",
+          "map_owner_id": null
+        },
+        "meta": {
+          "name": "tcx_stats",
+          "owner": "",
+          "description": "",
+          "metadata": {
+            "bpfman.io/application": "appA"
+          }
+        },
+        "created_at": "2026-06-26T15:46:30Z",
+        "updated_at": null
+      },
+      "kernel": {
+        "id": 260031,
+        "name": "tcx_stats",
+        "program_type": "schedcls",
+        "tag": "7a2dd52cbef12658",
+        "loaded_at": "2026-06-26T15:46:29Z",
+        "uid": 0,
+        "has_uid": true,
+        "btf_id": 774352,
+        "has_btf_id": true,
+        "map_ids": [
+          416842
+        ],
+        "has_map_ids": true,
+        "jited_size": 114,
+        "xlated_size": 168,
+        "verified_insns": 12,
+        "memlock": 4096,
+        "has_memlock": true,
+        "restricted": false
+      }
+    }
+  ]
+}
+[exit 0]
+
+$ gobpf program list -o json
+{
+  "programs": [
+    {
+      "program_id": 260031,
+      "managed": true,
+      "application": "appA",
+      "type": "tcx",
+      "function_name": "tcx_stats",
+      "links": [],
+      "record": {
+        "program_id": 260031,
+        "load": {
+          "object_path": "/run/bpfman-parity-go/programs/260031/bytecode.o",
+          "program_name": "tcx_stats",
+          "program_type": "tcx",
+          "global_data": {},
+          "image_source": null,
+          "attach_func": null,
+          "map_owner_id": null
+        },
+        "license": "Dual BSD/GPL",
+        "gpl_compatible": true,
+        "handles": {
+          "pin_path": "/run/bpfman-parity-go/fs/prog_260031",
+          "map_pin_path": "/run/bpfman-parity-go/fs/maps/260031",
+          "map_owner_id": null
+        },
+        "meta": {
+          "name": "tcx_stats",
+          "owner": "",
+          "description": "",
+          "metadata": {
+            "bpfman.io/application": "appA"
+          }
+        },
+        "created_at": "2026-06-26T15:46:30Z",
+        "updated_at": null
+      },
+      "kernel": {
+        "id": 260031,
+        "name": "tcx_stats",
+        "program_type": "schedcls",
+        "tag": "7a2dd52cbef12658",
+        "loaded_at": "2026-06-26T15:46:29Z",
+        "uid": 0,
+        "has_uid": true,
+        "btf_id": 774352,
+        "has_btf_id": true,
+        "map_ids": [
+          416842
+        ],
+        "has_map_ids": true,
+        "jited_size": 114,
+        "xlated_size": 168,
+        "verified_insns": 12,
+        "memlock": 4096,
+        "has_memlock": true,
+        "restricted": false
+      }
+    },
+    {
+      "program_id": 260034,
+      "managed": true,
+      "application": "appB",
+      "type": "kprobe",
+      "function_name": "kprobe_counter",
+      "links": [],
+      "record": {
+        "program_id": 260034,
+        "load": {
+          "object_path": "/run/bpfman-parity-go/programs/260034/bytecode.o",
+          "program_name": "kprobe_counter",
+          "program_type": "kprobe",
+          "global_data": {},
+          "image_source": null,
+          "attach_func": null,
+          "map_owner_id": null
+        },
+        "license": "Dual BSD/GPL",
+        "gpl_compatible": true,
+        "handles": {
+          "pin_path": "/run/bpfman-parity-go/fs/prog_260034",
+          "map_pin_path": "/run/bpfman-parity-go/fs/maps/260034",
+          "map_owner_id": null
+        },
+        "meta": {
+          "name": "kprobe_counter",
+          "owner": "",
+          "description": "",
+          "metadata": {
+            "bpfman.io/application": "appB"
+          }
+        },
+        "created_at": "2026-06-26T15:46:30Z",
+        "updated_at": null
+      },
+      "kernel": {
+        "id": 260034,
+        "name": "kprobe_counter",
+        "program_type": "kprobe",
+        "tag": "7a2dd52cbef12658",
+        "loaded_at": "2026-06-26T15:46:29Z",
+        "uid": 0,
+        "has_uid": true,
+        "btf_id": 774360,
+        "has_btf_id": true,
+        "map_ids": [
+          416845
+        ],
+        "has_map_ids": true,
+        "jited_size": 114,
+        "xlated_size": 168,
+        "verified_insns": 12,
+        "memlock": 4096,
+        "has_memlock": true,
+        "restricted": false
+      }
+    }
+  ]
+}
+[exit 0]
+
