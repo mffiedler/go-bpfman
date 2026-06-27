@@ -20,5 +20,5 @@ type ProgramCmd struct {
 
 	// Delete deletes a program and performs the associated cascading
 	// cleanup (detaching its links and tearing down emptied dispatchers).
-	Delete ProgramDeleteCmd `cmd:"" help:"Delete a program with cascading cleanup."`
+	Delete ProgramDeleteCmd `cmd:"" hidden:"" help:"Delete a program with cascading cleanup."`
 }

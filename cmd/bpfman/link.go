@@ -19,5 +19,5 @@ type LinkCmd struct {
 
 	// Delete deletes a link and performs the associated cascading cleanup
 	// (for example tearing down an empty dispatcher).
-	Delete LinkDeleteCmd `cmd:"" help:"Delete a link with cascading cleanup."`
+	Delete LinkDeleteCmd `cmd:"" hidden:"" help:"Delete a link with cascading cleanup."`
 }

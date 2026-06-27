@@ -43,14 +43,14 @@ type CLI struct {
 
 	// Dispatcher groups the dispatcher inspection and management
 	// subcommands.
-	Dispatcher DispatcherCmd `cmd:"" group:"resources" help:"Manage dispatchers."`
+	Dispatcher DispatcherCmd `cmd:"" hidden:"" group:"resources" help:"Manage dispatchers."`
 
 	// Image groups the OCI image subcommands (build, inspect, verify
 	// signatures).
-	Image ImageCmd `cmd:"" group:"infra" help:"Image operations (verify signatures)."`
+	Image ImageCmd `cmd:"" hidden:"" group:"infra" help:"Image operations (verify signatures)."`
 
 	// Serve starts the gRPC daemon.
-	Serve ServeCmd `cmd:"" group:"infra" help:"Start the gRPC daemon."`
+	Serve ServeCmd `cmd:"" hidden:"" group:"infra" help:"Start the gRPC daemon."`
 
 	// Version prints version information.
 	Version VersionCmd `cmd:"" group:"infra" help:"Print version information."`
