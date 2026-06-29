@@ -25,6 +25,7 @@ archive/bpfman-kernel/bpfman-kernel
 /e2e/kmod/.*.cmd
 /e2e/kmod/Module.symvers
 /e2e/kmod/modules.order
+/e2e/kmod/.kmod-kernel-stamp
 
 /ci-e2e-bundle/
 .cache/

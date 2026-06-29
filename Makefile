@@ -511,6 +511,14 @@ KDIR                  ?= /lib/modules/$(KERNEL_RELEASE)/build
 KERNEL_DEV            ?=
 E2E_KMOD_KBUILD       ?= $(E2E_KMOD_DIR)/.kbuild
 E2E_KMOD_PREPARE_KDIR := $(E2E_KMOD_DIR)/prepare-kdir.sh
+# Records the kernel release the current .ko was built against. A
+# kmod is only valid for the kernel it was compiled and BTF-encoded
+# against; kbuild's incremental logic keys off source timestamps and
+# would happily reuse a stale .ko across a reboot into a different
+# kernel (the BTF [M] step only re-runs on a relink). e2e-kmod-build
+# compares this stamp to KERNEL_RELEASE and cleans first when they
+# differ, so a kernel change forces a full rebuild.
+E2E_KMOD_STAMP        := $(E2E_KMOD_DIR)/.kmod-kernel-stamp
 
 # ---------------------------------------------------------------------------
 # Multi-arch buildx knobs.
@@ -1139,6 +1147,11 @@ clean-coverage:
 # Makefile, which is not warning-clean and is not ours to fix.
 e2e-kmod-build:
 	$(call quiet_cmd,KMOD,$(E2E_KMOD))
+	$(Q)if [ -f "$(E2E_KMOD_STAMP)" ] && \
+	    [ "$$(cat "$(E2E_KMOD_STAMP)")" != "$(KERNEL_RELEASE)" ]; then \
+	    echo "e2e kmod: built for $$(cat "$(E2E_KMOD_STAMP)"), now $(KERNEL_RELEASE); cleaning stale build" >&2; \
+	    $(MAKE) clean-e2e-kmod; \
+	fi
 	$(Q)set -e; \
 	    kdir=$$(KDIR="$(KDIR)" \
 	    KERNEL_DEV="$(KERNEL_DEV)" \
@@ -1153,6 +1166,21 @@ e2e-kmod-build:
 	        MAKEFLAGS= $(MAKE) -C $(E2E_KMOD_DIR) KDIR="$$kdir"; \
 	    fi
 	$(Q)test -f $(E2E_KMOD)
+	$(Q)if ! readelf -S $(E2E_KMOD) 2>/dev/null | grep -q '\.BTF'; then \
+	    { \
+	        echo "error: $(E2E_KMOD) has no .BTF section"; \
+	        echo ""; \
+	        echo "The module built but kbuild produced no BTF, so fentry/fexit"; \
+	        echo "attach to its functions fails at load time with a cryptic"; \
+	        echo "\"not supported\". Usual causes: the BTF [M] step ran without a"; \
+	        echo "vmlinux (see prepare-kdir.sh), pahole (dwarves) is missing, or a"; \
+	        echo "stale .ko was reused without relinking across a kernel change."; \
+	        echo "Run 'make clean-e2e-kmod' and rebuild; ensure pahole and"; \
+	        echo "/sys/kernel/btf/vmlinux (or KERNEL_DEV=<path>/vmlinux) exist."; \
+	    } >&2; \
+	    exit 1; \
+	fi
+	$(Q)printf '%s\n' "$(KERNEL_RELEASE)" > $(E2E_KMOD_STAMP)
 
 clean-e2e-kmod:
 	$(call quiet_cmd,CLEAN,$(E2E_KMOD_DIR))
@@ -1167,6 +1195,7 @@ clean-e2e-kmod:
 	        $(E2E_KMOD_DIR)/Module.symvers $(E2E_KMOD_DIR)/modules.order; \
 	fi
 	$(Q)$(RM) -r $(E2E_KMOD_KBUILD)
+	$(Q)$(RM) $(E2E_KMOD_STAMP)
 
 # Load the built module into the running kernel. Idempotent: if
 # the module is already present in lsmod, the target succeeds
