@@ -83,9 +83,8 @@ FROM base AS e2e-builder
 
 # RACE and EXTRA_TAGS are forwarded from the buildx --build-arg by
 # the ci-test-e2e and ci-test-e2e-scripts make recipes; empty by
-# default. EXTRA_TAGS lets a CI lane swap in alternate build tags
-# (e.g. cgo_sqlite to exercise the mattn driver in place of the
-# default modernc one).
+# default. EXTRA_TAGS lets a CI lane add build tags on top of the
+# defaults.
 ARG RACE=
 ARG EXTRA_TAGS=
 

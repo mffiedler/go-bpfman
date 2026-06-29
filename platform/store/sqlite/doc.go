@@ -18,14 +18,15 @@
 // link_fexit_details). Programs store user metadata as a JSON column
 // (metadata_json).
 //
-// # Driver Selection
+// # Driver
 //
-// Two SQLite drivers are supported, selected at build time:
-//
-//   - modernc.org/sqlite (default): pure Go, no CGO required for the
-//     database layer (though the application still requires
-//     CGO_ENABLED=1 for the bpfman-ns transport)
-//   - mattn/go-sqlite3: CGO-based, selected with -tags cgo_sqlite
+// The store uses github.com/mattn/go-sqlite3, a cgo database/sql
+// driver that links the SQLite C library. CGO_ENABLED=1 is required
+// regardless (the bpfman-ns transport uses a C constructor), and
+// binaries link either statically or dynamically. The build never
+// loads SQLite runtime extensions and compiles with
+// sqlite_omit_load_extension, which keeps a static binary free of a
+// dlopen reference.
 //
 // # Calling Conventions
 //

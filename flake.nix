@@ -99,7 +99,7 @@
             stress
             stress-ng
 
-            # SQLite (CLI for inspection; dev headers for -tags cgo_sqlite).
+            # SQLite CLI for inspecting the store database.
             sqlite
             sqlite.dev
           ];

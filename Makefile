@@ -391,28 +391,22 @@ BIN_LDFLAGS := $(if $(STAMP),$(GO_LDFLAGS),$(TEST_LDFLAGS))
 # ---------------------------------------------------------------------------
 STATIC_TAGS := osusergo,netgo
 EXTRA_TAGS ?=
-# When the caller selects the mattn/go-sqlite3 driver via cgo_sqlite,
-# also force sqlite_omit_load_extension. This compiles the embedded
-# SQLite amalgamation with -DSQLITE_OMIT_LOAD_EXTENSION, dropping the
-# sqlite3_load_extension() API and its unixDlOpen() wrapper -- the
-# sole reason the static linker emits "Using 'dlopen' in statically
-# linked applications requires at runtime the shared libraries from
-# the glibc version used for linking" against the cgo_sqlite path. We
-# never load runtime SQL extensions, so omitting them is pure
-# subtraction. Apply only when cgo_sqlite is already in EXTRA_TAGS so
-# default builds (modernc, no cgo) are unaffected.
-ifneq (,$(filter cgo_sqlite,$(subst $(comma), ,$(EXTRA_TAGS))))
-ifeq (,$(filter sqlite_omit_load_extension,$(subst $(comma), ,$(EXTRA_TAGS))))
-override EXTRA_TAGS := $(EXTRA_TAGS),sqlite_omit_load_extension
-endif
-endif
+# mattn/go-sqlite3 is the only SQLite driver, so every build links the
+# embedded SQLite amalgamation through cgo. sqlite_omit_load_extension
+# compiles it with -DSQLITE_OMIT_LOAD_EXTENSION, dropping the
+# sqlite3_load_extension() API and its unixDlOpen() wrapper -- the sole
+# reason the static linker emits "Using 'dlopen' in statically linked
+# applications requires at runtime the shared libraries from the glibc
+# version used for linking". We never load runtime SQL extensions, so
+# omitting them is pure subtraction; the tag is always on.
+SQLITE_TAGS := sqlite_omit_load_extension
 # Tag sets consumed by each go build/test recipe. EXTRA_TAGS is
-# appended to every set so callers can add a tag once (e.g.
-# EXTRA_TAGS=cgo_sqlite) and have every build path pick it up.
-BUILD_TAGS     := $(call comma-join,$(if $(STATIC),$(STATIC_TAGS)) $(EXTRA_TAGS))
+# appended to every set so callers can add a tag once and have every
+# build path pick it up.
+BUILD_TAGS     := $(call comma-join,$(if $(STATIC),$(STATIC_TAGS)) $(SQLITE_TAGS) $(EXTRA_TAGS))
 TEST_TAGS      := $(BUILD_TAGS)
-E2E_TAGS       := $(call comma-join,e2e $(if $(STATIC),$(STATIC_TAGS)) $(EXTRA_TAGS))
-BPFMAN_NS_TAGS := $(call comma-join,bpfman_ns $(EXTRA_TAGS))
+E2E_TAGS       := $(call comma-join,e2e $(if $(STATIC),$(STATIC_TAGS)) $(SQLITE_TAGS) $(EXTRA_TAGS))
+BPFMAN_NS_TAGS := $(call comma-join,bpfman_ns $(SQLITE_TAGS) $(EXTRA_TAGS))
 
 # ---------------------------------------------------------------------------
 # bpfman-ns transport cross-architecture tests.
@@ -723,11 +717,7 @@ help:
 	@echo "  e2e-kmod-force-reload       Delete managed bpfman state, apply e2e cleanup, then rebuild and reload the module (sudos internally)"
 	@echo "  clean-e2e-kmod              Remove e2e kmod build artefacts and result symlink"
 	@echo ""
-	@echo "SQLite driver:"
-	@echo "  The default SQLite driver is modernc.org/sqlite (pure Go)."
-	@echo "  To use mattn/go-sqlite3 (CGO) instead, pass -tags cgo_sqlite:"
-	@echo "    go build -tags cgo_sqlite ./..."
-	@echo "    go test -tags cgo_sqlite ./..."
+	@echo "SQLite driver: mattn/go-sqlite3 (cgo; the only driver)."
 
 print-go-version:
 	@echo $(GO_VERSION)
@@ -1314,31 +1304,24 @@ bpfman-fmt:
 bpfman-goimports: $(BIN_DIR)/golangci-lint
 	$(BIN_DIR)/golangci-lint fmt
 
-# Run go vet over every build-tag combination present in the tree.
-# `go vet ./...` honours the active tag set; cover the tree with
-# two passes, one per SQLite driver, both with e2e+bpfman_ns set so
-# the build-tagged files (entire e2e/ package, CGO-namespaced
-# bpfman-ns transport) are vetted alongside the rest. No file in the
-# tree uses negative tags like !e2e, so the e2e+bpfman_ns pass
-# supersets a tag-less pass and a third pass would be redundant.
-#   - !cgo_sqlite pass: modernc.org/sqlite branch (the default).
-#   - cgo_sqlite pass: mattn/go-sqlite3 alternate, mutually
-#     exclusive with the !cgo_sqlite branch.
+# Run go vet over the tree with e2e+bpfman_ns set so the build-tagged
+# files (entire e2e/ package, CGO-namespaced bpfman-ns transport) are
+# vetted alongside the rest. No file in the tree uses negative tags
+# like !e2e, so this pass supersets a tag-less one and a second pass
+# would be redundant. A single SQLite driver (mattn/go-sqlite3) means
+# one pass covers the store too.
 bpfman-vet: $(DISPATCHER_BPF_EMBEDS)
 	go vet -tags 'e2e,bpfman_ns' ./...
-	go vet -tags 'cgo_sqlite,e2e,bpfman_ns' ./...
 
-# Apply the Go modernisers (go fix) across the same two tag passes as
+# Apply the Go modernisers (go fix) over the same tag set as
 # bpfman-vet, so every file -- the e2e/bpfman_ns build-tagged packages
-# and both SQLite driver branches included -- is rewritten to the
-# latest idioms. GOTOOLCHAIN forces the moderniser toolchain on top of
-# whatever build Go is active, downloading it on demand; see
-# GOFIX_GO_VERSION for why the pin lives apart from GO_VERSION. Like
-# bpfman-fmt this mutates the tree in place; ci-check-gofix wraps it
-# with a git-diff gate.
+# included -- is rewritten to the latest idioms. GOTOOLCHAIN forces the
+# moderniser toolchain on top of whatever build Go is active,
+# downloading it on demand; see GOFIX_GO_VERSION for why the pin lives
+# apart from GO_VERSION. Like bpfman-fmt this mutates the tree in
+# place; ci-check-gofix wraps it with a git-diff gate.
 bpfman-gofix: $(DISPATCHER_BPF_EMBEDS)
 	GOTOOLCHAIN=$(GOFIX_GO_VERSION) go fix -tags 'e2e,bpfman_ns' ./...
-	GOTOOLCHAIN=$(GOFIX_GO_VERSION) go fix -tags 'cgo_sqlite,e2e,bpfman_ns' ./...
 
 # Compile bpfman. Depends on the dispatcher BPF embeds because
 # the dispatcher Go package's go:embed directives need them at
@@ -1743,8 +1726,8 @@ ci-check-goimports:
 ci-lint: ci-image
 	$(CI_RUN) make clean-bpf lint
 
-# Reproduce the workflow's check-vet job locally. Runs every vet
-# pass (default + e2e/bpfman_ns + cgo_sqlite) inside the CI container
+# Reproduce the workflow's check-vet job locally. Runs the vet
+# pass (e2e/bpfman_ns) inside the CI container
 # so the BPF embeds and CGO toolchain match what CI sees. Symmetric
 # with ci-check-fmt and ci-check-vendor: a separate gate, not a
 # side effect of bpfman-build.
