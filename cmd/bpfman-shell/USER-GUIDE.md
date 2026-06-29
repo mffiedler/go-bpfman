@@ -549,7 +549,26 @@ defer kill $worker
 `.symbol` for attach-only tests that want a valid uprobe target without
 the fire wave-protocol overhead.
 
-Use raw `ip`, `bpftool`, `sh`, or `exec` for cases outside the helper surface.
+The `linkinfo` and `proginfo` builtins read kernel link and program
+metadata directly through the bpf() syscall, so tests need not parse
+`bpftool` output. In particular `bpftool link show id` can exit
+non-zero while still printing the link, which otherwise forces callers
+to ignore the exit code and assert on stdout. `linkinfo id N` returns
+`id`, `prog_id`, and `type`; `proginfo id N` and `proginfo pinned
+PATH` return `id`, `type`, `name`, and `tag`. Both carry typed
+origins, so `--check` validates field access and rejects typos:
+
+```bpfman
+guard info <- linkinfo id $kernelLinkID
+assert $info.prog_id == $prog.record.program_id
+
+guard pinned <- proginfo pinned /sys/fs/bpf/my_prog
+let kernelID = $pinned.id
+```
+
+Prefer `linkinfo` and `proginfo` over raw `bpftool link show` and
+`bpftool prog show`. Use raw `ip`, `bpftool`, `sh`, or `exec` for
+cases outside the helper surface.
 
 ## Common Sharp Edges
 
