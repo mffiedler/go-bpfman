@@ -11,7 +11,7 @@
 
 import ../lib.bpfman
 
-let obj = "testdata/bpf/multi_prog_kprobe_counter.bpf.o"
+let obj = "testdata/bpf/multi_prog_kprobe_kmod_counter.bpf.o"
 
 guard load_a <- bpfman program load file $obj --programs kprobe:mkp_a
 let a = $load_a.programs[0].record.program_id

@@ -101,7 +101,7 @@ let tracepointTC = $listedTracepointTC |> jq "[.programs[] | select(.program_id 
 assert $tracepointTC == 0
 
 let tracingPin = "/sys/fs/bpf/bpfman_e2e_unmanaged_tracing_${pid}"
-guard _ <- exec bpftool prog load testdata/bpf/fentry_exact.bpf.o $tracingPin type fentry
+guard _ <- exec bpftool prog load testdata/bpf/fentry_kmod_exact.bpf.o $tracingPin type fentry
 defer exec rm -f $tracingPin
 
 guard tracingShow <- exec bpftool prog show pinned $tracingPin -j
