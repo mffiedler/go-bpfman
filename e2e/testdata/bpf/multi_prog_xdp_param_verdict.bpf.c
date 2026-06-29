@@ -45,13 +45,13 @@ NET_COUNTER_MAP(mxdv_c_count);
 		return verdict_var; \
 	}
 
-SEC("xdp/mxdv_a")
+SEC("xdp")
 XDP_PARAM_PROG(mxdv_a, mxdv_a_count, weight_a, verdict_a)
 
-SEC("xdp/mxdv_b")
+SEC("xdp")
 XDP_PARAM_PROG(mxdv_b, mxdv_b_count, weight_b, verdict_b)
 
-SEC("xdp/mxdv_c")
+SEC("xdp")
 XDP_PARAM_PROG(mxdv_c, mxdv_c_count, weight_c, verdict_c)
 
 char _license[] SEC("license") = "Dual BSD/GPL";

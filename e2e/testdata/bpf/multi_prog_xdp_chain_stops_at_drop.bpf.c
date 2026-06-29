@@ -35,13 +35,13 @@ NET_COUNTER_MAP(mxdc_count);
 		return verdict; \
 	}
 
-SEC("xdp/mxdp_chain_a")
+SEC("xdp")
 XDP_COUNT_PROG(mxdp_chain_a, mxda_count, weight_a, XDP_PASS)
 
-SEC("xdp/mxdp_chain_b")
+SEC("xdp")
 XDP_COUNT_PROG(mxdp_chain_b, mxdb_count, weight_b, XDP_DROP)
 
-SEC("xdp/mxdp_chain_c")
+SEC("xdp")
 XDP_COUNT_PROG(mxdp_chain_c, mxdc_count, weight_c, XDP_PASS)
 
 char _license[] SEC("license") = "Dual BSD/GPL";

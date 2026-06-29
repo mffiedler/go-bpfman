@@ -47,7 +47,7 @@ static __always_inline __u32 xdp_stats_record_action(struct xdp_md *ctx,
   return action;
 }
 
-SEC("xdp/xdp_stats")
+SEC("xdp")
 int xdp_stats(struct xdp_md *ctx) {
   __u32 action = XDP_PASS;
 
