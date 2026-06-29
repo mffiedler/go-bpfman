@@ -332,6 +332,15 @@ func publishMatches(targetPath string, requestedMaps []string, readonly bool) (b
 	}
 	published := make([]string, 0, len(entries))
 	for _, e := range entries {
+		// bpffs auto-creates root-level introspection files (maps.debug,
+		// progs.debug) on newer kernels. Those dentries are reserved by the
+		// filesystem -- no map pin can take their names -- so exclude them
+		// from the published set; otherwise an idempotent re-publish reads as
+		// a different map set and is wrongly rejected with ALREADY_EXISTS.
+		switch e.Name() {
+		case "maps.debug", "progs.debug":
+			continue
+		}
 		published = append(published, e.Name())
 	}
 	return equalStringSets(published, requestedMaps), nil
