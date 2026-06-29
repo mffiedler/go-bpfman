@@ -92,5 +92,4 @@ FROM ${RUNTIME_IMAGE}
 
 COPY --from=builder /src/bin/bpfman /bpfman
 
-ENV BPFMAN_PPROF_ADDRESS=localhost:6060
 ENTRYPOINT ["/bpfman"]

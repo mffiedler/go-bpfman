@@ -14,11 +14,6 @@ type ServeCmd struct {
 	// CSISupport enables the CSI driver support in the running daemon.
 	CSISupport bool `name:"csi-support" help:"Enable CSI driver support."`
 
-	// PprofAddress is the listen address for the pprof HTTP server. Port 0
-	// selects an ephemeral port and an empty string disables pprof; it
-	// defaults to localhost:0.
-	PprofAddress string `name:"pprof-address" help:"Address for pprof HTTP server. Port 0 selects an ephemeral port. Empty string disables." env:"BPFMAN_PPROF_ADDRESS" default:"localhost:0"`
-
 	// SocketPath is the Unix socket path for the gRPC server. It defaults
 	// to /run/bpfman-sock/bpfman.sock for compatibility with
 	// bpfman-operator, which expects the socket at this location.
@@ -27,8 +22,8 @@ type ServeCmd struct {
 
 // Run starts the bpfman gRPC daemon: it builds the logger, runtime
 // layout, image cache and application config, then runs the server on
-// the configured Unix-socket address (optionally with CSI and pprof
-// support) until the context is cancelled.
+// the configured Unix-socket address (optionally with CSI support)
+// until the context is cancelled.
 func (c *ServeCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	logger, err := cli.LoggerFromConfig()
 	if err != nil {
@@ -53,13 +48,12 @@ func (c *ServeCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	}
 
 	cfg := server.RunConfig{
-		Layout:       layout,
-		ImageCache:   imageCache,
-		CSISupport:   c.CSISupport,
-		PprofAddress: c.PprofAddress,
-		SocketPath:   c.SocketPath,
-		Logger:       logger,
-		Config:       appConfig,
+		Layout:     layout,
+		ImageCache: imageCache,
+		CSISupport: c.CSISupport,
+		SocketPath: c.SocketPath,
+		Logger:     logger,
+		Config:     appConfig,
 	}
 
 	return server.Run(ctx, cfg)

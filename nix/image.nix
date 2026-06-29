@@ -77,8 +77,5 @@ dockerTools.buildLayeredImage {
 
   config = {
     Entrypoint = [ "/bpfman" ];
-    Env = [
-      "BPFMAN_PPROF_ADDRESS=localhost:6060"
-    ];
   };
 }

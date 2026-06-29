@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"net/http"
-	_ "net/http/pprof"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -52,10 +50,6 @@ type RunConfig struct {
 	// CSISupport starts the Kubernetes CSI driver alongside the gRPC
 	// server when true.
 	CSISupport bool
-
-	// PprofAddress is an optional address for the pprof HTTP server
-	// (e.g. "localhost:2026"). Empty disables pprof.
-	PprofAddress string
 
 	// SocketPath overrides the Unix socket path; empty defaults to
 	// Layout.SocketPath().
@@ -169,28 +163,6 @@ func Run(ctx context.Context, cfg RunConfig) error {
 			logger.Info("stopping CSI driver")
 			csiDriver.Stop()
 		}()
-	}
-
-	// Start pprof HTTP server if configured.
-	if cfg.PprofAddress != "" {
-		pprofListener, err := net.Listen("tcp", cfg.PprofAddress)
-		if err != nil {
-			return fmt.Errorf("pprof listen on %s: %w", cfg.PprofAddress, err)
-		}
-
-		pprofServer := &http.Server{}
-		logger.Info("pprof HTTP server listening", "address", pprofListener.Addr().String())
-		go func() {
-			if err := pprofServer.Serve(pprofListener); err != nil && err != http.ErrServerClosed {
-				logger.Error("pprof HTTP server failed", "error", err)
-			}
-		}()
-		go func() {
-			<-ctx.Done()
-			pprofServer.Close()
-		}()
-	} else {
-		logger.Info("pprof HTTP server disabled")
 	}
 
 	// Start bpfman gRPC server

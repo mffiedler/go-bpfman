@@ -61,15 +61,13 @@
 //  5. Create the OCI image puller
 //  6. Create the manager with all dependencies
 //  7. Optionally start the CSI driver for Kubernetes map exposure
-//  8. Optionally start a pprof HTTP server
-//  9. Start serving on the Unix socket
+//  8. Start serving on the Unix socket
 //
 // # Graceful Shutdown
 //
 // When the context passed to [Run] is cancelled, the server performs
 // an orderly shutdown: the gRPC server drains in-flight requests via
-// GracefulStop, the CSI driver (if running) is stopped, and the pprof
-// server (if running) is closed.
+// GracefulStop and the CSI driver (if running) is stopped.
 //
 // # CSI Integration
 //
