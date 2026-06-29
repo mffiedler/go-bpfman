@@ -49,11 +49,6 @@ type RunConfig struct {
 	// directory exists; the image puller is built from it.
 	ImageCache fs.EnsuredImageCache
 
-	// TCPAddress is an optional TCP listen address (e.g. ":50051") for
-	// remote access. Empty disables the TCP listener; the Unix socket
-	// is always served.
-	TCPAddress string
-
 	// CSISupport starts the Kubernetes CSI driver alongside the gRPC
 	// server when true.
 	CSISupport bool
@@ -211,7 +206,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 		socketPath = layout.SocketPath()
 	}
 
-	return srv.serve(ctx, socketPath, cfg.TCPAddress)
+	return srv.serve(ctx, socketPath)
 }
 
 // Server implements the bpfman gRPC service.
@@ -249,8 +244,8 @@ func New(layout fs.Layout, mgr *manager.Manager, logger *slog.Logger) *Server {
 	}
 }
 
-// serve starts the gRPC server on the given socket path and optionally on TCP.
-func (s *Server) serve(ctx context.Context, socketPath, tcpAddr string) error {
+// serve starts the gRPC server on the given Unix socket path.
+func (s *Server) serve(ctx context.Context, socketPath string) error {
 	// Ensure socket directory exists
 	socketDir := filepath.Dir(socketPath)
 	if err := os.MkdirAll(socketDir, 0755); err != nil {
@@ -280,8 +275,8 @@ func (s *Server) serve(ctx context.Context, socketPath, tcpAddr string) error {
 	)
 	pb.RegisterBpfmanServer(grpcServer, s)
 
-	// Track errors from serving goroutines
-	errChan := make(chan error, 2)
+	// Track errors from the serving goroutine
+	errChan := make(chan error, 1)
 
 	// Start Unix socket server
 	go func() {
@@ -290,22 +285,6 @@ func (s *Server) serve(ctx context.Context, socketPath, tcpAddr string) error {
 			errChan <- fmt.Errorf("unix socket server: %w", err)
 		}
 	}()
-
-	// Optionally start TCP listener for remote access
-	if tcpAddr != "" {
-		tcpListener, err := net.Listen("tcp", tcpAddr)
-		if err != nil {
-			grpcServer.GracefulStop()
-			return fmt.Errorf("failed to listen on TCP %s: %w", tcpAddr, err)
-		}
-
-		go func() {
-			s.logger.InfoContext(ctx, "bpfman gRPC server listening", "tcp", tcpAddr)
-			if err := grpcServer.Serve(tcpListener); err != nil {
-				errChan <- fmt.Errorf("tcp server: %w", err)
-			}
-		}()
-	}
 
 	// Handle context cancellation for graceful shutdown
 	go func() {

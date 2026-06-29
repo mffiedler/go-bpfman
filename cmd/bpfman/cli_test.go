@@ -29,13 +29,13 @@ func TestMaybeInjectServe(t *testing.T) {
 		},
 		{
 			"csi-support followed by another flag",
-			[]string{"bpfman", "--csi-support", "--tcp-address=:50051"},
-			[]string{"bpfman", "serve", "--csi-support", "--tcp-address=:50051"},
+			[]string{"bpfman", "--csi-support", "--socket-path=/run/x.sock"},
+			[]string{"bpfman", "serve", "--csi-support", "--socket-path=/run/x.sock"},
 		},
 		{
 			"csi-support followed by separated flag value",
-			[]string{"bpfman", "--csi-support", "--tcp-address", ":50051"},
-			[]string{"bpfman", "serve", "--csi-support", "--tcp-address", ":50051"},
+			[]string{"bpfman", "--csi-support", "--socket-path", "/run/x.sock"},
+			[]string{"bpfman", "serve", "--csi-support", "--socket-path", "/run/x.sock"},
 		},
 		{
 			"explicit subcommand",
@@ -54,13 +54,13 @@ func TestMaybeInjectServe(t *testing.T) {
 		},
 		{
 			"non-marker flag alone",
-			[]string{"bpfman", "--tcp-address=:50051"},
-			[]string{"bpfman", "--tcp-address=:50051"},
+			[]string{"bpfman", "--socket-path=/run/x.sock"},
+			[]string{"bpfman", "--socket-path=/run/x.sock"},
 		},
 		{
 			"marker not at argv[1]",
-			[]string{"bpfman", "--tcp-address=:50051", "--csi-support"},
-			[]string{"bpfman", "--tcp-address=:50051", "--csi-support"},
+			[]string{"bpfman", "--socket-path=/run/x.sock", "--csi-support"},
+			[]string{"bpfman", "--socket-path=/run/x.sock", "--csi-support"},
 		},
 	}
 

@@ -5,7 +5,7 @@
 // The server exposes BPF program lifecycle operations over gRPC,
 // translating protobuf requests into domain types and delegating to
 // the manager (manager/) for orchestration. It listens on a Unix
-// domain socket and optionally on TCP for remote access.
+// domain socket.
 //
 // The [Run] function is the main entry point for daemon mode. It
 // assembles the full dependency graph (store, kernel adapter,
@@ -62,7 +62,7 @@
 //  6. Create the manager with all dependencies
 //  7. Optionally start the CSI driver for Kubernetes map exposure
 //  8. Optionally start a pprof HTTP server
-//  9. Start serving on Unix socket (and optionally TCP)
+//  9. Start serving on the Unix socket
 //
 // # Graceful Shutdown
 //

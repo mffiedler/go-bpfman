@@ -11,10 +11,6 @@ import (
 
 // ServeCmd starts the gRPC daemon.
 type ServeCmd struct {
-	// TCPAddress is the TCP listen address for the gRPC server; it defaults
-	// to [::]:50051.
-	TCPAddress string `name:"tcp-address" help:"TCP address for gRPC server." default:"[::]:50051"`
-
 	// CSISupport enables the CSI driver support in the running daemon.
 	CSISupport bool `name:"csi-support" help:"Enable CSI driver support."`
 
@@ -31,8 +27,8 @@ type ServeCmd struct {
 
 // Run starts the bpfman gRPC daemon: it builds the logger, runtime
 // layout, image cache and application config, then runs the server on
-// the configured TCP and Unix-socket addresses (optionally with CSI and
-// pprof support) until the context is cancelled.
+// the configured Unix-socket address (optionally with CSI and pprof
+// support) until the context is cancelled.
 func (c *ServeCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	logger, err := cli.LoggerFromConfig()
 	if err != nil {
@@ -59,7 +55,6 @@ func (c *ServeCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	cfg := server.RunConfig{
 		Layout:       layout,
 		ImageCache:   imageCache,
-		TCPAddress:   c.TCPAddress,
 		CSISupport:   c.CSISupport,
 		PprofAddress: c.PprofAddress,
 		SocketPath:   c.SocketPath,

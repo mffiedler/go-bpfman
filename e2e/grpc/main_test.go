@@ -166,12 +166,6 @@ func bootstrap() (func(), error) {
 		"--runtime-dir", runtimeDir,
 		"--image-cache-dir", cacheDir,
 		"--socket-path", socketPath,
-		// Disable the default TCP listener; the test only
-		// talks to the daemon over the per-run UDS, and a
-		// fixed TCP port would collide across concurrent
-		// runs or with an orphaned daemon from a previous
-		// run.
-		"--tcp-address=",
 	)
 	serverCmd.Stdout = logFile
 	serverCmd.Stderr = logFile
