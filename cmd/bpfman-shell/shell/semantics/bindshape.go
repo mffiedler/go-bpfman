@@ -21,20 +21,22 @@ func staticBindShape(s Shape) bindShapeFn {
 }
 
 var bindShapeRegistry = map[string]bindShapeFn{
-	"start":         staticBindShape(KindShape(OriginJob)),
-	"fire":          staticBindShape(KindShape(OriginJob)),
-	"kill":          staticBindShape(KindShape(OriginEnvelope)),
-	"wait":          staticBindShape(KindShape(OriginEnvelope)),
+	"bpfman":        inferBpfmanBindShape,
 	"exec":          staticBindShape(KindShape(OriginEnvelope)),
 	"file":          staticBindShape(Shape{Sealed: false, Kind: OriginUnknown}),
-	"tempdir":       staticBindShape(Shape{Sealed: false, Kind: OriginUnknown}),
-	"uprobe-target": staticBindShape(Shape{Sealed: false, Kind: OriginUnknown}),
-	"registry":      staticBindShape(KindShape(OriginScalar)),
-	"process":       staticBindShape(Shape{Sealed: false, Kind: OriginUnknown}),
-	"net":           inferNetBindShape,
-	"uprobe":        inferUprobeBindShape,
+	"fire":          staticBindShape(KindShape(OriginJob)),
 	"kfunc":         inferKfuncBindShape,
-	"bpfman":        inferBpfmanBindShape,
+	"kill":          staticBindShape(KindShape(OriginEnvelope)),
+	"linkinfo":      staticBindShape(KindShape(OriginLinkInfo)),
+	"net":           inferNetBindShape,
+	"process":       staticBindShape(Shape{Sealed: false, Kind: OriginUnknown}),
+	"proginfo":      staticBindShape(KindShape(OriginProgInfo)),
+	"registry":      staticBindShape(KindShape(OriginScalar)),
+	"start":         staticBindShape(KindShape(OriginJob)),
+	"tempdir":       staticBindShape(Shape{Sealed: false, Kind: OriginUnknown}),
+	"uprobe":        inferUprobeBindShape,
+	"uprobe-target": staticBindShape(Shape{Sealed: false, Kind: OriginUnknown}),
+	"wait":          staticBindShape(KindShape(OriginEnvelope)),
 }
 
 // HasBindShape reports whether name has a semantics-owned bind-shape

@@ -27,8 +27,8 @@ let schedclsPin = "/sys/fs/bpf/bpfman_e2e_unmanaged_schedcls_${pid}"
 guard _ <- exec bpftool prog load testdata/bpf/tc_counter.bpf.o $schedclsPin type classifier
 defer exec rm -f $schedclsPin
 
-guard schedclsShow <- exec bpftool prog show pinned $schedclsPin -j
-let schedclsID = $schedclsShow.stdout |> jq "fromjson | .id"
+guard schedclsShow <- proginfo pinned $schedclsPin
+let schedclsID = $schedclsShow.id
 print "unmanaged schedcls kernel id=${schedclsID}"
 
 guard listedAll <- bpfman program list --all -o json
@@ -51,8 +51,8 @@ let kprobePin = "/sys/fs/bpf/bpfman_e2e_unmanaged_kprobe_${pid}"
 guard _ <- exec bpftool prog load testdata/bpf/kprobe_exact.bpf.o $kprobePin type kprobe
 defer exec rm -f $kprobePin
 
-guard kprobeShow <- exec bpftool prog show pinned $kprobePin -j
-let kprobeID = $kprobeShow.stdout |> jq "fromjson | .id"
+guard kprobeShow <- proginfo pinned $kprobePin
+let kprobeID = $kprobeShow.id
 print "unmanaged kprobe kernel id=${kprobeID}"
 
 guard listedAllAfterKprobe <- bpfman program list --all -o json
@@ -84,8 +84,8 @@ let tracepointPin = "/sys/fs/bpf/bpfman_e2e_unmanaged_tracepoint_${pid}"
 guard _ <- exec bpftool prog load testdata/bpf/tracepoint_exact.bpf.o $tracepointPin type tracepoint
 defer exec rm -f $tracepointPin
 
-guard tracepointShow <- exec bpftool prog show pinned $tracepointPin -j
-let tracepointID = $tracepointShow.stdout |> jq "fromjson | .id"
+guard tracepointShow <- proginfo pinned $tracepointPin
+let tracepointID = $tracepointShow.id
 print "unmanaged tracepoint kernel id=${tracepointID}"
 
 guard listedAllAfterTracepoint <- bpfman program list --all -o json
@@ -104,8 +104,8 @@ let tracingPin = "/sys/fs/bpf/bpfman_e2e_unmanaged_tracing_${pid}"
 guard _ <- exec bpftool prog load testdata/bpf/fentry_kmod_exact.bpf.o $tracingPin type fentry
 defer exec rm -f $tracingPin
 
-guard tracingShow <- exec bpftool prog show pinned $tracingPin -j
-let tracingID = $tracingShow.stdout |> jq "fromjson | .id"
+guard tracingShow <- proginfo pinned $tracingPin
+let tracingID = $tracingShow.id
 print "unmanaged tracing kernel id=${tracingID}"
 
 guard listedAllAfterTracing <- bpfman program list --all -o json

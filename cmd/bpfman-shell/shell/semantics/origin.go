@@ -62,6 +62,7 @@ const (
 	// Origin() so consumers reach the typed payload Value without
 	// a JSON round-trip.
 	OriginEnvelope
+
 	// OriginJob tags a Value that wraps a Job: the user-visible
 	// handle for a background process started by 'start COMMAND
 	// ARGS'. The handle exposes 'pid' through the standard
@@ -71,6 +72,7 @@ const (
 	// not ordinary immutable data: its internal state evolves as
 	// the underlying process runs and exits.
 	OriginJob
+
 	// OriginNull is a Value that represents JSON null -- a value
 	// that is present but whose content is null. Distinct from
 	// an absent (zero) Value: an absent Value is a lookup miss or
@@ -82,6 +84,7 @@ const (
 	// boundaries: a null is assignable and renderable as "null";
 	// an absent value trips "produces no assignable value".
 	OriginNull
+
 	// OriginNetPair tags a Value that wraps a NetPair: the
 	// handle returned by `net veth-pair`. It owns a single
 	// veth pair plus the netns the peer sits in, plus the host
@@ -95,6 +98,7 @@ const (
 	// remain valid after release because the strings are a
 	// historical description of what existed.
 	OriginNetPair
+
 	// OriginKfunc tags a Value that wraps a Kfunc: one leased
 	// kernel-function slot exported by the bpfman_e2e_targets module.
 	// Tests use it as an isolated attach point for fentry/fexit
@@ -102,6 +106,7 @@ const (
 	// lifecycle capability: kfunc release returns the slot to the
 	// cross-process pool; field reads remain valid after release.
 	OriginKfunc
+
 	// OriginNetnsVethPair tags a Value that wraps a NetnsVethPair:
 	// the handle returned by `net netns-veth-pair`, the isolated
 	// topology whose veth ends both live in owned, named network
@@ -112,6 +117,7 @@ const (
 	// exec` refuses the bare pair because neither side is a
 	// natural default.
 	OriginNetnsVethPair
+
 	// OriginNetnsVethEndpoint tags a Value that wraps one side of
 	// a NetnsVethPair ($pair.a / $pair.b): a capability for
 	// execution and field access, not an ownership boundary. `net
@@ -121,6 +127,19 @@ const (
 	// release $pair.a` is rejected because you release the
 	// topology, not half of it.
 	OriginNetnsVethEndpoint
+
+	// OriginLinkInfo tags a Value produced by the linkinfo
+	// builtin: native kernel link metadata (id, prog_id, type)
+	// read straight from the kernel by link id. It is a
+	// read-only snapshot, not a handle, so there is nothing to
+	// release.
+	OriginLinkInfo
+
+	// OriginProgInfo tags a Value produced by the proginfo
+	// builtin: native kernel program metadata (id, type, name,
+	// tag) read by id or from a pinned path. Like OriginLinkInfo
+	// it is a snapshot rather than a handle.
+	OriginProgInfo
 )
 
 // String returns the canonical name used in user-facing error
@@ -158,6 +177,10 @@ func (k OriginKind) String() string {
 		return "netns-veth-pair"
 	case OriginNetnsVethEndpoint:
 		return "netns-veth-pair endpoint"
+	case OriginLinkInfo:
+		return "link info"
+	case OriginProgInfo:
+		return "program info"
 	default:
 		return fmt.Sprintf("OriginKind(%d)", int(k))
 	}
@@ -301,6 +324,25 @@ var (
 		// DispatcherListResult, both as untagged (unsealed)
 		// values, so field access is permitted but not
 		// typo-checked.
+		OriginLinkInfo: {
+			Sealed: true,
+			Kind:   OriginLinkInfo,
+			Fields: map[string]Shape{
+				"id":      {Sealed: true, Kind: OriginScalar},
+				"prog_id": {Sealed: true, Kind: OriginScalar},
+				"type":    {Sealed: true, Kind: OriginScalar},
+			},
+		},
+		OriginProgInfo: {
+			Sealed: true,
+			Kind:   OriginProgInfo,
+			Fields: map[string]Shape{
+				"id":   {Sealed: true, Kind: OriginScalar},
+				"type": {Sealed: true, Kind: OriginScalar},
+				"name": {Sealed: true, Kind: OriginScalar},
+				"tag":  {Sealed: true, Kind: OriginScalar},
+			},
+		},
 		OriginMap:     {Sealed: false, Kind: OriginMap},
 		OriginUnknown: {Sealed: false, Kind: OriginUnknown},
 	}

@@ -22,8 +22,8 @@ let strayPin = "/sys/fs/bpf/bpfman_e2e_unmanaged_${pid}"
 guard _ <- exec bpftool prog load testdata/bpf/xdp_pass.bpf.o $strayPin type xdp
 defer exec rm -f $strayPin
 
-guard strayShow <- exec bpftool prog show pinned $strayPin -j
-let strayID = $strayShow.stdout |> jq "fromjson | .id"
+guard strayShow <- proginfo pinned $strayPin
+let strayID = $strayShow.id
 print "managed pid=${pid} unmanaged kernel id=${strayID}"
 
 # Default listing: the managed program is present and flagged managed

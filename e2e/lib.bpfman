@@ -209,22 +209,13 @@ def expect_pinned_link_identity(link) {
     assert $link.status.pin_present
 
     let kernelLinkID = $link.record.kernel_link_id
-    # bpftool can return a non-zero status even while writing the
-    # requested link JSON to stdout. In parallel e2e runs the list
-    # form can also race with unrelated link deletion and fail the
-    # command despite containing the link we care about. Bind with
-    # `let`, print stderr for the temporary diagnostic, and let the
-    # payload assertions below decide whether the correlation is real.
-    let kernelLink <- bpftool link show id $kernelLinkID -j
-    if not $kernelLink.ok {
-        print "bpftool link show id ${kernelLinkID} exited ${kernelLink.exit_code}"
-        print "bpftool stderr: ${kernelLink.stderr}"
-        print "bpftool stdout: ${kernelLink.stdout}"
-    }
-    let bpftoolLinkID = $kernelLink.stdout |> jq "fromjson | .id"
-    let bpftoolProgID = $kernelLink.stdout |> jq "fromjson | .prog_id"
-    assert $bpftoolLinkID == $kernelLinkID
-    assert $bpftoolProgID == $link.record.program_id
+    # Read the link straight from the kernel by id. linkinfo uses the
+    # bpf() syscall, so it returns structured fields with no parsing
+    # and no exit-code quirk (bpftool's `link show id` can exit
+    # non-zero while still printing the link).
+    guard kernelLink <- linkinfo id $kernelLinkID
+    assert $kernelLink.id == $kernelLinkID
+    assert $kernelLink.prog_id == $link.record.program_id
 }
 
 # Assert that `bpfman link get` preserved the bpfman handle and the
