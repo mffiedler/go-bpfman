@@ -49,18 +49,12 @@ kretprobe and uretprobe diverge (see ISSUE-2).
 | uprobe / uretprobe | `<glibc>/libc.so.6` function `malloc` (resolved via `ldd`) |
 | fentry / fexit | `do_unlinkat` (supplied at load time in the load spec) |
 
-## Shared-object caveat: XDP
+## Shared-object note: XDP
 
-The richer go-bpfman testdata object `xdp_counter.bpf.o` (section
-`SEC("xdp/xdp_stats")`) loads in Go but Rust rejects it:
-
-```
-invalid program section `xdp/xdp_stats`
-```
-
-So the XDP baseline above uses `xdp_pass.bpf.o` (`SEC("xdp")`), which
-both load. This is the only baseline type whose natural testdata object
-is not shared-loadable. See ISSUE-1.
+The richer go-bpfman testdata object `xdp_counter.bpf.o` previously used
+`SEC("xdp/xdp_stats")`, which Rust rejects as an invalid XDP section
+(see ISSUE-1). It now uses the canonical `SEC("xdp")` and loads in both
+Go and Rust. The XDP baseline above uses `xdp_pass.bpf.o` (`SEC("xdp")`).
 
 ## Extra scenarios
 

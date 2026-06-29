@@ -30,25 +30,32 @@ particular:
   subjective judgement and is not being asserted here; the defensible,
   objective claim is only that the Rust behaviour is not reproducible.
 
-## ISSUE-1: Rust rejects `SEC("xdp/<name>")` object section format
+## ISSUE-1 (resolved): the XDP test object used a non-conformant section name
 
-The go-bpfman XDP testdata object uses `SEC("xdp/xdp_stats")`. Go loads
-it; Rust rejects it.
+The XDP test object originally declared its program with
+`SEC("xdp/xdp_stats")`. Go loaded it; Rust rejected it:
 
 ```
 $ sudo ./bin/bpfman-rs load file --path e2e/testdata/bpf/xdp_counter.bpf.o --programs xdp:xdp_stats
 [ERROR bpfman] Error: failed to load programs: error parsing BPF object: invalid program section `xdp/xdp_stats`
 ```
 
-Go (same object) loads fine. The two loaders disagree on accepted XDP
-ELF section names: Rust's loader wants bare `SEC("xdp")`. Notably this
-is XDP-specific -- the `TYPE/<name>` form IS accepted by Rust for tc
-(`classifier/stats`), tcx, tracepoint, kprobe, uprobe and fentry
-objects (all probed and loaded successfully).
+This is not a Rust defect. Per the kernel libbpf section-name rules,
+XDP is not a `type+` family: the only valid `xdp/<extra>` suffixes are
+`cpumap` and `devmap`, so `xdp/xdp_stats` is not a valid XDP section.
+The `xdp/<name>` form was a libbpf < 0.2 convention from when one ELF
+section held one program; modern toolchains key on the function name
+and a plain `SEC("xdp")` is correct. Rust rejecting the bad section is
+conformant; Go accepting it is leniency in cilium/ebpf, not an extra
+capability.
 
-Impact: the plan's "same `.o` file for Go and Rust" cannot use
-`xdp_counter.bpf.o`. The shared XDP proof uses `xdp_pass.bpf.o`
-(`SEC("xdp")`, function `pass`), which both load.
+The asymmetry the original note recorded -- Rust accepts `TYPE/<name>`
+for kprobe, uprobe, tracepoint, fentry and tc but not XDP -- follows
+from the same rule: those are `type+` families where `/<extra>` is the
+attach target, whereas XDP is not.
+
+Resolved: the test objects now use the canonical `SEC("xdp")`, so the
+same `.o` loads in both Go and Rust.
 
 ## ISSUE-2: Rust silently downgrades kretprobe -> kprobe and uretprobe -> uprobe
 
