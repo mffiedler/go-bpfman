@@ -56,15 +56,14 @@ inconsistency in the command output contract.
 
 ### NOTE: link IDs are synthetic, not kernel link IDs
 
-Go assigns link IDs from a monotonic counter at a fixed base (observed
-`2123456789 + n`), distinct from the kernel link id
-(`status.kernel.id`). Within one store they are unique and stable
-across CLI invocations (the store is on disk; the CLI is daemonless).
-Not a bug -- bpfman owns its link namespace, as Rust does with its own
-(hash-like) ids -- but worth recording. Not yet confirmed: behaviour of
-the counter across a store wipe / fresh runtime dir (each fresh store
-appears to restart near the same base, which is fine as long as ids are
-only ever compared within a store).
+Go assigns link IDs from the store's monotonic AUTOINCREMENT counter
+(the first handle is 1), distinct from the kernel link id
+(`status.kernel.id`). Within one store they are unique and never reused
+after delete, and they are stable across CLI invocations (the store is
+on disk; the CLI is daemonless). Not a bug -- bpfman owns its link
+namespace, as Rust does with its own (hash-like) ids -- but worth
+recording. A fresh store (wipe / new runtime dir) restarts the counter
+from 1, so link ids are only meaningful within a single store.
 
 ### CORRECTION: the deleted-namespace `kernel_seen` claim is unverified
 

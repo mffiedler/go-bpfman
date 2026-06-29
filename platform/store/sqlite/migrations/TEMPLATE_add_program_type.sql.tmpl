@@ -30,8 +30,8 @@
 -- enforcement is restored before the migration returns.
 --
 -- The links table is AUTOINCREMENT. The copy preserves the existing id
--- values, and the store re-applies its id-sequence floor on every open
--- (seedLinkIDSequence), so no manual sqlite_sequence fix-up is needed.
+-- values, and SQLite advances sqlite_sequence to the highest copied id,
+-- so the next allocated handle continues past them with no manual fix-up.
 --
 -- This example adds 'sockops' with a one-column detail table. Replace
 -- the value and the link_sockops_details shape with your own.

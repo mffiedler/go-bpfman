@@ -182,7 +182,7 @@ func TestDefaultLinkColumns_ExposeManagedAndKernelIDs(t *testing.T) {
 
 	kernelLinkID := kernel.LinkID(17)
 	link := bpfman.LinkRecord{
-		ID:           2_123_456_789,
+		ID:           8,
 		ProgramID:    42,
 		KernelLinkID: &kernelLinkID,
 		Kind:         bpfman.LinkKindTracepoint,
@@ -192,7 +192,7 @@ func TestDefaultLinkColumns_ExposeManagedAndKernelIDs(t *testing.T) {
 		t.Fatalf("RenderLinkTable() error = %v", err)
 	}
 	output := buf.String()
-	for _, want := range []string{"LINK ID", "KERNEL LINK ID", "2123456789", "17"} {
+	for _, want := range []string{"LINK ID", "KERNEL LINK ID", "8", "17"} {
 		if !strings.Contains(output, want) {
 			t.Errorf("link table missing %q: %s", want, output)
 		}

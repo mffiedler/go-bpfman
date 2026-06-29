@@ -444,29 +444,6 @@ func (s *sqliteStore) closeStatements() {
 	}
 }
 
-// debugLinkIDSequenceSeed makes store-allocated bpfman link handles
-// visually distinct from small kernel bpf_link IDs. SQLite AUTOINCREMENT
-// returns seq+1, so the first generated handle is 2123456789. Keep this
-// below uint32 max while the legacy gRPC surface still narrows link IDs
-// to uint32.
-const debugLinkIDSequenceSeed = 2_123_456_788
-
-func (s *sqliteStore) seedLinkIDSequence(ctx context.Context) error {
-	const updateSQL = `UPDATE sqlite_sequence SET seq = max(seq, ?) WHERE name = 'links'`
-	if _, err := s.db.ExecContext(ctx, updateSQL, debugLinkIDSequenceSeed); err != nil {
-		return fmt.Errorf("update links AUTOINCREMENT sequence: %w", err)
-	}
-
-	const insertSQL = `
-		INSERT INTO sqlite_sequence(name, seq)
-		SELECT 'links', ?
-		WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'links')`
-	if _, err := s.db.ExecContext(ctx, insertSQL, debugLinkIDSequenceSeed); err != nil {
-		return fmt.Errorf("insert links AUTOINCREMENT sequence: %w", err)
-	}
-	return nil
-}
-
 // prepareStatements prepares all SQL statements for reuse.
 func (s *sqliteStore) prepareStatements(ctx context.Context) error {
 	if err := s.prepareProgramStatements(ctx); err != nil {

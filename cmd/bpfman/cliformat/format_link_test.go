@@ -17,7 +17,7 @@ func TestRenderLinkGetTable_ExposesManagedAndKernelIDs(t *testing.T) {
 	kernelLinkID := kernel.LinkID(17)
 	link := bpfman.Link{
 		Record: bpfman.LinkRecord{
-			ID:           2_123_456_789,
+			ID:           8,
 			ProgramID:    42,
 			KernelLinkID: &kernelLinkID,
 			Kind:         bpfman.LinkKindTracepoint,
@@ -30,7 +30,7 @@ func TestRenderLinkGetTable_ExposesManagedAndKernelIDs(t *testing.T) {
 		t.Fatalf("RenderLinkGet() error = %v", err)
 	}
 	output := buf.String()
-	for _, want := range []string{"Link ID: 2123456789", "Kernel Link ID:", "17"} {
+	for _, want := range []string{"Link ID: 8", "Kernel Link ID:", "17"} {
 		if !strings.Contains(output, want) {
 			t.Errorf("link result table missing %q: %s", want, output)
 		}
@@ -42,7 +42,7 @@ func TestRenderLinkGetTable_ShowsMetadata(t *testing.T) {
 
 	link := bpfman.Link{
 		Record: bpfman.LinkRecord{
-			ID:        2_123_456_789,
+			ID:        8,
 			ProgramID: 42,
 			Kind:      bpfman.LinkKindTracepoint,
 			Details:   bpfman.TracepointDetails{Group: "sched", Name: "sched_switch"},
@@ -65,7 +65,7 @@ func TestRenderLinkAttachTable_PrintsLinkDetails(t *testing.T) {
 
 	link := bpfman.Link{
 		Record: bpfman.LinkRecord{
-			ID:        2_123_456_789,
+			ID:        8,
 			ProgramID: 42,
 			Kind:      bpfman.LinkKindTC,
 			Details: bpfman.TCDetails{
@@ -82,7 +82,7 @@ func TestRenderLinkAttachTable_PrintsLinkDetails(t *testing.T) {
 	}
 	output := buf.String()
 	for _, want := range []string{
-		"Link ID: 2123456789",
+		"Link ID: 8",
 		"Spec:",
 		"Status:",
 		"Type:",
@@ -103,7 +103,7 @@ func TestRenderLinkGetTable_RendersPresentationFields(t *testing.T) {
 
 	link := bpfman.Link{
 		Record: bpfman.LinkRecord{
-			ID:        2_123_456_789,
+			ID:        8,
 			ProgramID: 42,
 			Kind:      bpfman.LinkKindTC,
 			Details: bpfman.TCDetails{
@@ -146,7 +146,7 @@ func TestRenderDispatcherSnapshotTable_ExposesMemberManagedAndKernelIDs(t *testi
 			{
 				ProgramID:    42,
 				ProgramName:  "xdp_pass",
-				LinkID:       2_123_456_789,
+				LinkID:       8,
 				KernelLinkID: &memberKernelLinkID,
 				Position:     0,
 				Priority:     50,
@@ -160,7 +160,7 @@ func TestRenderDispatcherSnapshotTable_ExposesMemberManagedAndKernelIDs(t *testi
 		t.Fatalf("RenderDispatcherSnapshot() error = %v", err)
 	}
 	output := buf.String()
-	for _, want := range []string{"LINK_ID", "KERNEL_LINK_ID", "2123456789", "23"} {
+	for _, want := range []string{"LINK_ID", "KERNEL_LINK_ID", "8", "23"} {
 		if !strings.Contains(output, want) {
 			t.Errorf("dispatcher snapshot table missing %q: %s", want, output)
 		}
@@ -184,7 +184,7 @@ func TestRenderDispatcherSnapshotTable_MissingMemberKernelIDUsesColumnSentinel(t
 			{
 				ProgramID:   42,
 				ProgramName: "tc_pass",
-				LinkID:      2_123_456_789,
+				LinkID:      8,
 				Position:    0,
 				Priority:    50,
 				ProceedOn:   1 << 0,

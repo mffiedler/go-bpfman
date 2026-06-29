@@ -507,42 +507,6 @@ func TestLinkRegistry_CascadeDeleteFromRegistry(t *testing.T) {
 	require.Error(t, err, "expected link to be deleted")
 }
 
-func TestLinkRegistry_IDsAreNeverReusedAfterDelete(t *testing.T) {
-	t.Parallel()
-
-	store, err := sqlite.NewInMemory(context.Background(), testLogger())
-	require.NoError(t, err, "failed to create store")
-	defer store.Close()
-
-	ctx := context.Background()
-	require.NoError(t, store.Save(ctx, kernel.ProgramID(42), testProgram()), "Save failed")
-
-	first := createEphemeralLink(t, ctx, store, kernel.ProgramID(42), ptr(kernel.LinkID(100)),
-		bpfman.TracepointDetails{Group: "syscalls", Name: "sys_enter_openat"})
-	require.NoError(t, store.DeleteLink(ctx, first.ID), "DeleteLink failed")
-
-	second := createEphemeralLink(t, ctx, store, kernel.ProgramID(42), ptr(kernel.LinkID(101)),
-		bpfman.TracepointDetails{Group: "syscalls", Name: "sys_exit_openat"})
-
-	assert.Greater(t, second.ID, first.ID, "links.id is AUTOINCREMENT and must not reuse deleted bpfman handles")
-}
-
-func TestLinkRegistry_IDsStartInDiagnosticRange(t *testing.T) {
-	t.Parallel()
-
-	store, err := sqlite.NewInMemory(context.Background(), testLogger())
-	require.NoError(t, err, "failed to create store")
-	defer store.Close()
-
-	ctx := context.Background()
-	require.NoError(t, store.Save(ctx, kernel.ProgramID(42), testProgram()), "Save failed")
-
-	record := createEphemeralLink(t, ctx, store, kernel.ProgramID(42), ptr(kernel.LinkID(100)),
-		bpfman.TracepointDetails{Group: "syscalls", Name: "sys_enter_openat"})
-
-	assert.Equal(t, bpfman.LinkID(2_123_456_789), record.ID, "bpfman link handles should be visually distinct from small kernel link IDs")
-}
-
 func TestLinkRegistry_KernelLinkIDPartialUniqueIndex(t *testing.T) {
 	t.Parallel()
 

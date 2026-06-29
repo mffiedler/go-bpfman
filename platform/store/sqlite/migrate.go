@@ -81,7 +81,7 @@ func (s *sqliteStore) migrate(ctx context.Context) error {
 		s.logger.InfoContext(ctx, "applied schema migrations", "count", len(results), "from", current, "to", target)
 	}
 
-	return s.seedLinkIDSequence(ctx)
+	return nil
 }
 
 // checkSchemaVersion verifies, without writing, that the database is at
