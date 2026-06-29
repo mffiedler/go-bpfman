@@ -10,13 +10,36 @@
 //
 // # Schema
 //
-// The schema (schema.sql) uses a polymorphic registry pattern for
-// links: a links table with a kind discriminator column and separate
-// detail tables per link type (link_tracepoint_details,
-// link_kprobe_details, link_xdp_details, link_tc_details,
-// link_tcx_details, link_uprobe_details, link_fentry_details,
-// link_fexit_details). Programs store user metadata as a JSON column
-// (metadata_json).
+// The schema uses a polymorphic registry pattern for links: a links
+// table with a kind discriminator column and separate detail tables
+// per link type (link_tracepoint_details, link_kprobe_details,
+// link_xdp_details, link_tc_details, link_tcx_details,
+// link_uprobe_details, link_fentry_details, link_fexit_details).
+// Programs store user metadata as a JSON column (metadata_json).
+//
+// # Schema Versioning and Migrations
+//
+// The schema is versioned and evolved by ordered, forward-only
+// migrations under migrations/, applied with goose
+// (github.com/pressly/goose/v3). Each migration is a
+// migrations/NNNNN_*.sql file carrying goose Up/Down annotations; the
+// numeric prefix is the schema version the up section advances the
+// database to, and goose records applied versions in its own
+// goose_db_version table.
+//
+// Opening a store applies every pending migration in order; a database
+// already at the latest version is untouched. A database newer than the
+// running build understands is refused, never downgraded and never
+// deleted. The lowest migration, 00001_baseline.sql, is the initial
+// schema: every statement is idempotent (CREATE TABLE/INDEX IF NOT
+// EXISTS) so that a database already carrying this schema -- one written
+// by a pre-migration build, with no goose_db_version table -- adopts
+// the migration framework on next open without losing data.
+//
+// goose wraps normal migrations in a transaction. A migration that
+// needs SQLite table-rebuild behaviour outside that wrapper marks
+// itself with -- +goose NO TRANSACTION and manages its own explicit
+// transaction; see TEMPLATE_add_program_type.sql.tmpl.
 //
 // # Driver
 //

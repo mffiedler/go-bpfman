@@ -3,8 +3,6 @@ package sqlite
 import (
 	"context"
 	"database/sql"
-	_ "embed"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -107,12 +105,6 @@ func msec(d time.Duration) string {
 	return fmt.Sprintf("%.3f", float64(d.Microseconds())/1000)
 }
 
-//go:embed schema.sql
-var schemaSQL string
-
-// errSchemaMismatch tells New to recreate the file-backed store.
-var errSchemaMismatch = errors.New("schema version mismatch")
-
 // dbConn abstracts *sql.DB and *sql.Tx for query execution.
 type dbConn interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
@@ -213,8 +205,9 @@ type sqliteStore struct {
 
 // New creates a new SQLite store at the given path. The writer lock
 // scope proves the caller has serialised open/migrate/init against
-// other runtime processes before entering SQLite.
-// If the schema version doesn't match, the database is deleted and recreated.
+// other runtime processes before entering SQLite. The schema is brought
+// up to date by applying any pending migrations; an out-of-date
+// database is migrated forward in place, never deleted.
 func New(ctx context.Context, dbPath string, logger *slog.Logger, writeLock lock.WriterScope) (platform.Store, error) {
 	if writeLock == nil {
 		return nil, fmt.Errorf("writer lock required")
@@ -253,7 +246,6 @@ func New(ctx context.Context, dbPath string, logger *slog.Logger, writeLock lock
 	// the long-tail outlier where a single slow flock holder
 	// in the bpfman daemon pins the writer for longer.
 	busyTimeout, txRetryBackoffs := resolveTuning(logger)
-	recreatedForSchemaMismatch := false
 	for attempt := 0; ; attempt++ {
 		s, err := newFileStoreAttempt(ctx, dbPath, logger, busyTimeout, txRetryBackoffs)
 		if err == nil {
@@ -261,19 +253,6 @@ func New(ctx context.Context, dbPath string, logger *slog.Logger, writeLock lock
 				logger.InfoContext(ctx, "database opened after retry", "attempts", attempt+1)
 			}
 			return s, nil
-		}
-		if errors.Is(err, errSchemaMismatch) {
-			if recreatedForSchemaMismatch {
-				return nil, fmt.Errorf("schema still mismatched after recreate: %w", err)
-			}
-			recreatedForSchemaMismatch = true
-			logger.Warn("schema version mismatch, recreating database", "error", err)
-			if err := deleteDatabase(dbPath); err != nil {
-				return nil, fmt.Errorf("failed to delete old database: %w", err)
-			}
-
-			attempt = -1
-			continue
 		}
 		if !isBusyError(err) || attempt >= len(txRetryBackoffs) {
 			return nil, err
@@ -354,25 +333,6 @@ func newFileStoreAttempt(
 
 	logger.Info("opened database", "path", dbPath, "busy_timeout", busyTimeout, "tx_retry_backoffs", txRetryBackoffs)
 	return s, nil
-}
-
-// deleteDatabase removes the SQLite database file and its WAL/SHM companions.
-func deleteDatabase(dbPath string) error {
-	// Remove main database file
-	if err := os.Remove(dbPath); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-
-	// Remove WAL file if present
-	if err := os.Remove(dbPath + "-wal"); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-
-	// Remove SHM file if present
-	if err := os.Remove(dbPath + "-shm"); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return nil
 }
 
 // NewInMemory creates an in-memory SQLite store for testing.
@@ -484,77 +444,12 @@ func (s *sqliteStore) closeStatements() {
 	}
 }
 
-// schemaVersion is the current schema version. Increment this when the schema changes.
-// Migrations are supported from version 2 onwards; an unmigrated mismatch causes New to
-// delete and recreate the database.
-const schemaVersion = 16
-
 // debugLinkIDSequenceSeed makes store-allocated bpfman link handles
 // visually distinct from small kernel bpf_link IDs. SQLite AUTOINCREMENT
 // returns seq+1, so the first generated handle is 2123456789. Keep this
 // below uint32 max while the legacy gRPC surface still narrows link IDs
 // to uint32.
 const debugLinkIDSequenceSeed = 2_123_456_788
-
-func (s *sqliteStore) migrate(ctx context.Context) error {
-	// Check current schema version
-	var version int
-	if err := s.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
-		return fmt.Errorf("failed to read schema version: %w", err)
-	}
-
-	// Handle version 2 -> 3 migration
-	if version == 2 {
-		s.logger.Info("migrating database schema", "from", 2, "to", 3)
-		if err := s.migrateV2toV3(ctx); err != nil {
-			return fmt.Errorf("migration v2->v3: %w", err)
-		}
-
-		version = 3
-	}
-
-	// Handle version 3 -> 4 migration
-	if version == 3 {
-		s.logger.Info("migrating database schema", "from", 3, "to", 4)
-		if err := s.migrateV3toV4(ctx); err != nil {
-			return fmt.Errorf("migration v3->v4: %w", err)
-		}
-
-		version = 4
-	}
-
-	if version != 0 && version != schemaVersion {
-		// Version mismatch - caller needs to delete and recreate
-		return fmt.Errorf("%w: have %d, want %d", errSchemaMismatch, version, schemaVersion)
-	}
-
-	// Execute the embedded schema (idempotent due to IF NOT EXISTS)
-	if _, err := s.db.ExecContext(ctx, schemaSQL); err != nil {
-		return fmt.Errorf("failed to execute schema: %w", err)
-	}
-
-	if err := s.seedLinkIDSequence(ctx); err != nil {
-		return err
-	}
-
-	// Set schema version
-	if _, err := s.db.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
-		return fmt.Errorf("failed to set schema version: %w", err)
-	}
-
-	return nil
-}
-
-func (s *sqliteStore) checkSchemaVersion(ctx context.Context) error {
-	var version int
-	if err := s.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
-		return fmt.Errorf("failed to read schema version: %w", err)
-	}
-	if version != schemaVersion {
-		return fmt.Errorf("%w: have %d, want %d", errSchemaMismatch, version, schemaVersion)
-	}
-	return nil
-}
 
 func (s *sqliteStore) seedLinkIDSequence(ctx context.Context) error {
 	const updateSQL = `UPDATE sqlite_sequence SET seq = max(seq, ?) WHERE name = 'links'`
@@ -568,49 +463,6 @@ func (s *sqliteStore) seedLinkIDSequence(ctx context.Context) error {
 		WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'links')`
 	if _, err := s.db.ExecContext(ctx, insertSQL, debugLinkIDSequenceSeed); err != nil {
 		return fmt.Errorf("insert links AUTOINCREMENT sequence: %w", err)
-	}
-	return nil
-}
-
-// migrateV2toV3 migrates from schema version 2 to 3.
-// This migration:
-// - Adds metadata_json column to managed_programs
-// - Migrates data from program_metadata_index to metadata_json
-// - Drops program_tags and program_metadata_index tables
-func (s *sqliteStore) migrateV2toV3(ctx context.Context) error {
-	// Step 1: Add new column
-	if _, err := s.db.ExecContext(ctx, `ALTER TABLE managed_programs ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'`); err != nil {
-		return fmt.Errorf("add metadata_json column: %w", err)
-	}
-
-	// Step 2: Migrate existing metadata from index table to JSON column
-	if _, err := s.db.ExecContext(ctx, `
-		UPDATE managed_programs SET metadata_json = COALESCE(
-			(SELECT json_group_object(key, value)
-			 FROM program_metadata_index
-			 WHERE program_metadata_index.kernel_id = managed_programs.kernel_id),
-			'{}'
-		)
-	`); err != nil {
-		return fmt.Errorf("migrate metadata to JSON: %w", err)
-	}
-
-	// Step 3: Drop old tables
-	if _, err := s.db.ExecContext(ctx, `DROP TABLE IF EXISTS program_metadata_index`); err != nil {
-		return fmt.Errorf("drop program_metadata_index: %w", err)
-	}
-	if _, err := s.db.ExecContext(ctx, `DROP TABLE IF EXISTS program_tags`); err != nil {
-		return fmt.Errorf("drop program_tags: %w", err)
-	}
-
-	return nil
-}
-
-// migrateV3toV4 migrates from schema version 3 to 4.
-// This migration adds the license column to managed_programs.
-func (s *sqliteStore) migrateV3toV4(ctx context.Context) error {
-	if _, err := s.db.ExecContext(ctx, `ALTER TABLE managed_programs ADD COLUMN license TEXT`); err != nil {
-		return fmt.Errorf("add license column: %w", err)
 	}
 	return nil
 }

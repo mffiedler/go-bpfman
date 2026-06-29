@@ -1,3 +1,11 @@
+-- +goose Up
+-- +goose StatementBegin
+-- Initial schema: the baseline every database starts from. Later
+-- schema changes ship as 0002_*.sql, 0003_*.sql, and so on. Every
+-- statement is IF NOT EXISTS so that a database already carrying this
+-- schema adopts the migration framework on first open without
+-- re-creating anything.
+--
 -- Schema for bpfman SQLite database
 --
 -- This schema uses the registry + detail tables pattern for links,
@@ -427,3 +435,26 @@ CREATE TABLE IF NOT EXISTS shared_map_pins (
         REFERENCES managed_programs(program_id)
         ON DELETE CASCADE
 ) STRICT;
+-- +goose StatementEnd
+
+-- +goose Down
+-- +goose StatementBegin
+-- Drop every object the baseline creates. Child tables first so the
+-- foreign-key references unwind cleanly; the per-table indexes go with
+-- their tables. Production never runs this -- the store rolls forward,
+-- never down -- but a complete Down keeps the baseline reversible for
+-- tests and ad-hoc inspection.
+DROP TABLE IF EXISTS shared_map_pins;
+DROP TABLE IF EXISTS link_tcx_details;
+DROP TABLE IF EXISTS link_tc_details;
+DROP TABLE IF EXISTS link_xdp_details;
+DROP TABLE IF EXISTS dispatchers;
+DROP TABLE IF EXISTS link_fexit_details;
+DROP TABLE IF EXISTS link_fentry_details;
+DROP TABLE IF EXISTS link_uprobe_details;
+DROP TABLE IF EXISTS link_kprobe_details;
+DROP TABLE IF EXISTS link_tracepoint_details;
+DROP TABLE IF EXISTS links;
+DROP TABLE IF EXISTS managed_programs;
+DROP TABLE IF EXISTS map_sets;
+-- +goose StatementEnd
