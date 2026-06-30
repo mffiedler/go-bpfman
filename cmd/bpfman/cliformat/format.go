@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -229,8 +230,8 @@ func formatGlobalData(data map[string][]byte) string {
 		return "None"
 	}
 	parts := make([]string, 0, len(data))
-	for k, v := range data {
-		parts = append(parts, fmt.Sprintf("%s=%x", k, v))
+	for _, k := range slices.Sorted(maps.Keys(data)) {
+		parts = append(parts, fmt.Sprintf("%s=%x", k, data[k]))
 	}
 	return strings.Join(parts, ", ")
 }
@@ -241,8 +242,8 @@ func formatMetadata(meta map[string]string) string {
 		return "None"
 	}
 	parts := make([]string, 0, len(meta))
-	for k, v := range meta {
-		parts = append(parts, fmt.Sprintf("%s=%s", k, v))
+	for _, k := range slices.Sorted(maps.Keys(meta)) {
+		parts = append(parts, fmt.Sprintf("%s=%s", k, meta[k]))
 	}
 	return strings.Join(parts, ", ")
 }
