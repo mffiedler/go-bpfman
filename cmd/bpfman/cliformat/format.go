@@ -205,13 +205,13 @@ func formatProgramTable(prog bpfman.Program) string {
 		if len(prog.Status.Links) > 0 {
 			links = append(links, "    Links:\t ")
 			for _, l := range prog.Status.Links {
-				links = append(links, fmt.Sprintf("    Link %d:\t ", l.Record.ID))
+				links = append(links, fmt.Sprintf("      %d:\t ", l.Record.ID))
 				if l.Record.Details != nil {
-					links = append(links, fmt.Sprintf("      Attach:\t%s", formatAttachDetails(l.Record.Details)))
+					links = append(links, fmt.Sprintf("        Attach:\t%s", formatAttachDetails(l.Record.Details)))
 				}
-				links = append(links, fmt.Sprintf("      Kind:\t%s", l.Record.Kind))
+				links = append(links, fmt.Sprintf("        Kind:\t%s", l.Record.Kind))
 				if l.Record.PinPath != nil {
-					links = append(links, fmt.Sprintf("      Pin:\t%s%s", l.Record.PinPath.String(), presenceSuffix(l.Status.PinPresent)))
+					links = append(links, fmt.Sprintf("        Pin:\t%s%s", l.Record.PinPath.String(), presenceSuffix(l.Status.PinPresent)))
 				}
 			}
 		} else {
@@ -224,15 +224,15 @@ func formatProgramTable(prog bpfman.Program) string {
 		if len(prog.Status.Maps) > 0 {
 			mapLines = append(mapLines, "    Maps:\t ")
 			for _, m := range prog.Status.Maps {
-				mapLines = append(mapLines, fmt.Sprintf("    Map %d:\t ", m.ID))
-				mapLines = append(mapLines, fmt.Sprintf("      Key Size:\t%dB", m.KeySize))
-				mapLines = append(mapLines, fmt.Sprintf("      Max Entries:\t%d", m.MaxEntries))
-				mapLines = append(mapLines, fmt.Sprintf("      Name:\t%s", m.Name))
+				mapLines = append(mapLines, fmt.Sprintf("      %d:\t ", m.ID))
+				mapLines = append(mapLines, fmt.Sprintf("        Key Size:\t%dB", m.KeySize))
+				mapLines = append(mapLines, fmt.Sprintf("        Max Entries:\t%d", m.MaxEntries))
+				mapLines = append(mapLines, fmt.Sprintf("        Name:\t%s", m.Name))
 				if m.PinPath != "" {
-					mapLines = append(mapLines, fmt.Sprintf("      Pin:\t%s%s", m.PinPath, presenceSuffix(m.Present)))
+					mapLines = append(mapLines, fmt.Sprintf("        Pin:\t%s%s", m.PinPath, presenceSuffix(m.Present)))
 				}
-				mapLines = append(mapLines, fmt.Sprintf("      Type:\t%s", m.MapType))
-				mapLines = append(mapLines, fmt.Sprintf("      Value Size:\t%dB", m.ValueSize))
+				mapLines = append(mapLines, fmt.Sprintf("        Type:\t%s", m.MapType))
+				mapLines = append(mapLines, fmt.Sprintf("        Value Size:\t%dB", m.ValueSize))
 			}
 		} else if len(kp.MapIDs) > 0 {
 			mapLines = append(mapLines, fmt.Sprintf("    Maps:\t%v", kp.MapIDs))
