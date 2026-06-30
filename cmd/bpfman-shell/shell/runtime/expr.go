@@ -753,27 +753,6 @@ func (e *GuardFailure) Error() string {
 	return fmt.Sprintf("guard %s: command failed (exit %d)", target, e.Envelope.ExitCode)
 }
 
-// AssertFailure is the typed-error form of an assertion whose
-// condition did not hold. Tests and helper hooks use it directly
-// when they need a concrete assertion-failure value.
-type AssertFailure struct {
-	// Span is the source extent of the failing assert statement.
-	source.Span
-
-	// Expr is the rendered assertion expression, or empty when the
-	// caller supplied no expression text.
-	Expr string
-}
-
-// Error renders the failure as "assert failed", appending the
-// expression text when Expr is non-empty.
-func (e *AssertFailure) Error() string {
-	if e.Expr == "" {
-		return "assert failed"
-	}
-	return "assert failed: " + e.Expr
-}
-
 // RequireFailure is the typed-error form of a `require`
 // predicate that did not hold. Unwrapping yields
 // ErrRequireFailed so existing `errors.Is(err, ErrRequireFailed)`

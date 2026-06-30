@@ -149,12 +149,6 @@ func syntaxError(file string, span source.Span, msg string) error {
 	}
 }
 
-func topLevelDefInfo(stmts []syntax.Stmt) map[string]check.DefStaticInfo {
-	out := make(map[string]check.DefStaticInfo)
-	recordTopLevelDefInfo(out, stmts)
-	return out
-}
-
 func cloneDefInfo(src map[string]check.DefStaticInfo) map[string]check.DefStaticInfo {
 	out := make(map[string]check.DefStaticInfo, len(src))
 	maps.Copy(out, src)

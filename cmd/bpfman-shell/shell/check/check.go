@@ -91,15 +91,6 @@ func Check(prog *syntax.Program) []Issue {
 	return runCheckPass(c, prog)
 }
 
-// CheckImportLibrary validates an importable file. Import libraries
-// are def-only at top level: every top-level statement must be a
-// syntax.DefStmt, while def bodies are checked with the ordinary Check
-// rules. Non-def top-level statements are rejected here rather than
-// being evaluated and side-effecting at import time.
-func CheckImportLibrary(prog *syntax.Program) []Issue {
-	return CheckImportLibraryWithDefs(prog, nil)
-}
-
 // CheckImportLibraryWithDefs is the contextual form of
 // CheckImportLibrary: visibleDefs seeds the top-level def set
 // before this library's own defs are prescanned, so imported

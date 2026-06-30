@@ -41,14 +41,6 @@ func registerPureBuiltin(name string, arity int) {
 	pureBuiltinRegistry[name] = pureBuiltinSpec{Name: name, Arity: arity}
 }
 
-// unregisterPureBuiltin removes name from the parser-facing pure
-// builtin registry.
-func unregisterPureBuiltin(name string) {
-	pureBuiltinRegistryMu.Lock()
-	defer pureBuiltinRegistryMu.Unlock()
-	delete(pureBuiltinRegistry, name)
-}
-
 // lookupPureBuiltin reports whether name is a parser-visible pure
 // builtin and, when so, returns its parse-time metadata.
 func lookupPureBuiltin(name string) (pureBuiltinSpec, bool) {
