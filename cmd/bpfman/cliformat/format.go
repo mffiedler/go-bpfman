@@ -466,7 +466,7 @@ func RenderDispatcherList(w io.Writer, view DispatcherListView, format OutputFor
 }
 
 func formatDispatcherListTable(view DispatcherListView) string {
-	headers := []string{"TYPE", "NSID", "IFINDEX", "REVISION", "PROGRAM_ID", "KERNEL_LINK_ID", "PRIORITY", "HANDLE", "MEMBERS", "NETNS"}
+	headers := []string{"TYPE", "NSID", "IFINDEX", "REVISION", "PROGRAM ID", "KERNEL LINK ID", "PRIORITY", "HANDLE", "MEMBERS", "NETNS"}
 	rows := make([][]string, len(view.Summaries))
 	for i, s := range view.Summaries {
 		linkID := "-"
@@ -536,7 +536,7 @@ func formatDispatcherSnapshotTable(snap platform.DispatcherSnapshot) string {
 		return b.String()
 	}
 
-	headers := []string{"POS", "PRIORITY", "PROGRAM_ID", "NAME", "LINK_ID", "KERNEL_LINK_ID", "PROCEED_ON"}
+	headers := []string{"POS", "PRIORITY", "PROGRAM ID", "NAME", "LINK ID", "KERNEL LINK ID", "PROCEED ON"}
 	rows := make([][]string, len(snap.Members))
 	for i, m := range snap.Members {
 		kernelLinkID := "<none>"

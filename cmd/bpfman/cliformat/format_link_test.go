@@ -160,7 +160,7 @@ func TestRenderDispatcherSnapshotTable_ExposesMemberManagedAndKernelIDs(t *testi
 		t.Fatalf("RenderDispatcherSnapshot() error = %v", err)
 	}
 	output := buf.String()
-	for _, want := range []string{"LINK_ID", "KERNEL_LINK_ID", "8", "23"} {
+	for _, want := range []string{"KERNEL LINK ID", "8", "23"} {
 		if !strings.Contains(output, want) {
 			t.Errorf("dispatcher snapshot table missing %q: %s", want, output)
 		}
@@ -197,7 +197,7 @@ func TestRenderDispatcherSnapshotTable_MissingMemberKernelIDUsesColumnSentinel(t
 		t.Fatalf("RenderDispatcherSnapshot() error = %v", err)
 	}
 	output := buf.String()
-	for _, want := range []string{"KERNEL_LINK_ID", "<none>"} {
+	for _, want := range []string{"KERNEL LINK ID", "<none>"} {
 		if !strings.Contains(output, want) {
 			t.Errorf("dispatcher snapshot table missing %q: %s", want, output)
 		}
