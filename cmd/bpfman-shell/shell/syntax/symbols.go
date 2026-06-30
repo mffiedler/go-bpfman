@@ -23,12 +23,6 @@ const (
 	// <- CMD` bind.
 	SymbolBind SymbolKind = "bind"
 
-	// SymbolBindRC marks a bind target capturing a command's
-	// result-code envelope. It is defined for completeness; the
-	// current walker classifies every `<-` bind target as
-	// SymbolBind.
-	SymbolBindRC SymbolKind = "bind-rc"
-
 	// SymbolForEach is a loop variable introduced by `foreach`.
 	SymbolForEach SymbolKind = "foreach"
 )
