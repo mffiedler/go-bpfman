@@ -1,7 +1,6 @@
 package cliformat
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"slices"
@@ -39,63 +38,27 @@ type LinkListView struct {
 
 // RenderLinkAttach writes the result of a link attach command.
 func RenderLinkAttach(w io.Writer, view LinkAttachView, format OutputFormat) error {
-	switch format {
-	case OutputFormatJSON:
-		output, err := json.MarshalIndent(view.Link, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal link: %w", err)
-		}
-		return writeOutput(w, string(output)+"\n")
-	case OutputFormatText:
+	return renderOutput(w, format, view.Link, func(w io.Writer) error {
 		return writeOutput(w, formatLinkTable(LinkGetView{Link: view.Link}))
-	default:
-		return unsupportedOutputFormat(format)
-	}
+	})
 }
 
 // RenderLinkGet writes the result of a get-link command.
 func RenderLinkGet(w io.Writer, view LinkGetView, format OutputFormat) error {
-	switch format {
-	case OutputFormatJSON:
-		output, err := json.MarshalIndent(view.Link, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal link: %w", err)
-		}
-		return writeOutput(w, string(output)+"\n")
-	case OutputFormatText:
+	return renderOutput(w, format, view.Link, func(w io.Writer) error {
 		return writeOutput(w, formatLinkTable(view))
-	default:
-		return unsupportedOutputFormat(format)
-	}
+	})
 }
 
 // RenderLinkList writes the result of a link list command.
 func RenderLinkList(w io.Writer, view LinkListView, format OutputFormat) error {
-	switch format {
-	case OutputFormatJSON:
-		output, err := formatLinkListJSON(view)
-		if err != nil {
-			return err
-		}
-		return writeOutput(w, output)
-	case OutputFormatText:
-		return renderLinkListTable(w, view)
-	default:
-		return unsupportedOutputFormat(format)
-	}
-}
-
-func formatLinkListJSON(view LinkListView) (string, error) {
 	links := view.Links
 	if links == nil {
 		links = []bpfman.LinkRecord{}
 	}
-	result := bpfman.LinkListResult{Links: links}
-	output, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal result: %w", err)
-	}
-	return string(output) + "\n", nil
+	return renderOutput(w, format, bpfman.LinkListResult{Links: links}, func(w io.Writer) error {
+		return renderLinkListTable(w, view)
+	})
 }
 
 func renderLinkListTable(w io.Writer, view LinkListView) error {

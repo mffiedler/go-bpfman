@@ -49,28 +49,32 @@ func unsupportedOutputFormat(format OutputFormat) error {
 	return fmt.Errorf("unsupported output format %q", format)
 }
 
-// RenderProgram writes a program get result in the specified output format.
-func RenderProgram(w io.Writer, prog bpfman.Program, format OutputFormat) error {
+// renderOutput dispatches CLI output by format. The JSON branch marshals
+// jsonValue indented, with the single trailing newline the CLI contract
+// requires; the text branch runs textFn. Per-resource shaping -- envelope
+// wrappers, nil-to-empty coercion, presentation joins -- stays in the
+// caller; renderOutput owns only the format switch, the JSON encoding and
+// trailing newline, and the unsupported-format error.
+func renderOutput(w io.Writer, format OutputFormat, jsonValue any, textFn func(io.Writer) error) error {
 	switch format {
 	case OutputFormatJSON:
-		output, err := formatProgramJSON(prog)
+		output, err := json.MarshalIndent(jsonValue, "", "  ")
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to marshal %T: %w", jsonValue, err)
 		}
-		return writeOutput(w, output)
+		return writeOutput(w, string(output)+"\n")
 	case OutputFormatText:
-		return writeOutput(w, formatProgramTable(prog))
+		return textFn(w)
 	default:
 		return unsupportedOutputFormat(format)
 	}
 }
 
-func formatProgramJSON(prog bpfman.Program) (string, error) {
-	output, err := json.MarshalIndent(prog, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal result: %w", err)
-	}
-	return string(output) + "\n", nil
+// RenderProgram writes a program get result in the specified output format.
+func RenderProgram(w io.Writer, prog bpfman.Program, format OutputFormat) error {
+	return renderOutput(w, format, prog, func(w io.Writer) error {
+		return writeOutput(w, formatProgramTable(prog))
+	})
 }
 
 func formatProgramTable(prog bpfman.Program) string {
@@ -289,30 +293,13 @@ type LoadedProgramsView struct {
 
 // RenderLoadedPrograms writes the result of a load command.
 func RenderLoadedPrograms(w io.Writer, view LoadedProgramsView, format OutputFormat) error {
-	switch format {
-	case OutputFormatJSON:
-		output, err := formatLoadedProgramsJSON(view)
-		if err != nil {
-			return err
-		}
-		return writeOutput(w, output)
-	case OutputFormatText:
-		return writeOutput(w, formatLoadedProgramsTable(view))
-	default:
-		return unsupportedOutputFormat(format)
-	}
-}
-
-func formatLoadedProgramsJSON(view LoadedProgramsView) (string, error) {
 	programs := view.Programs
 	if programs == nil {
 		programs = []bpfman.Program{}
 	}
-	output, err := json.MarshalIndent(bpfman.LoadResult{Programs: programs}, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal result: %w", err)
-	}
-	return string(output) + "\n", nil
+	return renderOutput(w, format, bpfman.LoadResult{Programs: programs}, func(w io.Writer) error {
+		return writeOutput(w, formatLoadedProgramsTable(view))
+	})
 }
 
 func formatLoadedProgramsTable(view LoadedProgramsView) string {
@@ -495,18 +482,9 @@ func RenderProgramList(w io.Writer, view ProgramListView, format OutputFormat) e
 	if result.Programs == nil {
 		result.Programs = []bpfman.ProgramListEntry{}
 	}
-	switch format {
-	case OutputFormatJSON:
-		output, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal: %w", err)
-		}
-		return writeOutput(w, string(output)+"\n")
-	case OutputFormatText:
+	return renderOutput(w, format, result, func(w io.Writer) error {
 		return writeOutput(w, formatProgramsCompositeTable(result))
-	default:
-		return unsupportedOutputFormat(format)
-	}
+	})
 }
 
 // numListLinks bounds how many link IDs the LINKS column lists before
@@ -567,23 +545,13 @@ type DispatcherListView struct {
 
 // RenderDispatcherList writes a dispatcher list result.
 func RenderDispatcherList(w io.Writer, view DispatcherListView, format OutputFormat) error {
-	switch format {
-	case OutputFormatJSON:
-		summaries := view.Summaries
-		if summaries == nil {
-			summaries = []platform.DispatcherSummary{}
-		}
-		result := platform.DispatcherListResult{Dispatchers: summaries}
-		output, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal: %w", err)
-		}
-		return writeOutput(w, string(output)+"\n")
-	case OutputFormatText:
-		return writeOutput(w, formatDispatcherListTable(view))
-	default:
-		return unsupportedOutputFormat(format)
+	summaries := view.Summaries
+	if summaries == nil {
+		summaries = []platform.DispatcherSummary{}
 	}
+	return renderOutput(w, format, platform.DispatcherListResult{Dispatchers: summaries}, func(w io.Writer) error {
+		return writeOutput(w, formatDispatcherListTable(view))
+	})
 }
 
 func formatDispatcherListTable(view DispatcherListView) string {
@@ -621,18 +589,9 @@ func formatDispatcherListTable(view DispatcherListView) string {
 
 // RenderDispatcherSnapshot writes a single dispatcher snapshot.
 func RenderDispatcherSnapshot(w io.Writer, snap platform.DispatcherSnapshot, format OutputFormat) error {
-	switch format {
-	case OutputFormatJSON:
-		output, err := json.MarshalIndent(snap, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal: %w", err)
-		}
-		return writeOutput(w, string(output)+"\n")
-	case OutputFormatText:
+	return renderOutput(w, format, snap, func(w io.Writer) error {
 		return writeOutput(w, formatDispatcherSnapshotTable(snap))
-	default:
-		return unsupportedOutputFormat(format)
-	}
+	})
 }
 
 func formatDispatcherSnapshotTable(snap platform.DispatcherSnapshot) string {
