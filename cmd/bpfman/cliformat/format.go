@@ -403,18 +403,15 @@ func RenderProgramList(w io.Writer, view ProgramListView, format OutputFormat) e
 	})
 }
 
-// numListLinks bounds how many link IDs the LINKS column lists before
-// truncating with ", ...".
-const numListLinks = 3
-
 // formatProgramsCompositeTable renders the default program-list table.
-// The columns -- Program ID, Application, Type, Function Name, Links --
-// let the listing answer "which application?" and "is it attached?"
-// without a second command. The per-entry fields are precomputed by
-// the manager, so kernel-only rows render with their kernel type and
-// name and an empty application and links cell.
+// The columns -- Program ID, Application, Type, Function Name, and a
+// link count -- let the listing answer "which application?" and "is it
+// attached?" without a second command. The specific link IDs belong to
+// `link list` and `program get`, not this overview. The per-entry fields
+// are precomputed by the manager, so kernel-only rows render with their
+// kernel type and name, an empty application cell, and a zero count.
 func formatProgramsCompositeTable(result bpfman.ProgramListResult) string {
-	headers := []string{"PROGRAM ID", "APPLICATION", "TYPE", "FUNCTION NAME", "LINKS"}
+	headers := []string{"PROGRAM ID", "APPLICATION", "TYPE", "FUNCTION NAME", "#LINKS"}
 	rows := make([][]string, len(result.Programs))
 	for i, e := range result.Programs {
 		rows[i] = []string{
@@ -422,30 +419,10 @@ func formatProgramsCompositeTable(result bpfman.ProgramListResult) string {
 			e.Application,
 			e.Type,
 			e.FunctionName,
-			programLinksColumn(e.Links),
+			fmt.Sprintf("%d", len(e.Links)),
 		}
 	}
 	return renderTable("", headers, rows)
-}
-
-// programLinksColumn renders a program's links as a count followed by
-// up to numListLinks IDs, with ", ..." when more exist and an empty
-// cell when there are none.
-func programLinksColumn(links []bpfman.LinkID) string {
-	count := len(links)
-	if count == 0 {
-		return ""
-	}
-	shown := min(count, numListLinks)
-	ids := make([]string, shown)
-	for i := range shown {
-		ids[i] = fmt.Sprintf("%d", links[i])
-	}
-	list := strings.Join(ids, ", ")
-	if count > numListLinks {
-		list += ", ..."
-	}
-	return fmt.Sprintf("(%d) %s", count, list)
 }
 
 // DispatcherListView is the output view for dispatcher list commands.

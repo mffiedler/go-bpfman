@@ -11,50 +11,61 @@ import (
 	"github.com/bpfman/bpfman"
 )
 
-// TestRenderProgramListTable_Columns asserts the default
-// program-list table carries the Program ID, Application, Type,
-// Function Name and Links columns from the precomputed entry fields,
-// and that the Links cell shows a count with its IDs.
-func TestRenderProgramListTable_Columns(t *testing.T) {
-	t.Parallel()
-
-	result := bpfman.ProgramListResult{
-		Programs: []bpfman.ProgramListEntry{
-			{
-				ProgramID:    42,
-				Managed:      true,
-				Application:  "demo",
-				Type:         "xdp",
-				FunctionName: "xdp_stats",
-				Links:        []bpfman.LinkID{100, 101},
-			},
-		},
-	}
+// programListCell renders one entry and returns the value under the named
+// column, so a test asserts a cell by meaning. It relies on the fixture
+// leaving no empty cells (an empty cell collapses under the gap split).
+func programListCell(t *testing.T, entry bpfman.ProgramListEntry, column string) string {
+	t.Helper()
 
 	var buf bytes.Buffer
-	require.NoError(t, RenderProgramList(&buf, ProgramListView{Result: result}, OutputFormatText))
-	out := buf.String()
+	require.NoError(t, RenderProgramList(&buf, ProgramListView{Result: bpfman.ProgramListResult{Programs: []bpfman.ProgramListEntry{entry}}}, OutputFormatText))
 
-	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
 	require.Len(t, lines, 2, "header plus one row")
 
-	header := strings.Fields(lines[0])
-	assert.Equal(t, []string{"PROGRAM", "ID", "APPLICATION", "TYPE", "FUNCTION", "NAME", "LINKS"}, header)
+	headers := tableGap.Split(strings.TrimRight(lines[0], " "), -1)
+	cells := tableGap.Split(strings.TrimRight(lines[1], " "), -1)
+	require.Len(t, cells, len(headers), "row column count matches header")
 
-	assert.Contains(t, lines[1], "42")
-	assert.Contains(t, lines[1], "demo")
-	assert.Contains(t, lines[1], "xdp")
-	assert.Contains(t, lines[1], "xdp_stats")
-	assert.Contains(t, lines[1], "(2) 100, 101")
+	for i, h := range headers {
+		if h == column {
+			return cells[i]
+		}
+	}
+	t.Fatalf("no column %q in header %q", column, lines[0])
+	return ""
 }
 
-// TestProgramLinksColumn_CountAndTruncation proves the Links cell is
-// empty with no links, lists a count with IDs, and truncates beyond
-// numListLinks.
-func TestProgramLinksColumn_CountAndTruncation(t *testing.T) {
+// The default program-list table carries exactly these columns, with the
+// multi-word headers spelled with spaces.
+func TestRenderProgramList_Columns(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "", programLinksColumn(nil))
-	assert.Equal(t, "(2) 1, 2", programLinksColumn([]bpfman.LinkID{1, 2}))
-	assert.Equal(t, "(5) 1, 2, 3, ...", programLinksColumn([]bpfman.LinkID{1, 2, 3, 4, 5}))
+	entry := bpfman.ProgramListEntry{ProgramID: 42, Application: "demo", Type: "xdp", FunctionName: "xdp_stats"}
+	var buf bytes.Buffer
+	require.NoError(t, RenderProgramList(&buf, ProgramListView{Result: bpfman.ProgramListResult{Programs: []bpfman.ProgramListEntry{entry}}}, OutputFormatText))
+
+	header := tableGap.Split(strings.TrimRight(strings.SplitN(buf.String(), "\n", 2)[0], " "), -1)
+	assert.Equal(t, []string{"PROGRAM ID", "APPLICATION", "TYPE", "FUNCTION NAME", "#LINKS"}, header)
+}
+
+// The link column reports the arity -- a bare count -- not the IDs.
+func TestRenderProgramList_LinkColumnIsACount(t *testing.T) {
+	t.Parallel()
+
+	entry := bpfman.ProgramListEntry{ProgramID: 42, Application: "demo", Type: "xdp", FunctionName: "xdp_stats", Links: []bpfman.LinkID{100, 101}}
+	if got := programListCell(t, entry, "#LINKS"); got != "2" {
+		t.Errorf("# LINKS = %q, want %q (the count, not the IDs)", got, "2")
+	}
+}
+
+// A program with no links reports zero, not a blank cell, so arity reads
+// unambiguously.
+func TestRenderProgramList_NoLinksReportsZero(t *testing.T) {
+	t.Parallel()
+
+	entry := bpfman.ProgramListEntry{ProgramID: 7, Application: "app", Type: "tc", FunctionName: "fn"}
+	if got := programListCell(t, entry, "#LINKS"); got != "0" {
+		t.Errorf("# LINKS with no links = %q, want %q", got, "0")
+	}
 }
