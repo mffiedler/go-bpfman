@@ -54,13 +54,6 @@ func RegisterFireKind(name string, k FireKind) {
 	fireKinds[name] = k
 }
 
-// LookupFireKind returns the registered fire kind for the given
-// name; the second return is false when no kind matches.
-func LookupFireKind(name string) (FireKind, bool) {
-	k, ok := fireKinds[name]
-	return k, ok
-}
-
 // FireKinds returns the read-only registry of fire kinds keyed
 // by name. Callers must treat the map as immutable.
 func FireKinds() map[string]FireKind { return fireKinds }

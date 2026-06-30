@@ -256,27 +256,6 @@ func ParseProgramSpec(s string) (ProgramSpec, error) {
 	}, nil
 }
 
-// ImagePullPolicy represents a CLI-friendly pull policy string.
-type ImagePullPolicy struct {
-	// Value is the pull policy, one of Always, IfNotPresent, or Never; it defaults to IfNotPresent when unset.
-	Value string
-}
-
-// ParseImagePullPolicy parses a pull policy string.
-func ParseImagePullPolicy(s string) (ImagePullPolicy, error) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return ImagePullPolicy{Value: "IfNotPresent"}, nil
-	}
-
-	switch strings.ToLower(s) {
-	case "always", "ifnotpresent", "never":
-		return ImagePullPolicy{Value: s}, nil
-	default:
-		return ImagePullPolicy{}, fmt.Errorf("invalid pull policy %q: must be Always, IfNotPresent, or Never", s)
-	}
-}
-
 // ParseProgramTypes parses a slice of program type strings (case-insensitive).
 // Returns a set for O(1) lookup during filtering.
 func ParseProgramTypes(types []string) (map[bpfman.ProgramType]struct{}, error) {
@@ -291,42 +270,6 @@ func ParseProgramTypes(types []string) (map[bpfman.ProgramType]struct{}, error) 
 			return nil, fmt.Errorf("unknown program type %q (valid: %s)", raw, strings.Join(bpfman.ProgramTypeNames(), ", "))
 		}
 		result[pt] = struct{}{}
-	}
-	return result, nil
-}
-
-// ParseProgramTypesSlice parses a slice of program type strings (case-insensitive).
-// Returns a slice of ProgramType values.
-func ParseProgramTypesSlice(types []string) ([]bpfman.ProgramType, error) {
-	var result []bpfman.ProgramType
-	for _, raw := range types {
-		t := strings.TrimSpace(raw)
-		if t == "" {
-			continue
-		}
-		pt, err := bpfman.ParseProgramType(strings.ToLower(t))
-		if err != nil {
-			return nil, fmt.Errorf("unknown program type %q (valid: %s)", raw, strings.Join(bpfman.ProgramTypeNames(), ", "))
-		}
-		result = append(result, pt)
-	}
-	return result, nil
-}
-
-// ParseLinkKindsSlice parses a slice of link kind strings (case-insensitive).
-// Returns a slice of LinkKind values.
-func ParseLinkKindsSlice(kinds []string) ([]bpfman.LinkKind, error) {
-	var result []bpfman.LinkKind
-	for _, raw := range kinds {
-		k := strings.TrimSpace(raw)
-		if k == "" {
-			continue
-		}
-		kind, err := bpfman.ParseLinkKind(strings.ToLower(k))
-		if err != nil {
-			return nil, fmt.Errorf("unknown link kind %q (valid: %s)", raw, strings.Join(bpfman.LinkKindNames(), ", "))
-		}
-		result = append(result, kind)
 	}
 	return result, nil
 }

@@ -785,34 +785,6 @@ func (e *GuardFailure) Error() string {
 	return fmt.Sprintf("guard %s: command failed (exit %d)", target, e.Envelope.ExitCode)
 }
 
-// CommandFailure is the error type a syntax.CommandStmt produces when a
-// command is successfully resolved and executed and returns a
-// non-ok envelope. It explicitly does not cover unknown commands,
-// launch failures, or argument resolution rejections -- those are
-// environment-or-programmer mistakes that propagate as untyped
-// errors and remain fatal under retrying constructs.
-type CommandFailure struct {
-	// Span is the source extent of the failing command statement.
-	source.Span
-
-	// Args is the resolved argument list of the failed command.
-	Args []Arg
-
-	// Envelope is the captured non-ok result, carrying the exit
-	// code, stdout, and stderr.
-	Envelope Envelope
-}
-
-// Error renders the command failure as "command failed (exit N)",
-// appending the captured stderr when present.
-func (e *CommandFailure) Error() string {
-	if e.Envelope.Stderr != "" {
-		return fmt.Sprintf("command failed (exit %d): %s",
-			e.Envelope.ExitCode, e.Envelope.Stderr)
-	}
-	return fmt.Sprintf("command failed (exit %d)", e.Envelope.ExitCode)
-}
-
 // AssertFailure is the typed-error form of an assertion whose
 // condition did not hold. Tests and helper hooks use it directly
 // when they need a concrete assertion-failure value.

@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"time"
 
 	"github.com/bpfman/bpfman/cmd/internal/args"
 )
@@ -32,10 +31,4 @@ type GlobalDataFlags struct {
 	// GlobalData holds repeatable -g/--global NAME=HEX values used to
 	// populate the program's global variables at load time.
 	GlobalData []args.GlobalData `short:"g" name:"global" help:"NAME=HEX global data (can be repeated)."`
-}
-
-// TTLFlag provides a TTL duration flag.
-type TTLFlag struct {
-	// TTL is the time-to-live duration; it defaults to 5m.
-	TTL time.Duration `help:"Time-to-live duration." default:"5m"`
 }
