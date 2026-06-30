@@ -137,16 +137,6 @@ func (s *Session) getDef(name string) (*defValue, bool) {
 	return d, ok
 }
 
-// DeleteDef removes a user-defined command. Returns true if the def
-// existed.
-func (s *Session) DeleteDef(name string) bool {
-	if _, ok := s.defs[name]; !ok {
-		return false
-	}
-	delete(s.defs, name)
-	return true
-}
-
 // DefSignatures returns the registered defs as sorted read-only
 // signatures. The results are stable for display and tests without
 // exposing the runtime's internal def records.
@@ -188,48 +178,6 @@ func (s *Session) Get(name string) (Value, bool) {
 	return Value{}, false
 }
 
-// DeleteLocal removes a binding from the innermost frame only. A
-// binding that lives further out is left intact: after
-// DeleteLocal, Get may still return a value if an outer frame
-// holds one. Callers that want to remove the visible binding
-// wherever it lives should use DeleteVisible.
-func (s *Session) DeleteLocal(name string) {
-	delete(s.frames[len(s.frames)-1], name)
-}
-
-// DeleteVisible removes the first binding for name found while
-// walking frames from innermost outward. Outer bindings are left
-// intact even if multiple frames hold a binding of the same name
-// -- only the visible shadowing binding is removed, and the next
-// outer binding becomes visible.
-//
-// This is the operation an explicit cleanup path should call when
-// it means "remove the binding I can currently see" rather than
-// "delete only from the innermost frame". The evaluator itself uses
-// DeleteLocal; DeleteVisible remains available for non-lexical
-// cleanup semantics.
-func (s *Session) DeleteVisible(name string) {
-	for i := len(s.frames) - 1; i >= 0; i-- {
-		if _, ok := s.frames[i][name]; ok {
-			delete(s.frames[i], name)
-			return
-		}
-	}
-}
-
-// Names returns the visible variable set as a sorted slice, with
-// each name appearing exactly once. Inner bindings shadow outer
-// ones, so a name present in multiple frames is reported once.
-func (s *Session) Names() []string {
-	seen := make(map[string]struct{})
-	for _, f := range s.frames {
-		for name := range f {
-			seen[name] = struct{}{}
-		}
-	}
-	return slices.Sorted(maps.Keys(seen))
-}
-
 // FrameDepth returns the current size of the frame stack. The
 // root frame counts: an unmodified Session reports depth 1.
 // Used by the IR interpreter to remember how deep frames were
@@ -256,14 +204,4 @@ func (s *Session) PopFrame() {
 		panic("shell.Session.PopFrame: cannot pop root frame")
 	}
 	s.frames = s.frames[:len(s.frames)-1]
-}
-
-// WithFrame pushes a fresh frame, runs fn, and pops in a defer
-// so the pop runs on every exit path (success, error, panic). The
-// evaluator pushes frames only through WithFrame so block scope
-// is symmetric with the body's lexical extent.
-func (s *Session) WithFrame(fn func() error) error {
-	s.PushFrame()
-	defer s.PopFrame()
-	return fn()
 }

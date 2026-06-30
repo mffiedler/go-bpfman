@@ -4,9 +4,8 @@
 // slice of any so the same table can carry Values (from ir.Eval),
 // argv lists (from ir.BuildArgs), and bind results (from ir.DispatchBind)
 // without a tagged-union wrapper. Frame and defer-scope management
-// reuse the shared Session / Env primitives -- Session.WithFrame,
-// runWithDeferScope, runDefers -- so the interpreter owns control
-// flow while the scope mechanics stay centralised.
+// reuse the shared Session / Env primitives so the interpreter owns
+// control flow while the scope mechanics stay centralised.
 //
 // execInstr's switch handles the IR instruction set.
 
