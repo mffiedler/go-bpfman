@@ -162,21 +162,35 @@ func (m *Manager) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.P
 			mapStatuses = append(mapStatuses, ms)
 		}
 
-		// Report kernel maps with no corresponding pin.
+		// Report kernel maps with no corresponding pin. Global-data
+		// maps carry no pin path rather than an absent one reported as
+		// missing: the load path never pins them, so there is nothing
+		// to be missing.
 		for i, km := range kernelMaps {
-			if !matched[i] {
-				pinPath := bpffs.MapPinPath(mapOwner, km.Name)
-				mapStatuses = append(mapStatuses, bpfman.MapStatus{
-					Map:     km,
-					PinPath: pinPath,
-					Present: false,
-				})
+			if matched[i] {
+				continue
 			}
+			if isGlobalDataMap(km.Name) {
+				mapStatuses = append(mapStatuses, bpfman.MapStatus{Map: km})
+				continue
+			}
+
+			pinPath := bpffs.MapPinPath(mapOwner, km.Name)
+			mapStatuses = append(mapStatuses, bpfman.MapStatus{
+				Map:     km,
+				PinPath: pinPath,
+				Present: false,
+			})
 		}
 	} else {
-		// Directory unreadable or absent: fall back to
-		// constructing paths from kernel names.
+		// Directory unreadable or absent: fall back to constructing
+		// paths from kernel names, with the same global-data exception.
 		for _, km := range kernelMaps {
+			if isGlobalDataMap(km.Name) {
+				mapStatuses = append(mapStatuses, bpfman.MapStatus{Map: km})
+				continue
+			}
+
 			pinPath := bpffs.MapPinPath(mapOwner, km.Name)
 			mapStatuses = append(mapStatuses, bpfman.MapStatus{
 				Map:     km,
@@ -205,6 +219,16 @@ func (m *Manager) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.P
 
 	prog.Status.MapUsedBy = inspect.MapSetMembers(records)[programID]
 	return prog, nil
+}
+
+// isGlobalDataMap reports whether a kernel map name denotes a
+// libbpf-internal global-data map (.rodata, .bss, .data, .kconfig).
+// These are materialised from the program's ELF data sections, not
+// declared by the author, and the load path never pins them (it skips
+// dotted names; see platform/ebpf load). The list path therefore must
+// not synthesise a pin path for them and report it as missing.
+func isGlobalDataMap(name string) bool {
+	return strings.HasPrefix(name, ".")
 }
 
 // Snapshot returns a point-in-time correlated view of every
