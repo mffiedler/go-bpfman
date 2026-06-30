@@ -963,67 +963,6 @@ func TestTokeniseSingleQuotedIsLiteral(t *testing.T) {
 	assert.Equal(t, `a\nb`, got[0].Text)
 }
 
-func TestTokeniseStrict(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name  string
-		input string
-		want  []Token
-	}{
-		{
-			name:  "slash splits without whitespace",
-			input: "4/2",
-			want: []Token{
-				{Kind: TokenWord, Text: "4"},
-				{Kind: TokenWord, Text: "/"},
-				{Kind: TokenWord, Text: "2"},
-			},
-		},
-		{
-			name:  "minus splits without whitespace",
-			input: "$x-1",
-			want: []Token{
-				{Kind: TokenVarRef, Text: "$x", VarName: "x"},
-				{Kind: TokenWord, Text: "-"},
-				{Kind: TokenWord, Text: "1"},
-			},
-		},
-		{
-			name:  "all arithmetic operators split",
-			input: "1+2-3*4/5%6",
-			want: []Token{
-				{Kind: TokenWord, Text: "1"},
-				{Kind: TokenWord, Text: "+"},
-				{Kind: TokenWord, Text: "2"},
-				{Kind: TokenWord, Text: "-"},
-				{Kind: TokenWord, Text: "3"},
-				{Kind: TokenWord, Text: "*"},
-				{Kind: TokenWord, Text: "4"},
-				{Kind: TokenWord, Text: "/"},
-				{Kind: TokenWord, Text: "5"},
-				{Kind: TokenWord, Text: "%"},
-				{Kind: TokenWord, Text: "6"},
-			},
-		},
-		{
-			name:  "quoted path stays whole",
-			input: `"/sys/fs/bpf"`,
-			want: []Token{
-				{Kind: TokenQuoted, Text: "/sys/fs/bpf"},
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got, err := tokeniseStrict(tt.input)
-			require.NoError(t, err)
-			assert.Equal(t, tt.want, stripLocs(got))
-		})
-	}
-}
-
 // stripLocs zeroes source.Pos fields on a slice of tokens so tests that
 // care about kind/text/etc. can compare against literals without
 // having to spell out every token's position. Dedicated source.Pos

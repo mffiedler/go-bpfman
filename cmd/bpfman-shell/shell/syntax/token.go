@@ -119,22 +119,9 @@ type Token struct {
 // Tokenise lexes input in shell mode: '-' and '/' are valid
 // word-interior characters so paths like /sys/fs/bpf and flags
 // like -x and --long stay whole. Arithmetic operators '+', '*',
-// and '%' still split without whitespace, matching the status
-// quo. See tokeniseStrict for the mode used inside [[...]] where
-// '-' and '/' are also operators.
+// and '%' still split without whitespace.
 func Tokenise(input string) ([]Token, error) {
-	return tokeniseAt(source.Pos{Line: 1, Col: 1}, input, false)
-}
-
-// tokeniseStrict lexes input in strict expression mode: '-', '/',
-// '+', '*', and '%' all emit as single-character tokens regardless
-// of surrounding whitespace. This is the mode used inside
-// [[...]] so expressions like [[4/2]] and [[$x-1]] split
-// arithmetically rather than keeping '/' and '-' as word-interior
-// characters. Paths and flags appearing inside [[...]] must be
-// quoted -- "/sys/fs/bpf" rather than /sys/fs/bpf.
-func tokeniseStrict(input string) ([]Token, error) {
-	return tokeniseAt(source.Pos{Line: 1, Col: 1}, input, true)
+	return tokeniseAt(source.Pos{Line: 1, Col: 1}, input)
 }
 
 // TokeniseAt is Tokenise plus an explicit starting source
@@ -142,10 +129,10 @@ func tokeniseStrict(input string) ([]Token, error) {
 // positions stay in the same file and advance across lines from
 // there.
 func TokeniseAt(start source.Pos, input string) ([]Token, error) {
-	return tokeniseAt(start, input, false)
+	return tokeniseAt(start, input)
 }
 
-func tokeniseAt(start source.Pos, input string, strict bool) ([]Token, error) {
+func tokeniseAt(start source.Pos, input string) ([]Token, error) {
 	// stripComment preserves offsets by replacing stripped bytes
 	// with spaces, so positions into the returned string still map
 	// back to the original input's line/column.
@@ -209,14 +196,6 @@ func tokeniseAt(start source.Pos, input string, strict bool) ([]Token, error) {
 			// literals, flags, and paths). Emitting them as
 			// single-char tokens lets "1+1", "$x*2", "7%3" split
 			// cleanly without requiring surrounding whitespace.
-			tokens = emit(tokens, start, start+1, Token{Kind: TokenWord, Text: string(ch)})
-			i++
-
-		case strict && (ch == '-' || ch == '/'):
-			// In strict mode '-' and '/' join '+', '*', '%' as
-			// single-char operator tokens. Callers that reach
-			// strict mode are inside [[...]] where paths and
-			// negative literals do not appear bare.
 			tokens = emit(tokens, start, start+1, Token{Kind: TokenWord, Text: string(ch)})
 			i++
 
@@ -288,7 +267,7 @@ func tokeniseAt(start source.Pos, input string, strict bool) ([]Token, error) {
 				tokens = emit(tokens, start, start+n, tok)
 				i += n
 			} else {
-				tok, n := lexWord(input, i, strict)
+				tok, n := lexWord(input, i)
 				tokens = emit(tokens, start, start+n, tok)
 				i += n
 			}
@@ -769,10 +748,8 @@ func scanInterpBody(input string, pos int) (int, error) {
 //
 // In shell mode '-' and '/' stay as word-interior characters: '-'
 // is part of negative literals ("-3") and flags ("-x", "--long");
-// '/' is part of file paths ("/sys/fs/bpf"). In strict mode (set
-// inside [[...]]) '-' and '/' are terminators too so "4/2" and
-// "$x-1" split arithmetically.
-func lexWord(input string, pos int, strict bool) (Token, int) {
+// '/' is part of file paths ("/sys/fs/bpf").
+func lexWord(input string, pos int) (Token, int) {
 	i := pos
 	for i < len(input) {
 		ch := input[i]
@@ -781,9 +758,6 @@ func lexWord(input string, pos int, strict bool) (Token, int) {
 			ch == '[' || ch == ']' || ch == '{' || ch == '}' ||
 			ch == '(' || ch == ')' ||
 			ch == '+' || ch == '*' || ch == '%' {
-			break
-		}
-		if strict && (ch == '-' || ch == '/') {
 			break
 		}
 		i++
