@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 
 	"github.com/cilium/ebpf"
 	"golang.org/x/sys/unix"
@@ -49,7 +48,7 @@ func (k *kernelAdapter) HasPinByName(spec bpfman.LoadSpec) (bool, error) {
 		return false, fmt.Errorf("parse %s: %w", spec.ObjectPath(), err)
 	}
 	for name, mapSpec := range collSpec.Maps {
-		if mapSpec.Pinning == ebpf.PinByName && !strings.HasPrefix(name, ".") {
+		if mapSpec.Pinning == ebpf.PinByName && !kernel.IsInternalMapName(name) {
 			return true, nil
 		}
 	}
@@ -82,7 +81,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 	// directory, matching aya's LIBBPF_PIN_BY_NAME behaviour.
 	pinByNameMaps := make(map[string]bool)
 	for name, mapSpec := range collSpec.Maps {
-		if mapSpec.Pinning == ebpf.PinByName && !strings.HasPrefix(name, ".") {
+		if mapSpec.Pinning == ebpf.PinByName && !kernel.IsInternalMapName(name) {
 			pinByNameMaps[name] = true
 		}
 	}
@@ -186,7 +185,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 		// We iterate over collSpec.Maps to get the exact ELF map names.
 		for name := range collSpec.Maps {
 			// Skip internal maps (same filtering as pinning below)
-			if strings.HasPrefix(name, ".") {
+			if kernel.IsInternalMapName(name) {
 				continue
 			}
 			mapPath := bpffs.MapPinPath(mapOwnerID, name)
@@ -362,7 +361,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 		// cloned first, since Clone() produces an unpinned
 		// duplicate that can be pinned to a second path.
 		for name, m := range coll.Maps {
-			if strings.HasPrefix(name, ".") {
+			if kernel.IsInternalMapName(name) {
 				continue
 			}
 			mapPinPath := bpffs.MapPinPath(programID, name)

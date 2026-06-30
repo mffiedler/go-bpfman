@@ -11,6 +11,7 @@ import (
 	ciliumebpf "github.com/cilium/ebpf"
 
 	"github.com/bpfman/bpfman/internal/imagebuild"
+	"github.com/bpfman/bpfman/kernel"
 )
 
 // CiliumProjectBytecodeSource discovers cilium/ebpf bpf2go object files
@@ -116,7 +117,7 @@ func BuildInfoFromCollectionSpec(path string, spec *ciliumebpf.CollectionSpec) (
 
 	maps := make(map[string]string, len(spec.Maps))
 	for name, m := range spec.Maps {
-		if strings.HasPrefix(name, ".") {
+		if kernel.IsInternalMapName(name) {
 			continue
 		}
 		maps[name] = NormaliseBPFMapType(m.Type.String())

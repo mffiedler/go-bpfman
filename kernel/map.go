@@ -1,5 +1,7 @@
 package kernel
 
+import "strings"
+
 // Map represents a BPF map in the kernel, captured from cilium/ebpf's
 // MapInfo. The Has* fields are availability discriminators for their
 // companion field: when a HasX field is false the companion X was not
@@ -115,4 +117,15 @@ type LoadResult struct {
 	// PinDir is the bpffs directory the program and its maps were pinned
 	// under.
 	PinDir string `json:"pin_dir"`
+}
+
+// IsInternalMapName reports whether a map name denotes a libbpf-internal
+// map -- the maps materialised from a program's ELF data sections
+// (.rodata, .data, .bss) and from .kconfig, rather than maps the author
+// declared. libbpf names them with a leading dot. They are an
+// implementation detail of the object file: the load path does not pin
+// them and they are not shared by name, so callers filter on this when
+// deciding what to pin, share, or report.
+func IsInternalMapName(name string) bool {
+	return strings.HasPrefix(name, ".")
 }

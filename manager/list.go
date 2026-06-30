@@ -170,7 +170,7 @@ func (m *Manager) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.P
 			if matched[i] {
 				continue
 			}
-			if isGlobalDataMap(km.Name) {
+			if kernel.IsInternalMapName(km.Name) {
 				mapStatuses = append(mapStatuses, bpfman.MapStatus{Map: km})
 				continue
 			}
@@ -186,7 +186,7 @@ func (m *Manager) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.P
 		// Directory unreadable or absent: fall back to constructing
 		// paths from kernel names, with the same global-data exception.
 		for _, km := range kernelMaps {
-			if isGlobalDataMap(km.Name) {
+			if kernel.IsInternalMapName(km.Name) {
 				mapStatuses = append(mapStatuses, bpfman.MapStatus{Map: km})
 				continue
 			}
@@ -219,16 +219,6 @@ func (m *Manager) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.P
 
 	prog.Status.MapUsedBy = inspect.MapSetMembers(records)[programID]
 	return prog, nil
-}
-
-// isGlobalDataMap reports whether a kernel map name denotes a
-// libbpf-internal global-data map (.rodata, .bss, .data, .kconfig).
-// These are materialised from the program's ELF data sections, not
-// declared by the author, and the load path never pins them (it skips
-// dotted names; see platform/ebpf load). The list path therefore must
-// not synthesise a pin path for them and report it as missing.
-func isGlobalDataMap(name string) bool {
-	return strings.HasPrefix(name, ".")
 }
 
 // Snapshot returns a point-in-time correlated view of every
