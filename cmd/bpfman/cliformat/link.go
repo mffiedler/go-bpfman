@@ -64,18 +64,21 @@ func renderLinkListTable(w io.Writer, view LinkListView) error {
 }
 
 func formatLinkTable(view LinkGetView) string {
-	link := view.Link
 	var b strings.Builder
+	fmt.Fprintf(&b, "Link ID: %d\n", view.Link.Record.ID)
+	renderRows(&b, linkDetailRows(view), 1)
+	return b.String()
+}
 
-	// Primary identifier at column one (like Program ID for programs)
-	fmt.Fprintf(&b, "Link ID: %d\n", link.Record.ID)
+// linkDetailRows builds the Spec and Status sections of a link get view.
+// Spec fields are ordered by label, not by their rendered line, so a label
+// that is a prefix of another (Target vs Target Function vs Target Offset)
+// sorts by the name rather than by the punctuation that follows it.
+func linkDetailRows(view LinkGetView) []row {
+	link := view.Link
 
-	// Fields are carried as (label, value) pairs and ordered by
-	// label, not by the rendered line, so a label that is a prefix of
-	// another (Target vs Target Function vs Target Offset) sorts by
-	// the name rather than by the punctuation that follows it.
-	var spec []labelValue
-	add := func(label, value string) { spec = append(spec, labelValue{label, value}) }
+	var spec []row
+	add := func(label, value string) { spec = append(spec, fieldRow(label, value)) }
 
 	if view.ProgramName != "" {
 		add("BPF Function", view.ProgramName)
@@ -150,20 +153,18 @@ func formatLinkTable(view LinkGetView) string {
 		add("Proceed On", formatXDPProceedOn(d.ProceedOn))
 	}
 
-	sortByLabel(spec)
+	sortRowsByLabel(spec)
 
-	status := []labelValue{
-		{"Kernel Seen", fmt.Sprintf("%t", link.Status.KernelSeen)},
-		{"Pin Present", fmt.Sprintf("%t", link.Status.PinPresent)},
+	status := []row{
+		fieldRow("Kernel Seen", fmt.Sprintf("%t", link.Status.KernelSeen)),
+		fieldRow("Pin Present", fmt.Sprintf("%t", link.Status.PinPresent)),
 	}
-	sortByLabel(status)
+	sortRowsByLabel(status)
 
-	b.WriteString("  Spec:\n")
-	b.WriteString(alignLabelValues(spec))
-	b.WriteString("  Status:\n")
-	b.WriteString(alignLabelValues(status))
-
-	return b.String()
+	return []row{
+		sectionRow("Spec", spec...),
+		sectionRow("Status", status...),
+	}
 }
 
 // netnsOrNone renders a link's network namespace path, falling back to

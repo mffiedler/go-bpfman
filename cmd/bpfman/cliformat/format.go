@@ -70,54 +70,64 @@ func renderOutput(w io.Writer, format OutputFormat, jsonValue any, textFn func(i
 	}
 }
 
-// labelValue is one "label: value" row in a detail (get) view. The label
-// is the ordering and alignment key; the rendered line is derived from it,
-// never sorted directly, so a label that is a prefix of another (Target vs
-// Target Function) orders by the name rather than by the punctuation that
-// follows it.
-type labelValue struct {
-	label string
-	value string
+// A detail (get) view renders as a tree of rows. A row is one of three
+// shapes: a field (label and scalar value), a section (label and nested
+// children), or a note (a bare line standing in for an empty section,
+// such as "(no kernel info available)"). renderRows turns the tree into
+// text, computing indentation from depth so a level can be added or moved
+// without re-counting spaces.
+type row struct {
+	label    string
+	value    string
+	note     string
+	children []row
 }
 
-// sortByLabel orders rows by label.
-func sortByLabel(rows []labelValue) {
-	slices.SortFunc(rows, func(a, b labelValue) int { return strings.Compare(a.label, b.label) })
+// fieldRow is a "label: value" line.
+func fieldRow(label, value string) row { return row{label: label, value: value} }
+
+// sectionRow is a header with nested children.
+func sectionRow(label string, children ...row) row { return row{label: label, children: children} }
+
+// noteRow is a bare indented line that stands in for an empty section.
+func noteRow(text string) row { return row{note: text} }
+
+// sortRowsByLabel orders rows by label, not by their rendered line, so a
+// label that is a prefix of another (Target vs Target Function vs Target
+// Offset) sorts by the name rather than by the punctuation that follows
+// it. Section rows are appended after the sorted fields by the caller and
+// keep their given order.
+func sortRowsByLabel(rows []row) {
+	slices.SortFunc(rows, func(a, b row) int { return strings.Compare(a.label, b.label) })
 }
 
-// alignLabelValues renders rows as tab-aligned "    label: value" lines,
-// one per row, each terminated by a newline. Alignment is applied to the
-// rows as given; it never reorders them.
-func alignLabelValues(rows []labelValue) string {
-	var b strings.Builder
-	w := tabwriter.NewWriter(&b, 0, 0, 1, ' ', 0)
+// renderRows writes rows at the given depth, two spaces of indent per
+// level. Field values align within a sibling group: the label column is
+// padded to the widest field label in the group so the values line up,
+// and each subtree aligns independently -- a deep label never pushes a
+// shallow value to the right. Section rows render a header and recurse one
+// level deeper; note rows render verbatim.
+func renderRows(b *strings.Builder, rows []row, depth int) {
+	indent := strings.Repeat("  ", depth)
+	width := 0
 	for _, r := range rows {
-		fmt.Fprintf(w, "    %s:\t%s\n", r.label, r.value)
+		if r.note == "" && len(r.children) == 0 && len(r.label) > width {
+			width = len(r.label)
+		}
 	}
-	w.Flush()
-	return b.String()
-}
-
-// alignLines tab-aligns a block of pre-formatted lines (used for the
-// multi-line Links/Maps sub-sections, whose nested rows are not sorted).
-// It trims the trailing padding tabwriter adds after an empty-value
-// header cell, and returns "" for no lines.
-func alignLines(lines []string) string {
-	if len(lines) == 0 {
-		return ""
+	for _, r := range rows {
+		switch {
+		case r.note != "":
+			fmt.Fprintf(b, "%s%s\n", indent, r.note)
+		case len(r.children) > 0:
+			fmt.Fprintf(b, "%s%s:\n", indent, r.label)
+			renderRows(b, r.children, depth+1)
+		default:
+			line := fmt.Sprintf("%s%-*s %s", indent, width+1, r.label+":", r.value)
+			b.WriteString(strings.TrimRight(line, " "))
+			b.WriteByte('\n')
+		}
 	}
-	var aligned strings.Builder
-	w := tabwriter.NewWriter(&aligned, 0, 0, 1, ' ', 0)
-	for _, l := range lines {
-		fmt.Fprintln(w, l)
-	}
-	w.Flush()
-	var out strings.Builder
-	for _, line := range strings.Split(strings.TrimSuffix(aligned.String(), "\n"), "\n") {
-		out.WriteString(strings.TrimRight(line, " "))
-		out.WriteByte('\n')
-	}
-	return out.String()
 }
 
 // RenderProgram writes a program get result in the specified output format.
@@ -129,137 +139,156 @@ func RenderProgram(w io.Writer, prog bpfman.Program, format OutputFormat) error 
 
 func formatProgramTable(prog bpfman.Program) string {
 	var b strings.Builder
+	fmt.Fprintf(&b, "Program ID: %d\n", prog.Record.ProgramID)
+	renderRows(&b, programDetailRows(prog), 1)
+	return b.String()
+}
+
+// programDetailRows builds the Spec, Status, and Stats sections of a
+// program get view.
+func programDetailRows(prog bpfman.Program) []row {
+	return []row{
+		sectionRow("Spec", programSpecRows(prog)...),
+		sectionRow("Status", programStatusRows(prog)...),
+		sectionRow("Stats", programStatsRows(prog)...),
+	}
+}
+
+// programSpecRows builds the Spec fields, ordered by label.
+func programSpecRows(prog bpfman.Program) []row {
 	p := &prog.Record
 
-	fmt.Fprintf(&b, "Program ID: %d\n", p.ProgramID)
-
-	// Spec section: scalar fields ordered by label.
-	var spec []labelValue
-	addSpec := func(label, value string) { spec = append(spec, labelValue{label, value}) }
+	var spec []row
 	if len(p.Load.GlobalData()) > 0 {
-		addSpec("Global", formatGlobalData(p.Load.GlobalData()))
+		spec = append(spec, fieldRow("Global", formatGlobalData(p.Load.GlobalData())))
 	} else {
-		addSpec("Global", "None")
+		spec = append(spec, fieldRow("Global", "None"))
 	}
-	addSpec("GPL Compatible", fmt.Sprintf("%t", p.GPLCompatible))
+	spec = append(spec, fieldRow("GPL Compatible", fmt.Sprintf("%t", p.GPLCompatible)))
 	if p.License != "" {
-		addSpec("License", p.License)
+		spec = append(spec, fieldRow("License", p.License))
 	} else {
-		addSpec("License", "None")
+		spec = append(spec, fieldRow("License", "None"))
 	}
 	if p.Handles.MapOwnerID != nil {
-		addSpec("Map Owner ID", fmt.Sprintf("%d", *p.Handles.MapOwnerID))
+		spec = append(spec, fieldRow("Map Owner ID", fmt.Sprintf("%d", *p.Handles.MapOwnerID)))
 	} else {
-		addSpec("Map Owner ID", "None")
+		spec = append(spec, fieldRow("Map Owner ID", "None"))
 	}
-	addSpec("Map Pin Path", p.Handles.MapsDir.String())
+	spec = append(spec, fieldRow("Map Pin Path", p.Handles.MapsDir.String()))
 	if len(p.Meta.Metadata) > 0 {
-		addSpec("Metadata", formatMetadata(p.Meta.Metadata))
+		spec = append(spec, fieldRow("Metadata", formatMetadata(p.Meta.Metadata)))
 	} else {
-		addSpec("Metadata", "None")
+		spec = append(spec, fieldRow("Metadata", "None"))
 	}
-	addSpec("Name", p.Meta.Name)
-	addSpec("Path", p.Load.ObjectPath())
-	addSpec("Type", p.Load.ProgramType().String())
-	sortByLabel(spec)
+	spec = append(spec, fieldRow("Name", p.Meta.Name))
+	spec = append(spec, fieldRow("Path", p.Load.ObjectPath()))
+	spec = append(spec, fieldRow("Type", p.Load.ProgramType().String()))
+	sortRowsByLabel(spec)
+	return spec
+}
 
-	b.WriteString("  Spec:\n")
-	b.WriteString(alignLabelValues(spec))
+// programStatusRows builds the Status fields, ordered by label, followed
+// by the Links and Maps sub-sections.
+func programStatusRows(prog bpfman.Program) []row {
+	if prog.Status.Kernel == nil {
+		return []row{noteRow("(no kernel info available)")}
+	}
+	kp := prog.Status.Kernel
 
-	// Status section: scalar fields ordered by label, then the Links and
-	// Maps sub-sections. The multi-line blocks render after the scalars
-	// rather than wedged among them.
-	b.WriteString("  Status:\n")
-	if prog.Status.Kernel != nil {
-		kp := prog.Status.Kernel
+	var st []row
+	if kp.BTFId != 0 {
+		st = append(st, fieldRow("BTF ID", fmt.Sprintf("%d", kp.BTFId)))
+	}
+	if prog.Status.ProgPin != "" {
+		st = append(st, fieldRow("Bytecode", prog.Status.Bytecode))
+	}
+	st = append(st, fieldRow("Instructions", fmt.Sprintf("%d", kp.VerifiedInstructions)))
+	if !kp.LoadedAt.IsZero() {
+		st = append(st, fieldRow("Loaded At", kp.LoadedAt.Format(time.RFC3339)))
+	}
+	if prog.Status.ProgPin != "" {
+		st = append(st, fieldRow("Map Dir", prog.Status.MapDir.String()))
+	}
+	if kp.Memlock != 0 {
+		st = append(st, fieldRow("Memory", fmt.Sprintf("%d bytes", kp.Memlock)))
+	}
+	if prog.Status.ProgPin != "" {
+		st = append(st, fieldRow("Prog Pin", prog.Status.ProgPin.String()))
+	}
+	st = append(st, fieldRow("Size JITted", fmt.Sprintf("%d bytes", kp.JitedSize)))
+	st = append(st, fieldRow("Size Translated", fmt.Sprintf("%d bytes", kp.XlatedSize)))
+	st = append(st, fieldRow("Tag", kp.Tag))
+	sortRowsByLabel(st)
 
-		var st []labelValue
-		addSt := func(label, value string) { st = append(st, labelValue{label, value}) }
-		if kp.BTFId != 0 {
-			addSt("BTF ID", fmt.Sprintf("%d", kp.BTFId))
-		}
-		if prog.Status.ProgPin != "" {
-			addSt("Bytecode", prog.Status.Bytecode)
-		}
-		addSt("Instructions", fmt.Sprintf("%d", kp.VerifiedInstructions))
-		if !kp.LoadedAt.IsZero() {
-			addSt("Loaded At", kp.LoadedAt.Format(time.RFC3339))
-		}
-		if prog.Status.ProgPin != "" {
-			addSt("Map Dir", prog.Status.MapDir.String())
-		}
-		if kp.Memlock != 0 {
-			addSt("Memory", fmt.Sprintf("%d bytes", kp.Memlock))
-		}
-		if prog.Status.ProgPin != "" {
-			addSt("Prog Pin", prog.Status.ProgPin.String())
-		}
-		addSt("Size JITted", fmt.Sprintf("%d bytes", kp.JitedSize))
-		addSt("Size Translated", fmt.Sprintf("%d bytes", kp.XlatedSize))
-		addSt("Tag", kp.Tag)
-		sortByLabel(st)
-		b.WriteString(alignLabelValues(st))
+	return append(st, programLinksRow(prog), programMapsRow(prog))
+}
 
-		// Links sub-section.
-		var links []string
-		if len(prog.Status.Links) > 0 {
-			links = append(links, "    Links:\t ")
-			for _, l := range prog.Status.Links {
-				links = append(links, fmt.Sprintf("      %d:\t ", l.Record.ID))
-				if l.Record.Details != nil {
-					links = append(links, fmt.Sprintf("        Attach:\t%s", formatAttachDetails(l.Record.Details)))
-				}
-				links = append(links, fmt.Sprintf("        Kind:\t%s", l.Record.Kind))
-				if l.Record.PinPath != nil {
-					links = append(links, fmt.Sprintf("        Pin:\t%s%s", l.Record.PinPath.String(), presenceSuffix(l.Status.PinPresent)))
-				}
+// programLinksRow builds the Links sub-section: one section per link with
+// its attach details, kind, and pin, or a "None" field when there are no
+// links.
+func programLinksRow(prog bpfman.Program) row {
+	if len(prog.Status.Links) == 0 {
+		return fieldRow("Links", "None")
+	}
+	var entries []row
+	for _, l := range prog.Status.Links {
+		var props []row
+		if l.Record.Details != nil {
+			props = append(props, fieldRow("Attach", formatAttachDetails(l.Record.Details)))
+		}
+		props = append(props, fieldRow("Kind", l.Record.Kind.String()))
+		if l.Record.PinPath != nil {
+			props = append(props, fieldRow("Pin", fmt.Sprintf("%s%s", l.Record.PinPath.String(), presenceSuffix(l.Status.PinPresent))))
+		}
+		entries = append(entries, sectionRow(fmt.Sprintf("%d", l.Record.ID), props...))
+	}
+	return sectionRow("Links", entries...)
+}
+
+// programMapsRow builds the Maps sub-section: one section per map with its
+// sizes, name, pin, and type; the bare kernel map ids when only those are
+// known; or a "None" field when there are none.
+func programMapsRow(prog bpfman.Program) row {
+	if len(prog.Status.Maps) > 0 {
+		var entries []row
+		for _, m := range prog.Status.Maps {
+			props := []row{
+				fieldRow("Key Size", fmt.Sprintf("%dB", m.KeySize)),
+				fieldRow("Max Entries", fmt.Sprintf("%d", m.MaxEntries)),
+				fieldRow("Name", m.Name),
 			}
-		} else {
-			links = append(links, "    Links:\tNone")
-		}
-		b.WriteString(alignLines(links))
-
-		// Maps sub-section.
-		var mapLines []string
-		if len(prog.Status.Maps) > 0 {
-			mapLines = append(mapLines, "    Maps:\t ")
-			for _, m := range prog.Status.Maps {
-				mapLines = append(mapLines, fmt.Sprintf("      %d:\t ", m.ID))
-				mapLines = append(mapLines, fmt.Sprintf("        Key Size:\t%dB", m.KeySize))
-				mapLines = append(mapLines, fmt.Sprintf("        Max Entries:\t%d", m.MaxEntries))
-				mapLines = append(mapLines, fmt.Sprintf("        Name:\t%s", m.Name))
-				if m.PinPath != "" {
-					mapLines = append(mapLines, fmt.Sprintf("        Pin:\t%s%s", m.PinPath, presenceSuffix(m.Present)))
-				}
-				mapLines = append(mapLines, fmt.Sprintf("        Type:\t%s", m.MapType))
-				mapLines = append(mapLines, fmt.Sprintf("        Value Size:\t%dB", m.ValueSize))
+			if m.PinPath != "" {
+				props = append(props, fieldRow("Pin", fmt.Sprintf("%s%s", m.PinPath, presenceSuffix(m.Present))))
 			}
-		} else if len(kp.MapIDs) > 0 {
-			mapLines = append(mapLines, fmt.Sprintf("    Maps:\t%v", kp.MapIDs))
-		} else {
-			mapLines = append(mapLines, "    Maps:\tNone")
+			props = append(props,
+				fieldRow("Type", m.MapType.String()),
+				fieldRow("Value Size", fmt.Sprintf("%dB", m.ValueSize)),
+			)
+			entries = append(entries, sectionRow(fmt.Sprintf("%d", m.ID), props...))
 		}
-		b.WriteString(alignLines(mapLines))
-	} else {
-		b.WriteString("    (no kernel info available)\n")
+		return sectionRow("Maps", entries...)
 	}
-
-	// Stats section: scalar fields ordered by label.
-	b.WriteString("  Stats:\n")
-	if prog.Status.Stats != nil {
-		var stats []labelValue
-		if prog.Status.Stats.RecursionMisses > 0 {
-			stats = append(stats, labelValue{"Recursion Misses", fmt.Sprintf("%d", prog.Status.Stats.RecursionMisses)})
-		}
-		stats = append(stats, labelValue{"Run Count", fmt.Sprintf("%d", prog.Status.Stats.RunCount)})
-		stats = append(stats, labelValue{"Runtime", prog.Status.Stats.Runtime.String()})
-		sortByLabel(stats)
-		b.WriteString(alignLabelValues(stats))
-	} else {
-		b.WriteString("    (not enabled, see sysctl kernel.bpf_stats_enabled)\n")
+	if len(prog.Status.Kernel.MapIDs) > 0 {
+		return fieldRow("Maps", fmt.Sprintf("%v", prog.Status.Kernel.MapIDs))
 	}
+	return fieldRow("Maps", "None")
+}
 
-	return b.String()
+// programStatsRows builds the Stats fields, ordered by label, or the
+// not-enabled note when stats are unavailable.
+func programStatsRows(prog bpfman.Program) []row {
+	if prog.Status.Stats == nil {
+		return []row{noteRow("(not enabled, see sysctl kernel.bpf_stats_enabled)")}
+	}
+	var stats []row
+	if prog.Status.Stats.RecursionMisses > 0 {
+		stats = append(stats, fieldRow("Recursion Misses", fmt.Sprintf("%d", prog.Status.Stats.RecursionMisses)))
+	}
+	stats = append(stats, fieldRow("Run Count", fmt.Sprintf("%d", prog.Status.Stats.RunCount)))
+	stats = append(stats, fieldRow("Runtime", prog.Status.Stats.Runtime.String()))
+	sortRowsByLabel(stats)
+	return stats
 }
 
 // formatGlobalData formats global data map for display.
