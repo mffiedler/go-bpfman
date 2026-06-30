@@ -366,9 +366,8 @@ func RenderLoadedPrograms(w io.Writer, view LoadedProgramsView, format OutputFor
 }
 
 func formatLoadedProgramsTable(view LoadedProgramsView) string {
-	// Sort programs by program ID for consistent, scannable output
-	programs := view.Programs
-	sorted := slices.Clone(programs)
+	// Sort programs by program ID for consistent, scannable output.
+	sorted := slices.Clone(view.Programs)
 	slices.SortFunc(sorted, func(a, b bpfman.Program) int {
 		if a.Record.ProgramID < b.Record.ProgramID {
 			return -1
@@ -379,158 +378,13 @@ func formatLoadedProgramsTable(view LoadedProgramsView) string {
 		return 0
 	})
 
-	var b strings.Builder
-
+	// Each program renders exactly like `program get`; a load reporting
+	// several programs separates them with a blank line.
+	parts := make([]string, len(sorted))
 	for i, prog := range sorted {
-		if i > 0 {
-			b.WriteString("\n")
-		}
-
-		p := &prog.Record
-
-		// Header - program identifier
-		fmt.Fprintf(&b, "Program ID: %d\n", p.ProgramID)
-
-		// Collect Spec, Status, and Stats fields, then align them together
-		var specFields, statusFields, statsFields []string
-
-		// Spec fields (sorted alphabetically)
-		if len(p.Load.GlobalData()) > 0 {
-			specFields = append(specFields, fmt.Sprintf("    Global:\t%s", formatGlobalData(p.Load.GlobalData())))
-		} else {
-			specFields = append(specFields, "    Global:\tNone")
-		}
-		specFields = append(specFields, fmt.Sprintf("    GPL Compatible:\t%t", p.GPLCompatible))
-		if p.License != "" {
-			specFields = append(specFields, fmt.Sprintf("    License:\t%s", p.License))
-		} else {
-			specFields = append(specFields, "    License:\tNone")
-		}
-		if p.Handles.MapOwnerID != nil {
-			specFields = append(specFields, fmt.Sprintf("    Map Owner ID:\t%d", *p.Handles.MapOwnerID))
-		} else {
-			specFields = append(specFields, "    Map Owner ID:\tNone")
-		}
-		specFields = append(specFields, fmt.Sprintf("    Map Pin Path:\t%s", p.Handles.MapsDir))
-		if len(p.Meta.Metadata) > 0 {
-			specFields = append(specFields, fmt.Sprintf("    Metadata:\t%s", formatMetadata(p.Meta.Metadata)))
-		} else {
-			specFields = append(specFields, "    Metadata:\tNone")
-		}
-		specFields = append(specFields, fmt.Sprintf("    Name:\t%s", p.Meta.Name))
-		specFields = append(specFields, fmt.Sprintf("    Path:\t%s", p.Load.ObjectPath()))
-		specFields = append(specFields, fmt.Sprintf("    Type:\t%s", p.Load.ProgramType()))
-
-		// Status fields (sorted alphabetically)
-		if prog.Status.Kernel != nil {
-			kp := prog.Status.Kernel
-			if kp.BTFId != 0 {
-				statusFields = append(statusFields, fmt.Sprintf("    BTF ID:\t%d", kp.BTFId))
-			}
-			if prog.Status.ProgPin != "" {
-				statusFields = append(statusFields, fmt.Sprintf("    Bytecode:\t%s", prog.Status.Bytecode))
-			}
-			statusFields = append(statusFields, fmt.Sprintf("    Instructions:\t%d", kp.VerifiedInstructions))
-			if len(prog.Status.Links) > 0 {
-				statusFields = append(statusFields, "    Links:\t ")
-				for _, l := range prog.Status.Links {
-					statusFields = append(statusFields, fmt.Sprintf("    Link %d:\t ", l.Record.ID))
-					if l.Record.Details != nil {
-						statusFields = append(statusFields, fmt.Sprintf("      Attach:\t%s", formatAttachDetails(l.Record.Details)))
-					}
-					statusFields = append(statusFields, fmt.Sprintf("      Kind:\t%s", l.Record.Kind))
-					if l.Record.PinPath != nil {
-						statusFields = append(statusFields, fmt.Sprintf("      Pin:\t%s%s", l.Record.PinPath.String(), presenceSuffix(l.Status.PinPresent)))
-					}
-				}
-			} else {
-				statusFields = append(statusFields, "    Links:\tNone")
-			}
-			if !kp.LoadedAt.IsZero() {
-				statusFields = append(statusFields, fmt.Sprintf("    Loaded At:\t%s", kp.LoadedAt.Format(time.RFC3339)))
-			}
-			if prog.Status.ProgPin != "" {
-				statusFields = append(statusFields, fmt.Sprintf("    Map Dir:\t%s", prog.Status.MapDir))
-			}
-			if len(prog.Status.Maps) > 0 {
-				statusFields = append(statusFields, "    Maps:\t ")
-				for _, m := range prog.Status.Maps {
-					statusFields = append(statusFields, fmt.Sprintf("    Map %d:\t ", m.ID))
-					statusFields = append(statusFields, fmt.Sprintf("      Key Size:\t%dB", m.KeySize))
-					statusFields = append(statusFields, fmt.Sprintf("      Max Entries:\t%d", m.MaxEntries))
-					statusFields = append(statusFields, fmt.Sprintf("      Name:\t%s", m.Name))
-					if m.PinPath != "" {
-						statusFields = append(statusFields, fmt.Sprintf("      Pin:\t%s%s", m.PinPath, presenceSuffix(m.Present)))
-					}
-					statusFields = append(statusFields, fmt.Sprintf("      Type:\t%s", m.MapType))
-					statusFields = append(statusFields, fmt.Sprintf("      Value Size:\t%dB", m.ValueSize))
-				}
-			} else if len(kp.MapIDs) > 0 {
-				statusFields = append(statusFields, fmt.Sprintf("    Maps:\t%v", kp.MapIDs))
-			} else {
-				statusFields = append(statusFields, "    Maps:\tNone")
-			}
-			if kp.Memlock != 0 {
-				statusFields = append(statusFields, fmt.Sprintf("    Memory:\t%d bytes", kp.Memlock))
-			}
-			if prog.Status.ProgPin != "" {
-				statusFields = append(statusFields, fmt.Sprintf("    Prog Pin:\t%s", prog.Status.ProgPin))
-			}
-			statusFields = append(statusFields, fmt.Sprintf("    Size JITted:\t%d bytes", kp.JitedSize))
-			statusFields = append(statusFields, fmt.Sprintf("    Size Translated:\t%d bytes", kp.XlatedSize))
-			statusFields = append(statusFields, fmt.Sprintf("    Tag:\t%s", kp.Tag))
-		} else {
-			statusFields = append(statusFields, "    (no kernel info available)")
-		}
-
-		// Stats fields (sorted alphabetically)
-		if prog.Status.Stats != nil {
-			if prog.Status.Stats.RecursionMisses > 0 {
-				statsFields = append(statsFields, fmt.Sprintf("    Recursion Misses:\t%d", prog.Status.Stats.RecursionMisses))
-			}
-			statsFields = append(statsFields, fmt.Sprintf("    Run Count:\t%d", prog.Status.Stats.RunCount))
-			statsFields = append(statsFields, fmt.Sprintf("    Runtime:\t%s", prog.Status.Stats.Runtime))
-		} else {
-			statsFields = append(statsFields, "    (not enabled, see sysctl kernel.bpf_stats_enabled)")
-		}
-
-		// Run all fields through single tabwriter to get unified alignment
-		var aligned strings.Builder
-		w := tabwriter.NewWriter(&aligned, 0, 0, 1, ' ', 0)
-		for _, f := range specFields {
-			fmt.Fprintln(w, f)
-		}
-		for _, f := range statusFields {
-			fmt.Fprintln(w, f)
-		}
-		for _, f := range statsFields {
-			fmt.Fprintln(w, f)
-		}
-		w.Flush()
-
-		// Split aligned output and reassemble with headers
-		lines := strings.Split(strings.TrimSuffix(aligned.String(), "\n"), "\n")
-		specEnd := len(specFields)
-		statusEnd := specEnd + len(statusFields)
-
-		b.WriteString("  Spec:\n")
-		for _, line := range lines[:specEnd] {
-			b.WriteString(strings.TrimRight(line, " "))
-			b.WriteString("\n")
-		}
-		b.WriteString("  Status:\n")
-		for _, line := range lines[specEnd:statusEnd] {
-			b.WriteString(strings.TrimRight(line, " "))
-			b.WriteString("\n")
-		}
-		b.WriteString("  Stats:\n")
-		for _, line := range lines[statusEnd:] {
-			b.WriteString(strings.TrimRight(line, " "))
-			b.WriteString("\n")
-		}
+		parts[i] = formatProgramTable(prog)
 	}
-
-	return b.String()
+	return strings.Join(parts, "\n")
 }
 
 // ProgramListView is the output view for program list commands.
