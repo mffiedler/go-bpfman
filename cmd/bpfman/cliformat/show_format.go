@@ -11,56 +11,55 @@ import (
 	"github.com/bpfman/bpfman"
 )
 
-// RenderShowLinks writes a tabwriter table of link details.
+// RenderShowLinks writes a table of link details.
 func RenderShowLinks(out io.Writer, prog bpfman.Program) error {
 	if len(prog.Status.Links) == 0 {
 		return writeOutput(out, "No links.\n")
 	}
 
-	var b strings.Builder
-	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
-
-	fmt.Fprintln(w, "ID\tKIND\tATTACH\tPIN\tPRESENT")
-
-	for _, l := range prog.Status.Links {
+	headers := []string{"ID", "KIND", "ATTACH", "PIN", "PRESENT"}
+	rows := make([][]string, len(prog.Status.Links))
+	for i, l := range prog.Status.Links {
 		attach := ""
 		if l.Record.Details != nil {
 			attach = formatAttachDetails(l.Record.Details)
 		}
-		var pin string
+		pin := "(none)"
 		if l.Record.PinPath != nil {
 			pin = l.Record.PinPath.String()
-		} else {
-			pin = "(none)"
 		}
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n",
-			l.Record.ID, l.Record.Kind, attach, pin, presenceYN(l.Status.PinPresent))
+		rows[i] = []string{
+			fmt.Sprintf("%d", l.Record.ID),
+			l.Record.Kind.String(),
+			attach,
+			pin,
+			presenceYN(l.Status.PinPresent),
+		}
 	}
-
-	w.Flush()
-	return writeOutput(out, b.String())
+	return writeOutput(out, renderTable("", headers, rows))
 }
 
-// RenderShowMaps writes a tabwriter table of map details.
+// RenderShowMaps writes a table of map details.
 func RenderShowMaps(out io.Writer, prog bpfman.Program) error {
 	if len(prog.Status.Maps) == 0 {
 		return writeOutput(out, "No maps.\n")
 	}
 
-	var b strings.Builder
-	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
-
-	fmt.Fprintln(w, "ID\tNAME\tTYPE\tKEYS\tVALUES\tMAX\tPIN\tPRESENT")
-
-	for _, m := range prog.Status.Maps {
-		fmt.Fprintf(w, "%d\t%s\t%s\t%dB\t%dB\t%d\t%s\t%s\n",
-			m.ID, mapDisplayName(m), m.MapType,
-			m.KeySize, m.ValueSize, m.MaxEntries,
-			m.PinPath, presenceYN(m.Present))
+	headers := []string{"ID", "NAME", "TYPE", "KEYS", "VALUES", "MAX", "PIN", "PRESENT"}
+	rows := make([][]string, len(prog.Status.Maps))
+	for i, m := range prog.Status.Maps {
+		rows[i] = []string{
+			fmt.Sprintf("%d", m.ID),
+			mapDisplayName(m),
+			m.MapType.String(),
+			fmt.Sprintf("%dB", m.KeySize),
+			fmt.Sprintf("%dB", m.ValueSize),
+			fmt.Sprintf("%d", m.MaxEntries),
+			m.PinPath.String(),
+			presenceYN(m.Present),
+		}
 	}
-
-	w.Flush()
-	return writeOutput(out, b.String())
+	return writeOutput(out, renderTable("", headers, rows))
 }
 
 // RenderShowPaths writes a two-column path inventory.

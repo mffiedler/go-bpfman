@@ -7,7 +7,6 @@ import (
 	"maps"
 	"slices"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"github.com/bpfman/bpfman"
@@ -415,23 +414,18 @@ const numListLinks = 3
 // the manager, so kernel-only rows render with their kernel type and
 // name and an empty application and links cell.
 func formatProgramsCompositeTable(result bpfman.ProgramListResult) string {
-	var b strings.Builder
-	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
-
-	fmt.Fprintln(w, "PROGRAM ID\tAPPLICATION\tTYPE\tFUNCTION NAME\tLINKS")
-
-	for _, e := range result.Programs {
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n",
-			e.ProgramID,
+	headers := []string{"PROGRAM ID", "APPLICATION", "TYPE", "FUNCTION NAME", "LINKS"}
+	rows := make([][]string, len(result.Programs))
+	for i, e := range result.Programs {
+		rows[i] = []string{
+			fmt.Sprintf("%d", e.ProgramID),
 			e.Application,
 			e.Type,
 			e.FunctionName,
 			programLinksColumn(e.Links),
-		)
+		}
 	}
-
-	w.Flush()
-	return b.String()
+	return renderTable("", headers, rows)
 }
 
 // programLinksColumn renders a program's links as a count followed by
@@ -472,12 +466,9 @@ func RenderDispatcherList(w io.Writer, view DispatcherListView, format OutputFor
 }
 
 func formatDispatcherListTable(view DispatcherListView) string {
-	var b strings.Builder
-	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
-
-	fmt.Fprintln(w, "TYPE\tNSID\tIFINDEX\tREVISION\tPROGRAM_ID\tKERNEL_LINK_ID\tPRIORITY\tHANDLE\tMEMBERS\tNETNS")
-
-	for _, s := range view.Summaries {
+	headers := []string{"TYPE", "NSID", "IFINDEX", "REVISION", "PROGRAM_ID", "KERNEL_LINK_ID", "PRIORITY", "HANDLE", "MEMBERS", "NETNS"}
+	rows := make([][]string, len(view.Summaries))
+	for i, s := range view.Summaries {
 		linkID := "-"
 		if s.Runtime.KernelLinkID != nil {
 			linkID = fmt.Sprintf("%d", *s.Runtime.KernelLinkID)
@@ -494,14 +485,18 @@ func formatDispatcherListTable(view DispatcherListView) string {
 		if netns == "" {
 			netns = "-"
 		}
-		fmt.Fprintf(w, "%s\t%d\t%d\t%d\t%d\t%s\t%s\t%s\t%d\t%s\n",
-			s.Key.Type, s.Key.Nsid, s.Key.Ifindex,
-			s.Revision, s.Runtime.ProgramID,
-			linkID, priority, handle, s.MemberCount, netns)
+		rows[i] = []string{
+			s.Key.Type.String(),
+			fmt.Sprintf("%d", s.Key.Nsid),
+			fmt.Sprintf("%d", s.Key.Ifindex),
+			fmt.Sprintf("%d", s.Revision),
+			fmt.Sprintf("%d", s.Runtime.ProgramID),
+			linkID, priority, handle,
+			fmt.Sprintf("%d", s.MemberCount),
+			netns,
+		}
 	}
-
-	w.Flush()
-	return b.String()
+	return renderTable("", headers, rows)
 }
 
 // RenderDispatcherSnapshot writes a single dispatcher snapshot.
@@ -541,19 +536,24 @@ func formatDispatcherSnapshotTable(snap platform.DispatcherSnapshot) string {
 		return b.String()
 	}
 
-	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "  POS\tPRIORITY\tPROGRAM_ID\tNAME\tLINK_ID\tKERNEL_LINK_ID\tPROCEED_ON")
-	for _, m := range snap.Members {
-		proceedOn := formatProceedOnMask(m.ProceedOn, snap.Key.Type)
+	headers := []string{"POS", "PRIORITY", "PROGRAM_ID", "NAME", "LINK_ID", "KERNEL_LINK_ID", "PROCEED_ON"}
+	rows := make([][]string, len(snap.Members))
+	for i, m := range snap.Members {
 		kernelLinkID := "<none>"
 		if m.KernelLinkID != nil {
 			kernelLinkID = fmt.Sprintf("%d", *m.KernelLinkID)
 		}
-		fmt.Fprintf(w, "  %d\t%d\t%d\t%s\t%d\t%s\t%s\n",
-			m.Position, m.Priority, m.ProgramID,
-			m.ProgramName, m.LinkID, kernelLinkID, proceedOn)
+		rows[i] = []string{
+			fmt.Sprintf("%d", m.Position),
+			fmt.Sprintf("%d", m.Priority),
+			fmt.Sprintf("%d", m.ProgramID),
+			m.ProgramName,
+			fmt.Sprintf("%d", m.LinkID),
+			kernelLinkID,
+			formatProceedOnMask(m.ProceedOn, snap.Key.Type),
+		}
 	}
-	w.Flush()
+	b.WriteString(renderTable("  ", headers, rows))
 
 	return b.String()
 }

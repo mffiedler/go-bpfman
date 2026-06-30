@@ -60,7 +60,26 @@ func RenderLinkList(w io.Writer, view LinkListView, format OutputFormat) error {
 }
 
 func renderLinkListTable(w io.Writer, view LinkListView) error {
-	return DefaultLinkColumns().RenderLinkTable(w, view.Links)
+	headers := []string{"LINK ID", "KERNEL LINK ID", "KIND", "PROGRAM ID", "PIN PATH"}
+	rows := make([][]string, len(view.Links))
+	for i, l := range view.Links {
+		kernelLinkID := "<none>"
+		if l.KernelLinkID != nil {
+			kernelLinkID = fmt.Sprintf("%d", *l.KernelLinkID)
+		}
+		pinPath := "<none>"
+		if l.PinPath != nil {
+			pinPath = l.PinPath.String()
+		}
+		rows[i] = []string{
+			fmt.Sprintf("%d", l.ID),
+			kernelLinkID,
+			l.Kind.String(),
+			fmt.Sprintf("%d", l.ProgramID),
+			pinPath,
+		}
+	}
+	return writeOutput(w, renderTable("", headers, rows))
 }
 
 func formatLinkTable(view LinkGetView) string {
