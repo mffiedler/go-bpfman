@@ -3,9 +3,7 @@ package cliformat
 import (
 	"fmt"
 	"io"
-	"slices"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"github.com/bpfman/bpfman"
@@ -72,119 +70,98 @@ func formatLinkTable(view LinkGetView) string {
 	// Primary identifier at column one (like Program ID for programs)
 	fmt.Fprintf(&b, "Link ID: %d\n", link.Record.ID)
 
-	// Collect Spec fields from LinkSpec, then sort alphabetically
-	var specFields []string
+	// Fields are carried as (label, value) pairs and ordered by
+	// label, not by the rendered line, so a label that is a prefix of
+	// another (Target vs Target Function vs Target Offset) sorts by
+	// the name rather than by the punctuation that follows it.
+	var spec []labelValue
+	add := func(label, value string) { spec = append(spec, labelValue{label, value}) }
 
 	if view.ProgramName != "" {
-		specFields = append(specFields, fmt.Sprintf("    BPF Function:\t%s", view.ProgramName))
+		add("BPF Function", view.ProgramName)
 	}
 	if !link.Record.CreatedAt.IsZero() {
-		specFields = append(specFields, fmt.Sprintf("    Created At:\t%s", link.Record.CreatedAt.Format(time.RFC3339)))
+		add("Created At", link.Record.CreatedAt.Format(time.RFC3339))
 	}
 	if link.Record.KernelLinkID != nil {
-		specFields = append(specFields, fmt.Sprintf("    Kernel Link ID:\t%d", *link.Record.KernelLinkID))
+		add("Kernel Link ID", fmt.Sprintf("%d", *link.Record.KernelLinkID))
 	} else {
-		specFields = append(specFields, "    Kernel Link ID:\tNone")
+		add("Kernel Link ID", "None")
 	}
-	specFields = append(specFields, fmt.Sprintf("    Metadata:\t%s", formatMetadata(link.Record.Metadata)))
+	add("Metadata", formatMetadata(link.Record.Metadata))
 	if link.Record.PinPath != nil {
-		specFields = append(specFields, fmt.Sprintf("    Pin Path:\t%s", link.Record.PinPath.String()))
+		add("Pin Path", link.Record.PinPath.String())
 	} else {
-		specFields = append(specFields, "    Pin Path:\tNone")
+		add("Pin Path", "None")
 	}
-	specFields = append(specFields, fmt.Sprintf("    Program ID:\t%d", link.Record.ProgramID))
-	specFields = append(specFields, fmt.Sprintf("    Type:\t%s", link.Record.Kind))
+	add("Program ID", fmt.Sprintf("%d", link.Record.ProgramID))
+	add("Type", string(link.Record.Kind))
 
-	// Type-specific fields from LinkDetails
+	// Type-specific fields from LinkDetails.
 	switch d := link.Record.Details.(type) {
 	case bpfman.FentryDetails:
-		specFields = append(specFields, fmt.Sprintf("    Target Function:\t%s", d.FnName))
+		add("Target Function", d.FnName)
 	case bpfman.FexitDetails:
-		specFields = append(specFields, fmt.Sprintf("    Target Function:\t%s", d.FnName))
+		add("Target Function", d.FnName)
 	case bpfman.KprobeDetails:
 		if d.Retprobe {
-			specFields = append(specFields, "    Attach Type:\tkretprobe")
+			add("Attach Type", "kretprobe")
 		} else {
-			specFields = append(specFields, "    Attach Type:\tkprobe")
+			add("Attach Type", "kprobe")
 		}
-		specFields = append(specFields, fmt.Sprintf("    Target Function:\t%s", d.FnName))
+		add("Target Function", d.FnName)
 		if d.Offset != 0 {
-			specFields = append(specFields, fmt.Sprintf("    Target Offset:\t%d", d.Offset))
+			add("Target Offset", fmt.Sprintf("%d", d.Offset))
 		}
 	case bpfman.TCDetails:
-		specFields = append(specFields, fmt.Sprintf("    Direction:\t%s", d.Direction))
-		specFields = append(specFields, fmt.Sprintf("    Interface:\t%s", d.Interface))
-		specFields = append(specFields, fmt.Sprintf("    Network Namespace:\t%s", netnsOrNone(d.Netns)))
-		specFields = append(specFields, fmt.Sprintf("    Position:\t%d", d.Position))
-		specFields = append(specFields, fmt.Sprintf("    Priority:\t%d", d.Priority))
-		specFields = append(specFields, fmt.Sprintf("    Proceed On:\t%s", bpfman.TCActionsToString(d.ProceedOn)))
+		add("Direction", string(d.Direction))
+		add("Interface", d.Interface)
+		add("Network Namespace", netnsOrNone(d.Netns))
+		add("Position", fmt.Sprintf("%d", d.Position))
+		add("Priority", fmt.Sprintf("%d", d.Priority))
+		add("Proceed On", bpfman.TCActionsToString(d.ProceedOn))
 	case bpfman.TCXDetails:
-		specFields = append(specFields, fmt.Sprintf("    Direction:\t%s", d.Direction))
-		specFields = append(specFields, fmt.Sprintf("    Interface:\t%s", d.Interface))
-		specFields = append(specFields, fmt.Sprintf("    Network Namespace:\t%s", netnsOrNone(d.Netns)))
-		specFields = append(specFields, fmt.Sprintf("    Position:\t%d", d.Position))
-		specFields = append(specFields, fmt.Sprintf("    Priority:\t%d", d.Priority))
+		add("Direction", string(d.Direction))
+		add("Interface", d.Interface)
+		add("Network Namespace", netnsOrNone(d.Netns))
+		add("Position", fmt.Sprintf("%d", d.Position))
+		add("Priority", fmt.Sprintf("%d", d.Priority))
 	case bpfman.TracepointDetails:
-		specFields = append(specFields, fmt.Sprintf("    Tracepoint:\t%s/%s", d.Group, d.Name))
+		add("Tracepoint", d.Group+"/"+d.Name)
 	case bpfman.UprobeDetails:
 		if d.Retprobe {
-			specFields = append(specFields, "    Attach Type:\turetprobe")
+			add("Attach Type", "uretprobe")
 		} else {
-			specFields = append(specFields, "    Attach Type:\tuprobe")
+			add("Attach Type", "uprobe")
 		}
 		if d.PID != 0 {
-			specFields = append(specFields, fmt.Sprintf("    PID:\t%d", d.PID))
+			add("PID", fmt.Sprintf("%d", d.PID))
 		}
-		specFields = append(specFields, fmt.Sprintf("    Target:\t%s", d.Target))
-		specFields = append(specFields, fmt.Sprintf("    Target Function:\t%s", d.FnName))
+		add("Target", d.Target)
+		add("Target Function", d.FnName)
 		if d.Offset != 0 {
-			specFields = append(specFields, fmt.Sprintf("    Target Offset:\t%d", d.Offset))
+			add("Target Offset", fmt.Sprintf("%d", d.Offset))
 		}
 	case bpfman.XDPDetails:
-		specFields = append(specFields, fmt.Sprintf("    Interface:\t%s", d.Interface))
-		specFields = append(specFields, fmt.Sprintf("    Network Namespace:\t%s", netnsOrNone(d.Netns)))
-		specFields = append(specFields, fmt.Sprintf("    Position:\t%d", d.Position))
-		specFields = append(specFields, fmt.Sprintf("    Priority:\t%d", d.Priority))
-		specFields = append(specFields, fmt.Sprintf("    Proceed On:\t%s", formatXDPProceedOn(d.ProceedOn)))
+		add("Interface", d.Interface)
+		add("Network Namespace", netnsOrNone(d.Netns))
+		add("Position", fmt.Sprintf("%d", d.Position))
+		add("Priority", fmt.Sprintf("%d", d.Priority))
+		add("Proceed On", formatXDPProceedOn(d.ProceedOn))
 	}
 
-	slices.Sort(specFields)
+	sortByLabel(spec)
 
-	var statusFields []string
-	if link.Status.KernelSeen {
-		statusFields = append(statusFields, "    Kernel Seen:\ttrue")
-	} else {
-		statusFields = append(statusFields, "    Kernel Seen:\tfalse")
+	status := []labelValue{
+		{"Kernel Seen", fmt.Sprintf("%t", link.Status.KernelSeen)},
+		{"Pin Present", fmt.Sprintf("%t", link.Status.PinPresent)},
 	}
-	if link.Status.PinPresent {
-		statusFields = append(statusFields, "    Pin Present:\ttrue")
-	} else {
-		statusFields = append(statusFields, "    Pin Present:\tfalse")
-	}
+	sortByLabel(status)
 
-	slices.Sort(statusFields)
-
-	var aligned strings.Builder
-	w := tabwriter.NewWriter(&aligned, 0, 0, 1, ' ', 0)
-	for _, f := range specFields {
-		fmt.Fprintln(w, f)
-	}
-	for _, f := range statusFields {
-		fmt.Fprintln(w, f)
-	}
-	w.Flush()
-
-	lines := strings.Split(strings.TrimSuffix(aligned.String(), "\n"), "\n")
 	b.WriteString("  Spec:\n")
-	for _, line := range lines[:len(specFields)] {
-		b.WriteString(line)
-		b.WriteString("\n")
-	}
+	b.WriteString(alignLabelValues(spec))
 	b.WriteString("  Status:\n")
-	for _, line := range lines[len(specFields):] {
-		b.WriteString(line)
-		b.WriteString("\n")
-	}
+	b.WriteString(alignLabelValues(status))
 
 	return b.String()
 }

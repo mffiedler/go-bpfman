@@ -70,6 +70,34 @@ func renderOutput(w io.Writer, format OutputFormat, jsonValue any, textFn func(i
 	}
 }
 
+// labelValue is one "label: value" row in a detail (get) view. The label
+// is the ordering and alignment key; the rendered line is derived from it,
+// never sorted directly, so a label that is a prefix of another (Target vs
+// Target Function) orders by the name rather than by the punctuation that
+// follows it.
+type labelValue struct {
+	label string
+	value string
+}
+
+// sortByLabel orders rows by label.
+func sortByLabel(rows []labelValue) {
+	slices.SortFunc(rows, func(a, b labelValue) int { return strings.Compare(a.label, b.label) })
+}
+
+// alignLabelValues renders rows as tab-aligned "    label: value" lines,
+// one per row, each terminated by a newline. Alignment is applied to the
+// rows as given; it never reorders them.
+func alignLabelValues(rows []labelValue) string {
+	var b strings.Builder
+	w := tabwriter.NewWriter(&b, 0, 0, 1, ' ', 0)
+	for _, r := range rows {
+		fmt.Fprintf(w, "    %s:\t%s\n", r.label, r.value)
+	}
+	w.Flush()
+	return b.String()
+}
+
 // RenderProgram writes a program get result in the specified output format.
 func RenderProgram(w io.Writer, prog bpfman.Program, format OutputFormat) error {
 	return renderOutput(w, format, prog, func(w io.Writer) error {
