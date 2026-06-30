@@ -23,24 +23,6 @@ func FormatSource(src string, prog *Program) string {
 	return f.b.String()
 }
 
-// FormatProgramSource renders prog as canonical bpfman-shell source
-// when the original source text is unavailable. The CLI uses
-// FormatSource so it can preserve comments, blank lines, and selected
-// source layout choices such as command continuations. This helper is
-// intentionally AST-based: comments and redundant grouping parens are
-// not preserved because they are not part of the semantic tree. The
-// formatter re-inserts parens only where today's grammar needs them to
-// keep command arguments, list elements, and expression statement
-// reparsing unambiguous.
-func FormatProgramSource(prog *Program) string {
-	if prog == nil || len(prog.Stmts) == 0 {
-		return ""
-	}
-	f := sourceFormatter{}
-	f.writeStmts(prog.Stmts, 0)
-	return f.b.String()
-}
-
 type sourceFormatter struct {
 	b     strings.Builder
 	lines []string

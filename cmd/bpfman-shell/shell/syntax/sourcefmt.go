@@ -28,27 +28,12 @@ func FormatExprSourceIndented(expr Expr, indent int) string {
 	return b.String()
 }
 
-// FormatAssertClauseSource renders one assertion clause in the shell's
-// compact source-like form.
-func FormatAssertClauseSource(clause AssertClause) string {
-	return dumpAssertClauseSource(clause)
-}
-
 func dumpExprSource(e Expr) string {
 	if e == nil {
 		return "nil"
 	}
 	var b strings.Builder
 	writeExprSource(&b, e)
-	return b.String()
-}
-
-func dumpAssertClauseSource(c AssertClause) string {
-	if c == nil {
-		return "<nil-assert-clause>"
-	}
-	var b strings.Builder
-	writeAssertClauseSource(&b, c)
 	return b.String()
 }
 
@@ -215,28 +200,6 @@ func writeDoubleQuotedContent(b *strings.Builder, text string) {
 		default:
 			b.WriteRune(r)
 		}
-	}
-}
-
-func writeAssertClauseSource(b *strings.Builder, c AssertClause) {
-	switch v := c.(type) {
-	case *AssertExprClause:
-		writeExprSource(b, v.Expr)
-	case *AssertCommandClause:
-		if v.Negate {
-			b.WriteString("not ")
-		}
-		b.WriteString(v.Head)
-		for _, a := range v.Args {
-			b.WriteByte(' ')
-			writeExprSource(b, a)
-		}
-	default:
-		t := fmt.Sprintf("%T", c)
-		if i := strings.LastIndex(t, "."); i >= 0 {
-			t = t[i+1:]
-		}
-		fmt.Fprintf(b, "<%s>", t)
 	}
 }
 
