@@ -1721,9 +1721,9 @@ func advancePos(start source.Pos, s string) source.Pos {
 // tryParseExpression attempts to interpret tokens as a single
 // expression. It returns (expr, true) only when the expression
 // grammar matches and every non-separator token is consumed; any
-// parse error or trailing token returns (nil, false). Used by the
-// cmd-sub primary to detect "[EXPR]" misuse and point the user at
-// the "[[EXPR]]" form.
+// parse error or trailing token returns (nil, false). Used by
+// string-interpolation parsing to decide whether a ${...} body is a
+// valid expression.
 func tryParseExpression(tokens []Token) (Expr, bool) {
 	e, err := parseExpression(tokens)
 	if err != nil {
