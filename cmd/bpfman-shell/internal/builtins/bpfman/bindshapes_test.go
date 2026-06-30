@@ -7,9 +7,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	bpfman "github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/check"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
+	bpfman "github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/check"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/syntax"
 )
 
 // checkSource tokenises and parses src, runs the static checker,

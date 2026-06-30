@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/ir"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/semantics"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/ir"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/semantics"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/source"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/syntax"
 )
 
 // Env is the execution environment for the evaluator. Session is

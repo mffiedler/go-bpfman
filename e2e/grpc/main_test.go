@@ -52,8 +52,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	"github.com/frobware/go-bpfman/e2e"
-	pb "github.com/frobware/go-bpfman/server/pb"
+	"github.com/bpfman/bpfman/e2e"
+	pb "github.com/bpfman/bpfman/server/pb"
 )
 
 // daemonLogPath is where the spawned bpfman daemon's stdout

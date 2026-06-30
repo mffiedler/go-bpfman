@@ -11,9 +11,9 @@ import (
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 
-	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/ns/netns"
-	"github.com/frobware/go-bpfman/platform"
+	"github.com/bpfman/bpfman/kernel"
+	"github.com/bpfman/bpfman/ns/netns"
+	"github.com/bpfman/bpfman/platform"
 )
 
 // kernelAdapter implements platform.KernelOperations using cilium/ebpf.

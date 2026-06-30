@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/frobware/go-bpfman/fs/runtime"
+	"github.com/bpfman/bpfman/fs/runtime"
 )
 
 func TestIsBpffsMounted(t *testing.T) {

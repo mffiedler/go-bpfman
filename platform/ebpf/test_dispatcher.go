@@ -6,7 +6,7 @@ import (
 
 	"github.com/cilium/ebpf"
 
-	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/bpfman/bpfman/dispatcher"
 )
 
 // testDispatchers holds lazily-loaded test dispatchers used as

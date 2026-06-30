@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/frobware/go-bpfman/kernel"
+	"github.com/bpfman/bpfman/kernel"
 )
 
 // LoadSpec describes how to load a BPF program.

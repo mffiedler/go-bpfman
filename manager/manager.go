@@ -4,9 +4,9 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/frobware/go-bpfman/fs"
-	"github.com/frobware/go-bpfman/manager/action"
-	"github.com/frobware/go-bpfman/platform"
+	"github.com/bpfman/bpfman/fs"
+	"github.com/bpfman/bpfman/manager/action"
+	"github.com/bpfman/bpfman/platform"
 )
 
 // opIDKey is the context key for operation IDs.

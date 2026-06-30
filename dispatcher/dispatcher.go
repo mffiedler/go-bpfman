@@ -7,7 +7,7 @@ import (
 
 	"github.com/cilium/ebpf"
 
-	"github.com/frobware/go-bpfman"
+	"github.com/bpfman/bpfman"
 )
 
 // MaxPrograms is the maximum number of programs that can be chained.

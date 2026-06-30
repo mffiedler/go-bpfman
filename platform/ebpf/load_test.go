@@ -9,7 +9,7 @@ import (
 
 	"github.com/cilium/ebpf"
 
-	"github.com/frobware/go-bpfman"
+	"github.com/bpfman/bpfman"
 )
 
 // xdpPassGlobalsObject holds the same xdp_pass object the external

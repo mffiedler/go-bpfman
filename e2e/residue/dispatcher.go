@@ -6,7 +6,7 @@ import (
 
 	"github.com/vishvananda/netlink"
 
-	bpfnetns "github.com/frobware/go-bpfman/ns/netns"
+	bpfnetns "github.com/bpfman/bpfman/ns/netns"
 )
 
 // DefaultBPFFS is the kernel's bpf filesystem mount point.

@@ -8,7 +8,7 @@ package driver
 import (
 	"fmt"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/source"
 )
 
 // SourceLoc identifies a position in a script file. The zero

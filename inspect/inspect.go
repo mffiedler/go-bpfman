@@ -9,10 +9,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/fs"
-	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/platform"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/fs"
+	"github.com/bpfman/bpfman/kernel"
+	"github.com/bpfman/bpfman/platform"
 )
 
 // ErrNotFound is returned when a program is not found in any source.

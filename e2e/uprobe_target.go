@@ -12,7 +12,7 @@
 
 package e2e
 
-import "github.com/frobware/go-bpfman/e2e/uprobetarget"
+import "github.com/bpfman/bpfman/e2e/uprobetarget"
 
 // invokeUprobeCallMalloc calls the shared cgo'd target,
 // firing whichever kernel uprobe (or uretprobe) is attached to

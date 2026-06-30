@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman/e2e/residue"
-	"github.com/frobware/go-bpfman/fs"
+	"github.com/bpfman/bpfman/e2e/residue"
+	"github.com/bpfman/bpfman/fs"
 )
 
 // TestScanWipe_RemovesRuntimeRoot exercises the wipe plan on a

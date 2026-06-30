@@ -14,9 +14,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/driver"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/semantics"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/driver"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/runtime"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/semantics"
 )
 
 // HandleU32LE parses args[0] as a non-negative integer that fits

@@ -8,7 +8,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/labels"
 
-	"github.com/frobware/go-bpfman/kernel"
+	"github.com/bpfman/bpfman/kernel"
 )
 
 // ProgramType is bpfman's discriminator for BPF program types. It is

@@ -11,7 +11,7 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - github.com/frobware/go-bpfman
+        - github.com/bpfman/bpfman
 
 linters:
   default: none

@@ -9,7 +9,7 @@ import (
 
 	"github.com/vishvananda/netlink"
 
-	"github.com/frobware/go-bpfman/internal/testnetroute"
+	"github.com/bpfman/bpfman/internal/testnetroute"
 )
 
 // DefaultNetnsDir is the iproute2 convention for named network

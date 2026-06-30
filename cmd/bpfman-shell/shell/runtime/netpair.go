@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/semantics"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/semantics"
 )
 
 // NetPair is the user-visible handle for a paired-veth single-netns

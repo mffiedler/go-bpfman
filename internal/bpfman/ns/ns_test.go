@@ -79,7 +79,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/frobware/go-bpfman/internal/bpfman/ns"
+	"github.com/bpfman/bpfman/internal/bpfman/ns"
 )
 
 // TestHelperProcess is the subprocess entry point, not a real test.

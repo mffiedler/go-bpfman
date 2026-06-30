@@ -13,7 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman/fs"
+	"github.com/bpfman/bpfman/fs"
 )
 
 func TestOpenMutableWaitsForRuntimeWriterLock(t *testing.T) {

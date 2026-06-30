@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/cmd/bpfman/cliformat"
-	"github.com/frobware/go-bpfman/cmd/internal/args"
-	"github.com/frobware/go-bpfman/cmd/internal/runtime"
-	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/lock"
-	"github.com/frobware/go-bpfman/manager"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/cmd/bpfman/cliformat"
+	"github.com/bpfman/bpfman/cmd/internal/args"
+	"github.com/bpfman/bpfman/cmd/internal/runtime"
+	"github.com/bpfman/bpfman/kernel"
+	"github.com/bpfman/bpfman/lock"
+	"github.com/bpfman/bpfman/manager"
 )
 
 // ProgramDeleteCmd deletes BPF programs with cascading cleanup.

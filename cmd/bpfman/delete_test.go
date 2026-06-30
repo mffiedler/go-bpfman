@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/frobware/go-bpfman/cmd/internal/args"
+	"github.com/bpfman/bpfman/cmd/internal/args"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

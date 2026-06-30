@@ -6,14 +6,14 @@ import (
 	"iter"
 	"testing"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/fs"
-	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/lock"
-	"github.com/frobware/go-bpfman/manager"
-	"github.com/frobware/go-bpfman/manager/action"
-	"github.com/frobware/go-bpfman/platform"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/dispatcher"
+	"github.com/bpfman/bpfman/fs"
+	"github.com/bpfman/bpfman/kernel"
+	"github.com/bpfman/bpfman/lock"
+	"github.com/bpfman/bpfman/manager"
+	"github.com/bpfman/bpfman/manager/action"
+	"github.com/bpfman/bpfman/platform"
 )
 
 // stubStore is a minimal Store implementation for executor tests.

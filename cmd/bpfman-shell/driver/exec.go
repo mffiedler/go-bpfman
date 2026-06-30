@@ -20,10 +20,10 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
-	"github.com/frobware/go-bpfman/cmd/internal/cli"
-	"github.com/frobware/go-bpfman/internal/execcancel"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/runtime"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/source"
+	"github.com/bpfman/bpfman/cmd/internal/cli"
+	"github.com/bpfman/bpfman/internal/execcancel"
 )
 
 // ExecFailure is the typed error returned by RunExecStatement when

@@ -11,8 +11,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/fixturemode"
-	"github.com/frobware/go-bpfman/internal/bpfman/ns/runner"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/fixturemode"
+	"github.com/bpfman/bpfman/internal/bpfman/ns/runner"
 )
 
 var errInterrupted = fmt.Errorf("interrupted by signal: %w", context.Canceled)

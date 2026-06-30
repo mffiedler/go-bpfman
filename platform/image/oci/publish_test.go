@@ -15,7 +15,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
-	"github.com/frobware/go-bpfman/internal/imagebuild"
+	"github.com/bpfman/bpfman/internal/imagebuild"
 )
 
 func TestPublishBytecodeImagePublishesSingleArchImage(t *testing.T) {

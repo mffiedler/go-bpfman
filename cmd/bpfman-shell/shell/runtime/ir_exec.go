@@ -18,9 +18,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/ir"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/ir"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/source"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/syntax"
 )
 
 // Exec runs lp against env. Top-level defs in lp are registered into the

@@ -3,7 +3,7 @@ package manager
 import (
 	"context"
 
-	"github.com/frobware/go-bpfman/lock"
+	"github.com/bpfman/bpfman/lock"
 )
 
 // NewExecutorForTest exposes the unexported newExecutor for black-box tests.

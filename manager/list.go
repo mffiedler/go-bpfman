@@ -9,12 +9,12 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/inspect"
-	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/lock"
-	"github.com/frobware/go-bpfman/platform"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/dispatcher"
+	"github.com/bpfman/bpfman/inspect"
+	"github.com/bpfman/bpfman/kernel"
+	"github.com/bpfman/bpfman/lock"
+	"github.com/bpfman/bpfman/platform"
 )
 
 // ErrProgramRequiresReconciliation is returned when a program has a

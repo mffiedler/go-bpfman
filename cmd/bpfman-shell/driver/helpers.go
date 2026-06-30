@@ -8,8 +8,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
-	"github.com/frobware/go-bpfman/cmd/internal/cli"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/runtime"
+	"github.com/bpfman/bpfman/cmd/internal/cli"
 )
 
 // ErrSilent is returned when the error has already been

@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/frobware/go-bpfman/kernel"
+	"github.com/bpfman/bpfman/kernel"
 )
 
 // Scanner provides read-only access to bpfman's bpffs layout.

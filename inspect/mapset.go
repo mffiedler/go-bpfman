@@ -3,8 +3,8 @@ package inspect
 import (
 	"slices"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/kernel"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/kernel"
 )
 
 // MapSetMembers derives, for every program in records, the sorted ids

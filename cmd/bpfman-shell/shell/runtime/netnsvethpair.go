@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/semantics"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/semantics"
 )
 
 // NetnsVethPair is the user-visible handle for the isolated

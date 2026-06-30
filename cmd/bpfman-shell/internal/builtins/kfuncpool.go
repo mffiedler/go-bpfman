@@ -18,7 +18,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/runtime"
 )
 
 const (

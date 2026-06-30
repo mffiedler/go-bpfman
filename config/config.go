@@ -9,7 +9,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/frobware/go-bpfman/logging"
+	"github.com/bpfman/bpfman/logging"
 )
 
 //go:embed default.toml

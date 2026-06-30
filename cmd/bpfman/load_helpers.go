@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/frobware/go-bpfman/cmd/internal/args"
-	"github.com/frobware/go-bpfman/manager"
+	"github.com/bpfman/bpfman/cmd/internal/args"
+	"github.com/bpfman/bpfman/manager"
 )
 
 func loadProgramSpecs(programs []args.ProgramSpec) []manager.ProgramSpec {

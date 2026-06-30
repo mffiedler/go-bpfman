@@ -35,9 +35,9 @@ import (
 
 	"github.com/vishvananda/netns"
 
-	"github.com/frobware/go-bpfman/internal/testnetroute"
+	"github.com/bpfman/bpfman/internal/testnetroute"
 
-	bpfnetns "github.com/frobware/go-bpfman/ns/netns"
+	bpfnetns "github.com/bpfman/bpfman/ns/netns"
 )
 
 // RootNetns is the name under /run/netns/ that the e2e suite

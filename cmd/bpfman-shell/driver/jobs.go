@@ -7,8 +7,8 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
-	"github.com/frobware/go-bpfman/cmd/internal/cli"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/runtime"
+	"github.com/bpfman/bpfman/cmd/internal/cli"
 )
 
 // StrictJobLeakHandler is the script-mode policy: an unmanaged

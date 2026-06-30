@@ -10,11 +10,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/check"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/ir"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/lower"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/check"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/ir"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/lower"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/source"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/syntax"
 )
 
 // runCheckInput wraps CheckInput over a string source so tests

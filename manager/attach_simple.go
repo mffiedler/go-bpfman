@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/manager/action"
-	"github.com/frobware/go-bpfman/manager/operation"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/kernel"
+	"github.com/bpfman/bpfman/manager/action"
+	"github.com/bpfman/bpfman/manager/operation"
 )
 
 // Binding keys for simpleAttach plan nodes.

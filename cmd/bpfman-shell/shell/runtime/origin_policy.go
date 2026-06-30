@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/semantics"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/semantics"
 )
 
 // OriginMismatchError is returned when a command parser receives a

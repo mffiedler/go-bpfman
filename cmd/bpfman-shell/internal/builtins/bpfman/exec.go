@@ -5,7 +5,7 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/frobware/go-bpfman/internal/execcancel"
+	"github.com/bpfman/bpfman/internal/execcancel"
 )
 
 func newBPFManCommand(ctx context.Context, argv ...string) (*exec.Cmd, func() error) {

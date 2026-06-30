@@ -9,14 +9,14 @@ import (
 	"slices"
 	"time"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/fs"
-	"github.com/frobware/go-bpfman/inspect"
-	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/lock"
-	"github.com/frobware/go-bpfman/manager/action"
-	"github.com/frobware/go-bpfman/manager/operation"
-	"github.com/frobware/go-bpfman/platform"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/fs"
+	"github.com/bpfman/bpfman/inspect"
+	"github.com/bpfman/bpfman/kernel"
+	"github.com/bpfman/bpfman/lock"
+	"github.com/bpfman/bpfman/manager/action"
+	"github.com/bpfman/bpfman/manager/operation"
+	"github.com/bpfman/bpfman/platform"
 )
 
 // loadedKey is the binding key for the per-program load plan.

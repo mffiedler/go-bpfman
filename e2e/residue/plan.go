@@ -12,8 +12,8 @@ import (
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 
-	"github.com/frobware/go-bpfman/internal/testnetroute"
-	bpfnetns "github.com/frobware/go-bpfman/ns/netns"
+	"github.com/bpfman/bpfman/internal/testnetroute"
+	bpfnetns "github.com/bpfman/bpfman/ns/netns"
 )
 
 // Action is one cleanup step. Describe returns the shell-shaped

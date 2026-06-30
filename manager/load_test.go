@@ -9,10 +9,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/manager"
-	"github.com/frobware/go-bpfman/platform"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/kernel"
+	"github.com/bpfman/bpfman/manager"
+	"github.com/bpfman/bpfman/platform"
 )
 
 type failProgramSaveStore struct {

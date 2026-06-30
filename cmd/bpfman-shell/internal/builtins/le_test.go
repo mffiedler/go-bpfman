@@ -3,8 +3,8 @@ package builtins
 import (
 	"testing"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/driver"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/driver"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/runtime"
 )
 
 // litArg fabricates a literal-text Arg so the helpers can be

@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	bpfman "github.com/frobware/go-bpfman"
+	bpfman "github.com/bpfman/bpfman"
 )
 
 // removePinFile removes a file under the bpffs mount.

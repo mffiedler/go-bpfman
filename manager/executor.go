@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/fs"
-	"github.com/frobware/go-bpfman/manager/action"
-	"github.com/frobware/go-bpfman/platform"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/dispatcher"
+	"github.com/bpfman/bpfman/fs"
+	"github.com/bpfman/bpfman/manager/action"
+	"github.com/bpfman/bpfman/platform"
 )
 
 // executor interprets and executes actions.

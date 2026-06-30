@@ -8,11 +8,11 @@ import (
 
 	"github.com/alecthomas/kong"
 
-	cmdruntime "github.com/frobware/go-bpfman/cmd/internal/runtime"
-	"github.com/frobware/go-bpfman/e2e/residue"
-	"github.com/frobware/go-bpfman/fs"
-	"github.com/frobware/go-bpfman/inspect"
-	"github.com/frobware/go-bpfman/internal/bpfman/runtimestate"
+	cmdruntime "github.com/bpfman/bpfman/cmd/internal/runtime"
+	"github.com/bpfman/bpfman/e2e/residue"
+	"github.com/bpfman/bpfman/fs"
+	"github.com/bpfman/bpfman/inspect"
+	"github.com/bpfman/bpfman/internal/bpfman/runtimestate"
 )
 
 var errSnapshotSetup = errors.New("snapshot setup")

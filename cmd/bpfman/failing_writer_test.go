@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman/cmd/internal/cli"
+	"github.com/bpfman/bpfman/cmd/internal/cli"
 )
 
 // failingWriter is an io.Writer that succeeds for the first N bytes, then

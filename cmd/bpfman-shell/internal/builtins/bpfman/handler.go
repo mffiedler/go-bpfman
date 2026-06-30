@@ -3,9 +3,9 @@ package bpfmanbuiltin
 import (
 	"context"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/driver"
-	parent "github.com/frobware/go-bpfman/cmd/bpfman-shell/internal/builtins"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/driver"
+	parent "github.com/bpfman/bpfman/cmd/bpfman-shell/internal/builtins"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/runtime"
 )
 
 var topLevelNouns = map[string]bool{

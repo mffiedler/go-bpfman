@@ -27,11 +27,11 @@ import (
 	vnetlink "github.com/vishvananda/netlink"
 	vnetns "github.com/vishvananda/netns"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/driver"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/semantics"
-	"github.com/frobware/go-bpfman/internal/testnetroute"
-	"github.com/frobware/go-bpfman/ns/netns"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/driver"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/runtime"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/semantics"
+	"github.com/bpfman/bpfman/internal/testnetroute"
+	"github.com/bpfman/bpfman/ns/netns"
 )
 
 func init() {

@@ -8,9 +8,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/frobware/go-bpfman/cmd/internal/cli"
-	"github.com/frobware/go-bpfman/fs"
-	"github.com/frobware/go-bpfman/lock"
+	"github.com/bpfman/bpfman/cmd/internal/cli"
+	"github.com/bpfman/bpfman/fs"
+	"github.com/bpfman/bpfman/lock"
 )
 
 // CLI extends the shared command CLI with bpfman runtime flags.

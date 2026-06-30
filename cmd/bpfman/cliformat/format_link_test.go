@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/platform"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/dispatcher"
+	"github.com/bpfman/bpfman/kernel"
+	"github.com/bpfman/bpfman/platform"
 )
 
 func TestRenderLinkGetTable_ExposesManagedAndKernelIDs(t *testing.T) {

@@ -12,7 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman/cmd/internal/cli"
+	"github.com/bpfman/bpfman/cmd/internal/cli"
 )
 
 // TestCancelledRun_DrainsDefersUnderCleanupContext pins the

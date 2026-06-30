@@ -11,13 +11,13 @@ import (
 
 	"github.com/alecthomas/kong"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/cmd/bpfman/cliformat"
-	"github.com/frobware/go-bpfman/cmd/internal/args"
-	"github.com/frobware/go-bpfman/cmd/internal/runtime"
-	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/fs"
-	"github.com/frobware/go-bpfman/lock"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/cmd/bpfman/cliformat"
+	"github.com/bpfman/bpfman/cmd/internal/args"
+	"github.com/bpfman/bpfman/cmd/internal/runtime"
+	"github.com/bpfman/bpfman/dispatcher"
+	"github.com/bpfman/bpfman/fs"
+	"github.com/bpfman/bpfman/lock"
 )
 
 type rootlessCommand interface {

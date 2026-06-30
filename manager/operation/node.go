@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/frobware/go-bpfman/manager/action"
+	"github.com/bpfman/bpfman/manager/action"
 )
 
 // nodeFlavour distinguishes the three node types in a plan.

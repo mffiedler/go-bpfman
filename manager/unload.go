@@ -5,12 +5,12 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/lock"
-	"github.com/frobware/go-bpfman/manager/action"
-	"github.com/frobware/go-bpfman/platform"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/dispatcher"
+	"github.com/bpfman/bpfman/kernel"
+	"github.com/bpfman/bpfman/lock"
+	"github.com/bpfman/bpfman/manager/action"
+	"github.com/bpfman/bpfman/platform"
 )
 
 // unload removes a program's kernel-side artefacts and, when persisted

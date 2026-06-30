@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman/fs"
-	"github.com/frobware/go-bpfman/fs/runtime"
+	"github.com/bpfman/bpfman/fs"
+	"github.com/bpfman/bpfman/fs/runtime"
 )
 
 // mockMounter records calls and can be configured to return errors.

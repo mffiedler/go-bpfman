@@ -11,8 +11,8 @@ import (
 	"os"
 	"sync"
 
-	"github.com/frobware/go-bpfman/config"
-	"github.com/frobware/go-bpfman/logging"
+	"github.com/bpfman/bpfman/config"
+	"github.com/bpfman/bpfman/logging"
 )
 
 // CLI carries the common global flags, output writers, and cached

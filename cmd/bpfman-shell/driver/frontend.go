@@ -5,9 +5,9 @@ import (
 	"maps"
 	"path/filepath"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/check"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/check"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/source"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/syntax"
 )
 
 // ParseAndExpand tokenises and parses src, then resolves any

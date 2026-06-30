@@ -15,12 +15,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/ir"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/lower"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
-	"github.com/frobware/go-bpfman/cmd/internal/cli"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/ir"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/lower"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/runtime"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/source"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/syntax"
+	"github.com/bpfman/bpfman/cmd/internal/cli"
 )
 
 // RunHooks bundles the Env callbacks the runner installs when

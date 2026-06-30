@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman"
+	"github.com/bpfman/bpfman"
 )
 
 // TestImagePullPolicy_JSONRoundTrip pins the wire form. ImagePullPolicy

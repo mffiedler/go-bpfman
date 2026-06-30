@@ -3,11 +3,11 @@ package manager
 import (
 	"context"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/manager/action"
-	"github.com/frobware/go-bpfman/manager/operation"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/dispatcher"
+	"github.com/bpfman/bpfman/kernel"
+	"github.com/bpfman/bpfman/manager/action"
+	"github.com/bpfman/bpfman/manager/operation"
 )
 
 // dispatcherAttachParams describes a dispatcher-based attach operation

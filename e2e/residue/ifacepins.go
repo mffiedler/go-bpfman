@@ -10,7 +10,7 @@ import (
 	"github.com/cilium/ebpf/link"
 	"github.com/vishvananda/netlink"
 
-	bpfnetns "github.com/frobware/go-bpfman/ns/netns"
+	bpfnetns "github.com/bpfman/bpfman/ns/netns"
 )
 
 // ifaceLinkPinIndex maps bpf_link pins attached to interfaces

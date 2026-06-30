@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"strings"
 
-	bpfman "github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/kernel"
+	bpfman "github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/dispatcher"
+	"github.com/bpfman/bpfman/kernel"
 )
 
 // BPFFS provides access to bpfman's bpffs path conventions.

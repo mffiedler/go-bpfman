@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/frobware/go-bpfman/cmd/internal/args"
+	"github.com/bpfman/bpfman/cmd/internal/args"
 )
 
 // ErrSilent is returned when the error has already been communicated

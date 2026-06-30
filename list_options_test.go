@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/labels"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/kernel"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/kernel"
 )
 
 func TestListOptions_NoOptions(t *testing.T) {

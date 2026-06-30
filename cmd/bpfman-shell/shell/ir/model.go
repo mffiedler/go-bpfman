@@ -26,7 +26,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/source"
 )
 
 // Program is the lowered form of a parsed *syntax.Program. It

@@ -4,8 +4,8 @@ import (
 	"maps"
 	"slices"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/ir"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/ir"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/source"
 )
 
 // Session holds variable bindings and user-defined commands (defs)

@@ -20,9 +20,9 @@ import (
 	"oras.land/oras-go/v2/registry/remote/credentials"
 	"oras.land/oras-go/v2/registry/remote/retry"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/fs"
-	"github.com/frobware/go-bpfman/platform"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/fs"
+	"github.com/bpfman/bpfman/platform"
 )
 
 const (

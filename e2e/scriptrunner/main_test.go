@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/frobware/go-bpfman/internal/registryfixture"
+	"github.com/bpfman/bpfman/internal/registryfixture"
 )
 
 // e2eSuiteLockPath is the same system-wide flock the workload

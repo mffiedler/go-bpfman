@@ -1,9 +1,9 @@
 package platform
 
 import (
-	bpfman "github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/kernel"
+	bpfman "github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/dispatcher"
+	"github.com/bpfman/bpfman/kernel"
 )
 
 // DispatcherMember describes an extension program attached to a

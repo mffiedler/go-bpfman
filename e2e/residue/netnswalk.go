@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	bpfnetns "github.com/frobware/go-bpfman/ns/netns"
+	bpfnetns "github.com/bpfman/bpfman/ns/netns"
 )
 
 // namedNetnsEntry is one named netns under netnsDir that needs

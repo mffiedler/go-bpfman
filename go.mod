@@ -1,4 +1,4 @@
-module github.com/frobware/go-bpfman
+module github.com/bpfman/bpfman
 
 go 1.25.7
 

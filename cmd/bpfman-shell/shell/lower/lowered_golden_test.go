@@ -22,7 +22,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/driver"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/driver"
 )
 
 var updateGolden = flag.Bool("update", false, "rewrite lowered golden files instead of comparing")

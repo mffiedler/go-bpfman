@@ -169,7 +169,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/frobware/go-bpfman/internal/strdist"
+	"github.com/bpfman/bpfman/internal/strdist"
 )
 
 // levenshtein and nearestStrings are thin shims onto the shared

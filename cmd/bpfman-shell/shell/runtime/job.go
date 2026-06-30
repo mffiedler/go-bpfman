@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/semantics"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/semantics"
 )
 
 // Job is the user-visible handle for a background process started

@@ -11,12 +11,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/labels"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/internal/tcpolicy"
-	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/manager"
-	"github.com/frobware/go-bpfman/platform"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/dispatcher"
+	"github.com/bpfman/bpfman/internal/tcpolicy"
+	"github.com/bpfman/bpfman/kernel"
+	"github.com/bpfman/bpfman/manager"
+	"github.com/bpfman/bpfman/platform"
 )
 
 type failDispatcherSnapshotStore struct {

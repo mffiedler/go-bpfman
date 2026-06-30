@@ -13,7 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman/lock"
+	"github.com/bpfman/bpfman/lock"
 )
 
 func testLogger() *slog.Logger {

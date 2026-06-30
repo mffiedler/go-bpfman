@@ -13,13 +13,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/driver"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/jobsig"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/semantics"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
-	"github.com/frobware/go-bpfman/cmd/internal/cli"
-	"github.com/frobware/go-bpfman/internal/execcancel"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/driver"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/jobsig"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/runtime"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/semantics"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/syntax"
+	"github.com/bpfman/bpfman/cmd/internal/cli"
+	"github.com/bpfman/bpfman/internal/execcancel"
 )
 
 func init() {

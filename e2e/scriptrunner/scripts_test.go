@@ -22,9 +22,9 @@ import (
 	"github.com/stretchr/testify/require"
 	k8slabels "k8s.io/apimachinery/pkg/labels"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/scriptmeta"
-	"github.com/frobware/go-bpfman/internal/execcancel"
-	"github.com/frobware/go-bpfman/internal/tcpolicy"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/scriptmeta"
+	"github.com/bpfman/bpfman/internal/execcancel"
+	"github.com/bpfman/bpfman/internal/tcpolicy"
 )
 
 // TestBPFManScripts discovers every .bpfman script under
@@ -270,7 +270,7 @@ const (
 	bpfmanShellTimelineEnv        = "BPFMAN_E2E_SCRIPT_TIMELINE"
 	bpfmanShellSelectorEnv        = "BPFMAN_E2E_SCRIPT_SELECTOR"
 	bpfmanShellSelectorDefaultRaw = "!external"
-	bpfmanShellTestPackage        = "github.com/frobware/go-bpfman/e2e/scriptrunner"
+	bpfmanShellTestPackage        = "github.com/bpfman/bpfman/e2e/scriptrunner"
 )
 
 var scriptTimelineMu sync.Mutex

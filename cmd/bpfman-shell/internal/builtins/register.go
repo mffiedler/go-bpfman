@@ -1,7 +1,7 @@
 package builtins
 
 import (
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/driver"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/driver"
 )
 
 // Register installs one builtin in the shared shell registry.

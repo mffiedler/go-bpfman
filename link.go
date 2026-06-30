@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/frobware/go-bpfman/kernel"
+	"github.com/bpfman/bpfman/kernel"
 )
 
 // LinkID uniquely identifies a bpfman-managed attachment.

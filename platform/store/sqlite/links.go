@@ -10,9 +10,9 @@ import (
 	"strconv"
 	"time"
 
-	bpfman "github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/platform"
+	bpfman "github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/kernel"
+	"github.com/bpfman/bpfman/platform"
 )
 
 // ----------------------------------------------------------------------------

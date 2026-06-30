@@ -22,7 +22,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
-	"github.com/frobware/go-bpfman/internal/imagebuild"
+	"github.com/bpfman/bpfman/internal/imagebuild"
 )
 
 type publisher struct {

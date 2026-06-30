@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	cmdruntime "github.com/frobware/go-bpfman/cmd/internal/runtime"
-	"github.com/frobware/go-bpfman/internal/bpfman/runtimestate"
-	"github.com/frobware/go-bpfman/manager"
-	"github.com/frobware/go-bpfman/platform"
+	cmdruntime "github.com/bpfman/bpfman/cmd/internal/runtime"
+	"github.com/bpfman/bpfman/internal/bpfman/runtimestate"
+	"github.com/bpfman/bpfman/manager"
+	"github.com/bpfman/bpfman/platform"
 )
 
 // newManager creates a manager for bpfman CLI commands.

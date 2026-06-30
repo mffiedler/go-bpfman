@@ -7,9 +7,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/frobware/go-bpfman/manager"
-	"github.com/frobware/go-bpfman/platform"
-	pb "github.com/frobware/go-bpfman/server/pb"
+	"github.com/bpfman/bpfman/manager"
+	"github.com/bpfman/bpfman/platform"
+	pb "github.com/bpfman/bpfman/server/pb"
 )
 
 // PullBytecode implements the PullBytecode RPC method.

@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/frobware/go-bpfman/e2e/testnet"
-	"github.com/frobware/go-bpfman/e2e/uprobetarget"
-	pb "github.com/frobware/go-bpfman/server/pb"
+	"github.com/bpfman/bpfman/e2e/testnet"
+	"github.com/bpfman/bpfman/e2e/uprobetarget"
+	pb "github.com/bpfman/bpfman/server/pb"
 )
 
 // Per-lifecycle RPC accounting, grouped by daemon-side

@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/frobware/go-bpfman/cmd/internal/runtime"
-	"github.com/frobware/go-bpfman/server"
-	"github.com/frobware/go-bpfman/version"
+	"github.com/bpfman/bpfman/cmd/internal/runtime"
+	"github.com/bpfman/bpfman/server"
+	"github.com/bpfman/bpfman/version"
 )
 
 // ServeCmd starts the gRPC daemon.

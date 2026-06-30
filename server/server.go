@@ -15,16 +15,16 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/frobware/go-bpfman/config"
-	driver "github.com/frobware/go-bpfman/csi"
-	"github.com/frobware/go-bpfman/fs"
-	"github.com/frobware/go-bpfman/internal/bpfman/runtimestate"
-	"github.com/frobware/go-bpfman/lock"
-	"github.com/frobware/go-bpfman/manager"
-	"github.com/frobware/go-bpfman/ns/netns"
-	"github.com/frobware/go-bpfman/platform/image/oci"
-	"github.com/frobware/go-bpfman/platform/image/verify"
-	pb "github.com/frobware/go-bpfman/server/pb"
+	"github.com/bpfman/bpfman/config"
+	driver "github.com/bpfman/bpfman/csi"
+	"github.com/bpfman/bpfman/fs"
+	"github.com/bpfman/bpfman/internal/bpfman/runtimestate"
+	"github.com/bpfman/bpfman/lock"
+	"github.com/bpfman/bpfman/manager"
+	"github.com/bpfman/bpfman/ns/netns"
+	"github.com/bpfman/bpfman/platform/image/oci"
+	"github.com/bpfman/bpfman/platform/image/verify"
+	pb "github.com/bpfman/bpfman/server/pb"
 )
 
 const (

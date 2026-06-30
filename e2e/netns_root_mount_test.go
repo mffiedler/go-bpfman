@@ -9,7 +9,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/frobware/go-bpfman/e2e/testnet"
+	"github.com/bpfman/bpfman/e2e/testnet"
 )
 
 // The bind-mount target is /run/netns/<testnet.RootNetns>, so

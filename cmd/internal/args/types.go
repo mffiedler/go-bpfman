@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/kernel"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/kernel"
 )
 
 // ProgramID wraps a program ID with hex support.

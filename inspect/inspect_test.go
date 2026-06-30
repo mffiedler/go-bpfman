@@ -14,13 +14,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/fs"
-	"github.com/frobware/go-bpfman/inspect"
-	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/platform"
-	"github.com/frobware/go-bpfman/platform/store/sqlite"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/dispatcher"
+	"github.com/bpfman/bpfman/fs"
+	"github.com/bpfman/bpfman/inspect"
+	"github.com/bpfman/bpfman/kernel"
+	"github.com/bpfman/bpfman/platform"
+	"github.com/bpfman/bpfman/platform/store/sqlite"
 )
 
 func ptr[T any](v T) *T { return &v }

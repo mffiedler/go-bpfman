@@ -4,9 +4,9 @@ import (
 	"reflect"
 	"strings"
 
-	bpfman "github.com/frobware/go-bpfman"
+	bpfman "github.com/bpfman/bpfman"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/syntax"
 )
 
 // Per-type OriginKind registry. The Shape registry maps each

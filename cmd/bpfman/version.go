@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/frobware/go-bpfman/version"
+	"github.com/bpfman/bpfman/version"
 )
 
 // VersionCmd prints build version information.

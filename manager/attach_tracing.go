@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"slices"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/lock"
-	"github.com/frobware/go-bpfman/manager/action"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/lock"
+	"github.com/bpfman/bpfman/manager/action"
 )
 
 // attachTracepoint attaches a pinned program to a tracepoint.

@@ -1,6 +1,6 @@
 package ir
 
-import "github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
+import "github.com/bpfman/bpfman/cmd/bpfman-shell/shell/source"
 
 // AssertClause is the lowered-runtime mirror of syntax.AssertClause.
 // One Assert instruction carries one clause discriminator; the

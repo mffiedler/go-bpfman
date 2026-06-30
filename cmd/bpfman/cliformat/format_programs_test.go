@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman"
+	"github.com/bpfman/bpfman"
 )
 
 // TestRenderProgramListTable_Columns asserts the default

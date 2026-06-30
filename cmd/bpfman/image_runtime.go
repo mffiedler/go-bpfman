@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/frobware/go-bpfman/cmd/internal/runtime"
-	"github.com/frobware/go-bpfman/manager"
-	"github.com/frobware/go-bpfman/platform"
-	"github.com/frobware/go-bpfman/platform/image/oci"
-	"github.com/frobware/go-bpfman/platform/image/verify"
+	"github.com/bpfman/bpfman/cmd/internal/runtime"
+	"github.com/bpfman/bpfman/manager"
+	"github.com/bpfman/bpfman/platform"
+	"github.com/bpfman/bpfman/platform/image/oci"
+	"github.com/bpfman/bpfman/platform/image/verify"
 )
 
 // newImageManager creates a manager with the image puller needed by

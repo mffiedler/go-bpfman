@@ -6,7 +6,7 @@ import (
 
 	"github.com/cilium/ebpf"
 
-	"github.com/frobware/go-bpfman/kernel"
+	"github.com/bpfman/bpfman/kernel"
 )
 
 // ToKernelProgram converts a cilium/ebpf ProgramInfo to a kernel.Program.

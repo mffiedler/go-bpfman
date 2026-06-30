@@ -1,6 +1,6 @@
 package syntax
 
-import "github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
+import "github.com/bpfman/bpfman/cmd/bpfman-shell/shell/source"
 
 // Expr is the sealed sum type for shell expressions.
 type Expr interface {

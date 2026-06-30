@@ -22,7 +22,7 @@ import (
 	"github.com/vishvananda/netlink"
 	"github.com/vishvananda/netns"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/runtime"
 )
 
 // poolSize is the number of /30 subnets the pool carves out of

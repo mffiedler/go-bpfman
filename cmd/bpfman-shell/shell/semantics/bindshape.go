@@ -1,6 +1,6 @@
 package semantics
 
-import "github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
+import "github.com/bpfman/bpfman/cmd/bpfman-shell/shell/syntax"
 
 // Bind-shape lookup: the static checker queries this table to
 // learn what primary Shape a `<-` bind RHS produces. The table is

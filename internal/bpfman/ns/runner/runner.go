@@ -9,8 +9,8 @@ import (
 
 	"github.com/alecthomas/kong"
 
-	"github.com/frobware/go-bpfman/internal/bpfman/ns"
-	"github.com/frobware/go-bpfman/lock"
+	"github.com/bpfman/bpfman/internal/bpfman/ns"
+	"github.com/bpfman/bpfman/lock"
 )
 
 // NSCmd handles the bpfman-ns subcommand for attaching uprobes in other

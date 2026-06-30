@@ -15,7 +15,7 @@ import (
 	"github.com/pressly/goose/v3/database"
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman/lock"
+	"github.com/bpfman/bpfman/lock"
 )
 
 // addNotesMigration is a synthetic second migration used to prove that

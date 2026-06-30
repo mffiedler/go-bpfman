@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/frobware/go-bpfman/kernel"
+	"github.com/bpfman/bpfman/kernel"
 )
 
 const (

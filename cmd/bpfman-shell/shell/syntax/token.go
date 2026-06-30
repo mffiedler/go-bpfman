@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/source"
 )
 
 // adapterPrefixes is the fixed set of known adapter names recognised

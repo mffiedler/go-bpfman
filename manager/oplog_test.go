@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/frobware/go-bpfman/manager"
+	"github.com/bpfman/bpfman/manager"
 )
 
 func TestWithOpIDHandler_WithoutOpIDInContext(t *testing.T) {

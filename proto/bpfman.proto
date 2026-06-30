@@ -1,6 +1,6 @@
 syntax = "proto3";
 package bpfman.v1;
-option go_package = "github.com/frobware/go-bpfman/server/pb";
+option go_package = "github.com/bpfman/bpfman/server/pb";
 
 service Bpfman {
     rpc Load (LoadRequest) returns (LoadResponse);

@@ -9,13 +9,13 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/frobware/go-bpfman/fs"
-	fsruntime "github.com/frobware/go-bpfman/fs/runtime"
-	"github.com/frobware/go-bpfman/inspect"
-	"github.com/frobware/go-bpfman/lock"
-	"github.com/frobware/go-bpfman/platform"
-	"github.com/frobware/go-bpfman/platform/ebpf"
-	"github.com/frobware/go-bpfman/platform/store/sqlite"
+	"github.com/bpfman/bpfman/fs"
+	fsruntime "github.com/bpfman/bpfman/fs/runtime"
+	"github.com/bpfman/bpfman/inspect"
+	"github.com/bpfman/bpfman/lock"
+	"github.com/bpfman/bpfman/platform"
+	"github.com/bpfman/bpfman/platform/ebpf"
+	"github.com/bpfman/bpfman/platform/store/sqlite"
 )
 
 // Mutable is bpfman's opened runtime state for callers that may

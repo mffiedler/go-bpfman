@@ -11,8 +11,8 @@ import (
 
 	"github.com/cilium/ebpf"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/platform"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/platform"
 )
 
 // ProgramDiscoverer implements platform.ProgramDiscoverer using cilium/ebpf.

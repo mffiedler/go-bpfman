@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/platform"
-	pb "github.com/frobware/go-bpfman/server/pb"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/kernel"
+	"github.com/bpfman/bpfman/platform"
+	pb "github.com/bpfman/bpfman/server/pb"
 )
 
 // protoToBpfmanType converts proto program type to bpfman type.

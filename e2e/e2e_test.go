@@ -10,10 +10,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/e2e/testnet"
-	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/manager"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/e2e/testnet"
+	"github.com/bpfman/bpfman/kernel"
+	"github.com/bpfman/bpfman/manager"
 )
 
 // TestTracepoint_LoadAttachDetachUnload tests the full lifecycle of a tracepoint program.

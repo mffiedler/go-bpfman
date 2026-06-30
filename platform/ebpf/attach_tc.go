@@ -12,11 +12,11 @@ import (
 	"github.com/vishvananda/netlink/nl"
 	"golang.org/x/sys/unix"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/ns/netns"
-	"github.com/frobware/go-bpfman/platform"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/dispatcher"
+	"github.com/bpfman/bpfman/kernel"
+	"github.com/bpfman/bpfman/ns/netns"
+	"github.com/bpfman/bpfman/platform"
 )
 
 // tcDispatcherPriority is the default TC priority for the dispatcher

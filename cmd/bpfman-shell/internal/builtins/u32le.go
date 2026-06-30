@@ -1,6 +1,6 @@
 package builtins
 
-import "github.com/frobware/go-bpfman/cmd/bpfman-shell/driver"
+import "github.com/bpfman/bpfman/cmd/bpfman-shell/driver"
 
 func init() {
 	Register(driver.Builtin{

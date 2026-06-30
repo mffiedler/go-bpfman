@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/platform"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/kernel"
+	"github.com/bpfman/bpfman/platform"
 )
 
 // getProgram fetches a program from the store, translating

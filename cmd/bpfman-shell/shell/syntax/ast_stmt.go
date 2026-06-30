@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/source"
 )
 
 // Program is the root of a parsed source unit: an ordered sequence

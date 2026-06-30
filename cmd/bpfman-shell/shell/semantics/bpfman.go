@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	bpfman "github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
+	bpfman "github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/syntax"
 )
 
 // Program and Link shape inference for bpfman API types. Derived

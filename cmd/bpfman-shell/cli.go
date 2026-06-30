@@ -14,17 +14,17 @@ import (
 
 	k8slabels "k8s.io/apimachinery/pkg/labels"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/driver"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/internal/builtins"
-	bpfmanbuiltin "github.com/frobware/go-bpfman/cmd/bpfman-shell/internal/builtins/bpfman"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/scriptmeta"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
-	"github.com/frobware/go-bpfman/cmd/internal/cli"
-	"github.com/frobware/go-bpfman/fs"
-	"github.com/frobware/go-bpfman/internal/registryfixture"
-	"github.com/frobware/go-bpfman/version"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/driver"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/internal/builtins"
+	bpfmanbuiltin "github.com/bpfman/bpfman/cmd/bpfman-shell/internal/builtins/bpfman"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/scriptmeta"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/runtime"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/source"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/syntax"
+	"github.com/bpfman/bpfman/cmd/internal/cli"
+	"github.com/bpfman/bpfman/fs"
+	"github.com/bpfman/bpfman/internal/registryfixture"
+	"github.com/bpfman/bpfman/version"
 )
 
 // CLI is the root command structure for bpfman-shell. The binary is

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/frobware/go-bpfman"
+	"github.com/bpfman/bpfman"
 )
 
 // RenderShowLinks writes a tabwriter table of link details.

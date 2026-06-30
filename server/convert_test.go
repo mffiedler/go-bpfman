@@ -3,7 +3,7 @@ package server
 import (
 	"testing"
 
-	pb "github.com/frobware/go-bpfman/server/pb"
+	pb "github.com/bpfman/bpfman/server/pb"
 )
 
 func TestProtoImageAuthRequiresBothCredentials(t *testing.T) {

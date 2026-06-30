@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/frobware/go-bpfman/fs"
-	"github.com/frobware/go-bpfman/fs/runtime"
+	"github.com/bpfman/bpfman/fs"
+	"github.com/bpfman/bpfman/fs/runtime"
 )
 
 // ScanWipe returns a Plan that returns bpfman's runtime directory

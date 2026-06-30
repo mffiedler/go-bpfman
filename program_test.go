@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/kernel"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/kernel"
 )
 
 // TestProgramListResult_EmptyMarshalsAsEmptyArray pins the wire

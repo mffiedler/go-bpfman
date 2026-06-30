@@ -14,7 +14,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/source"
 )
 
 // diagnostic is the structured form of one rendered error: where

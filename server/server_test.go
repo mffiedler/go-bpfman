@@ -14,8 +14,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/frobware/go-bpfman/fs"
-	"github.com/frobware/go-bpfman/lock"
+	"github.com/bpfman/bpfman/fs"
+	"github.com/bpfman/bpfman/lock"
 )
 
 func testLogger() *slog.Logger {

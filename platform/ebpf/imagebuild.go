@@ -10,7 +10,7 @@ import (
 
 	ciliumebpf "github.com/cilium/ebpf"
 
-	"github.com/frobware/go-bpfman/internal/imagebuild"
+	"github.com/bpfman/bpfman/internal/imagebuild"
 )
 
 // CiliumProjectBytecodeSource discovers cilium/ebpf bpf2go object files

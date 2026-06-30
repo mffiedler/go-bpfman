@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/runtime"
 )
 
 // ArgText extracts the text from a single Arg. For text-bearing

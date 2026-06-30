@@ -13,9 +13,9 @@ import (
 	"github.com/cilium/ebpf"
 	"golang.org/x/sys/unix"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/fs"
-	"github.com/frobware/go-bpfman/kernel"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/fs"
+	"github.com/bpfman/bpfman/kernel"
 )
 
 // applyGlobalData sets the user-supplied global variables on the

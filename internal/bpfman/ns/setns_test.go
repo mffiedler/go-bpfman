@@ -5,7 +5,7 @@ package ns_test
 import (
 	"testing"
 
-	"github.com/frobware/go-bpfman/internal/bpfman/ns"
+	"github.com/bpfman/bpfman/internal/bpfman/ns"
 )
 
 // TestConstructorWithSelfNamespace is the strongest proof that the

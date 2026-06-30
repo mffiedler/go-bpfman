@@ -5,7 +5,7 @@ import (
 
 	"github.com/cilium/ebpf/link"
 
-	"github.com/frobware/go-bpfman/kernel"
+	"github.com/bpfman/bpfman/kernel"
 )
 
 // ToKernelLink converts a cilium/ebpf link.Info to a kernel.Link.

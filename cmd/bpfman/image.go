@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/frobware/go-bpfman/cmd/internal/runtime"
-	"github.com/frobware/go-bpfman/config"
-	"github.com/frobware/go-bpfman/internal/imagebuild"
-	"github.com/frobware/go-bpfman/platform"
-	platformebpf "github.com/frobware/go-bpfman/platform/ebpf"
-	"github.com/frobware/go-bpfman/platform/image/oci"
-	"github.com/frobware/go-bpfman/platform/image/verify"
+	"github.com/bpfman/bpfman/cmd/internal/runtime"
+	"github.com/bpfman/bpfman/config"
+	"github.com/bpfman/bpfman/internal/imagebuild"
+	"github.com/bpfman/bpfman/platform"
+	platformebpf "github.com/bpfman/bpfman/platform/ebpf"
+	"github.com/bpfman/bpfman/platform/image/oci"
+	"github.com/bpfman/bpfman/platform/image/verify"
 )
 
 // ImageCmd groups image-related subcommands.

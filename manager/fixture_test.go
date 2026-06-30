@@ -12,14 +12,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/fs"
-	"github.com/frobware/go-bpfman/fs/runtime"
-	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/lock"
-	"github.com/frobware/go-bpfman/manager"
-	"github.com/frobware/go-bpfman/platform"
-	"github.com/frobware/go-bpfman/platform/store/sqlite"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/fs"
+	"github.com/bpfman/bpfman/fs/runtime"
+	"github.com/bpfman/bpfman/kernel"
+	"github.com/bpfman/bpfman/lock"
+	"github.com/bpfman/bpfman/manager"
+	"github.com/bpfman/bpfman/platform"
+	"github.com/bpfman/bpfman/platform/store/sqlite"
 )
 
 // testLogger returns a logger for tests. By default it discards all output.

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/source"
 )
 
 // Parse turns a token stream into a *Program. Every parse error

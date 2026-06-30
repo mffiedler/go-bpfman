@@ -1,6 +1,6 @@
 package runtime
 
-import "github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
+import "github.com/bpfman/bpfman/cmd/bpfman-shell/shell/source"
 
 // Arg is the post-expansion representation of a command argument. It
 // is a sealed sum type that preserves distinctions lost in []string:

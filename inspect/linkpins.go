@@ -8,8 +8,8 @@ import (
 
 	"github.com/cilium/ebpf/link"
 
-	"github.com/frobware/go-bpfman/fs"
-	"github.com/frobware/go-bpfman/kernel"
+	"github.com/bpfman/bpfman/fs"
+	"github.com/bpfman/bpfman/kernel"
 )
 
 // linkPinIndex maps a kernel link ID to the bpf fs pin path

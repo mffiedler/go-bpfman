@@ -14,9 +14,9 @@ import (
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/e2e/testnet"
-	"github.com/frobware/go-bpfman/manager"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/e2e/testnet"
+	"github.com/bpfman/bpfman/manager"
 )
 
 // listIngressBPFFilters returns the cls_bpf filters at the given

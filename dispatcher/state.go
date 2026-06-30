@@ -1,6 +1,6 @@
 package dispatcher
 
-import "github.com/frobware/go-bpfman/kernel"
+import "github.com/bpfman/bpfman/kernel"
 
 // Key uniquely identifies a dispatcher by its type, network namespace,
 // and interface index.

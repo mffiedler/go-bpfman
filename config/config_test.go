@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/frobware/go-bpfman/logging"
+	"github.com/bpfman/bpfman/logging"
 )
 
 func TestLoggingConfigToSpec_MergesComponents(t *testing.T) {

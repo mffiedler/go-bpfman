@@ -1,6 +1,6 @@
 package syntax
 
-import "github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
+import "github.com/bpfman/bpfman/cmd/bpfman-shell/shell/source"
 
 // MatchesBlockExpr is the parsed `matches { path: pattern, ... }`
 // block owned by a MatchesExpr, or a nested sub-block reached from a

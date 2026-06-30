@@ -10,8 +10,8 @@ import (
 	"slices"
 	"strconv"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/semantics"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/semantics"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/syntax"
 )
 
 // ErrFieldMissing is a sentinel returned by the path walker when a

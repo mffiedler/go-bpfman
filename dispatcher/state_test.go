@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/bpfman/bpfman/dispatcher"
 )
 
 func TestKeyFilterMatches(t *testing.T) {

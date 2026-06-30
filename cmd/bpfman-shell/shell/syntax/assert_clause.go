@@ -1,6 +1,6 @@
 package syntax
 
-import "github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
+import "github.com/bpfman/bpfman/cmd/bpfman-shell/shell/source"
 
 // AssertClause is the syntax-owned body that follows an assert or
 // require keyword. The parser always produces one AssertStmt; the

@@ -9,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/manager"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/manager"
 )
 
 // TestDebug_DetachDeferral_Kretprobe is a diagnostic, not a regression

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/frobware/go-bpfman/lock"
-	"github.com/frobware/go-bpfman/platform"
+	"github.com/bpfman/bpfman/lock"
+	"github.com/bpfman/bpfman/platform"
 )
 
 // Tuning knob env vars. Both apply to every process that opens

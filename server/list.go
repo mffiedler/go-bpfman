@@ -8,12 +8,12 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/inspect"
-	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/manager"
-	"github.com/frobware/go-bpfman/platform"
-	pb "github.com/frobware/go-bpfman/server/pb"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/inspect"
+	"github.com/bpfman/bpfman/kernel"
+	"github.com/bpfman/bpfman/manager"
+	"github.com/bpfman/bpfman/platform"
+	pb "github.com/bpfman/bpfman/server/pb"
 )
 
 // List implements the List RPC method.

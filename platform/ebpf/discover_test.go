@@ -6,8 +6,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/platform/ebpf"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/platform/ebpf"
 )
 
 // xdpPassObject is the compiled xdp_pass BPF object, read off disk

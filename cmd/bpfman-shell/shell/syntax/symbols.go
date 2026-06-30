@@ -1,6 +1,6 @@
 package syntax
 
-import "github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
+import "github.com/bpfman/bpfman/cmd/bpfman-shell/shell/source"
 
 // SymbolKind classifies a binding site in bpfman-shell source.
 type SymbolKind string

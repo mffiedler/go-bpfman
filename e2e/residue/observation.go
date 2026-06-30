@@ -3,8 +3,8 @@ package residue
 import (
 	"github.com/cilium/ebpf/link"
 
-	"github.com/frobware/go-bpfman/inspect"
-	"github.com/frobware/go-bpfman/kernel"
+	"github.com/bpfman/bpfman/inspect"
+	"github.com/bpfman/bpfman/kernel"
 )
 
 // PlanFromObservation translates an inspect.Observation into a

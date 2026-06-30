@@ -6,8 +6,8 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/ir"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/ir"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/source"
 )
 
 // MatchesResult is the shell-owned outcome of evaluating a

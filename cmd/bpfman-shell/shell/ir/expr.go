@@ -1,6 +1,6 @@
 package ir
 
-import "github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
+import "github.com/bpfman/bpfman/cmd/bpfman-shell/shell/source"
 
 // Expr is the lowered-expression sum type carried by Eval,
 // BuildArgs, and Assert. It mirrors the surface expression

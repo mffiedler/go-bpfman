@@ -3,7 +3,7 @@ package syntax
 import (
 	"strings"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/source"
 )
 
 // isMatchesPredicate reports whether s is one of the bareword

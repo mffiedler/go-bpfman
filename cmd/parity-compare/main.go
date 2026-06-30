@@ -21,7 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/frobware/go-bpfman/internal/parity"
+	"github.com/bpfman/bpfman/internal/parity"
 
 	"gopkg.in/yaml.v3"
 )

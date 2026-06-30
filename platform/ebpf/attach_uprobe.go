@@ -16,10 +16,10 @@ import (
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/internal/bpfman/ns"
-	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/lock"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/internal/bpfman/ns"
+	"github.com/bpfman/bpfman/kernel"
+	"github.com/bpfman/bpfman/lock"
 )
 
 // AttachUprobeLocal attaches a pinned program to a user-space function

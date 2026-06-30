@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"testing"
 
-	bpfman "github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/manager/action"
+	bpfman "github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/manager/action"
 )
 
 // testAction creates a labelled action for matching in the fake

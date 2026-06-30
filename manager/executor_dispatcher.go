@@ -14,13 +14,13 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/internal/tcpolicy"
-	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/manager/action"
-	"github.com/frobware/go-bpfman/ns/netns"
-	"github.com/frobware/go-bpfman/platform"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/dispatcher"
+	"github.com/bpfman/bpfman/internal/tcpolicy"
+	"github.com/bpfman/bpfman/kernel"
+	"github.com/bpfman/bpfman/manager/action"
+	"github.com/bpfman/bpfman/ns/netns"
+	"github.com/bpfman/bpfman/platform"
 )
 
 // rebuildSlot carries per-extension data for the rebuild.

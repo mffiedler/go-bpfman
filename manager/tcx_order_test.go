@@ -3,8 +3,8 @@ package manager
 import (
 	"testing"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/kernel"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/kernel"
 )
 
 func TestComputeTCXAttachOrder(t *testing.T) {

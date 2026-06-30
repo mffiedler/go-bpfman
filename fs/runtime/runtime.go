@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/frobware/go-bpfman/fs"
+	"github.com/bpfman/bpfman/fs"
 )
 
 // New creates runtime directories and ensures bpffs is mounted.

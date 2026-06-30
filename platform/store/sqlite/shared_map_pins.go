@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/frobware/go-bpfman/kernel"
+	"github.com/bpfman/bpfman/kernel"
 )
 
 // prepareSharedMapPinStatements prepares SQL statements for shared map

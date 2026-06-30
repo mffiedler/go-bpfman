@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/frobware/go-bpfman/kernel"
+	"github.com/bpfman/bpfman/kernel"
 )
 
 // ErrInvalidAttachSpec is the sentinel wrapped by attach-spec

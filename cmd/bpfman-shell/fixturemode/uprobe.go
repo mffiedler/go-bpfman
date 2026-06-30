@@ -33,7 +33,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/driver"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/driver"
 )
 
 // UprobeTargetSymbol names the cgo'd target the
@@ -49,7 +49,7 @@ const UprobeTargetSymbol = "bpfman_shell_uprobe_call_malloc"
 // (and slashes) -- the shape that real-world Go targets such as
 // the operator's `main.getCount` present, and that bpffs rejects
 // in pin names. Tests attach here to cover that shape.
-const UprobeGoTargetSymbol = "github.com/frobware/go-bpfman/cmd/bpfman-shell/fixturemode.GoUprobeTarget"
+const UprobeGoTargetSymbol = "github.com/bpfman/bpfman/cmd/bpfman-shell/fixturemode.GoUprobeTarget"
 
 // goUprobeSink gives GoUprobeTarget's body an unelidable side
 // effect so the call cannot be optimised away.

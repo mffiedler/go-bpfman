@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/lock"
-	"github.com/frobware/go-bpfman/manager/action"
-	"github.com/frobware/go-bpfman/manager/operation"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/dispatcher"
+	"github.com/bpfman/bpfman/lock"
+	"github.com/bpfman/bpfman/manager/action"
+	"github.com/bpfman/bpfman/manager/operation"
 )
 
 // Detach removes a link by link ID.

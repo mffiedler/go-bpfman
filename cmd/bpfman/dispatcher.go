@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman/cliformat"
-	"github.com/frobware/go-bpfman/cmd/internal/runtime"
-	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/lock"
+	"github.com/bpfman/bpfman/cmd/bpfman/cliformat"
+	"github.com/bpfman/bpfman/cmd/internal/runtime"
+	"github.com/bpfman/bpfman/dispatcher"
+	"github.com/bpfman/bpfman/lock"
 )
 
 // DispatcherCmd groups dispatcher management subcommands.

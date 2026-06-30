@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/frobware/go-bpfman/ns/netns"
+	"github.com/bpfman/bpfman/ns/netns"
 )
 
 // e2eSuiteLockPath is a system-wide flock the suite holds for the

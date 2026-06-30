@@ -6,9 +6,9 @@ import (
 
 	"github.com/cilium/ebpf/link"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/platform"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/kernel"
+	"github.com/bpfman/bpfman/platform"
 )
 
 // ExtensionLinkInfo loads a pinned freplace link, calls

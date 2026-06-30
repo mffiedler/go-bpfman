@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/lock"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/lock"
 )
 
 // Attach attaches a loaded program using the given spec. The spec

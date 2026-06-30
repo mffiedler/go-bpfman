@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/frobware/go-bpfman/internal/imagebuild"
+	"github.com/bpfman/bpfman/internal/imagebuild"
 )
 
 func TestBytecodeSourceRejectsConflictingModes(t *testing.T) {

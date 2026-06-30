@@ -306,7 +306,7 @@ DEV_RUNTIME_IMAGE ?= registry.fedoraproject.org/fedora-minimal:$(FEDORA_VERSION)
 # ---------------------------------------------------------------------------
 # Version information injected at build time.
 # ---------------------------------------------------------------------------
-VERSION_PKG := github.com/frobware/go-bpfman/version
+VERSION_PKG := github.com/bpfman/bpfman/version
 GIT_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null)
 GIT_BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
 GIT_STATE ?= $(shell if git diff --quiet 2>/dev/null; then echo clean; else echo dirty; fi)
@@ -954,7 +954,7 @@ test-e2e-grpc: build-e2e-grpc
 # bin/e2e.test on a single host.
 
 E2E_SCRIPTS_TEST_BIN := $(BIN_DIR)/e2e-scripts.test
-E2E_SCRIPTS_TEST_PKG := github.com/frobware/go-bpfman/e2e/scriptrunner
+E2E_SCRIPTS_TEST_PKG := github.com/bpfman/bpfman/e2e/scriptrunner
 E2E_IMAGE_NO_VERIFY_CONFIG := $(abspath e2e/config/no-signature-verification.toml)
 BPFMAN_CONFIG ?=
 
@@ -1246,7 +1246,7 @@ e2e-kmod-force-reload: bpfman-build bpfman-e2e-cleanup-build
 # ---------------------------------------------------------------------------
 doc:
 	@echo "Starting pkgsite documentation server..."
-	@echo "Open http://localhost:$(DOC_PORT)/github.com/frobware/go-bpfman"
+	@echo "Open http://localhost:$(DOC_PORT)/github.com/bpfman/bpfman"
 	@echo "Press Ctrl+C to stop"
 	@go run golang.org/x/pkgsite/cmd/pkgsite@latest -http=localhost:$(DOC_PORT) .
 

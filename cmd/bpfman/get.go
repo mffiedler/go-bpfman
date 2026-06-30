@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/cmd/bpfman/cliformat"
-	"github.com/frobware/go-bpfman/cmd/internal/args"
-	"github.com/frobware/go-bpfman/cmd/internal/runtime"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/cmd/bpfman/cliformat"
+	"github.com/bpfman/bpfman/cmd/internal/args"
+	"github.com/bpfman/bpfman/cmd/internal/runtime"
 )
 
 // GetCmd is a verb-noun alias path mirroring the Rust bpfman CLI

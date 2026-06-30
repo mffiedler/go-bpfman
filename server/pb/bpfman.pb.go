@@ -3724,7 +3724,7 @@ const file_bpfman_proto_rawDesc = "" +
 	"\fPullBytecode\x12\x1e.bpfman.v1.PullBytecodeRequest\x1a\x1f.bpfman.v1.PullBytecodeResponse\x124\n" +
 	"\x03Get\x12\x15.bpfman.v1.GetRequest\x1a\x16.bpfman.v1.GetResponse\x12F\n" +
 	"\tListLinks\x12\x1b.bpfman.v1.ListLinksRequest\x1a\x1c.bpfman.v1.ListLinksResponse\x12@\n" +
-	"\aGetLink\x12\x19.bpfman.v1.GetLinkRequest\x1a\x1a.bpfman.v1.GetLinkResponseB)Z'github.com/frobware/go-bpfman/server/pbb\x06proto3"
+	"\aGetLink\x12\x19.bpfman.v1.GetLinkRequest\x1a\x1a.bpfman.v1.GetLinkResponseB$Z\"github.com/bpfman/bpfman/server/pbb\x06proto3"
 
 var (
 	file_bpfman_proto_rawDescOnce sync.Once

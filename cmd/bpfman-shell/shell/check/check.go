@@ -27,11 +27,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/jobsig"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/semantics"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/source"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/syntax"
-	"github.com/frobware/go-bpfman/internal/strdist"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/jobsig"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/semantics"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/source"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/syntax"
+	"github.com/bpfman/bpfman/internal/strdist"
 )
 
 // Issue is one finding from a Check pass: a source location

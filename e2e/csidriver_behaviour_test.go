@@ -19,10 +19,10 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/frobware/go-bpfman"
-	csidriver "github.com/frobware/go-bpfman/csi"
-	"github.com/frobware/go-bpfman/manager"
-	"github.com/frobware/go-bpfman/platform/ebpf"
+	"github.com/bpfman/bpfman"
+	csidriver "github.com/bpfman/bpfman/csi"
+	"github.com/bpfman/bpfman/manager"
+	"github.com/bpfman/bpfman/platform/ebpf"
 )
 
 // newCSIDriver loads a probe program carrying the metadata the driver

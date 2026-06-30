@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	bpfman "github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/fs"
+	bpfman "github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/fs"
 )
 
 func TestBPFFS_RemoveDispatcherProgPin_ValidatesNameAndParent(t *testing.T) {

@@ -3,9 +3,9 @@ package manager
 import (
 	"context"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/manager/action"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/dispatcher"
+	"github.com/bpfman/bpfman/manager/action"
 )
 
 // attachXDP attaches an XDP program to a network interface using the

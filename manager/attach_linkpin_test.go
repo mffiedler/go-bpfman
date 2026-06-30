@@ -11,10 +11,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/manager"
-	"github.com/frobware/go-bpfman/platform"
+	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/kernel"
+	"github.com/bpfman/bpfman/manager"
+	"github.com/bpfman/bpfman/platform"
 )
 
 // These tests pin down the link pin-naming contract: link pins use
@@ -93,7 +93,7 @@ func TestAttach_TracepointLinkPinPathIsNumericLinkID(t *testing.T) {
 func TestAttach_DottedGoSymbolKeepsPinNumeric(t *testing.T) {
 	t.Parallel()
 
-	const goSymbol = "github.com/frobware/go-bpfman/cmd/bpfman-shell/fixturemode.GoUprobeTarget"
+	const goSymbol = "github.com/bpfman/bpfman/cmd/bpfman-shell/fixturemode.GoUprobeTarget"
 
 	fix := newTestFixture(t)
 	ctx := context.Background()

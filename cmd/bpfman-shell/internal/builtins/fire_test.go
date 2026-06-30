@@ -6,9 +6,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/driver"
-	_ "github.com/frobware/go-bpfman/cmd/bpfman-shell/fixturemode"
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/runtime"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/driver"
+	_ "github.com/bpfman/bpfman/cmd/bpfman-shell/fixturemode"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/runtime"
 )
 
 // callFire invokes handleFire with the given word-arg sequence

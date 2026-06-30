@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell/ir"
+	"github.com/bpfman/bpfman/cmd/bpfman-shell/shell/ir"
 )
 
 // TestDumpLowered_body covers the simplest possible program: a

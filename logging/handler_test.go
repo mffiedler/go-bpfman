@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman/logging"
+	"github.com/bpfman/bpfman/logging"
 )
 
 func TestFilteringHandler_Enabled(t *testing.T) {

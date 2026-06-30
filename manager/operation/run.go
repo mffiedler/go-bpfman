@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/frobware/go-bpfman/manager/action"
+	"github.com/bpfman/bpfman/manager/action"
 )
 
 // Run executes a plan and returns the bindings on success. On

@@ -12,8 +12,8 @@ import (
 	"github.com/sigstore/cosign/v2/pkg/cosign"
 	cosignremote "github.com/sigstore/cosign/v2/pkg/oci/remote"
 
-	"github.com/frobware/go-bpfman/config"
-	"github.com/frobware/go-bpfman/platform"
+	"github.com/bpfman/bpfman/config"
+	"github.com/bpfman/bpfman/platform"
 )
 
 func TestNoSignReportsVerificationDisabled(t *testing.T) {

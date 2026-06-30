@@ -7,7 +7,7 @@ import (
 
 	"github.com/vishvananda/netlink"
 
-	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/bpfman/bpfman/dispatcher"
 )
 
 func TestLoadTCDispatcher(t *testing.T) {

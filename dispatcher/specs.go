@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/frobware/go-bpfman"
+	"github.com/bpfman/bpfman"
 )
 
 // XDPExtensionAttachSpec contains parameters for attaching an XDP extension

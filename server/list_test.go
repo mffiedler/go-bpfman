@@ -3,7 +3,7 @@ package server
 import (
 	"testing"
 
-	"github.com/frobware/go-bpfman"
+	"github.com/bpfman/bpfman"
 )
 
 // linkDetailsToProto is the only step between a link's domain details

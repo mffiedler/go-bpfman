@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/frobware/go-bpfman/lock"
+	"github.com/bpfman/bpfman/lock"
 )
 
 //nolint:paralleltest // mutates the os.Args process global via newCLIForArgs; cannot run in parallel.
