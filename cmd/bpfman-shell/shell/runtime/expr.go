@@ -210,13 +210,6 @@ func (e *Env) InPoll() bool {
 // mistake within a fraction of a second.
 const MaxDefCallDepth = 256
 
-// withDeferScope runs fn inside a fresh defer scope, restoring the outer
-// scope on return and executing every registered deferred statement in LIFO
-// order regardless of fn's outcome.
-func withDeferScope(env *Env, fn func() error) error {
-	return runWithDeferScope(env, fn)
-}
-
 // callDef binds def parameters from args and runs the def's
 // lowered entry block in env. Each call runs in its own session frame: parameters bind
 // into the call frame, body-level `let` lives there too, and
@@ -604,31 +597,6 @@ func (e *Env) ReapJobs(shouldReap func(*Job) bool) {
 		src[i] = nil
 	}
 	*e.jobs = dst
-}
-
-// runWithDeferScope establishes a defer scope around fn. The
-// previous scope is saved and restored on exit so nested scopes
-// (program, def body) compose. fn's error is returned verbatim;
-// defer execution happens regardless of fn's outcome.
-//
-// Defer scopes are independent of job scopes (see withJobScope)
-// because they nest differently: a def body opens its own defer
-// scope (defers fire at def return) but inherits the caller's
-// job scope (a job started in a def joins the caller's
-// registry, so returning the handle for the caller to wait is
-// not flagged as a leak).
-func runWithDeferScope(env *Env, fn func() error) error {
-	saved := env.defers
-	var stack []deferEntry
-	env.defers = &stack
-	bodyErr := fn()
-	env.defers = saved
-	// Most callers do not need the local failure count; the
-	// session counter is the right view for them. callDefAsBind
-	// reaches for the local count via its own scope wrapping in
-	// runDefCall so cleanup observation stays def-local.
-	_ = runDefers(env, stack)
-	return bodyErr
 }
 
 // withJobScope establishes a job scope around fn: any Job that

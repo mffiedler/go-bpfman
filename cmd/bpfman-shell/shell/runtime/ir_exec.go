@@ -60,18 +60,6 @@ func execProgram(lp *ir.Program, env *Env, skipProgramScope bool) error {
 	return runErr
 }
 
-// execInScope runs lp's body against env without opening a fresh
-// program-level defer scope. The caller is expected to have set env.defers
-// already so defers registered by the body append to that scope.
-//
-// Inner scopes (poll attempts, def-local cleanup) still nest
-// normally; only the body's program-policy ir.EnterDeferScope /
-// ir.RunDefers pair defers to the caller. Tests use this to pin inherited
-// defer-scope behaviour directly.
-func execInScope(lp *ir.Program, env *Env) error {
-	return execProgram(lp, env, true)
-}
-
 // runLoweredDefCall runs a def whose body is the IR Blocks
 // rooted at def.Entry. The caller (runDefCall) has
 // already done arity checking and recursion-depth bookkeeping;
