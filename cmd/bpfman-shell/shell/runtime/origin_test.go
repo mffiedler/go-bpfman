@@ -1,7 +1,6 @@
 package runtime
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -140,69 +139,6 @@ func TestValue_WithKind(t *testing.T) {
 	tagged := base.WithKind(semantics.OriginLink)
 	assert.Equal(t, semantics.OriginScalar, base.Kind())
 	assert.Equal(t, semantics.OriginLink, tagged.Kind())
-}
-
-func TestExpectOrigin_Matches(t *testing.T) {
-	t.Parallel()
-
-	v := StringValue("x").WithKind(semantics.OriginProgram)
-	assert.NoError(t, ExpectOrigin(v, "$prog", semantics.OriginProgram))
-	assert.NoError(t, ExpectOrigin(v, "$prog", semantics.OriginProgram, semantics.OriginLink))
-}
-
-func TestExpectOrigin_UnknownIsWildcard(t *testing.T) {
-	t.Parallel()
-
-	v, err := ValueFromJSON([]byte(`{"record":{"id":1}}`))
-	require.NoError(t, err)
-	assert.NoError(t, ExpectOrigin(v, "$x", semantics.OriginProgram))
-	assert.NoError(t, ExpectOrigin(v, "$x", semantics.OriginLink))
-}
-
-func TestExpectOrigin_Mismatch(t *testing.T) {
-	t.Parallel()
-
-	v := StringValue("x").WithKind(semantics.OriginProgram)
-	err := ExpectOrigin(v, "$prog", semantics.OriginLink)
-	require.Error(t, err)
-
-	var mismatch *OriginMismatchError
-	require.True(t, errors.As(err, &mismatch))
-	assert.Equal(t, "$prog", mismatch.VarName)
-	assert.Equal(t, semantics.OriginProgram, mismatch.Got)
-	assert.Equal(t, []semantics.OriginKind{semantics.OriginLink}, mismatch.Want)
-}
-
-func TestOriginMismatchError_Message(t *testing.T) {
-	t.Parallel()
-
-	cases := []struct {
-		name string
-		err  *OriginMismatchError
-		want string
-	}{
-		{
-			name: "single expected",
-			err:  &OriginMismatchError{VarName: "$prog", Got: semantics.OriginProgram, Want: []semantics.OriginKind{semantics.OriginLink}},
-			want: `variable "$prog" is a program; expected link`,
-		},
-		{
-			name: "multiple expected",
-			err:  &OriginMismatchError{VarName: "$x", Got: semantics.OriginScalar, Want: []semantics.OriginKind{semantics.OriginProgram, semantics.OriginLink}},
-			want: `variable "$x" is a scalar; expected one of program, link`,
-		},
-		{
-			name: "no varname",
-			err:  &OriginMismatchError{Got: semantics.OriginLink, Want: []semantics.OriginKind{semantics.OriginProgram}},
-			want: `value is a link; expected program`,
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			assert.Equal(t, tc.want, tc.err.Error())
-		})
-	}
 }
 
 func shapeFieldNames(shape semantics.Shape) []string {

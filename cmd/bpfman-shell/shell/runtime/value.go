@@ -82,10 +82,10 @@ func (p Presence) IsPresent() bool { return p.state != presenceMissing }
 // information that the JSON round-trip erases.
 //
 // The kind field declares what the Value represents (see semantics.OriginKind).
-// Producers set it at construction time via WithKind; consumers
-// check it via ExpectOrigin. semantics.OriginUnknown is the default and acts
-// as a wildcard for origin-less values (e.g. JSON parsed without
-// explicit tagging, map literals, path-lookup results).
+// Producers set it at construction time via WithKind.
+// semantics.OriginUnknown is the default and acts as a wildcard for
+// origin-less values (e.g. JSON parsed without explicit tagging, map
+// literals, path-lookup results).
 type Value struct {
 	v            any                  // JSON-decoded tree (map[string]any, etc.)
 	origin       any                  // original Go value, nil for non-struct values

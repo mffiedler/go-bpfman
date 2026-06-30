@@ -7,22 +7,19 @@ import (
 // OriginKind identifies what kind of thing a Value represents. It is
 // a closed set used for command-parser type checks and for uniform
 // error messages. The kind is declared at construction time by the
-// code that produces the Value; consumers (command parsers, assert,
-// if) check it via ExpectOrigin.
+// code that produces the Value.
 //
-// OriginUnknown is the default and acts as a wildcard in ExpectOrigin:
-// values with no declared kind (e.g. JSON parsed without explicit
-// tagging, map literals, path-lookup results) pass all origin checks.
-// This preserves the existing fallback behaviour where the consumer
-// tries a structural extraction (capability interface, path lookup)
-// regardless of origin.
+// OriginUnknown is the default and acts as a wildcard: values with no
+// declared kind (e.g. JSON parsed without explicit tagging, map
+// literals, path-lookup results) pass all origin checks. This preserves
+// the existing fallback behaviour where the consumer tries a structural
+// extraction (capability interface, path lookup) regardless of origin.
 type OriginKind int
 
 const (
 	// OriginUnknown is the zero value and the wildcard kind: a
 	// Value with no declared origin (JSON parsed without tagging,
-	// map literals, path-lookup results) passes every ExpectOrigin
-	// check.
+	// map literals, path-lookup results) passes every origin check.
 	OriginUnknown OriginKind = iota
 
 	// OriginScalar tags a Value that renders as a single token: a
