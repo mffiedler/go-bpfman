@@ -98,6 +98,28 @@ func alignLabelValues(rows []labelValue) string {
 	return b.String()
 }
 
+// alignLines tab-aligns a block of pre-formatted lines (used for the
+// multi-line Links/Maps sub-sections, whose nested rows are not sorted).
+// It trims the trailing padding tabwriter adds after an empty-value
+// header cell, and returns "" for no lines.
+func alignLines(lines []string) string {
+	if len(lines) == 0 {
+		return ""
+	}
+	var aligned strings.Builder
+	w := tabwriter.NewWriter(&aligned, 0, 0, 1, ' ', 0)
+	for _, l := range lines {
+		fmt.Fprintln(w, l)
+	}
+	w.Flush()
+	var out strings.Builder
+	for _, line := range strings.Split(strings.TrimSuffix(aligned.String(), "\n"), "\n") {
+		out.WriteString(strings.TrimRight(line, " "))
+		out.WriteByte('\n')
+	}
+	return out.String()
+}
+
 // RenderProgram writes a program get result in the specified output format.
 func RenderProgram(w io.Writer, prog bpfman.Program, format OutputFormat) error {
 	return renderOutput(w, format, prog, func(w io.Writer) error {
@@ -109,148 +131,132 @@ func formatProgramTable(prog bpfman.Program) string {
 	var b strings.Builder
 	p := &prog.Record
 
-	// Header - program identifier
 	fmt.Fprintf(&b, "Program ID: %d\n", p.ProgramID)
 
-	// Collect Spec, Status, and Stats fields, then align them together
-	var specFields, statusFields, statsFields []string
-
-	// Spec fields (sorted alphabetically)
+	// Spec section: scalar fields ordered by label.
+	var spec []labelValue
+	addSpec := func(label, value string) { spec = append(spec, labelValue{label, value}) }
 	if len(p.Load.GlobalData()) > 0 {
-		specFields = append(specFields, fmt.Sprintf("    Global:\t%s", formatGlobalData(p.Load.GlobalData())))
+		addSpec("Global", formatGlobalData(p.Load.GlobalData()))
 	} else {
-		specFields = append(specFields, "    Global:\tNone")
+		addSpec("Global", "None")
 	}
-	specFields = append(specFields, fmt.Sprintf("    GPL Compatible:\t%t", p.GPLCompatible))
+	addSpec("GPL Compatible", fmt.Sprintf("%t", p.GPLCompatible))
 	if p.License != "" {
-		specFields = append(specFields, fmt.Sprintf("    License:\t%s", p.License))
+		addSpec("License", p.License)
 	} else {
-		specFields = append(specFields, "    License:\tNone")
+		addSpec("License", "None")
 	}
 	if p.Handles.MapOwnerID != nil {
-		specFields = append(specFields, fmt.Sprintf("    Map Owner ID:\t%d", *p.Handles.MapOwnerID))
+		addSpec("Map Owner ID", fmt.Sprintf("%d", *p.Handles.MapOwnerID))
 	} else {
-		specFields = append(specFields, "    Map Owner ID:\tNone")
+		addSpec("Map Owner ID", "None")
 	}
-	specFields = append(specFields, fmt.Sprintf("    Map Pin Path:\t%s", p.Handles.MapsDir))
+	addSpec("Map Pin Path", p.Handles.MapsDir.String())
 	if len(p.Meta.Metadata) > 0 {
-		specFields = append(specFields, fmt.Sprintf("    Metadata:\t%s", formatMetadata(p.Meta.Metadata)))
+		addSpec("Metadata", formatMetadata(p.Meta.Metadata))
 	} else {
-		specFields = append(specFields, "    Metadata:\tNone")
+		addSpec("Metadata", "None")
 	}
-	specFields = append(specFields, fmt.Sprintf("    Name:\t%s", p.Meta.Name))
-	specFields = append(specFields, fmt.Sprintf("    Path:\t%s", p.Load.ObjectPath()))
-	specFields = append(specFields, fmt.Sprintf("    Type:\t%s", p.Load.ProgramType()))
-
-	// Status fields (sorted alphabetically).
-	// All lines use tabs so the tabwriter aligns values at
-	// a single column. Sub-section headers (Link N:, Map N:)
-	// carry an empty value; their properties use deeper indent.
-	if prog.Status.Kernel != nil {
-		kp := prog.Status.Kernel
-		if kp.BTFId != 0 {
-			statusFields = append(statusFields, fmt.Sprintf("    BTF ID:\t%d", kp.BTFId))
-		}
-		if prog.Status.ProgPin != "" {
-			statusFields = append(statusFields, fmt.Sprintf("    Bytecode:\t%s", prog.Status.Bytecode))
-		}
-		statusFields = append(statusFields, fmt.Sprintf("    Instructions:\t%d", kp.VerifiedInstructions))
-		if len(prog.Status.Links) > 0 {
-			statusFields = append(statusFields, "    Links:\t ")
-			for _, l := range prog.Status.Links {
-				statusFields = append(statusFields, fmt.Sprintf("    Link %d:\t ", l.Record.ID))
-				if l.Record.Details != nil {
-					statusFields = append(statusFields, fmt.Sprintf("      Attach:\t%s", formatAttachDetails(l.Record.Details)))
-				}
-				statusFields = append(statusFields, fmt.Sprintf("      Kind:\t%s", l.Record.Kind))
-				if l.Record.PinPath != nil {
-					statusFields = append(statusFields, fmt.Sprintf("      Pin:\t%s%s", l.Record.PinPath.String(), presenceSuffix(l.Status.PinPresent)))
-				}
-			}
-		} else {
-			statusFields = append(statusFields, "    Links:\tNone")
-		}
-		if !kp.LoadedAt.IsZero() {
-			statusFields = append(statusFields, fmt.Sprintf("    Loaded At:\t%s", kp.LoadedAt.Format(time.RFC3339)))
-		}
-		if prog.Status.ProgPin != "" {
-			statusFields = append(statusFields, fmt.Sprintf("    Map Dir:\t%s", prog.Status.MapDir))
-		}
-		if len(prog.Status.Maps) > 0 {
-			statusFields = append(statusFields, "    Maps:\t ")
-			for _, m := range prog.Status.Maps {
-				statusFields = append(statusFields, fmt.Sprintf("    Map %d:\t ", m.ID))
-				statusFields = append(statusFields, fmt.Sprintf("      Key Size:\t%dB", m.KeySize))
-				statusFields = append(statusFields, fmt.Sprintf("      Max Entries:\t%d", m.MaxEntries))
-				statusFields = append(statusFields, fmt.Sprintf("      Name:\t%s", m.Name))
-				if m.PinPath != "" {
-					statusFields = append(statusFields, fmt.Sprintf("      Pin:\t%s%s", m.PinPath, presenceSuffix(m.Present)))
-				}
-				statusFields = append(statusFields, fmt.Sprintf("      Type:\t%s", m.MapType))
-				statusFields = append(statusFields, fmt.Sprintf("      Value Size:\t%dB", m.ValueSize))
-			}
-		} else if len(kp.MapIDs) > 0 {
-			statusFields = append(statusFields, fmt.Sprintf("    Maps:\t%v", kp.MapIDs))
-		} else {
-			statusFields = append(statusFields, "    Maps:\tNone")
-		}
-		if kp.Memlock != 0 {
-			statusFields = append(statusFields, fmt.Sprintf("    Memory:\t%d bytes", kp.Memlock))
-		}
-		if prog.Status.ProgPin != "" {
-			statusFields = append(statusFields, fmt.Sprintf("    Prog Pin:\t%s", prog.Status.ProgPin))
-		}
-		statusFields = append(statusFields, fmt.Sprintf("    Size JITted:\t%d bytes", kp.JitedSize))
-		statusFields = append(statusFields, fmt.Sprintf("    Size Translated:\t%d bytes", kp.XlatedSize))
-		statusFields = append(statusFields, fmt.Sprintf("    Tag:\t%s", kp.Tag))
-	} else {
-		statusFields = append(statusFields, "    (no kernel info available)")
-	}
-
-	// Stats fields (sorted alphabetically)
-	if prog.Status.Stats != nil {
-		if prog.Status.Stats.RecursionMisses > 0 {
-			statsFields = append(statsFields, fmt.Sprintf("    Recursion Misses:\t%d", prog.Status.Stats.RecursionMisses))
-		}
-		statsFields = append(statsFields, fmt.Sprintf("    Run Count:\t%d", prog.Status.Stats.RunCount))
-		statsFields = append(statsFields, fmt.Sprintf("    Runtime:\t%s", prog.Status.Stats.Runtime))
-	} else {
-		statsFields = append(statsFields, "    (not enabled, see sysctl kernel.bpf_stats_enabled)")
-	}
-
-	// Run all fields through single tabwriter to get unified alignment
-	var aligned strings.Builder
-	w := tabwriter.NewWriter(&aligned, 0, 0, 1, ' ', 0)
-	for _, f := range specFields {
-		fmt.Fprintln(w, f)
-	}
-	for _, f := range statusFields {
-		fmt.Fprintln(w, f)
-	}
-	for _, f := range statsFields {
-		fmt.Fprintln(w, f)
-	}
-	w.Flush()
-
-	// Split aligned output and reassemble with headers
-	lines := strings.Split(strings.TrimSuffix(aligned.String(), "\n"), "\n")
-	specEnd := len(specFields)
-	statusEnd := specEnd + len(statusFields)
+	addSpec("Name", p.Meta.Name)
+	addSpec("Path", p.Load.ObjectPath())
+	addSpec("Type", p.Load.ProgramType().String())
+	sortByLabel(spec)
 
 	b.WriteString("  Spec:\n")
-	for _, line := range lines[:specEnd] {
-		b.WriteString(strings.TrimRight(line, " "))
-		b.WriteString("\n")
-	}
+	b.WriteString(alignLabelValues(spec))
+
+	// Status section: scalar fields ordered by label, then the Links and
+	// Maps sub-sections. The multi-line blocks render after the scalars
+	// rather than wedged among them.
 	b.WriteString("  Status:\n")
-	for _, line := range lines[specEnd:statusEnd] {
-		b.WriteString(strings.TrimRight(line, " "))
-		b.WriteString("\n")
+	if prog.Status.Kernel != nil {
+		kp := prog.Status.Kernel
+
+		var st []labelValue
+		addSt := func(label, value string) { st = append(st, labelValue{label, value}) }
+		if kp.BTFId != 0 {
+			addSt("BTF ID", fmt.Sprintf("%d", kp.BTFId))
+		}
+		if prog.Status.ProgPin != "" {
+			addSt("Bytecode", prog.Status.Bytecode)
+		}
+		addSt("Instructions", fmt.Sprintf("%d", kp.VerifiedInstructions))
+		if !kp.LoadedAt.IsZero() {
+			addSt("Loaded At", kp.LoadedAt.Format(time.RFC3339))
+		}
+		if prog.Status.ProgPin != "" {
+			addSt("Map Dir", prog.Status.MapDir.String())
+		}
+		if kp.Memlock != 0 {
+			addSt("Memory", fmt.Sprintf("%d bytes", kp.Memlock))
+		}
+		if prog.Status.ProgPin != "" {
+			addSt("Prog Pin", prog.Status.ProgPin.String())
+		}
+		addSt("Size JITted", fmt.Sprintf("%d bytes", kp.JitedSize))
+		addSt("Size Translated", fmt.Sprintf("%d bytes", kp.XlatedSize))
+		addSt("Tag", kp.Tag)
+		sortByLabel(st)
+		b.WriteString(alignLabelValues(st))
+
+		// Links sub-section.
+		var links []string
+		if len(prog.Status.Links) > 0 {
+			links = append(links, "    Links:\t ")
+			for _, l := range prog.Status.Links {
+				links = append(links, fmt.Sprintf("    Link %d:\t ", l.Record.ID))
+				if l.Record.Details != nil {
+					links = append(links, fmt.Sprintf("      Attach:\t%s", formatAttachDetails(l.Record.Details)))
+				}
+				links = append(links, fmt.Sprintf("      Kind:\t%s", l.Record.Kind))
+				if l.Record.PinPath != nil {
+					links = append(links, fmt.Sprintf("      Pin:\t%s%s", l.Record.PinPath.String(), presenceSuffix(l.Status.PinPresent)))
+				}
+			}
+		} else {
+			links = append(links, "    Links:\tNone")
+		}
+		b.WriteString(alignLines(links))
+
+		// Maps sub-section.
+		var mapLines []string
+		if len(prog.Status.Maps) > 0 {
+			mapLines = append(mapLines, "    Maps:\t ")
+			for _, m := range prog.Status.Maps {
+				mapLines = append(mapLines, fmt.Sprintf("    Map %d:\t ", m.ID))
+				mapLines = append(mapLines, fmt.Sprintf("      Key Size:\t%dB", m.KeySize))
+				mapLines = append(mapLines, fmt.Sprintf("      Max Entries:\t%d", m.MaxEntries))
+				mapLines = append(mapLines, fmt.Sprintf("      Name:\t%s", m.Name))
+				if m.PinPath != "" {
+					mapLines = append(mapLines, fmt.Sprintf("      Pin:\t%s%s", m.PinPath, presenceSuffix(m.Present)))
+				}
+				mapLines = append(mapLines, fmt.Sprintf("      Type:\t%s", m.MapType))
+				mapLines = append(mapLines, fmt.Sprintf("      Value Size:\t%dB", m.ValueSize))
+			}
+		} else if len(kp.MapIDs) > 0 {
+			mapLines = append(mapLines, fmt.Sprintf("    Maps:\t%v", kp.MapIDs))
+		} else {
+			mapLines = append(mapLines, "    Maps:\tNone")
+		}
+		b.WriteString(alignLines(mapLines))
+	} else {
+		b.WriteString("    (no kernel info available)\n")
 	}
+
+	// Stats section: scalar fields ordered by label.
 	b.WriteString("  Stats:\n")
-	for _, line := range lines[statusEnd:] {
-		b.WriteString(strings.TrimRight(line, " "))
-		b.WriteString("\n")
+	if prog.Status.Stats != nil {
+		var stats []labelValue
+		if prog.Status.Stats.RecursionMisses > 0 {
+			stats = append(stats, labelValue{"Recursion Misses", fmt.Sprintf("%d", prog.Status.Stats.RecursionMisses)})
+		}
+		stats = append(stats, labelValue{"Run Count", fmt.Sprintf("%d", prog.Status.Stats.RunCount)})
+		stats = append(stats, labelValue{"Runtime", prog.Status.Stats.Runtime.String()})
+		sortByLabel(stats)
+		b.WriteString(alignLabelValues(stats))
+	} else {
+		b.WriteString("    (not enabled, see sysctl kernel.bpf_stats_enabled)\n")
 	}
 
 	return b.String()
