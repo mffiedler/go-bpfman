@@ -347,6 +347,15 @@ func formatAttachDetails(details bpfman.LinkDetails) string {
 	}
 }
 
+// presenceSuffix annotates a pin path inline: empty when the pin is
+// present, " (missing)" when the path does not exist on the filesystem.
+func presenceSuffix(present bool) string {
+	if present {
+		return ""
+	}
+	return " (missing)"
+}
+
 // LoadedProgramsView is the output view for commands that load programs.
 type LoadedProgramsView struct {
 	// Programs are the programs loaded by the command, one row per program.
