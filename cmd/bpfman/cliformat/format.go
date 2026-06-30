@@ -514,19 +514,24 @@ func RenderDispatcherSnapshot(w io.Writer, snap platform.DispatcherSnapshot, for
 func formatDispatcherSnapshotTable(snap platform.DispatcherSnapshot) string {
 	var b strings.Builder
 
-	// Header section
+	// Header section: identity line, then the runtime fields as aligned
+	// label/value rows.
 	fmt.Fprintf(&b, "Dispatcher: %s nsid=%d ifindex=%d\n", snap.Key.Type, snap.Key.Nsid, snap.Key.Ifindex)
-	fmt.Fprintf(&b, "  Revision:    %d\n", snap.Revision)
-	fmt.Fprintf(&b, "  Program ID:  %d\n", snap.Runtime.ProgramID)
+
+	header := []row{
+		fieldRow("Revision", fmt.Sprintf("%d", snap.Revision)),
+		fieldRow("Program ID", fmt.Sprintf("%d", snap.Runtime.ProgramID)),
+	}
 	if snap.Runtime.KernelLinkID != nil {
-		fmt.Fprintf(&b, "  Kernel Link ID: %d\n", *snap.Runtime.KernelLinkID)
+		header = append(header, fieldRow("Kernel Link ID", fmt.Sprintf("%d", *snap.Runtime.KernelLinkID)))
 	}
 	if snap.Runtime.FilterPriority != nil {
-		fmt.Fprintf(&b, "  Priority:    %d\n", *snap.Runtime.FilterPriority)
+		header = append(header, fieldRow("Priority", fmt.Sprintf("%d", *snap.Runtime.FilterPriority)))
 	}
 	if snap.Runtime.FilterHandle != nil {
-		fmt.Fprintf(&b, "  Filter Handle: %#x\n", *snap.Runtime.FilterHandle)
+		header = append(header, fieldRow("Filter Handle", fmt.Sprintf("%#x", *snap.Runtime.FilterHandle)))
 	}
+	renderRows(&b, header, 1)
 
 	// Members table
 	fmt.Fprintf(&b, "\nMembers (%d/%d):\n", len(snap.Members), dispatcher.MaxPrograms)
