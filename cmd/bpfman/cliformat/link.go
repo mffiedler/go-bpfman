@@ -59,27 +59,74 @@ func RenderLinkList(w io.Writer, view LinkListView, format OutputFormat) error {
 	})
 }
 
+// renderLinkListTable renders the link-list overview. The pin path is
+// deliberately absent: the bpffs layout is internal naming, not
+// interface, and the ATTACHMENT summary carries the "attached to what?"
+// answer in domain terms. Pin detail stays on `link get` and in the
+// JSON output.
 func renderLinkListTable(w io.Writer, view LinkListView) error {
-	headers := []string{"LINK ID", "KERNEL LINK ID", "KIND", "PROGRAM ID", "PIN PATH"}
+	headers := []string{"LINK ID", "KERNEL LINK ID", "KIND", "PROGRAM ID", "ATTACHMENT"}
 	rows := make([][]string, len(view.Links))
 	for i, l := range view.Links {
 		kernelLinkID := "<none>"
 		if l.KernelLinkID != nil {
 			kernelLinkID = fmt.Sprintf("%d", *l.KernelLinkID)
 		}
-		pinPath := "<none>"
-		if l.PinPath != nil {
-			pinPath = l.PinPath.String()
-		}
 		rows[i] = []string{
 			fmt.Sprintf("%d", l.ID),
 			kernelLinkID,
 			l.Kind.String(),
 			fmt.Sprintf("%d", l.ProgramID),
-			pinPath,
+			attachmentSummary(l.Details),
 		}
 	}
 	return writeOutput(w, renderTable("", headers, rows))
+}
+
+// attachmentSummary renders a one-cell summary of where a link is
+// attached, from its typed details: interface, direction, and chain
+// position for the network kinds, the traced function or tracepoint for
+// the probe kinds. The KIND column already names the link type, so the
+// summary carries only the target.
+func attachmentSummary(details bpfman.LinkDetails) string {
+	switch d := details.(type) {
+	case bpfman.XDPDetails:
+		s := fmt.Sprintf("%s pos-%d", d.Interface, d.Position)
+		if d.Netns != "" {
+			s += " netns=" + d.Netns
+		}
+		return s
+	case bpfman.TCDetails:
+		s := fmt.Sprintf("%s %s pos-%d", d.Interface, d.Direction, d.Position)
+		if d.Netns != "" {
+			s += " netns=" + d.Netns
+		}
+		return s
+	case bpfman.TCXDetails:
+		s := fmt.Sprintf("%s %s pos-%d", d.Interface, d.Direction, d.Position)
+		if d.Netns != "" {
+			s += " netns=" + d.Netns
+		}
+		return s
+	case bpfman.TracepointDetails:
+		return d.Group + "/" + d.Name
+	case bpfman.KprobeDetails:
+		if d.Offset != 0 {
+			return fmt.Sprintf("%s+%d", d.FnName, d.Offset)
+		}
+		return d.FnName
+	case bpfman.UprobeDetails:
+		if d.FnName == "" {
+			return fmt.Sprintf("%s +%d", d.Target, d.Offset)
+		}
+		return d.Target + " " + d.FnName
+	case bpfman.FentryDetails:
+		return d.FnName
+	case bpfman.FexitDetails:
+		return d.FnName
+	default:
+		return "<none>"
+	}
 }
 
 func formatLinkTable(view LinkGetView) string {

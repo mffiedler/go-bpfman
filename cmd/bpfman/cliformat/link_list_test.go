@@ -81,3 +81,81 @@ func TestRenderLinkList_NilKernelIDShowsSentinel(t *testing.T) {
 		t.Errorf("KERNEL LINK ID column with no captured kernel ID = %q, want %q", got, "<none>")
 	}
 }
+
+// The ATTACHMENT column summarises where each link is attached from its
+// typed details, so the listing answers "attached to what?" without
+// decoding the pin path or running link get per row.
+func TestRenderLinkList_AttachmentSummaries(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		link bpfman.LinkRecord
+		want string
+	}{
+		{
+			name: "xdp",
+			link: bpfman.LinkRecord{ID: 1, Kind: bpfman.LinkKindXDP, Details: bpfman.XDPDetails{Interface: "eth0", Position: 2}},
+			want: "eth0 pos-2",
+		},
+		{
+			name: "xdp in a network namespace",
+			link: bpfman.LinkRecord{ID: 1, Kind: bpfman.LinkKindXDP, Details: bpfman.XDPDetails{Interface: "eth0", Position: 0, Netns: "/var/run/netns/blue"}},
+			want: "eth0 pos-0 netns=/var/run/netns/blue",
+		},
+		{
+			name: "tc",
+			link: bpfman.LinkRecord{ID: 1, Kind: bpfman.LinkKindTC, Details: bpfman.TCDetails{Interface: "eth0", Direction: bpfman.TCDirectionIngress, Position: 0}},
+			want: "eth0 ingress pos-0",
+		},
+		{
+			name: "tcx",
+			link: bpfman.LinkRecord{ID: 1, Kind: bpfman.LinkKindTCX, Details: bpfman.TCXDetails{Interface: "eth0", Direction: bpfman.TCDirectionEgress, Position: 1}},
+			want: "eth0 egress pos-1",
+		},
+		{
+			name: "tracepoint",
+			link: bpfman.LinkRecord{ID: 1, Kind: bpfman.LinkKindTracepoint, Details: bpfman.TracepointDetails{Group: "syscalls", Name: "sys_enter_kill"}},
+			want: "syscalls/sys_enter_kill",
+		},
+		{
+			name: "kprobe",
+			link: bpfman.LinkRecord{ID: 1, Kind: bpfman.LinkKindKprobe, Details: bpfman.KprobeDetails{FnName: "do_unlinkat"}},
+			want: "do_unlinkat",
+		},
+		{
+			name: "kprobe with offset",
+			link: bpfman.LinkRecord{ID: 1, Kind: bpfman.LinkKindKprobe, Details: bpfman.KprobeDetails{FnName: "do_unlinkat", Offset: 8}},
+			want: "do_unlinkat+8",
+		},
+		{
+			name: "uprobe",
+			link: bpfman.LinkRecord{ID: 1, Kind: bpfman.LinkKindUprobe, Details: bpfman.UprobeDetails{Target: "/usr/lib/libc.so.6", FnName: "malloc"}},
+			want: "/usr/lib/libc.so.6 malloc",
+		},
+		{
+			name: "uprobe by offset",
+			link: bpfman.LinkRecord{ID: 1, Kind: bpfman.LinkKindUprobe, Details: bpfman.UprobeDetails{Target: "/usr/lib/libc.so.6", Offset: 4096}},
+			want: "/usr/lib/libc.so.6 +4096",
+		},
+		{
+			name: "fentry",
+			link: bpfman.LinkRecord{ID: 1, Kind: bpfman.LinkKindFentry, Details: bpfman.FentryDetails{FnName: "do_unlinkat"}},
+			want: "do_unlinkat",
+		},
+		{
+			name: "no details",
+			link: bpfman.LinkRecord{ID: 1, Kind: bpfman.LinkKindXDP},
+			want: "<none>",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := linkListCell(t, tt.link, "ATTACHMENT"); got != tt.want {
+				t.Errorf("ATTACHMENT column = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

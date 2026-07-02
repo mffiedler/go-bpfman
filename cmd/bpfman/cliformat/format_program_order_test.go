@@ -76,3 +76,22 @@ func TestFormatProgramTable_ImageLoadShowsProvenance(t *testing.T) {
 		t.Errorf("image load should not show a Path row, got:\n%s", out)
 	}
 }
+
+// The Status section reports map-sharing membership: every program
+// whose records point at this program's map set, space-separated like
+// the list table's LINK IDS column. It answers "whose data disappears
+// if I unload this?".
+func TestFormatProgramTable_MapsUsedByRow(t *testing.T) {
+	t.Parallel()
+
+	prog := bpfman.Program{
+		Record: bpfman.ProgramRecord{ProgramID: 42},
+		Status: bpfman.ProgramStatus{
+			Kernel:    &kernel.Program{},
+			MapUsedBy: []kernel.ProgramID{42, 57},
+		},
+	}
+	if out := formatProgramTable(prog); !strings.Contains(out, "Maps Used By:") || !strings.Contains(out, "42 57") {
+		t.Errorf("Status should carry a Maps Used By row with the sharing program ids, got:\n%s", out)
+	}
+}

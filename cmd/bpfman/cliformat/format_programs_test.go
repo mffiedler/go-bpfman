@@ -46,26 +46,51 @@ func TestRenderProgramList_Columns(t *testing.T) {
 	require.NoError(t, RenderProgramList(&buf, ProgramListView{Result: bpfman.ProgramListResult{Programs: []bpfman.ProgramListEntry{entry}}}, OutputFormatText))
 
 	header := tableGap.Split(strings.TrimRight(strings.SplitN(buf.String(), "\n", 2)[0], " "), -1)
-	assert.Equal(t, []string{"PROGRAM ID", "APPLICATION", "TYPE", "FUNCTION NAME", "#LINKS"}, header)
+	assert.Equal(t, []string{"PROGRAM ID", "APPLICATION", "TYPE", "FUNCTION NAME", "LINK IDS"}, header)
 }
 
-// The link column reports the arity -- a bare count -- not the IDs.
-func TestRenderProgramList_LinkColumnIsACount(t *testing.T) {
+// When no listed program carries an application label the APPLICATION
+// column is elided rather than rendered as a blank stripe down the
+// table. One labelled entry anywhere in the result brings it back for
+// every row.
+func TestRenderProgramList_ApplicationColumnElidedWhenEmpty(t *testing.T) {
 	t.Parallel()
 
-	entry := bpfman.ProgramListEntry{ProgramID: 42, Application: "demo", Type: "xdp", FunctionName: "xdp_stats", Links: []bpfman.LinkID{100, 101}}
-	if got := programListCell(t, entry, "#LINKS"); got != "2" {
-		t.Errorf("# LINKS = %q, want %q (the count, not the IDs)", got, "2")
+	unlabelled := bpfman.ProgramListEntry{ProgramID: 7, Type: "tc", FunctionName: "fn"}
+	labelled := bpfman.ProgramListEntry{ProgramID: 8, Application: "demo", Type: "xdp", FunctionName: "pass"}
+
+	headerFor := func(entries ...bpfman.ProgramListEntry) []string {
+		var buf bytes.Buffer
+		require.NoError(t, RenderProgramList(&buf, ProgramListView{Result: bpfman.ProgramListResult{Programs: entries}}, OutputFormatText))
+		return tableGap.Split(strings.TrimRight(strings.SplitN(buf.String(), "\n", 2)[0], " "), -1)
+	}
+
+	assert.Equal(t, []string{"PROGRAM ID", "TYPE", "FUNCTION NAME", "LINK IDS"}, headerFor(unlabelled))
+	assert.Equal(t, []string{"PROGRAM ID", "APPLICATION", "TYPE", "FUNCTION NAME", "LINK IDS"}, headerFor(unlabelled, labelled))
+}
+
+// The link column carries the bpfman link IDs -- the handles link get and
+// link list accept -- so a listing row leads straight to its links without
+// another query. All IDs render; there is no truncation. Single spaces
+// separate the IDs so each one is a word to a terminal's double-click
+// selection; the table's column gaps are two or more spaces, so the cell
+// still reads as one column.
+func TestRenderProgramList_LinkColumnCarriesLinkIDs(t *testing.T) {
+	t.Parallel()
+
+	entry := bpfman.ProgramListEntry{ProgramID: 42, Application: "demo", Type: "xdp", FunctionName: "xdp_stats", Links: []bpfman.LinkID{100, 101, 102, 103}}
+	if got := programListCell(t, entry, "LINK IDS"); got != "100 101 102 103" {
+		t.Errorf("LINK IDS = %q, want %q (every bpfman link ID, space-separated)", got, "100 101 102 103")
 	}
 }
 
-// A program with no links reports zero, not a blank cell, so arity reads
-// unambiguously.
-func TestRenderProgramList_NoLinksReportsZero(t *testing.T) {
+// A program with no links shows the sentinel, not a blank cell, so
+// "unattached" reads unambiguously.
+func TestRenderProgramList_NoLinksShowsSentinel(t *testing.T) {
 	t.Parallel()
 
 	entry := bpfman.ProgramListEntry{ProgramID: 7, Application: "app", Type: "tc", FunctionName: "fn"}
-	if got := programListCell(t, entry, "#LINKS"); got != "0" {
-		t.Errorf("# LINKS with no links = %q, want %q", got, "0")
+	if got := programListCell(t, entry, "LINK IDS"); got != "<none>" {
+		t.Errorf("LINK IDS with no links = %q, want %q", got, "<none>")
 	}
 }

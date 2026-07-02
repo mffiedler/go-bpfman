@@ -218,6 +218,17 @@ func programStatusRows(prog bpfman.Program) []row {
 	if prog.Status.ProgPin != "" {
 		st = append(st, fieldRow("Map Dir", prog.Status.MapDir.String()))
 	}
+	// Map-sharing membership: every managed program whose records
+	// point at this program's map set, i.e. whose data disappears if
+	// this program's maps go away. Space-separated so each ID is a
+	// word to a terminal's double-click selection.
+	if len(prog.Status.MapUsedBy) > 0 {
+		ids := make([]string, len(prog.Status.MapUsedBy))
+		for i, id := range prog.Status.MapUsedBy {
+			ids[i] = fmt.Sprintf("%d", id)
+		}
+		st = append(st, fieldRow("Maps Used By", strings.Join(ids, " ")))
+	}
 	if kp.Memlock != 0 {
 		st = append(st, fieldRow("Memory", fmt.Sprintf("%d bytes", kp.Memlock)))
 	}
@@ -422,25 +433,58 @@ func RenderProgramList(w io.Writer, view ProgramListView, format OutputFormat) e
 }
 
 // formatProgramsCompositeTable renders the default program-list table.
-// The columns -- Program ID, Application, Type, Function Name, and a
-// link count -- let the listing answer "which application?" and "is it
-// attached?" without a second command. The specific link IDs belong to
-// `link list` and `program get`, not this overview. The per-entry fields
-// are precomputed by the manager, so kernel-only rows render with their
-// kernel type and name, an empty application cell, and a zero count.
+// The columns -- Program ID, Application, Type, Function Name, and the
+// bpfman link IDs -- let the listing answer "which application?" and
+// "attached by what?" without a second command: each link ID is the
+// handle `link get` and `link list` accept, so a row leads straight to
+// its links. Every ID renders, space-separated and untruncated -- single
+// spaces keep each ID selectable as a word in a terminal while the
+// table's wider column gaps keep the cell one column -- and a count
+// would only restate the list's length.
+//
+// The APPLICATION column is elided when no listed program carries an
+// application label, so an unlabelled result set does not render a
+// blank stripe down the table; one labelled entry brings it back for
+// every row. The per-entry fields are precomputed by the manager, so
+// kernel-only rows render with their kernel type and name, the
+// no-links sentinel, and (when the column renders at all) an empty
+// application cell.
 func formatProgramsCompositeTable(result bpfman.ProgramListResult) string {
-	headers := []string{"PROGRAM ID", "APPLICATION", "TYPE", "FUNCTION NAME", "#LINKS"}
-	rows := make([][]string, len(result.Programs))
-	for i, e := range result.Programs {
-		rows[i] = []string{
-			fmt.Sprintf("%d", e.ProgramID),
-			e.Application,
-			e.Type,
-			e.FunctionName,
-			fmt.Sprintf("%d", len(e.Links)),
+	withApplication := false
+	for _, e := range result.Programs {
+		if e.Application != "" {
+			withApplication = true
+			break
 		}
 	}
+
+	headers := []string{"PROGRAM ID", "TYPE", "FUNCTION NAME", "LINK IDS"}
+	if withApplication {
+		headers = []string{"PROGRAM ID", "APPLICATION", "TYPE", "FUNCTION NAME", "LINK IDS"}
+	}
+	rows := make([][]string, len(result.Programs))
+	for i, e := range result.Programs {
+		row := []string{fmt.Sprintf("%d", e.ProgramID)}
+		if withApplication {
+			row = append(row, e.Application)
+		}
+		rows[i] = append(row, e.Type, e.FunctionName, formatLinkIDs(e.Links))
+	}
 	return renderTable("", headers, rows)
+}
+
+// formatLinkIDs joins a program's bpfman link IDs for the list table,
+// with a sentinel when the program has no links so "unattached" never
+// renders as a blank cell.
+func formatLinkIDs(ids []bpfman.LinkID) string {
+	if len(ids) == 0 {
+		return "<none>"
+	}
+	parts := make([]string, len(ids))
+	for i, id := range ids {
+		parts[i] = fmt.Sprintf("%d", id)
+	}
+	return strings.Join(parts, " ")
 }
 
 // DispatcherListView is the output view for dispatcher list commands.
