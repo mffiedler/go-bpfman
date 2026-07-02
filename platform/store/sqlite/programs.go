@@ -41,6 +41,7 @@ func (s *sqliteStore) Get(ctx context.Context, programID kernel.ProgramID) (bpfm
 type scannedProgram struct {
 	programID                                        kernel.ProgramID
 	programName, programTypeStr, objectPath, pinPath string
+	sourcePath                                       sql.NullString
 	attachFunc, globalDataJSON, mapPinPath           sql.NullString
 	imageSourceJSON, owner, description              sql.NullString
 	license, metadataJSON                            sql.NullString
@@ -132,6 +133,7 @@ func buildProgramRecord(sp *scannedProgram) (bpfman.ProgramRecord, error) {
 		ProgramID: sp.programID,
 		Load: bpfman.LoadSpec{}.
 			WithObjectPath(sp.objectPath).
+			WithSourcePath(sp.sourcePath.String).
 			WithProgramName(sp.programName).
 			WithProgramType(programType).
 			WithGlobalData(globalData).
@@ -168,6 +170,7 @@ func (s *sqliteStore) scanProgram(row *sql.Row, programID kernel.ProgramID) (bpf
 		&sp.programName,
 		&sp.programTypeStr,
 		&sp.objectPath,
+		&sp.sourcePath,
 		&sp.pinPath,
 		&sp.attachFunc,
 		&sp.globalDataJSON,
@@ -261,9 +264,12 @@ func (s *sqliteStore) Save(ctx context.Context, programID kernel.ProgramID, meta
 		}
 	}
 	// Handle nullable fields
-	var attachFunc, owner, description, license sql.NullString
+	var attachFunc, owner, description, license, sourcePath sql.NullString
 	if metadata.Load.AttachFunc() != "" {
 		attachFunc = sql.NullString{String: metadata.Load.AttachFunc(), Valid: true}
+	}
+	if metadata.Load.SourcePath() != "" {
+		sourcePath = sql.NullString{String: metadata.Load.SourcePath(), Valid: true}
 	}
 	if metadata.Meta.Owner != "" {
 		owner = sql.NullString{String: metadata.Meta.Owner, Valid: true}
@@ -298,6 +304,7 @@ func (s *sqliteStore) Save(ctx context.Context, programID kernel.ProgramID, meta
 		metadata.Meta.Name,
 		metadata.Load.ProgramType().String(),
 		metadata.Load.ObjectPath(),
+		sourcePath,
 		metadata.Handles.PinPath,
 		attachFunc,
 		globalDataJSON,
@@ -523,6 +530,7 @@ func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (kernel.ProgramID, bpf
 		&sp.programName,
 		&sp.programTypeStr,
 		&sp.objectPath,
+		&sp.sourcePath,
 		&sp.pinPath,
 		&sp.attachFunc,
 		&sp.globalDataJSON,

@@ -181,7 +181,16 @@ func programSpecRows(prog bpfman.Program) []row {
 		spec = append(spec, fieldRow("Metadata", "None"))
 	}
 	spec = append(spec, fieldRow("Name", p.Meta.Name))
-	spec = append(spec, fieldRow("Path", p.Load.ObjectPath()))
+	// The load source is one concept with variant-specific rows: an
+	// image load shows its provenance, a file load shows the caller's
+	// path operand. The stored copy is reported as Bytecode in Status
+	// either way.
+	if p.Load.HasImageSource() {
+		spec = append(spec, fieldRow("Image URL", p.Load.ImageURL()))
+		spec = append(spec, fieldRow("Pull Policy", string(p.Load.ImagePullPolicy())))
+	} else {
+		spec = append(spec, fieldRow("Path", p.Load.SourcePath()))
+	}
 	spec = append(spec, fieldRow("Type", p.Load.ProgramType().String()))
 	sortRowsByLabel(spec)
 	return spec

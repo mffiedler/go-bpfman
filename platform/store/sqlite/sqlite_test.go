@@ -1613,3 +1613,30 @@ func TestRunInTransaction_DuplicatePinPathRollsBack(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, links, "the constraint failure must roll back the whole transaction")
 }
+
+// The caller's file-load path operand round-trips through Save and Get
+// verbatim, and a record saved without one reads back empty rather
+// than inheriting the stored-copy object path.
+func TestSourcePath_RoundTrip(t *testing.T) {
+	t.Parallel()
+
+	store, err := sqlite.NewInMemory(context.Background(), testLogger())
+	require.NoError(t, err, "failed to create store")
+	defer store.Close()
+
+	ctx := context.Background()
+
+	withSource := testProgram()
+	withSource.Load = withSource.Load.WithSourcePath("e2e/testdata/bpf/xdp_pass.bpf.o")
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(42), withSource), "Save failed")
+
+	found, err := store.Get(ctx, kernel.ProgramID(42))
+	require.NoError(t, err, "Get failed")
+	assert.Equal(t, "e2e/testdata/bpf/xdp_pass.bpf.o", found.Load.SourcePath(), "source path mismatch")
+
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(43), testProgram()), "Save failed")
+
+	found, err = store.Get(ctx, kernel.ProgramID(43))
+	require.NoError(t, err, "Get failed")
+	assert.Empty(t, found.Load.SourcePath(), "record saved without a source path must read back empty")
+}

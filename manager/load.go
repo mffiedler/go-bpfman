@@ -58,10 +58,20 @@ func buildProgramRecord(
 	if ownerID := spec.MapOwnerID(); ownerID != 0 {
 		mapOwnerID = &ownerID
 	}
+	// For a file load the incoming spec's object path is the caller's
+	// operand, preserved verbatim as the record's source path before
+	// the object path is rewritten to bpfman's stored copy. Image
+	// loads record no source path; their provenance is the image
+	// source.
+	var sourcePath string
+	if !spec.HasImageSource() {
+		sourcePath = spec.ObjectPath()
+	}
 	return bpfman.ProgramRecord{
 		ProgramID: loaded.Program.ID,
 		Load: bpfman.LoadSpec{}.
 			WithObjectPath(rt.ProgramBytecodePath(loaded.Program.ID)).
+			WithSourcePath(sourcePath).
 			WithProgramName(spec.ProgramName()).
 			WithProgramType(loaded.InferredType).
 			WithGlobalData(spec.GlobalData()).

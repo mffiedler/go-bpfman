@@ -49,6 +49,7 @@ assert $prog matches exhaustive {
         updated_at:     null
         load: matches exhaustive {
             object_path:  $expect_bytecode
+            source_path:  testdata/bpf/xdp_pass.bpf.o
             program_name: pass
             program_type: xdp
             attach_func:  null
@@ -150,6 +151,7 @@ assert $got matches exhaustive {
         updated_at:     null
         load: matches exhaustive {
             object_path:  $prog.record.load.object_path
+            source_path:  testdata/bpf/xdp_pass.bpf.o
             program_name: $prog.record.load.program_name
             program_type: $prog.record.load.program_type
             attach_func:  $prog.record.load.attach_func

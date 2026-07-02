@@ -18,6 +18,7 @@ import (
 // when calling the kernel layer.
 type LoadSpec struct {
 	objectPath      string
+	sourcePath      string
 	programName     string
 	programType     ProgramType
 	globalData      map[string][]byte
@@ -110,13 +111,15 @@ func NewAttachLoadSpec(objectPath, programName string, programType ProgramType, 
 // ObjectPath returns the bytecode object path the spec was
 // constructed with. For a spec that has flowed through a load,
 // this is bpfman's stored copy under
-// <runtime-dir>/programs/<id>/bytecode.o, not whatever path the
-// caller originally supplied to load -- the original path is the
-// load input and is not preserved past Phase A; the stored copy
-// is the canonical location bpfman reads from afterwards. Round
-// tripping a load response back through a comparison against the
-// caller's original path operand will not match by design.
+// <runtime-dir>/programs/<id>/bytecode.o -- the canonical location
+// bpfman reads from afterwards. The path the caller originally
+// supplied to a file load is preserved separately; see SourcePath.
 func (s LoadSpec) ObjectPath() string { return s.objectPath }
+
+// SourcePath returns the bytecode path the caller supplied to a file
+// load, verbatim. It is empty for image loads; image provenance lives
+// in the image source fields.
+func (s LoadSpec) SourcePath() string { return s.sourcePath }
 
 // ProgramName returns the program (function) name selected within the object.
 func (s LoadSpec) ProgramName() string { return s.programName }
@@ -201,6 +204,14 @@ func (s LoadSpec) WithObjectPath(path string) LoadSpec {
 	return s
 }
 
+// WithSourcePath returns a new LoadSpec with the caller-supplied
+// file-load path set. Used when building the persisted record at load
+// time and when reconstructing from stored data.
+func (s LoadSpec) WithSourcePath(path string) LoadSpec {
+	s.sourcePath = path
+	return s
+}
+
 // WithProgramName returns a new LoadSpec with program name set.
 // Used when reconstructing from stored data.
 func (s LoadSpec) WithProgramName(name string) LoadSpec {
@@ -238,7 +249,8 @@ type imageSourceJSON struct {
 // (GlobalData) marshal as {} when empty. The contract is a stable
 // schema for consumers; absence is never used to encode meaning.
 type loadSpecJSON struct {
-	ObjectPath  string            `json:"object_path"` // bpfman's stored bytecode path post-load (<runtime-dir>/programs/<id>/bytecode.o), not the caller's original path operand
+	ObjectPath  string            `json:"object_path"` // bpfman's stored bytecode path post-load (<runtime-dir>/programs/<id>/bytecode.o)
+	SourcePath  *string           `json:"source_path"` // the caller's file-load path operand, verbatim; null for image loads
 	ProgramName string            `json:"program_name"`
 	ProgramType ProgramType       `json:"program_type"`
 	GlobalData  map[string][]byte `json:"global_data"`  // always emit; {} when no globals
@@ -271,8 +283,14 @@ func (s LoadSpec) MarshalJSON() ([]byte, error) {
 		af := s.attachFunc
 		attachFunc = &af
 	}
+	var sourcePath *string
+	if s.sourcePath != "" {
+		src := s.sourcePath
+		sourcePath = &src
+	}
 	return json.Marshal(loadSpecJSON{
 		ObjectPath:  s.objectPath,
+		SourcePath:  sourcePath,
 		ProgramName: s.programName,
 		ProgramType: s.programType,
 		GlobalData:  gd,
@@ -292,6 +310,9 @@ func (s *LoadSpec) UnmarshalJSON(data []byte) error {
 	}
 
 	s.objectPath = js.ObjectPath
+	if js.SourcePath != nil {
+		s.sourcePath = *js.SourcePath
+	}
 	s.programName = js.ProgramName
 	s.programType = js.ProgramType
 	s.globalData = js.GlobalData

@@ -146,6 +146,9 @@ CREATE TABLE IF NOT EXISTS managed_programs (
         'uprobe','uretprobe','fentry','fexit'
     )),
     object_path TEXT NOT NULL,
+    source_path TEXT,            -- the caller's file-load path operand,
+                                     -- verbatim; NULL for image loads, whose
+                                     -- provenance lives in image_source
     pin_path TEXT NOT NULL,
     attach_func TEXT,
     global_data TEXT CHECK (global_data IS NULL OR json_valid(global_data)),

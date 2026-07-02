@@ -10,7 +10,7 @@ func (s *sqliteStore) prepareProgramStatements(ctx context.Context) error {
 	var err error
 
 	const sqlGetProgram = `
-		SELECT m.program_name, m.program_type, m.object_path, m.pin_path, m.attach_func,
+		SELECT m.program_name, m.program_type, m.object_path, m.source_path, m.pin_path, m.attach_func,
 		       m.global_data, m.map_set_id, ms.pin_path, m.image_source, m.owner, m.description,
 		       m.license, m.gpl_compatible, m.created_at, m.updated_at, m.metadata_json
 		FROM managed_programs m
@@ -35,13 +35,14 @@ func (s *sqliteStore) prepareProgramStatements(ctx context.Context) error {
 	// signal that a program_id was reused and the row was overwritten.
 	const sqlSaveProgram = `
 		INSERT INTO managed_programs
-		(program_id, program_name, program_type, object_path, pin_path, attach_func,
+		(program_id, program_name, program_type, object_path, source_path, pin_path, attach_func,
 		 global_data, map_set_id, image_source, owner, description, license, gpl_compatible, metadata_json, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(program_id) DO UPDATE SET
 		  program_name = excluded.program_name,
 		  program_type = excluded.program_type,
 		  object_path = excluded.object_path,
+		  source_path = excluded.source_path,
 		  pin_path = excluded.pin_path,
 		  attach_func = excluded.attach_func,
 		  global_data = excluded.global_data,
@@ -63,7 +64,7 @@ func (s *sqliteStore) prepareProgramStatements(ctx context.Context) error {
 	}
 
 	const sqlListPrograms = `
-		SELECT m.program_id, m.program_name, m.program_type, m.object_path, m.pin_path, m.attach_func,
+		SELECT m.program_id, m.program_name, m.program_type, m.object_path, m.source_path, m.pin_path, m.attach_func,
 		       m.global_data, m.map_set_id, ms.pin_path, m.image_source, m.owner, m.description,
 		       m.license, m.gpl_compatible, m.created_at, m.updated_at, m.metadata_json
 		FROM managed_programs m

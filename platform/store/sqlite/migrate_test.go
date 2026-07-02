@@ -119,10 +119,19 @@ func TestMigrateAdoptsExistingDatabaseWithoutWipe(t *testing.T) {
 	dbPath := filepath.Join(dir, "store.db")
 	lockPath := filepath.Join(dir, ".lock")
 
-	// Create a current-schema database and write a row.
-	require.NoError(t, openStore(ctx, dbPath, lockPath))
+	// Create a baseline-schema database and write a row. A pre-goose
+	// database carries the baseline shape only -- later migrations did
+	// not exist when it was written -- so seed with UpTo(1), not a full
+	// open, which would bake in every later migration and make adoption
+	// re-apply them onto a schema that already has their changes.
 	seed := openRaw(t, dbPath)
-	_, err := seed.ExecContext(ctx, "INSERT INTO map_sets(id, pin_path, created_at) VALUES (1, '/pin', 'now')")
+	sub, err := fs.Sub(migrationsFS, "migrations")
+	require.NoError(t, err)
+	seedProvider, err := goose.NewProvider(goose.DialectSQLite3, seed, sub, goose.WithLogger(goose.NopLogger()))
+	require.NoError(t, err)
+	_, err = seedProvider.UpTo(ctx, 1)
+	require.NoError(t, err)
+	_, err = seed.ExecContext(ctx, "INSERT INTO map_sets(id, pin_path, created_at) VALUES (1, '/pin', 'now')")
 	require.NoError(t, err)
 
 	// Strip goose's bookkeeping and stamp the legacy PRAGMA
@@ -133,7 +142,8 @@ func TestMigrateAdoptsExistingDatabaseWithoutWipe(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, seed.Close())
 
-	// Reopening must adopt the existing schema rather than wipe it.
+	// Reopening must adopt the existing schema rather than wipe it,
+	// then migrate it forward to the latest version.
 	require.NoError(t, openStore(ctx, dbPath, lockPath))
 
 	db := openRaw(t, dbPath)

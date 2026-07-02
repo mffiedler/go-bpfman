@@ -40,6 +40,7 @@ assert $prog matches exhaustive {
         updated_at:     null
         load: matches exhaustive {
             object_path:  $expect_bytecode
+            source_path:  testdata/bpf/fentry_counter.bpf.o
             program_name: test_fexit
             program_type: fexit
             attach_func:  $fn.name
@@ -131,6 +132,7 @@ assert $got matches exhaustive {
         updated_at:     null
         load: matches exhaustive {
             object_path:  $prog.record.load.object_path
+            source_path:  testdata/bpf/fentry_counter.bpf.o
             program_name: $prog.record.load.program_name
             program_type: $prog.record.load.program_type
             attach_func:  $fn.name
