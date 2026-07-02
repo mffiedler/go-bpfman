@@ -17,8 +17,8 @@ import (
 type CLI struct {
 	cli.CLI
 
-	// RuntimeDir is the root directory for bpfman runtime files (--runtime-dir), used to derive the filesystem layout and the writer-lock path. It defaults to the standard runtime root (/run/bpfman).
-	RuntimeDir string `name:"runtime-dir" placeholder:"DIR" group:"global" help:"Root directory for runtime files." default:"${default_runtime_dir}"`
+	// RuntimeDir is the root directory for bpfman runtime files (--runtime-dir or BPFMAN_RUNTIME_DIR), used to derive the filesystem layout and the writer-lock path. It defaults to the standard runtime root (/run/bpfman).
+	RuntimeDir string `name:"runtime-dir" placeholder:"DIR" group:"global" help:"Root directory for runtime files." default:"${default_runtime_dir}" env:"BPFMAN_RUNTIME_DIR"`
 
 	// ImageCacheDir is the root directory for the OCI image cache (--image-cache-dir). It defaults to /var/cache/bpfman.
 	ImageCacheDir string `name:"image-cache-dir" placeholder:"DIR" group:"global" help:"Root directory for OCI image cache." default:"${default_image_cache_dir}"`
