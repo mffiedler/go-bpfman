@@ -32,11 +32,13 @@ type LoadFileCmd struct {
 	// Path is the filesystem path to the BPF object file (.o) to load.
 	Path string `arg:"" name:"path" help:"Path to the BPF object file (.o)."`
 
-	// Programs selects which programs in the object to load, each given as
+	// Programs names every program in the object to load, each given as
 	// TYPE:NAME or TYPE:NAME:ATTACH_FUNC (comma-separated or repeated). For
-	// fentry/fexit the ATTACH_FUNC component is required. When empty, every
-	// program in the object file is loaded.
-	Programs []args.ProgramSpec `name:"programs" sep:"," help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (comma-separated or repeated). For fentry/fexit, ATTACH_FUNC is required. If not specified, all programs in the object file are loaded."`
+	// fentry/fexit the ATTACH_FUNC component is required. The flag is
+	// required: there is no whole-object load, because a section-derived
+	// type would be a guess (classifier sections cannot distinguish tc
+	// from tcx).
+	Programs []args.ProgramSpec `name:"programs" sep:"," required:"" help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (comma-separated or repeated). For fentry/fexit, ATTACH_FUNC is required. Every program to load must be named."`
 
 	// Application groups the loaded programs under an application name,
 	// stored as the bpfman.io/application metadata key.

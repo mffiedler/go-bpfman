@@ -31,7 +31,7 @@ func newManagerWithImagePuller(ctx context.Context, cli *cmdruntime.CLI, puller 
 		return nil, nil, fmt.Errorf("open runtime: %w", err)
 	}
 
-	mgr, err := manager.New(opened.FS, puller, opened.Store, opened.Kernel, opened.Discoverer, logger)
+	mgr, err := manager.New(opened.FS, puller, opened.Store, opened.Kernel, opened.Validator, logger)
 	if err != nil {
 		opened.Close()
 		return nil, nil, fmt.Errorf("create manager: %w", err)

@@ -119,7 +119,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 
 	// Create manager for orchestrating store + kernel operations.
 	// The manager is needed by CSI for reconciled program lookups.
-	mgr, err := manager.New(opened.FS, puller, opened.Store, opened.Kernel, opened.Discoverer, logger)
+	mgr, err := manager.New(opened.FS, puller, opened.Store, opened.Kernel, opened.Validator, logger)
 	if err != nil {
 		return fmt.Errorf("failed to create manager: %w", err)
 	}

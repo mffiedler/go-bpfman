@@ -165,7 +165,7 @@ func buildSuiteRuntime() (*suiteRuntime, error) {
 		return nil, fmt.Errorf("create image puller: %w", err)
 	}
 
-	mgr, err := manager.New(ensuredRuntime, puller, store, kernel, ebpf.NewProgramDiscoverer(), logger)
+	mgr, err := manager.New(ensuredRuntime, puller, store, kernel, ebpf.NewProgramValidator(), logger)
 	if err != nil {
 		store.Close()
 		return nil, fmt.Errorf("create suite manager: %w", err)

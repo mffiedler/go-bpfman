@@ -41,7 +41,7 @@ func testLogger() *slog.Logger {
 type testFixture struct {
 	Manager       *manager.Manager
 	Kernel        *fakeKernel
-	Discoverer    *fakeDiscoverer
+	Validator     *fakeValidator
 	Store         platform.Store
 	Layout        fs.Layout
 	t             *testing.T
@@ -54,16 +54,16 @@ func newTestFixture(t *testing.T) *testFixture {
 	return newTestFixtureWithOptions(t, nil, nil)
 }
 
-// newTestFixtureWithDiscoverer creates a test fixture with a custom discoverer.
-func newTestFixtureWithDiscoverer(t *testing.T, discoverer *fakeDiscoverer) *testFixture {
-	return newTestFixtureWithOptions(t, discoverer, nil)
+// newTestFixtureWithValidator creates a test fixture with a custom validator.
+func newTestFixtureWithValidator(t *testing.T, validator *fakeValidator) *testFixture {
+	return newTestFixtureWithOptions(t, validator, nil)
 }
 
 // newTestFixtureWithOptions creates a test fixture with optional overrides.
 // The store is intentionally not overridable; tests should exercise the
 // real SQLite schema so cascade and restriction behaviour stays covered.
-func newTestFixtureWithOptions(t *testing.T, discoverer *fakeDiscoverer, puller platform.ImagePuller) *testFixture {
-	return newTestFixtureWithOptionsAndStore(t, discoverer, puller, nil)
+func newTestFixtureWithOptions(t *testing.T, validator *fakeValidator, puller platform.ImagePuller) *testFixture {
+	return newTestFixtureWithOptionsAndStore(t, validator, puller, nil)
 }
 
 func newTestFixtureWithStore(t *testing.T, wrap func(platform.Store) platform.Store) *testFixture {
@@ -72,7 +72,7 @@ func newTestFixtureWithStore(t *testing.T, wrap func(platform.Store) platform.St
 
 func newTestFixtureWithOptionsAndStore(
 	t *testing.T,
-	discoverer *fakeDiscoverer,
+	validator *fakeValidator,
 	puller platform.ImagePuller,
 	wrap func(platform.Store) platform.Store,
 ) *testFixture {
@@ -87,21 +87,21 @@ func newTestFixtureWithOptionsAndStore(
 	layout, err := fs.New(filepath.Join(t.TempDir(), "bpfman"))
 	require.NoError(t, err, "failed to create fs layout")
 	kernel := newFakeKernel()
-	if discoverer == nil {
-		discoverer = newFakeDiscoverer()
+	if validator == nil {
+		validator = newFakeValidator()
 	}
 
 	// Centralised ensure call in fixture
 	ensuredRuntime, err := runtime.New(layout, runtime.NoOpMounter{}, testLogger())
 	require.NoError(t, err, "failed to ensure runtime")
 
-	mgr, err := manager.New(ensuredRuntime, puller, managerStore, kernel, discoverer, testLogger())
+	mgr, err := manager.New(ensuredRuntime, puller, managerStore, kernel, validator, testLogger())
 	require.NoError(t, err, "failed to create manager")
 	bcDir := t.TempDir()
 	return &testFixture{
 		Manager:       mgr,
 		Kernel:        kernel,
-		Discoverer:    discoverer,
+		Validator:     validator,
 		Store:         managerStore,
 		Layout:        layout,
 		t:             t,
@@ -175,7 +175,7 @@ func (f *testFixture) AssertKernelOps(expected []string) {
 
 // Load is a convenience wrapper that loads a single program from a LoadSpec.
 // It translates the LoadSpec into the LoadSource/ProgramSpec form expected
-// by Manager.Load, ensures the fake discoverer knows about the program,
+// by Manager.Load, ensures the fake validator knows about the program,
 // acquires a real lock for compile-time safety, and returns the single
 // loaded program.
 func (f *testFixture) Load(ctx context.Context, spec bpfman.LoadSpec, opts manager.LoadOpts) (bpfman.Program, error) {
@@ -192,8 +192,8 @@ func (f *testFixture) Load(ctx context.Context, spec bpfman.LoadSpec, opts manag
 	if id := spec.MapOwnerID(); id != 0 {
 		programs[0].MapOwnerID = id
 	}
-	// Ensure the discoverer knows about the program so validation passes.
-	f.Discoverer.AddPrograms(spec.ObjectPath(), platform.DiscoveredProgram{
+	// Ensure the validator knows about the program so validation passes.
+	f.Validator.AddPrograms(spec.ObjectPath(), fakeProgramInfo{
 		Name:       spec.ProgramName(),
 		Type:       spec.ProgramType(),
 		AttachFunc: spec.AttachFunc(),

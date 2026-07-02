@@ -48,8 +48,8 @@
 //
 // [ImagePuller] fetches BPF bytecode from OCI container images.
 // [SignatureVerifier] checks image signatures. [ImageRef] and
-// [PulledImage] describe the request and result. [ProgramDiscoverer]
-// scans ELF object files for loadable BPF programs.
+// [PulledImage] describe the request and result. [ProgramValidator]
+// checks requested program names against ELF object files.
 //
 // Implementations live in platform/image/oci/ and
 // platform/image/verify/.

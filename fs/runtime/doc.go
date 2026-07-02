@@ -19,7 +19,7 @@
 //	if err != nil {
 //	    return err
 //	}
-//	mgr, err := manager.New(rt, store, kernel, discoverer, logger)
+//	mgr, err := manager.New(rt, store, kernel, validator, logger)
 //
 // For tests, use NoOpMounter to skip actual bpffs mounting:
 //

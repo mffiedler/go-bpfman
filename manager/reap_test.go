@@ -29,11 +29,11 @@ func TestReapDeadProgramRecords(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	discoverer := newFakeDiscoverer()
-	f := newTestFixtureWithDiscoverer(t, discoverer)
+	validator := newFakeValidator()
+	f := newTestFixtureWithValidator(t, validator)
 
 	sharedObj := f.BytecodeFile("shared.o")
-	discoverer.SetPrograms(sharedObj, []platform.DiscoveredProgram{
+	validator.SetPrograms(sharedObj, []fakeProgramInfo{
 		{Name: "owner", SectionName: "tcx", Type: bpfman.ProgramTypeTCX},
 		{Name: "dependent", SectionName: "tcx", Type: bpfman.ProgramTypeTCX},
 	})
@@ -63,11 +63,11 @@ func TestReapDeadProgramRecords(t *testing.T) {
 
 	// A standalone program that stays live in the kernel.
 	liveObj := f.BytecodeFile("live.o")
-	discoverer.SetPrograms(liveObj, []platform.DiscoveredProgram{
+	validator.SetPrograms(liveObj, []fakeProgramInfo{
 		{Name: "live", SectionName: "tcx", Type: bpfman.ProgramTypeTCX},
 	})
 	live, err := f.LoadDirect(ctx,
-		manager.LoadSource{FilePath: liveObj}, nil, manager.LoadOpts{})
+		manager.LoadSource{FilePath: liveObj}, validator.specsFor(liveObj), manager.LoadOpts{})
 	require.NoError(t, err)
 	require.Len(t, live, 1)
 	liveID := live[0].Record.ProgramID
@@ -132,11 +132,11 @@ func TestReapKeepsDeadOwnerWithLiveDependent(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	discoverer := newFakeDiscoverer()
-	f := newTestFixtureWithDiscoverer(t, discoverer)
+	validator := newFakeValidator()
+	f := newTestFixtureWithValidator(t, validator)
 
 	obj := f.BytecodeFile("shared.o")
-	discoverer.SetPrograms(obj, []platform.DiscoveredProgram{
+	validator.SetPrograms(obj, []fakeProgramInfo{
 		{Name: "owner", SectionName: "tcx", Type: bpfman.ProgramTypeTCX},
 		{Name: "dependent", SectionName: "tcx", Type: bpfman.ProgramTypeTCX},
 	})

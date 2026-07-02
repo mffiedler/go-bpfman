@@ -45,10 +45,10 @@
 // tooling. Detachment removes the filter by ifindex, parent, priority,
 // and handle.
 //
-// # Program Discovery
+// # Program Validation
 //
-// [NewProgramDiscoverer] provides [platform.ProgramDiscoverer] for
-// scanning BPF object files. It opens ELF files using cilium/ebpf's
-// spec parser and returns all loadable program sections with their
-// types.
+// [NewProgramValidator] provides [platform.ProgramValidator] for
+// checking requested program names against BPF object files. It
+// opens ELF files using cilium/ebpf's spec parser and reports any
+// requested name the object does not contain.
 package ebpf

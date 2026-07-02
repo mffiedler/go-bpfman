@@ -153,7 +153,7 @@
 //   - Runtime: capability token proving bpffs is mounted
 //   - Store: database interface (platform.Store)
 //   - KernelOperations: BPF syscall adapter
-//   - ProgramDiscoverer: kernel program enumeration
+//   - ProgramValidator: program-name validation against object files
 //   - ImagePuller: optional OCI image puller for container images
 //   - Logger: structured logger with op_id support
 //

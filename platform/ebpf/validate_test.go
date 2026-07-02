@@ -35,73 +35,13 @@ func xdpPassReader() *bytes.Reader {
 	return bytes.NewReader(xdpPassObject)
 }
 
-func TestDiscoverPrograms(t *testing.T) {
-	t.Parallel()
-
-	programs, err := ebpf.DiscoverProgramsFromReader(xdpPassReader())
-	if err != nil {
-		t.Fatalf("DiscoverPrograms failed: %v", err)
-	}
-
-	if len(programs) == 0 {
-		t.Fatal("expected at least one program to be discovered")
-	}
-
-	// Verify programs are sorted by name
-	for i := 1; i < len(programs); i++ {
-		if programs[i-1].Name >= programs[i].Name {
-			t.Errorf("programs not sorted: %s >= %s", programs[i-1].Name, programs[i].Name)
-		}
-	}
-
-	// Verify each program has required fields
-	for _, prog := range programs {
-		if prog.Name == "" {
-			t.Error("program has empty name")
-		}
-		if prog.SectionName == "" {
-			t.Error("program has empty section name")
-		}
-		if !prog.Type.Valid() {
-			t.Errorf("program %q has unspecified type", prog.Name)
-		}
-		// fentry/fexit should be filtered out
-		if prog.Type == bpfman.ProgramTypeFentry || prog.Type == bpfman.ProgramTypeFexit {
-			t.Errorf("program %q is fentry/fexit but should have been filtered", prog.Name)
-		}
-	}
-}
-
-func TestDiscoverPrograms_NonExistentFile(t *testing.T) {
-	t.Parallel()
-
-	_, err := ebpf.DiscoverPrograms("/nonexistent/path/to/file.o")
-	if err == nil {
-		t.Fatal("expected error for non-existent file")
-	}
-}
-
 func TestValidatePrograms(t *testing.T) {
 	t.Parallel()
 
-	// First discover what programs are available
-	discovered, err := ebpf.DiscoverProgramsFromReader(xdpPassReader())
-	if err != nil {
-		t.Fatalf("DiscoverPrograms failed: %v", err)
-	}
-
-	if len(discovered) == 0 {
-		t.Fatal("no programs discovered in test file")
-	}
-
+	// The compiled xdp_pass object holds exactly one program, "pass".
 	t.Run("valid programs", func(t *testing.T) {
 		t.Parallel()
-		// Use actual program names from the object file
-		names := make([]string, len(discovered))
-		for i, d := range discovered {
-			names[i] = d.Name
-		}
-		err := ebpf.ValidateProgramsFromReader(xdpPassReader(), names)
+		err := ebpf.ValidateProgramsFromReader(xdpPassReader(), []string{"pass"})
 		if err != nil {
 			t.Errorf("ValidatePrograms failed for valid programs: %v", err)
 		}
@@ -117,7 +57,7 @@ func TestValidatePrograms(t *testing.T) {
 
 	t.Run("mix of valid and invalid", func(t *testing.T) {
 		t.Parallel()
-		names := []string{discovered[0].Name, "nonexistent_program_xyz"}
+		names := []string{"pass", "nonexistent_program_xyz"}
 		err := ebpf.ValidateProgramsFromReader(xdpPassReader(), names)
 		if err == nil {
 			t.Error("expected error for mixed valid/invalid programs")
@@ -139,33 +79,6 @@ func TestValidatePrograms(t *testing.T) {
 			t.Errorf("expected no error for nil list: %v", err)
 		}
 	})
-}
-
-func TestExtractAttachFunc(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		section  string
-		expected string
-	}{
-		{"fentry/vfs_read", "vfs_read"},
-		{"fexit/vfs_write", "vfs_write"},
-		{"?fentry/do_sys_open", "do_sys_open"},
-		{"kprobe/sys_open", "sys_open"},
-		{"tracepoint/syscalls/sys_enter_read", "syscalls/sys_enter_read"},
-		{"xdp", ""},
-		{"tc", ""},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.section, func(t *testing.T) {
-			t.Parallel()
-			got := ebpf.ExtractAttachFunc(tc.section)
-			if got != tc.expected {
-				t.Errorf("ExtractAttachFunc(%q) = %q, want %q", tc.section, got, tc.expected)
-			}
-		})
-	}
 }
 
 func TestInferProgramType(t *testing.T) {

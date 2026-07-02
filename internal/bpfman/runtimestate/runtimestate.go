@@ -31,9 +31,9 @@ type Mutable struct {
 	// and unload programs.
 	Kernel platform.KernelOperations
 
-	// Discoverer enumerates the loadable programs contained in a BPF
-	// object file.
-	Discoverer platform.ProgramDiscoverer
+	// Validator checks requested program names against a BPF object
+	// file.
+	Validator platform.ProgramValidator
 
 	// Logger is the structured logger shared by the runtime adapters.
 	Logger *slog.Logger
@@ -124,11 +124,11 @@ func finishMutableOpen(layout fs.Layout, logger *slog.Logger, store platform.Sto
 	}
 
 	return &Mutable{
-		FS:         ensuredFS,
-		Store:      store,
-		Kernel:     ebpf.New(ebpf.WithLogger(logger)),
-		Discoverer: ebpf.NewProgramDiscoverer(),
-		Logger:     logger,
+		FS:        ensuredFS,
+		Store:     store,
+		Kernel:    ebpf.New(ebpf.WithLogger(logger)),
+		Validator: ebpf.NewProgramValidator(),
+		Logger:    logger,
 	}, nil
 }
 

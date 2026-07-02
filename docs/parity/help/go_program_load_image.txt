@@ -1,5 +1,5 @@
 $ go-bpfman program load image --help
-Usage: bpfman program load image <image> [flags]
+Usage: bpfman program load image --programs=PROGRAMS,... <image> [flags]
 
 Load from an OCI container image.
 
@@ -17,8 +17,7 @@ Flags:
       --programs=PROGRAMS,...      TYPE:NAME or TYPE:NAME:ATTACH_FUNC program
                                    to load (comma-separated or repeated).
                                    For fentry/fexit, ATTACH_FUNC is required.
-                                   If not specified, all programs in the image
-                                   are loaded.
+                                   Every program to load must be named.
   -p, --pull-policy="IfNotPresent"
                                    Image pull policy (Always, IfNotPresent,
                                    Never).
@@ -37,7 +36,8 @@ Global Flags:
                              ($BPFMAN_CONFIG).
   --log=SPEC                 Log spec (e.g., 'info,manager=debug')
                              ($BPFMAN_LOG).
-  --runtime-dir=DIR          Root directory for runtime files.
+  --runtime-dir=DIR          Root directory for runtime files
+                             ($BPFMAN_RUNTIME_DIR).
   --image-cache-dir=DIR      Root directory for OCI image cache.
   --lock-timeout=DURATION    Timeout for acquiring the global writer lock (0 for
                              indefinite) ($BPFMAN_LOCK_TIMEOUT).

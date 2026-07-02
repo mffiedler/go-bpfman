@@ -45,7 +45,9 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 		return nil, status.Error(codes.InvalidArgument, "invalid bytecode location")
 	}
 
-	// Build ProgramSpecs from request info
+	// Build ProgramSpecs from request info. Every program must be
+	// named (the guard above rejects an empty Info); there is no
+	// whole-object load.
 	programs := make([]manager.ProgramSpec, 0, len(req.Info))
 	for _, info := range req.Info {
 		if info.Name == "" {

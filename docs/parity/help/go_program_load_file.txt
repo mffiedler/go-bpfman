@@ -1,5 +1,5 @@
 $ go-bpfman program load file --help
-Usage: bpfman program load file <path> [flags]
+Usage: bpfman program load file --programs=PROGRAMS,... <path> [flags]
 
 Load from a local object file.
 
@@ -16,8 +16,7 @@ Flags:
       --programs=PROGRAMS,...      TYPE:NAME or TYPE:NAME:ATTACH_FUNC program
                                    to load (comma-separated or repeated).
                                    For fentry/fexit, ATTACH_FUNC is required.
-                                   If not specified, all programs in the object
-                                   file are loaded.
+                                   Every program to load must be named.
   -a, --application=STRING         Application name to group programs (stored as
                                    bpfman.io/application metadata).
       --map-owner-id=PROGRAM-ID    Program ID of another program to share maps
@@ -28,7 +27,8 @@ Global Flags:
                              ($BPFMAN_CONFIG).
   --log=SPEC                 Log spec (e.g., 'info,manager=debug')
                              ($BPFMAN_LOG).
-  --runtime-dir=DIR          Root directory for runtime files.
+  --runtime-dir=DIR          Root directory for runtime files
+                             ($BPFMAN_RUNTIME_DIR).
   --image-cache-dir=DIR      Root directory for OCI image cache.
   --lock-timeout=DURATION    Timeout for acquiring the global writer lock (0 for
                              indefinite) ($BPFMAN_LOCK_TIMEOUT).

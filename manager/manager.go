@@ -27,13 +27,13 @@ func OpIDFromContext(ctx context.Context) uint64 {
 
 // Manager orchestrates BPF program management using fetch/compute/execute.
 type Manager struct {
-	rt                fs.Runtime
-	store             platform.Store
-	kernel            platform.KernelOperations
-	executor          action.ExecutorWithResult
-	programDiscoverer platform.ProgramDiscoverer
-	imagePuller       platform.ImagePuller // optional, nil if not configured
-	logger            *slog.Logger
+	rt               fs.Runtime
+	store            platform.Store
+	kernel           platform.KernelOperations
+	executor         action.ExecutorWithResult
+	programValidator platform.ProgramValidator
+	imagePuller      platform.ImagePuller // optional, nil if not configured
+	logger           *slog.Logger
 }
 
 // New creates a new Manager with all required dependencies.
@@ -42,7 +42,7 @@ type Manager struct {
 //   - rt: runtime capability token (from runtime.New()) proving directories and bpffs are ready
 //   - store: database for program/link metadata
 //   - kernel: kernel operations adapter
-//   - programDiscoverer: discovers existing kernel programs
+//   - programValidator: validates requested program names against object files
 //   - logger: structured logger (nil uses slog.Default())
 //
 // Optional parameters:
@@ -58,7 +58,7 @@ func New(
 	imagePuller platform.ImagePuller,
 	store platform.Store,
 	kernel platform.KernelOperations,
-	programDiscoverer platform.ProgramDiscoverer,
+	programValidator platform.ProgramValidator,
 	logger *slog.Logger,
 ) (*Manager, error) {
 	if logger == nil {
@@ -66,13 +66,13 @@ func New(
 	}
 
 	return &Manager{
-		rt:                rt,
-		store:             store,
-		kernel:            kernel,
-		programDiscoverer: programDiscoverer,
-		imagePuller:       imagePuller,
-		executor:          newExecutor(store, kernel, rt.Bytecode(), rt.BPFFS(), logger).(action.ExecutorWithResult),
-		logger:            logger.With("component", "manager"),
+		rt:               rt,
+		store:            store,
+		kernel:           kernel,
+		programValidator: programValidator,
+		imagePuller:      imagePuller,
+		executor:         newExecutor(store, kernel, rt.Bytecode(), rt.BPFFS(), logger).(action.ExecutorWithResult),
+		logger:           logger.With("component", "manager"),
 	}, nil
 }
 

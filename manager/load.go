@@ -148,8 +148,8 @@ type LoadRequest struct {
 	// path or an image reference).
 	Source LoadSource
 
-	// Programs lists the programs to load from Source. Empty means
-	// auto-discover and load every program in the ELF.
+	// Programs lists the programs to load from Source. It must name
+	// every program to load; Load rejects an empty list.
 	Programs []ProgramSpec
 
 	// Opts carries the batch-level metadata, global data, and owner.
@@ -227,9 +227,9 @@ func (m *Manager) LoadFromRequest(ctx context.Context, req LoadRequest) ([]bpfma
 
 // Load loads one or more BPF programs from a file or OCI image.
 //
-// If programs is nil, all programs in the ELF are auto-discovered.
-// If programs is non-nil, only those programs are loaded after
-// validation.
+// The programs list is required and names every program to load;
+// each entry is validated against the object before anything loads.
+// An empty list is an error.
 //
 // Map sharing is explicit: programs share maps only when their
 // ProgramSpec names a MapOwnerID.
@@ -237,6 +237,11 @@ func (m *Manager) LoadFromRequest(ctx context.Context, req LoadRequest) ([]bpfma
 // On failure, all previously loaded programs are cleaned up by
 // calling Unload for each.
 func (m *Manager) Load(ctx context.Context, source LoadSource, programs []ProgramSpec, opts LoadOpts) ([]bpfman.Program, error) {
+	// Reject an empty program list before resolving the source, so an
+	// image load fails fast rather than pulling an image it cannot use.
+	if len(programs) == 0 {
+		return nil, errors.New("no programs specified: name every program to load as TYPE:NAME")
+	}
 	programs = normalizeLoadProgramSpecs(programs, opts)
 
 	objectPath, pulled, err := m.resolveBatchSource(ctx, source)
@@ -778,38 +783,24 @@ func (m *Manager) resolveBatchSource(
 	return "", nil, fmt.Errorf("exactly one of FilePath or Image must be set")
 }
 
-// resolveBatchPrograms discovers or validates the program list.
+// resolveBatchPrograms validates the program list against the object.
+// The list is never empty here (Load rejects that up front) and is
+// never auto-discovered: section names cannot distinguish tc from tcx
+// (both live in classifier sections) and cannot carry a fentry/fexit
+// attach function, so a whole-object load silently mislabelled
+// programs. The caller declares every program explicitly, matching
+// the Rust CLI's required --programs.
 func (m *Manager) resolveBatchPrograms(
-	ctx context.Context,
+	_ context.Context,
 	objectPath string,
 	programs []ProgramSpec,
-	opts LoadOpts,
+	_ LoadOpts,
 ) ([]ProgramSpec, error) {
-	if len(programs) == 0 {
-		discovered, err := m.programDiscoverer.DiscoverPrograms(objectPath)
-		if err != nil {
-			return nil, fmt.Errorf("discover programs: %w", err)
-		}
-
-		result := make([]ProgramSpec, 0, len(discovered))
-		for _, d := range discovered {
-			globalData := opts.GlobalData
-			result = append(result, ProgramSpec{
-				Name:       d.Name,
-				Type:       d.Type,
-				AttachFunc: d.AttachFunc,
-				GlobalData: globalData,
-			})
-		}
-		m.logger.InfoContext(ctx, "auto-discovered programs", "count", len(result))
-		return result, nil
-	}
-
 	programNames := make([]string, len(programs))
 	for i, p := range programs {
 		programNames[i] = p.Name
 	}
-	if err := m.programDiscoverer.ValidatePrograms(objectPath, programNames); err != nil {
+	if err := m.programValidator.ValidatePrograms(objectPath, programNames); err != nil {
 		return nil, err
 	}
 	return programs, nil

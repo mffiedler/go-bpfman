@@ -39,64 +39,66 @@ import (
 	"github.com/bpfman/bpfman/fs"
 	"github.com/bpfman/bpfman/kernel"
 	"github.com/bpfman/bpfman/lock"
+	"github.com/bpfman/bpfman/manager"
 	"github.com/bpfman/bpfman/platform"
 )
 
-// fakeDiscoverer implements platform.ProgramDiscoverer for testing.
-type fakeDiscoverer struct {
-	// Programs maps object path to discovered programs
-	programs map[string][]platform.DiscoveredProgram
-	// DiscoverErr if set, DiscoverPrograms returns this error
-	discoverErr error
+// fakeProgramInfo describes a program the fake validator knows about
+// in a given object, standing in for what a real ELF scan would find.
+type fakeProgramInfo struct {
+	// Name is the program's function/symbol name.
+	Name string
+	// SectionName is the ELF section the program was defined in.
+	SectionName string
+	// Type is the attach-oriented program type.
+	Type bpfman.ProgramType
+	// AttachFunc is the fentry/fexit target function; empty otherwise.
+	AttachFunc string
+}
+
+// fakeValidator implements platform.ProgramValidator for testing.
+type fakeValidator struct {
+	// Programs maps object path to the programs it contains
+	programs map[string][]fakeProgramInfo
 	// ValidateErr if set, ValidatePrograms returns this error
 	validateErr error
 }
 
-func newFakeDiscoverer() *fakeDiscoverer {
-	return &fakeDiscoverer{
-		programs: make(map[string][]platform.DiscoveredProgram),
+func newFakeValidator() *fakeValidator {
+	return &fakeValidator{
+		programs: make(map[string][]fakeProgramInfo),
 	}
 }
 
 // SetPrograms configures the programs to return for a given object path.
-func (d *fakeDiscoverer) SetPrograms(objectPath string, programs []platform.DiscoveredProgram) {
+func (d *fakeValidator) SetPrograms(objectPath string, programs []fakeProgramInfo) {
 	d.programs[objectPath] = programs
 }
 
 // AddPrograms appends programs to the list for the given object path.
-func (d *fakeDiscoverer) AddPrograms(objectPath string, programs ...platform.DiscoveredProgram) {
+func (d *fakeValidator) AddPrograms(objectPath string, programs ...fakeProgramInfo) {
 	d.programs[objectPath] = append(d.programs[objectPath], programs...)
 }
 
-// SetDiscoverError configures DiscoverPrograms to return the given error.
-func (d *fakeDiscoverer) SetDiscoverError(err error) {
-	d.discoverErr = err
+// specsFor returns explicit ProgramSpecs naming every program
+// configured for objectPath, in configuration order. Tests that load
+// a whole object use it to declare each program, mirroring the CLI's
+// required --programs.
+func (d *fakeValidator) specsFor(objectPath string) []manager.ProgramSpec {
+	infos := d.programs[objectPath]
+	specs := make([]manager.ProgramSpec, len(infos))
+	for i, p := range infos {
+		specs[i] = manager.ProgramSpec{Name: p.Name, Type: p.Type, AttachFunc: p.AttachFunc}
+	}
+	return specs
 }
 
 // SetValidateError configures ValidatePrograms to return the given error.
-func (d *fakeDiscoverer) SetValidateError(err error) {
+func (d *fakeValidator) SetValidateError(err error) {
 	d.validateErr = err
 }
 
-func (d *fakeDiscoverer) DiscoverPrograms(objectPath string) ([]platform.DiscoveredProgram, error) {
-	if d.discoverErr != nil {
-		return nil, d.discoverErr
-	}
-
-	programs, ok := d.programs[objectPath]
-	if !ok {
-		return nil, fmt.Errorf("no programs found in object file")
-	}
-	// Return sorted copy for determinism
-	result := make([]platform.DiscoveredProgram, len(programs))
-	copy(result, programs)
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].Name < result[j].Name
-	})
-	return result, nil
-}
-
-func (d *fakeDiscoverer) ValidatePrograms(objectPath string, programNames []string) error {
+func (d *fakeValidator) ValidatePrograms(objectPath string, programNames []string) error {
 	if d.validateErr != nil {
 		return d.validateErr
 	}
@@ -129,8 +131,8 @@ func (d *fakeDiscoverer) ValidatePrograms(objectPath string, programNames []stri
 	return nil
 }
 
-// Ensure fakeDiscoverer implements the interface.
-var _ platform.ProgramDiscoverer = (*fakeDiscoverer)(nil)
+// Ensure fakeValidator implements the interface.
+var _ platform.ProgramValidator = (*fakeValidator)(nil)
 
 // fakeImagePuller implements platform.ImagePuller for testing.
 type fakeImagePuller struct {

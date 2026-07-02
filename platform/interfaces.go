@@ -662,35 +662,12 @@ type SignatureVerifier interface {
 	Verify(ctx context.Context, req SignatureVerificationRequest) (SignatureVerification, error)
 }
 
-// DiscoveredProgram represents a program found in a BPF object file.
-type DiscoveredProgram struct {
-	// Name is the program's function/symbol name as defined in the
-	// ELF object.
-	Name string
-
-	// SectionName is the ELF section the program was defined in (for
-	// example "fentry/vfs_read").
-	SectionName string
-
-	// Type is the attach-oriented program type inferred from the
-	// section name.
-	Type bpfman.ProgramType
-
-	// AttachFunc is the target function extracted from the section
-	// name for fentry/fexit programs (e.g. "fentry/vfs_read" ->
-	// "vfs_read"). It is empty for other program types.
-	AttachFunc string
-}
-
-// ProgramDiscoverer discovers programs in BPF object files.
-type ProgramDiscoverer interface {
-	// DiscoverPrograms scans a BPF object file and returns every
-	// program whose section name maps to a recognised type; a
-	// section with no known type is skipped. fentry and fexit
-	// programs are included, each carrying the attach function
-	// extracted from its section name.
-	DiscoverPrograms(objectPath string) ([]DiscoveredProgram, error)
-
+// ProgramValidator validates requested program names against BPF
+// object files. Loads name every program explicitly; there is no
+// whole-object discovery (section names cannot distinguish tc from
+// tcx and carry no fentry/fexit attach function, so a discovered
+// type would be a guess).
+type ProgramValidator interface {
 	// ValidatePrograms checks that all specified program names exist in
 	// the object file. Returns an error listing missing programs.
 	ValidatePrograms(objectPath string, programNames []string) error

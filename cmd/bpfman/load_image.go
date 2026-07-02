@@ -24,11 +24,13 @@ type LoadImageCmd struct {
 	// ImageURL is the OCI image reference to pull the bytecode from.
 	ImageURL string `arg:"" name:"image" help:"OCI image reference (e.g., quay.io/bpfman-bytecode/xdp_pass:latest)."`
 
-	// Programs selects which programs in the image to load, each given as
+	// Programs names every program in the image to load, each given as
 	// TYPE:NAME or TYPE:NAME:ATTACH_FUNC (comma-separated or repeated). For
-	// fentry/fexit the ATTACH_FUNC component is required. When empty, every
-	// program in the image is loaded.
-	Programs []args.ProgramSpec `name:"programs" sep:"," help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (comma-separated or repeated). For fentry/fexit, ATTACH_FUNC is required. If not specified, all programs in the image are loaded."`
+	// fentry/fexit the ATTACH_FUNC component is required. The flag is
+	// required: there is no whole-image load, because a section-derived
+	// type would be a guess (classifier sections cannot distinguish tc
+	// from tcx).
+	Programs []args.ProgramSpec `name:"programs" sep:"," required:"" help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (comma-separated or repeated). For fentry/fexit, ATTACH_FUNC is required. Every program to load must be named."`
 
 	// PullPolicy controls when the image is pulled (Always, IfNotPresent,
 	// or Never); it defaults to IfNotPresent.

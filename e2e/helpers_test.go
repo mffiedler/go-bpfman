@@ -190,7 +190,7 @@ func NewTestEnv(t *testing.T) *TestEnv {
 	require.NoError(t, err, "failed to create image puller")
 
 	// Create manager
-	mgr, err := manager.New(ensuredRuntime, puller, store, kernel, ebpf.NewProgramDiscoverer(), logger)
+	mgr, err := manager.New(ensuredRuntime, puller, store, kernel, ebpf.NewProgramValidator(), logger)
 	require.NoError(t, err, "failed to create manager")
 
 	cleanup := func() error {

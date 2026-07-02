@@ -11,8 +11,8 @@
 let bad <- bpfman program load file testdata/bpf/multi_prog_one_bad.bpf.o --programs xdp:bad
 assert not $bad.ok
 
-# Control: loading the whole object (bad included) fails as a unit.
-let whole <- bpfman program load file testdata/bpf/multi_prog_one_bad.bpf.o
+# Control: loading both programs (bad included) fails as a unit.
+let whole <- bpfman program load file testdata/bpf/multi_prog_one_bad.bpf.o --programs xdp:good,xdp:bad
 assert not $whole.ok
 
 # The behaviour under test: requesting only good succeeds despite bad
