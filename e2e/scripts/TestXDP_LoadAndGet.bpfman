@@ -31,6 +31,11 @@ let runtime_base = $prog.record.handles.pin_path |> jq 'split("/fs/")[0]'
 let expect_prog_pin = "${runtime_base}/fs/prog_${pid}"
 let expect_map_dir = "${runtime_base}/fs/maps/${pid}"
 let expect_bytecode = "${runtime_base}/programs/${pid}/bytecode.o"
+# source_path echoes the file argument for a bare file load, but is null
+# when that load is brokered to an image under
+# BPFMAN_E2E_BYTECODE_SOURCE=image. Derive the expectation from the
+# in-band image_source signal so both source modes assert exactly.
+let expect_source_path = $prog.record.load |> jq 'if .image_source == null then "testdata/bpf/xdp_pass.bpf.o" else null end'
 # Kernel-reported map_ids list cross-checked against bpfman's
 # observed status.maps[].id set.
 let expect_map_ids = $prog.status.maps |> jq "[.[].id]"
@@ -49,7 +54,7 @@ assert $prog matches exhaustive {
         updated_at:     null
         load: matches exhaustive {
             object_path:  $expect_bytecode
-            source_path:  testdata/bpf/xdp_pass.bpf.o
+            source_path:  $expect_source_path
             program_name: pass
             program_type: xdp
             attach_func:  null
@@ -151,7 +156,7 @@ assert $got matches exhaustive {
         updated_at:     null
         load: matches exhaustive {
             object_path:  $prog.record.load.object_path
-            source_path:  testdata/bpf/xdp_pass.bpf.o
+            source_path:  $expect_source_path
             program_name: $prog.record.load.program_name
             program_type: $prog.record.load.program_type
             attach_func:  $prog.record.load.attach_func
