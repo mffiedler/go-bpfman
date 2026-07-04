@@ -75,11 +75,7 @@ func programIDs(explicit []args.ProgramID) []kernel.ProgramID {
 // executeDeletePrograms deletes the given programs with cascading
 // cleanup. Locking is handled internally.
 func executeDeletePrograms(ctx context.Context, cli *runtime.CLI, mgr *manager.Manager, ids []kernel.ProgramID, recursive bool, all bool) error {
-	type result struct {
-		id  kernel.ProgramID
-		err error
-	}
-	results := make([]result, 0, len(ids))
+	results := make([]runtime.BatchResult[kernel.ProgramID], 0, len(ids))
 
 	lockErr := runtime.RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
 		deleteResults := mgr.DeletePrograms(ctx, writeLock, ids, manager.DeleteProgramsOpts{
@@ -87,7 +83,7 @@ func executeDeletePrograms(ctx context.Context, cli *runtime.CLI, mgr *manager.M
 			All:       all,
 		})
 		for _, r := range deleteResults {
-			results = append(results, result{id: r.ProgramID, err: r.Err})
+			results = append(results, runtime.BatchResult[kernel.ProgramID]{ID: r.ProgramID, Err: r.Err})
 		}
 		return nil
 	})
@@ -95,19 +91,7 @@ func executeDeletePrograms(ctx context.Context, cli *runtime.CLI, mgr *manager.M
 		return lockErr
 	}
 
-	var failCount int
-	for _, r := range results {
-		if r.err != nil {
-			_ = cli.PrintErrf("program %d: %v\n", r.id, r.err)
-			failCount++
-		}
-	}
-
-	if failCount > 0 {
-		return fmt.Errorf("%d of %d program(s) failed to delete", failCount, len(results))
-	}
-
-	return nil
+	return runtime.ReportBatchFailures(cli, "program", "delete", results)
 }
 
 // LinkDeleteCmd deletes BPF links with cascading cleanup.
@@ -136,11 +120,7 @@ func (c *LinkDeleteCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	}
 	defer cleanup()
 
-	type result struct {
-		id  bpfman.LinkID
-		err error
-	}
-	results := make([]result, 0, len(c.LinkIDs))
+	results := make([]runtime.BatchResult[bpfman.LinkID], 0, len(c.LinkIDs))
 
 	lockErr := runtime.RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
 		linkIDs := make([]bpfman.LinkID, len(c.LinkIDs))
@@ -149,7 +129,7 @@ func (c *LinkDeleteCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 		}
 		deleteResults := mgr.DeleteLinks(ctx, writeLock, linkIDs, manager.DeleteLinksOpts{Recursive: c.Recursive})
 		for _, r := range deleteResults {
-			results = append(results, result{id: r.LinkID, err: r.Err})
+			results = append(results, runtime.BatchResult[bpfman.LinkID]{ID: r.LinkID, Err: r.Err})
 		}
 		return nil
 	})
@@ -157,17 +137,5 @@ func (c *LinkDeleteCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 		return lockErr
 	}
 
-	var failCount int
-	for _, r := range results {
-		if r.err != nil {
-			_ = cli.PrintErrf("link %d: %v\n", r.id, r.err)
-			failCount++
-		}
-	}
-
-	if failCount > 0 {
-		return fmt.Errorf("%d of %d link(s) failed to delete", failCount, len(results))
-	}
-
-	return nil
+	return runtime.ReportBatchFailures(cli, "link", "delete", results)
 }

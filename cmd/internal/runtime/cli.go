@@ -89,6 +89,36 @@ func RunWithLockValue[T any](ctx context.Context, c *CLI, fn func(context.Contex
 	return result, nil
 }
 
+// BatchResult pairs a mutated ID with the error from mutating it, nil
+// on success. It is the unit ReportBatchFailures reports over.
+type BatchResult[ID ~uint32 | ~uint64] struct {
+	// ID is the identifier that was mutated.
+	ID ID
+
+	// Err is the failure for this ID, or nil if the mutation succeeded.
+	Err error
+}
+
+// ReportBatchFailures prints each failed result to stderr as
+// "<noun> <id>: <err>" and returns an "N of M <noun>(s) failed to
+// <verb>" summary error if any failed, or nil when all succeeded. It is
+// the shared reporting tail for batch mutations, whether the caller
+// iterated the IDs itself (RunBatchMutation) or delegated the iteration
+// to the manager (program/link delete).
+func ReportBatchFailures[ID ~uint32 | ~uint64](c *CLI, noun, verb string, results []BatchResult[ID]) error {
+	var failCount int
+	for _, r := range results {
+		if r.Err != nil {
+			_ = c.PrintErrf("%s %d: %v\n", noun, r.ID, r.Err)
+			failCount++
+		}
+	}
+	if failCount > 0 {
+		return fmt.Errorf("%d of %d %s(s) failed to %s", failCount, len(results), noun, verb)
+	}
+	return nil
+}
+
 // RunBatchMutation executes mutate for each ID under the global
 // writer lock, collects errors, and prints failures after releasing
 // the lock. Returns a summary error if any mutations failed.
@@ -100,16 +130,11 @@ func RunBatchMutation[ID ~uint32 | ~uint64](
 	verb string,
 	mutate func(context.Context, lock.WriterScope, ID) error,
 ) error {
-	type result struct {
-		id  ID
-		err error
-	}
-	results := make([]result, 0, len(ids))
+	results := make([]BatchResult[ID], 0, len(ids))
 
 	lockErr := RunWithLock(ctx, c, func(ctx context.Context, writeLock lock.WriterScope) error {
 		for _, id := range ids {
-			err := mutate(ctx, writeLock, id)
-			results = append(results, result{id: id, err: err})
+			results = append(results, BatchResult[ID]{ID: id, Err: mutate(ctx, writeLock, id)})
 		}
 		return nil
 	})
@@ -117,15 +142,5 @@ func RunBatchMutation[ID ~uint32 | ~uint64](
 		return lockErr
 	}
 
-	var failCount int
-	for _, r := range results {
-		if r.err != nil {
-			_ = c.PrintErrf("%s %d: %v\n", noun, r.id, r.err)
-			failCount++
-		}
-	}
-	if failCount > 0 {
-		return fmt.Errorf("%d of %d %s(s) failed to %s", failCount, len(results), noun, verb)
-	}
-	return nil
+	return ReportBatchFailures(c, noun, verb, results)
 }
