@@ -38,7 +38,7 @@ func ParseProgramID(s string) (ProgramID, error) {
 	}
 
 	if err != nil {
-		return ProgramID{}, fmt.Errorf("invalid program ID %q: %w", s, err)
+		return ProgramID{}, fmt.Errorf("invalid program ID %q: must be a decimal or 0x-prefixed hexadecimal number", s)
 	}
 
 	return ProgramID{Value: kernel.ProgramID(val)}, nil
@@ -71,7 +71,7 @@ func ParseLinkID(s string) (LinkID, error) {
 	}
 
 	if err != nil {
-		return LinkID{}, fmt.Errorf("invalid link ID %q: %w", s, err)
+		return LinkID{}, fmt.Errorf("invalid link ID %q: must be a decimal or 0x-prefixed hexadecimal number", s)
 	}
 
 	return LinkID{Value: bpfman.LinkID(val)}, nil
