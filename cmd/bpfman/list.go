@@ -129,10 +129,6 @@ func combineSelectors(selectors ...labels.Selector) labels.Selector {
 // otherwise it renders the program table or structured output in the
 // selected format.
 func (c *ListProgramsCmd) Run(cli *runtime.CLI, ctx context.Context) error {
-	if err := c.Validate(); err != nil {
-		return err
-	}
-
 	format, err := c.OutputFlags.Format()
 	if err != nil {
 		return err
