@@ -71,15 +71,6 @@ func (c *LoadImageCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 
 	logger.Info("loading BPF programs from OCI image", "image", c.ImageURL, "programs", len(c.Programs), "pull_policy", c.PullPolicy.String())
 
-	// loadImageResult captures the result of a load image operation.
-	type loadImageResult struct {
-		Programs []bpfman.Program
-	}
-
-	// Manager.Load decides whether post-pull work needs the writer
-	// flock: ordinary loads stay lockless, while explicit map-owner
-	// joins and PinByName loads serialise internally.
-
 	// Parse auth config from base64-encoded registry-auth.
 	auth, err := registryAuthFromFlag(c.RegistryAuth)
 	if err != nil {
@@ -101,20 +92,22 @@ func (c *LoadImageCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 		Auth:       auth,
 	}
 
+	// Manager.Load decides whether post-pull work needs the writer
+	// flock: ordinary loads stay lockless, while explicit map-owner
+	// joins and PinByName loads serialise internally.
 	req := manager.NewLoadRequest(manager.LoadSource{Image: &ref}, loadProgramSpecs(c.Programs), manager.LoadRequestOpts{
 		UserMetadata: args.MetadataMap(c.Metadata),
 		GlobalData:   globalData,
 		Application:  c.Application,
 		MapOwnerID:   c.MapOwnerID,
 	})
+
 	loaded, err := mgr.LoadFromRequest(ctx, req)
 	if err != nil {
 		return fmt.Errorf("failed to load from image: %w", err)
 	}
 
-	result := loadImageResult{Programs: loaded}
-
-	return cliformat.RenderLoadedPrograms(cli.Out, cliformat.LoadedProgramsView{Programs: result.Programs}, format)
+	return cliformat.RenderLoadedPrograms(cli.Out, cliformat.LoadedProgramsView{Programs: loaded}, format)
 }
 
 // registryAuthFromFlag decodes a base64-encoded registry-auth flag
