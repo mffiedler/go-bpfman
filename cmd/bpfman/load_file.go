@@ -22,21 +22,20 @@ type LoadCmd struct {
 	Image LoadImageCmd `cmd:"" help:"Load from an OCI container image."`
 }
 
-// LoadFileCmd loads a BPF program from a local object file.
-type LoadFileCmd struct {
+// loadFlags carries the flags common to loading from a file and from an
+// image: the output format, metadata, global data, the required program
+// list, the application grouping, and an optional map-owner share. Each
+// load command embeds it alongside its source-specific flags.
+type loadFlags struct {
 	cliformat.OutputFlags
 	MetadataFlags
 	GlobalDataFlags
 
-	// Path is the filesystem path to the BPF object file (.o) to load.
-	Path string `arg:"" name:"path" help:"Path to the BPF object file (.o)."`
-
-	// Programs names every program in the object to load, each given as
-	// TYPE:NAME or TYPE:NAME:ATTACH_FUNC (comma-separated or repeated). For
-	// fentry/fexit the ATTACH_FUNC component is required. The flag is
-	// required: there is no whole-object load, because a section-derived
-	// type would be a guess (classifier sections cannot distinguish tc
-	// from tcx).
+	// Programs names every program to load, each given as TYPE:NAME or
+	// TYPE:NAME:ATTACH_FUNC (comma-separated or repeated). For fentry/fexit
+	// the ATTACH_FUNC component is required. The flag is required: there is
+	// no untyped bulk load, because a section-derived type would be a guess
+	// (classifier sections cannot distinguish tc from tcx).
 	Programs []args.ProgramSpec `name:"programs" sep:"," required:"" help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (comma-separated or repeated). For fentry/fexit, ATTACH_FUNC is required. Every program to load must be named."`
 
 	// Application groups the loaded programs under an application name,
@@ -46,6 +45,30 @@ type LoadFileCmd struct {
 	// MapOwnerID is the kernel program ID of an already-loaded program
 	// whose maps these programs should share instead of creating their own.
 	MapOwnerID kernel.ProgramID `name:"map-owner-id" help:"Program ID of another program to share maps with."`
+}
+
+// requestOpts builds the load-request options shared by both load
+// sources from the common flags.
+func (f loadFlags) requestOpts() manager.LoadRequestOpts {
+	var globalData map[string][]byte
+	if len(f.GlobalData) > 0 {
+		globalData = args.GlobalDataMap(f.GlobalData)
+	}
+
+	return manager.LoadRequestOpts{
+		UserMetadata: args.MetadataMap(f.Metadata),
+		GlobalData:   globalData,
+		Application:  f.Application,
+		MapOwnerID:   f.MapOwnerID,
+	}
+}
+
+// LoadFileCmd loads a BPF program from a local object file.
+type LoadFileCmd struct {
+	loadFlags
+
+	// Path is the filesystem path to the BPF object file (.o) to load.
+	Path string `arg:"" name:"path" help:"Path to the BPF object file (.o)."`
 }
 
 // Run loads the selected programs from the local object file at Path
@@ -75,20 +98,10 @@ func executeLoadFile(ctx context.Context, cli *runtime.CLI, mgr *manager.Manager
 		return err
 	}
 
-	var globalData map[string][]byte
-	if len(c.GlobalData) > 0 {
-		globalData = args.GlobalDataMap(c.GlobalData)
-	}
-
 	// Manager.Load decides whether the request needs the writer flock:
 	// ordinary loads stay lockless, while explicit map-owner joins and
 	// PinByName loads serialise internally.
-	req := manager.NewLoadRequest(manager.LoadSource{FilePath: objPath.Path}, loadProgramSpecs(c.Programs), manager.LoadRequestOpts{
-		UserMetadata: args.MetadataMap(c.Metadata),
-		GlobalData:   globalData,
-		Application:  c.Application,
-		MapOwnerID:   c.MapOwnerID,
-	})
+	req := manager.NewLoadRequest(manager.LoadSource{FilePath: objPath.Path}, loadProgramSpecs(c.Programs), c.requestOpts())
 
 	loaded, err := mgr.LoadFromRequest(ctx, req)
 	if err != nil {

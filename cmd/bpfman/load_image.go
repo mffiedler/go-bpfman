@@ -8,29 +8,17 @@ import (
 
 	"github.com/bpfman/bpfman"
 	"github.com/bpfman/bpfman/cmd/bpfman/cliformat"
-	"github.com/bpfman/bpfman/cmd/internal/args"
 	"github.com/bpfman/bpfman/cmd/internal/runtime"
-	"github.com/bpfman/bpfman/kernel"
 	"github.com/bpfman/bpfman/manager"
 	"github.com/bpfman/bpfman/platform"
 )
 
 // LoadImageCmd loads BPF programs from an OCI container image.
 type LoadImageCmd struct {
-	cliformat.OutputFlags
-	MetadataFlags
-	GlobalDataFlags
+	loadFlags
 
 	// ImageURL is the OCI image reference to pull the bytecode from.
 	ImageURL string `arg:"" name:"image" help:"OCI image reference (e.g., quay.io/bpfman-bytecode/xdp_pass:latest)."`
-
-	// Programs names every program in the image to load, each given as
-	// TYPE:NAME or TYPE:NAME:ATTACH_FUNC (comma-separated or repeated). For
-	// fentry/fexit the ATTACH_FUNC component is required. The flag is
-	// required: there is no whole-image load, because a section-derived
-	// type would be a guess (classifier sections cannot distinguish tc
-	// from tcx).
-	Programs []args.ProgramSpec `name:"programs" sep:"," required:"" help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (comma-separated or repeated). For fentry/fexit, ATTACH_FUNC is required. Every program to load must be named."`
 
 	// PullPolicy controls when the image is pulled (Always, IfNotPresent,
 	// or Never); it defaults to IfNotPresent.
@@ -41,14 +29,6 @@ type LoadImageCmd struct {
 	// environment variable so the credentials do not appear in process
 	// listings.
 	RegistryAuth string `name:"registry-auth" env:"BPFMAN_REGISTRY_AUTH" help:"Base64-encoded registry auth (username:password). Prefer BPFMAN_REGISTRY_AUTH env var to avoid exposing credentials in process listings."`
-
-	// Application groups the loaded programs under an application name,
-	// stored as the bpfman.io/application metadata key.
-	Application string `short:"a" name:"application" help:"Application name to group programs (stored as bpfman.io/application metadata)."`
-
-	// MapOwnerID is the kernel program ID of an already-loaded program
-	// whose maps these programs should share instead of creating their own.
-	MapOwnerID kernel.ProgramID `name:"map-owner-id" help:"Program ID of another program to share maps with."`
 }
 
 // Run pulls the OCI image at ImageURL (honouring the pull policy and any
@@ -81,11 +61,6 @@ func (c *LoadImageCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 		logger.Debug("using registry auth", "username", auth.Username)
 	}
 
-	var globalData map[string][]byte
-	if len(c.GlobalData) > 0 {
-		globalData = args.GlobalDataMap(c.GlobalData)
-	}
-
 	ref := platform.ImageRef{
 		URL:        c.ImageURL,
 		PullPolicy: c.PullPolicy,
@@ -95,12 +70,7 @@ func (c *LoadImageCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	// Manager.Load decides whether post-pull work needs the writer
 	// flock: ordinary loads stay lockless, while explicit map-owner
 	// joins and PinByName loads serialise internally.
-	req := manager.NewLoadRequest(manager.LoadSource{Image: &ref}, loadProgramSpecs(c.Programs), manager.LoadRequestOpts{
-		UserMetadata: args.MetadataMap(c.Metadata),
-		GlobalData:   globalData,
-		Application:  c.Application,
-		MapOwnerID:   c.MapOwnerID,
-	})
+	req := manager.NewLoadRequest(manager.LoadSource{Image: &ref}, loadProgramSpecs(c.Programs), c.requestOpts())
 
 	loaded, err := mgr.LoadFromRequest(ctx, req)
 	if err != nil {
