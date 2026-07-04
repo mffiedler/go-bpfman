@@ -1,7 +1,6 @@
 package dispatcher
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/bpfman/bpfman"
@@ -33,21 +32,29 @@ type XDPExtensionAttachSpec struct {
 	LinkPinPath bpfman.LinkPath `json:"link_pin_path,omitempty"`
 }
 
-// Validate checks the spec for invalid or missing values.
-func (s XDPExtensionAttachSpec) Validate() error {
-	if s.DispatcherPinPath == "" {
-		return errors.New("XDP extension: DispatcherPinPath is required")
+// validateExtensionAttachSpec checks the fields shared by the XDP and TC
+// extension attach specs, prefixing each error with kind ("XDP" or
+// "TC"). The two spec types are distinct because they select different
+// kernel attach paths at the boundary, but their validation is the same.
+func validateExtensionAttachSpec(kind string, dispatcherPin, progPin bpfman.ProgPinPath, programName string, position int) error {
+	if dispatcherPin == "" {
+		return fmt.Errorf("%s extension: DispatcherPinPath is required", kind)
 	}
-	if s.ProgPinPath == "" {
-		return errors.New("XDP extension: ProgPinPath is required")
+	if progPin == "" {
+		return fmt.Errorf("%s extension: ProgPinPath is required", kind)
 	}
-	if s.ProgramName == "" {
-		return errors.New("XDP extension: ProgramName is required")
+	if programName == "" {
+		return fmt.Errorf("%s extension: ProgramName is required", kind)
 	}
-	if s.Position < 0 || s.Position >= MaxPrograms {
-		return fmt.Errorf("XDP extension: Position %d out of range [0, %d)", s.Position, MaxPrograms)
+	if position < 0 || position >= MaxPrograms {
+		return fmt.Errorf("%s extension: Position %d out of range [0, %d)", kind, position, MaxPrograms)
 	}
 	return nil
+}
+
+// Validate checks the spec for invalid or missing values.
+func (s XDPExtensionAttachSpec) Validate() error {
+	return validateExtensionAttachSpec("XDP", s.DispatcherPinPath, s.ProgPinPath, s.ProgramName, s.Position)
 }
 
 // TCExtensionAttachSpec contains parameters for attaching a TC extension
@@ -78,17 +85,5 @@ type TCExtensionAttachSpec struct {
 
 // Validate checks the spec for invalid or missing values.
 func (s TCExtensionAttachSpec) Validate() error {
-	if s.DispatcherPinPath == "" {
-		return errors.New("TC extension: DispatcherPinPath is required")
-	}
-	if s.ProgPinPath == "" {
-		return errors.New("TC extension: ProgPinPath is required")
-	}
-	if s.ProgramName == "" {
-		return errors.New("TC extension: ProgramName is required")
-	}
-	if s.Position < 0 || s.Position >= MaxPrograms {
-		return fmt.Errorf("TC extension: Position %d out of range [0, %d)", s.Position, MaxPrograms)
-	}
-	return nil
+	return validateExtensionAttachSpec("TC", s.DispatcherPinPath, s.ProgPinPath, s.ProgramName, s.Position)
 }
