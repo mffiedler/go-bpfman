@@ -65,6 +65,21 @@ func (c *ListProgramsCmd) Validate() error {
 	return nil
 }
 
+// applicationMetadata builds the metadata-selector map from the
+// --metadata-selector pairs and folds --application in under the
+// application metadata key when it is set. It backs the program-scope
+// filtering on both the program and link list commands.
+func applicationMetadata(selector []args.KeyValue, application string) map[string]string {
+	metadata := args.MetadataMap(selector)
+	if application != "" {
+		if metadata == nil {
+			metadata = map[string]string{}
+		}
+		metadata[manager.ApplicationMetadataKey] = application
+	}
+	return metadata
+}
+
 func (c *ListProgramsCmd) buildListOptions() ([]bpfman.ListOption, error) {
 	var opts []bpfman.ListOption
 
@@ -83,13 +98,7 @@ func (c *ListProgramsCmd) buildListOptions() ([]bpfman.ListOption, error) {
 	}
 
 	var selectors []labels.Selector
-	metadata := args.MetadataMap(c.MetadataSelector)
-	if c.Application != "" {
-		if metadata == nil {
-			metadata = map[string]string{}
-		}
-		metadata[manager.ApplicationMetadataKey] = c.Application
-	}
+	metadata := applicationMetadata(c.MetadataSelector, c.Application)
 	if len(metadata) > 0 {
 		selectors = append(selectors, labels.SelectorFromSet(labels.Set(metadata)))
 	}
@@ -223,13 +232,7 @@ func (c *ListLinksCmd) programScopeOptions() ([]bpfman.ListOption, bool) {
 		scoped = true
 	}
 
-	metadata := args.MetadataMap(c.MetadataSelector)
-	if c.Application != "" {
-		if metadata == nil {
-			metadata = map[string]string{}
-		}
-		metadata[manager.ApplicationMetadataKey] = c.Application
-	}
+	metadata := applicationMetadata(c.MetadataSelector, c.Application)
 	if len(metadata) > 0 {
 		opts = append(opts, bpfman.MatchingSelector(labels.SelectorFromSet(labels.Set(metadata))))
 		scoped = true
