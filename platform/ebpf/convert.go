@@ -147,75 +147,11 @@ func infoToMap(info *ebpf.MapInfo, id kernel.MapID) kernel.Map {
 	return km
 }
 
+// infoToLink converts a cilium/ebpf link.Info to a kernel.Link value.
+// It delegates to the canonical ToKernelLink so the two conversions
+// cannot drift; callers here want a value rather than a pointer.
 func infoToLink(info *link.Info) kernel.Link {
-	kl := kernel.Link{
-		ID:        kernel.LinkID(info.ID),
-		ProgramID: kernel.ProgramID(info.Program),
-		LinkType:  linkTypeString(info.Type),
-	}
-
-	// Extract type-specific info where available.
-	if tracing := info.Tracing(); tracing != nil {
-		kl.AttachType = fmt.Sprintf("%d", tracing.AttachType)
-		kl.TargetObjID = tracing.TargetObjId
-		kl.TargetBTFId = uint32(tracing.TargetBtfId)
-	}
-
-	if xdp := info.XDP(); xdp != nil {
-		kl.Ifindex = xdp.Ifindex
-	}
-
-	if tcx := info.TCX(); tcx != nil {
-		kl.AttachType = fmt.Sprintf("%d", tcx.AttachType)
-		kl.Ifindex = tcx.Ifindex
-	}
-
-	if cgroup := info.Cgroup(); cgroup != nil {
-		kl.AttachType = fmt.Sprintf("%d", cgroup.AttachType)
-		kl.CgroupID = cgroup.CgroupId
-	}
-
-	if netns := info.NetNs(); netns != nil {
-		kl.AttachType = fmt.Sprintf("%d", netns.AttachType)
-		kl.NetnsIno = netns.NetnsIno
-	}
-
-	if netkit := info.Netkit(); netkit != nil {
-		kl.AttachType = fmt.Sprintf("%d", netkit.AttachType)
-		kl.Ifindex = netkit.Ifindex
-	}
-
-	if netfilter := info.Netfilter(); netfilter != nil {
-		kl.NetfilterPf = netfilter.Pf
-		kl.NetfilterHooknum = netfilter.Hooknum
-		kl.NetfilterPriority = netfilter.Priority
-		kl.NetfilterFlags = netfilter.Flags
-	}
-
-	if kprobeMulti := info.KprobeMulti(); kprobeMulti != nil {
-		if count, ok := kprobeMulti.AddressCount(); ok {
-			kl.KprobeMultiCount = count
-		}
-		if flags, ok := kprobeMulti.Flags(); ok {
-			kl.KprobeMultiFlags = flags
-		}
-		if missed, ok := kprobeMulti.Missed(); ok {
-			kl.KprobeMultiMissed = missed
-		}
-	}
-
-	if perfEvent := info.PerfEvent(); perfEvent != nil {
-		if kprobeInfo := perfEvent.Kprobe(); kprobeInfo != nil {
-			if addr, ok := kprobeInfo.Address(); ok {
-				kl.KprobeAddress = addr
-			}
-			if missed, ok := kprobeInfo.Missed(); ok {
-				kl.KprobeMissed = missed
-			}
-		}
-	}
-
-	return kl
+	return *ToKernelLink(info)
 }
 
 // linkTypeString converts a link.Type to a human-readable string.

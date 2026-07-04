@@ -47,6 +47,9 @@ func ToKernelLink(info *link.Info) *kernel.Link {
 	}
 	if kprobeMulti := info.KprobeMulti(); kprobeMulti != nil {
 		// KprobeMulti fields are accessed via methods
+		if count, ok := kprobeMulti.AddressCount(); ok {
+			kl.KprobeMultiCount = count
+		}
 		if flags, ok := kprobeMulti.Flags(); ok {
 			kl.KprobeMultiFlags = flags
 		}
