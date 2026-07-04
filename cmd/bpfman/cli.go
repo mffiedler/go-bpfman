@@ -55,10 +55,9 @@ type CLI struct {
 	// Version prints version information.
 	Version VersionCmd `cmd:"" group:"infra" help:"Print version information."`
 
-	// Get is a hidden verb-noun compatibility alias (Rust bpfman
-	// style) routing "get link" and "get program" to the native
-	// noun-verb subcommands.
-	Get GetCmd `cmd:"" hidden:"" help:"Verb-noun compatibility alias (Rust bpfman style)."`
+	// Get is a hidden verb-noun compatibility alias routing "get
+	// link" and "get program" to the native noun-verb subcommands.
+	Get GetCmd `cmd:"" hidden:"" help:"Verb-noun compatibility alias for get link/get program."`
 }
 
 // daemonMarkerFlag identifies the bpfman-operator's daemonset

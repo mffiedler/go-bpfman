@@ -10,10 +10,9 @@ import (
 	"github.com/bpfman/bpfman/cmd/internal/runtime"
 )
 
-// GetCmd is a verb-noun alias path mirroring the Rust bpfman CLI
-// surface (`bpfman get link <id>`, `bpfman get program <id>`).
-// Callers driving the Go binary with Rust-style commands -- notably
-// the bpfman-operator integration tests -- reach the same Run
+// GetCmd is a hidden verb-noun alias path (`bpfman get link <id>`,
+// `bpfman get program <id>`). Callers driving the verb-noun form --
+// notably the bpfman-operator integration tests -- reach the same Run
 // methods as the native noun-verb form (`bpfman link get <id>`).
 type GetCmd struct {
 	// Link shows the details of a link by link ID.

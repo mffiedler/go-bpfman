@@ -33,9 +33,9 @@ type ListProgramsCmd struct {
 	// comma-separated or repeated, e.g. --type=xdp,kprobe).
 	Type []bpfman.ProgramType `name:"type" sep:"," help:"Filter by program type (case-insensitive, e.g., --type=xdp,kprobe)."`
 
-	// ProgramType is a Rust-CLI-compatible alias for --type; values from
-	// both flags are unioned into the type filter.
-	ProgramType []bpfman.ProgramType `name:"program-type" short:"p" sep:"," help:"Filter by program type (Rust-compatible alias for --type)."`
+	// ProgramType is an alias for --type; values from both flags are
+	// unioned into the type filter.
+	ProgramType []bpfman.ProgramType `name:"program-type" short:"p" sep:"," help:"Alias for --type."`
 
 	// Application filters to programs whose bpfman.io/application metadata
 	// equals this value.
@@ -212,7 +212,7 @@ func (c *ListLinksCmd) buildLinkListOptions() ([]bpfman.LinkListOption, error) {
 	return opts, nil
 }
 
-// programScopeOptions builds the program-list options for Rust-style
+// programScopeOptions builds the program-list options for
 // program-scoped link filtering: --program-type, --application and
 // --metadata-selector select the owning program. The bool reports whether
 // any program-scope filter was supplied; when false, all links are listed
