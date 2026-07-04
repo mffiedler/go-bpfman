@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/bpfman/bpfman"
 	"github.com/bpfman/bpfman/cmd/bpfman/cliformat"
 	"github.com/bpfman/bpfman/cmd/internal/args"
 	"github.com/bpfman/bpfman/cmd/internal/runtime"
@@ -49,11 +48,6 @@ type LoadFileCmd struct {
 	MapOwnerID kernel.ProgramID `name:"map-owner-id" help:"Program ID of another program to share maps with."`
 }
 
-// loadFileResult captures the result of a load file operation.
-type loadFileResult struct {
-	Programs []bpfman.Program
-}
-
 // Run loads the selected programs from the local object file at Path
 // (applying metadata, global data, application grouping and any
 // map-owner share) and renders the loaded programs in the chosen output
@@ -73,16 +67,12 @@ func (c *LoadFileCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	return executeLoadFile(ctx, cli, mgr, c, format)
 }
 
-// executeLoadFileResult is the shared implementation for loading a
-// BPF program from a local object file, returning the result without
-// formatting. Both the CLI command and bpfman-shell call this function.
-func executeLoadFileResult(ctx context.Context, cli *runtime.CLI, mgr *manager.Manager, c *LoadFileCmd) (loadFileResult, error) {
-	_ = cli // load does not take the writer lock.
-
-	// Validate object file exists.
+// executeLoadFile loads the selected programs from a local object file
+// and renders them in the chosen output format.
+func executeLoadFile(ctx context.Context, cli *runtime.CLI, mgr *manager.Manager, c *LoadFileCmd, format cliformat.OutputFormat) error {
 	objPath, err := args.ParseObjectPath(c.Path)
 	if err != nil {
-		return loadFileResult{}, err
+		return err
 	}
 
 	var globalData map[string][]byte
@@ -99,23 +89,11 @@ func executeLoadFileResult(ctx context.Context, cli *runtime.CLI, mgr *manager.M
 		Application:  c.Application,
 		MapOwnerID:   c.MapOwnerID,
 	})
-	loaded, loadErr := mgr.LoadFromRequest(ctx, req)
-	if loadErr != nil {
-		return loadFileResult{}, fmt.Errorf("failed to load programs: %w", loadErr)
-	}
 
-	return loadFileResult{Programs: loaded}, nil
-}
-
-// executeLoadFile is the shared implementation for loading a BPF
-// program from a local object file. The CLI command calls this
-// function; bpfman-shell uses executeLoadFileResult directly.
-func executeLoadFile(ctx context.Context, cli *runtime.CLI, mgr *manager.Manager, c *LoadFileCmd, format cliformat.OutputFormat) error {
-	result, err := executeLoadFileResult(ctx, cli, mgr, c)
+	loaded, err := mgr.LoadFromRequest(ctx, req)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to load programs: %w", err)
 	}
 
-	// Format and emit output outside the lock
-	return cliformat.RenderLoadedPrograms(cli.Out, cliformat.LoadedProgramsView{Programs: result.Programs}, format)
+	return cliformat.RenderLoadedPrograms(cli.Out, cliformat.LoadedProgramsView{Programs: loaded}, format)
 }

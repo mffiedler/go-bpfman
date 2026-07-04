@@ -72,9 +72,8 @@ func programIDs(explicit []args.ProgramID) []kernel.ProgramID {
 	return ids
 }
 
-// executeDeletePrograms is the shared implementation for deleting
-// programs with cascading cleanup. Both the CLI command and
-// bpfman-shell call this function. Locking is handled internally.
+// executeDeletePrograms deletes the given programs with cascading
+// cleanup. Locking is handled internally.
 func executeDeletePrograms(ctx context.Context, cli *runtime.CLI, mgr *manager.Manager, ids []kernel.ProgramID, recursive bool, all bool) error {
 	type result struct {
 		id  kernel.ProgramID
