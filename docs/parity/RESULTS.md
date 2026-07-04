@@ -150,6 +150,12 @@ defect.
   kernel-type label is accurate and Rust's is not (assuming "Kernel
   Type" is meant to be the kernel's `BPF_PROG_TYPE`; if Rust intends the
   logical bpfman type, it is a labelling choice). See GO-AUDIT.md.
+  Go's text `program get` renders this readback as a `Kernel Type` row
+  in the Status block, alongside the Spec `Type` that records the load
+  request, so the honest kernel type -- `extension` for dispatcher-backed
+  XDP/TC, `schedcls` for tcx, `kprobe` for the probes, `tracing` for
+  fentry/fexit -- is visible without `-o json`. Rust surfaces its
+  (inaccurate) `xdp`/`tc` in the same position.
 - tracepoint identity: Go splits `{group, name}`; Rust joins
   `group/name`.
 - Output format: Go supports `-o json` on every verb; Rust `get`/`list`
