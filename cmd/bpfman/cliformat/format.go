@@ -243,7 +243,15 @@ func programStatusRows(prog bpfman.Program) []row {
 		st = append(st, fieldRow("Prog Pin", prog.Status.ProgPin.String()))
 	}
 	st = append(st, fieldRow("Size JITted", fmt.Sprintf("%d bytes", kp.JitedSize)))
-	st = append(st, fieldRow("Size Translated", fmt.Sprintf("%d bytes", kp.XlatedSize)))
+	// The kernel withholds the translated-instruction size under
+	// kptr_restrict and/or bpf_jit_harden, leaving XlatedSize zero by
+	// omission rather than because the program is empty. Say so instead of
+	// printing an authoritative "0 bytes".
+	if kp.Restricted {
+		st = append(st, fieldRow("Size Translated", "(restricted)"))
+	} else {
+		st = append(st, fieldRow("Size Translated", fmt.Sprintf("%d bytes", kp.XlatedSize)))
+	}
 	st = append(st, fieldRow("Tag", kp.Tag))
 	sortRowsByLabel(st)
 

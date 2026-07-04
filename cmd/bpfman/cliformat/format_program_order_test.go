@@ -103,6 +103,34 @@ func TestFormatProgramTable_KernelTypeRow(t *testing.T) {
 	}
 }
 
+// The kernel withholds the translated-instruction size under
+// kptr_restrict / bpf_jit_harden; the resulting zero is an omission,
+// not an empty program, so Status marks it restricted rather than
+// printing an authoritative "0 bytes".
+func TestFormatProgramTable_RestrictedTranslatedSize(t *testing.T) {
+	t.Parallel()
+
+	prog := bpfman.Program{
+		Record: bpfman.ProgramRecord{ProgramID: 42},
+		Status: bpfman.ProgramStatus{
+			Kernel: &kernel.Program{Restricted: true},
+		},
+	}
+
+	var line string
+	for _, l := range strings.Split(formatProgramTable(prog), "\n") {
+		if strings.Contains(l, "Size Translated") {
+			line = l
+		}
+	}
+	if !strings.Contains(line, "(restricted)") {
+		t.Errorf("restricted translated size should render (restricted), got %q", line)
+	}
+	if strings.Contains(line, "bytes") {
+		t.Errorf("restricted translated size should not print an authoritative byte count, got %q", line)
+	}
+}
+
 // The Status section reports map-sharing membership: every program
 // whose records point at this program's map set, space-separated like
 // the list table's LINK IDS column. It answers "whose data disappears
