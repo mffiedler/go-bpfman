@@ -13,7 +13,7 @@ import (
 func Run(
 	ctx context.Context,
 	logger *slog.Logger,
-	exec action.ExecutorWithResult,
+	exec action.Executor,
 	plan Plan,
 ) (*Bindings, error) {
 	bindings := newBindings()
@@ -32,7 +32,7 @@ func Run(
 func Run0(
 	ctx context.Context,
 	logger *slog.Logger,
-	exec action.ExecutorWithResult,
+	exec action.Executor,
 	plan Plan,
 ) error {
 	_, err := Run(ctx, logger, exec, plan)
@@ -46,7 +46,7 @@ func Run0(
 func interpret(
 	ctx context.Context,
 	logger *slog.Logger,
-	exec action.ExecutorWithResult,
+	exec action.Executor,
 	plan Plan,
 	bindings *Bindings,
 ) (undos [][]action.Action, opErr error) {
@@ -105,7 +105,7 @@ func appendUndos(undos [][]action.Action, n *node, bindings *Bindings) [][]actio
 func executeRollback(
 	ctx context.Context,
 	logger *slog.Logger,
-	exec action.ExecutorWithResult,
+	exec action.Executor,
 	undos [][]action.Action,
 ) {
 	for i := len(undos) - 1; i >= 0; i-- {

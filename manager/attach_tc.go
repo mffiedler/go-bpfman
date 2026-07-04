@@ -220,7 +220,7 @@ func (m *Manager) attachTCXPlan(
 ) operation.Plan {
 	return operation.Build(
 		operation.Produce(attachOutKey, target,
-			func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) (bpfman.AttachOutput, error) {
+			func(ctx context.Context, exec action.Executor, _ *operation.Bindings) (bpfman.AttachOutput, error) {
 				return action.Produce[bpfman.AttachOutput](ctx, exec, action.AttachTCX{
 					Ifindex:     ifindex,
 					Direction:   direction.String(),

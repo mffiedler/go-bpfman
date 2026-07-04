@@ -26,8 +26,8 @@ type node struct {
 
 	// Exactly one of these is set, depending on flavour.
 	// do/try use execFn; produce uses produceFn.
-	execFn    func(context.Context, action.ExecutorWithResult, *Bindings) error
-	produceFn func(context.Context, action.ExecutorWithResult, *Bindings) (any, error)
+	execFn    func(context.Context, action.Executor, *Bindings) error
+	produceFn func(context.Context, action.Executor, *Bindings) (any, error)
 
 	// For produce: the key name used to store the binding.
 	bindKey string
@@ -44,7 +44,7 @@ type Node = node
 // Produce creates a value-producing node. The returned value is stored
 // under the given key and can be retrieved by later nodes via Get.
 func Produce[T any](key Key[T], target string,
-	fn func(context.Context, action.ExecutorWithResult, *Bindings) (T, error),
+	fn func(context.Context, action.Executor, *Bindings) (T, error),
 	opts ...NodeOpt,
 ) Node {
 	n := node{
@@ -52,7 +52,7 @@ func Produce[T any](key Key[T], target string,
 		flavour: flavourProduce,
 		target:  target,
 		bindKey: key.name,
-		produceFn: func(ctx context.Context, exec action.ExecutorWithResult, b *Bindings) (any, error) {
+		produceFn: func(ctx context.Context, exec action.Executor, b *Bindings) (any, error) {
 			return fn(ctx, exec, b)
 		},
 	}
@@ -65,7 +65,7 @@ func Produce[T any](key Key[T], target string,
 // Do creates a side-effecting node. Do nodes support undo via
 // UndoFrom.
 func Do(label string, target string,
-	fn func(context.Context, action.ExecutorWithResult, *Bindings) error,
+	fn func(context.Context, action.Executor, *Bindings) error,
 	opts ...NodeOpt,
 ) Node {
 	n := node{
@@ -84,7 +84,7 @@ func Do(label string, target string,
 // the operation continues without setting the error state. Try nodes
 // have no undo.
 func Try(label string, target string,
-	fn func(context.Context, action.ExecutorWithResult, *Bindings) error,
+	fn func(context.Context, action.Executor, *Bindings) error,
 ) Node {
 	return node{
 		label:   label,
@@ -99,7 +99,7 @@ func Try(label string, target string,
 // closure simply calls exec.Execute with a fixed action value.
 func DoAction(label, target string, a action.Action, opts ...NodeOpt) Node {
 	return Do(label, target,
-		func(ctx context.Context, exec action.ExecutorWithResult, _ *Bindings) error {
+		func(ctx context.Context, exec action.Executor, _ *Bindings) error {
 			return exec.Execute(ctx, a)
 		},
 		opts...,
@@ -110,7 +110,7 @@ func DoAction(label, target string, a action.Action, opts ...NodeOpt) Node {
 // Convenience wrapper around Try for a fixed action value.
 func TryAction(label, target string, a action.Action) Node {
 	return Try(label, target,
-		func(ctx context.Context, exec action.ExecutorWithResult, _ *Bindings) error {
+		func(ctx context.Context, exec action.Executor, _ *Bindings) error {
 			return exec.Execute(ctx, a)
 		},
 	)

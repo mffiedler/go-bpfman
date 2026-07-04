@@ -7,7 +7,6 @@ import (
 	"log/slog"
 
 	"github.com/bpfman/bpfman"
-	"github.com/bpfman/bpfman/dispatcher"
 	"github.com/bpfman/bpfman/fs"
 	"github.com/bpfman/bpfman/manager/action"
 	"github.com/bpfman/bpfman/platform"
@@ -53,24 +52,8 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 		}
 		return rec, nil
 
-	case action.CheckProgramNotInStore:
-		if _, err := e.store.Get(ctx, a.ProgramID); err == nil {
-			return nil, fmt.Errorf("program %d already exists in database", a.ProgramID)
-		} else if !errors.Is(err, platform.ErrRecordNotFound) {
-			return nil, fmt.Errorf("check existing program %d: %w", a.ProgramID, err)
-		}
-		return nil, nil
-
 	case action.LoadProgram:
 		return e.kernel.Load(ctx, a.Spec, a.BPFFS)
-
-	case action.SaveProgram:
-		return nil, e.store.RunInTransaction(ctx, "save_program", func(tx platform.Store) error {
-			return tx.Save(ctx, a.ProgramID, a.Metadata)
-		})
-
-	case action.DeleteProgram:
-		return nil, e.store.Delete(ctx, a.ProgramID)
 
 	case action.CreateLink:
 		return e.store.CreateLink(ctx, a.Spec)
@@ -111,16 +94,8 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 	case action.AttachTCX:
 		return e.kernel.AttachTCX(ctx, a.Ifindex, a.Direction, a.ProgPinPath, a.LinkPinPath, a.NetnsPath, a.Order)
 
-	case action.DeleteDispatcher:
-		return nil, e.store.DeleteDispatcherSnapshot(ctx, dispatcher.Key{
-			Type: a.Type, Nsid: a.Nsid, Ifindex: a.Ifindex,
-		})
-
 	case action.DetachLink:
 		return nil, e.kernel.DetachLink(ctx, a.PinPath)
-
-	case action.DetachTCFilter:
-		return nil, e.kernel.DetachTCFilter(ctx, a.Ifindex, a.Ifname, a.Parent, a.Priority, a.Handle, a.NetnsPath)
 
 	case action.PublishBytecode:
 		return nil, e.bcfs.PublishBytecode(a.ProgramID, a.SourcePath, a.Provenance)
@@ -128,49 +103,8 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 	case action.RemoveProgramDir:
 		return nil, e.bcfs.RemoveProgramDir(a.Path)
 
-	case action.RemoveProgPin:
-		return nil, e.bpffs.RemoveProgPin(a.Path)
-
-	case action.RemoveMapDir:
-		return nil, e.bpffs.RemoveMapDir(a.Path)
-
-	case action.RemoveDispatcherProgPin:
-		return nil, e.bpffs.RemoveDispatcherProgPin(a.Path)
-
 	case action.RemoveDispatcherRevDir:
 		return nil, e.bpffs.RemoveDispatcherRevDir(a.Path)
-
-	case action.RemoveDispatcherLinkPin:
-		return nil, e.bpffs.RemoveDispatcherLinkPin(a.Path)
-
-	case action.RemoveStagingDir:
-		return nil, e.bcfs.RemoveStagingDir(a.Path)
-
-	case action.SaveSharedMapPins:
-		return nil, e.store.RunInTransaction(ctx, "save_shared_map_pins", func(tx platform.Store) error {
-			return tx.SaveSharedMapPins(ctx, a.ProgramID, a.MapNames)
-		})
-
-	case action.CleanupSharedMapPins:
-		var orphaned []string
-		if err := e.store.RunInTransaction(ctx, "cleanup_shared_map_pins", func(tx platform.Store) error {
-			var txErr error
-			orphaned, txErr = tx.DeleteSharedMapPins(ctx, a.ProgramID)
-			return txErr
-		}); err != nil {
-			return nil, err
-		}
-
-		for _, mapName := range orphaned {
-			path := e.bpffs.SharedMapPin(mapName)
-			if rmErr := e.bpffs.RemoveSharedMapPin(path); rmErr != nil {
-				e.logger.Warn("failed to remove orphaned shared map pin", "path", path, "error", rmErr)
-			}
-		}
-		return nil, nil
-
-	case action.RemoveSharedMapPin:
-		return nil, e.bpffs.RemoveSharedMapPin(a.Path)
 
 	case action.RebuildXDPDispatcher:
 		return e.rebuildXDPDispatcher(ctx, a.ProgramID,
@@ -199,32 +133,5 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 	}
 }
 
-// ExecuteAll runs multiple actions, stopping on first error.
-func (e *executor) ExecuteAll(ctx context.Context, actions []action.Action) error {
-	return e.ExecuteAllWithResult(ctx, actions).Error
-}
-
-// ExecuteAllWithResult runs multiple actions, stopping on first error,
-// and returns structured information about what completed and what failed.
-func (e *executor) ExecuteAllWithResult(ctx context.Context, actions []action.Action) action.ExecutionResult {
-	res := action.ExecutionResult{
-		CompletedCount: 0,
-		FailedIndex:    -1,
-		Error:          nil,
-		Actions:        actions,
-	}
-
-	for i, a := range actions {
-		if err := e.Execute(ctx, a); err != nil {
-			res.FailedIndex = i
-			res.Error = err
-			return res
-		}
-		res.CompletedCount++
-	}
-
-	return res
-}
-
-// Ensure executor implements action.ExecutorWithResult.
-var _ action.ExecutorWithResult = (*executor)(nil)
+// Ensure executor implements action.Executor.
+var _ action.Executor = (*executor)(nil)

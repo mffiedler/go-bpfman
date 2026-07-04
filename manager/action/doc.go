@@ -10,32 +10,21 @@
 // each opcode to the appropriate I/O subsystem -- store, kernel, or
 // filesystem.
 //
-//   - Store:      CheckProgramNotInStore, SaveProgram, DeleteProgram,
-//     GetProgramFromStore, CreateLink, CreatePendingLink,
-//     DeleteLink, FinaliseLink, DeleteDispatcher
+//   - Store:      GetProgramFromStore, CreateLink, CreatePendingLink,
+//     DeleteLink, FinaliseLink
 //   - Kernel:     LoadProgram, UnloadProgram, DetachLink, RemoveMapsPins,
-//     DetachTCFilter, AttachTracepoint, AttachKprobe, AttachTCX,
+//     AttachTracepoint, AttachKprobe, AttachTCX,
 //     AttachUprobeLocal, AttachUprobeContainer, AttachFentry,
 //     AttachFexit
-//   - Filesystem: PublishBytecode, RemoveProgramDir, RemoveProgPin,
-//     RemoveMapDir, RemoveStagingDir,
-//     RemoveDispatcherProgPin,
-//     RemoveDispatcherRevDir, RemoveDispatcherLinkPin
+//   - Filesystem: PublishBytecode, RemoveProgramDir,
+//     RemoveDispatcherRevDir
 //   - Rebuild:    RebuildXDPDispatcher, RebuildTCDispatcher,
 //     RebuildDispatcherForDetach, RemoveDispatcher
-//   - Shared map: SaveSharedMapPins, CleanupSharedMapPins,
-//     RemoveSharedMapPin
 //
 // Rebuild actions are cross-subsystem operations that the executor
 // handles internally (kernel + store with inline rollback). They
 // encapsulate a full dispatcher rebuild so the plan interpreter sees
 // a single atomic action rather than multiple steps.
-//
-// The shared-map actions reference-count LIBBPF_PIN_BY_NAME maps
-// shared across programs. SaveSharedMapPins records a program's
-// references in the store and RemoveSharedMapPin deletes a single pin
-// file; CleanupSharedMapPins spans both, dropping a program's
-// references and then removing any pins left unreferenced.
 //
 // Execute runs an instruction for its side effect. ExecuteResult
 // runs it and returns a typed value (used by LoadProgram and the

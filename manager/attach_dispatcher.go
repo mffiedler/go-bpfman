@@ -84,7 +84,7 @@ func (m *Manager) dispatcherAttachPlan(p dispatcherAttachParams) operation.Plan 
 	return operation.Build(
 		// Node 1: Fetch program record.
 		operation.Produce(dispPreparedKey, p.target,
-			func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) (dispPrepared, error) {
+			func(ctx context.Context, exec action.Executor, _ *operation.Bindings) (dispPrepared, error) {
 				prog, err := action.Produce[bpfman.ProgramRecord](ctx, exec, action.GetProgramFromStore{ProgramID: p.programID})
 				if err != nil {
 					return dispPrepared{}, err
@@ -95,7 +95,7 @@ func (m *Manager) dispatcherAttachPlan(p dispatcherAttachParams) operation.Plan 
 
 		// Node 2: Rebuild dispatcher (creates if needed, attaches extension).
 		operation.Produce(extResultKey, p.target,
-			func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) (extensionResult, error) {
+			func(ctx context.Context, exec action.Executor, b *operation.Bindings) (extensionResult, error) {
 				dp := operation.Get(b, dispPreparedKey)
 				return action.Produce[extensionResult](ctx, exec, p.rebuildAction(dp.prog))
 			},

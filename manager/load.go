@@ -708,7 +708,7 @@ func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) o
 
 	return operation.Build(
 		operation.Produce(loadedKey, programName,
-			func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) (bpfman.LoadOutput, error) {
+			func(ctx context.Context, exec action.Executor, b *operation.Bindings) (bpfman.LoadOutput, error) {
 				loaded, err := action.Produce[bpfman.LoadOutput](ctx, exec, action.LoadProgram{
 					Spec:  spec,
 					BPFFS: m.rt.BPFFS(),
@@ -730,7 +730,7 @@ func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) o
 		),
 
 		operation.Do("fs-publish", programName,
-			func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) error {
+			func(ctx context.Context, exec action.Executor, b *operation.Bindings) error {
 				l := operation.Get(b, loadedKey)
 				return exec.Execute(ctx, action.PublishBytecode{
 					ProgramID:  l.Program.ID,

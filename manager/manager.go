@@ -30,7 +30,7 @@ type Manager struct {
 	rt               fs.Runtime
 	store            platform.Store
 	kernel           platform.KernelOperations
-	executor         action.ExecutorWithResult
+	executor         action.Executor
 	programValidator platform.ProgramValidator
 	imagePuller      platform.ImagePuller // optional, nil if not configured
 	logger           *slog.Logger
@@ -71,7 +71,7 @@ func New(
 		kernel:           kernel,
 		programValidator: programValidator,
 		imagePuller:      imagePuller,
-		executor:         newExecutor(store, kernel, rt.Bytecode(), rt.BPFFS(), logger).(action.ExecutorWithResult),
+		executor:         newExecutor(store, kernel, rt.Bytecode(), rt.BPFFS(), logger),
 		logger:           logger.With("component", "manager"),
 	}, nil
 }

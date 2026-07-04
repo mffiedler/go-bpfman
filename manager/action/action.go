@@ -14,27 +14,6 @@ type Action interface {
 	isAction()
 }
 
-// Store actions - operations on the metadata store
-
-// SaveProgram saves program metadata to the store.
-type SaveProgram struct {
-	// ProgramID is the kernel ID of the program whose metadata this action persists.
-	ProgramID kernel.ProgramID
-
-	// Metadata is the program record to write under that ID.
-	Metadata bpfman.ProgramRecord
-}
-
-func (SaveProgram) isAction() {}
-
-// DeleteProgram removes program metadata from the store.
-type DeleteProgram struct {
-	// ProgramID is the kernel ID of the program whose metadata this action removes.
-	ProgramID kernel.ProgramID
-}
-
-func (DeleteProgram) isAction() {}
-
 // Link actions - operations on link metadata
 
 // CreateLink saves a standalone link to the store and allocates a bpfman ID.
@@ -92,15 +71,6 @@ type GetProgramFromStore struct {
 }
 
 func (GetProgramFromStore) isAction() {}
-
-// CheckProgramNotInStore verifies that no program with the given
-// program ID exists in the store. Returns an error if it does.
-type CheckProgramNotInStore struct {
-	// ProgramID is the kernel ID this action asserts is absent from the store.
-	ProgramID kernel.ProgramID
-}
-
-func (CheckProgramNotInStore) isAction() {}
 
 // LoadProgram loads a BPF program into the kernel and returns
 // the LoadOutput via ExecuteResult.
@@ -270,23 +240,6 @@ type AttachFexit struct {
 
 func (AttachFexit) isAction() {}
 
-// Dispatcher actions - operations on dispatcher state
-
-// DeleteDispatcher removes a dispatcher and all its extension link
-// records from the store by attach point key.
-type DeleteDispatcher struct {
-	// Type is the dispatcher type (XDP, TC ingress, TC egress) identifying the attach point.
-	Type dispatcher.DispatcherType
-
-	// Nsid is the network namespace ID of the dispatcher to remove.
-	Nsid uint64
-
-	// Ifindex is the interface index of the dispatcher to remove.
-	Ifindex uint32
-}
-
-func (DeleteDispatcher) isAction() {}
-
 // Kernel link actions - operations on kernel links
 
 // DetachLink tears down a kernel-attached BPF link synchronously
@@ -305,32 +258,6 @@ type DetachLink struct {
 }
 
 func (DetachLink) isAction() {}
-
-// DetachTCFilter removes a legacy TC BPF filter via netlink.
-// Used to detach TC dispatchers which are attached as clsact filters
-// rather than BPF links.
-type DetachTCFilter struct {
-	// Ifindex is the interface index carrying the TC filter to remove.
-	Ifindex int
-
-	// Ifname is the name of that interface.
-	Ifname string
-
-	// Parent is the TC parent handle (ingress or egress) the filter is attached to.
-	Parent uint32
-
-	// Priority is the filter priority identifying which filter to remove.
-	Priority uint16
-
-	// Handle is the kernel-assigned filter handle, pinpointing bpfman's
-	// own filter rather than another sharing the priority.
-	Handle uint32
-
-	// NetnsPath is the network namespace path in which the interface lives.
-	NetnsPath string
-}
-
-func (DetachTCFilter) isAction() {}
 
 // PublishBytecode copies a BPF object file to the per-program
 // bytecode directory and writes provenance metadata alongside it.
@@ -359,31 +286,6 @@ func (RemoveProgramDir) isAction() {}
 // GC cleanup actions -- validated filesystem removal operations
 // routed through fs.BPFFS and fs.Bytecode typed deletion methods.
 
-// RemoveProgPin removes a program pin via BPFFS.RemoveProgPin.
-type RemoveProgPin struct {
-	// Path is the bpffs program pin to remove.
-	Path bpfman.ProgPinPath
-}
-
-func (RemoveProgPin) isAction() {}
-
-// RemoveMapDir removes a map directory via BPFFS.RemoveMapDir.
-type RemoveMapDir struct {
-	// Path is the per-program maps directory to remove.
-	Path bpfman.MapDir
-}
-
-func (RemoveMapDir) isAction() {}
-
-// RemoveDispatcherProgPin removes a dispatcher program pin via
-// BPFFS.RemoveDispatcherProgPin.
-type RemoveDispatcherProgPin struct {
-	// Path is the dispatcher program pin to remove.
-	Path bpfman.ProgPinPath
-}
-
-func (RemoveDispatcherProgPin) isAction() {}
-
 // RemoveDispatcherRevDir removes a dispatcher revision directory via
 // BPFFS.RemoveDispatcherRevDir.
 type RemoveDispatcherRevDir struct {
@@ -392,24 +294,6 @@ type RemoveDispatcherRevDir struct {
 }
 
 func (RemoveDispatcherRevDir) isAction() {}
-
-// RemoveDispatcherLinkPin removes a dispatcher link pin via
-// BPFFS.RemoveDispatcherLinkPin.
-type RemoveDispatcherLinkPin struct {
-	// Path is the dispatcher extension link pin to remove.
-	Path bpfman.LinkPath
-}
-
-func (RemoveDispatcherLinkPin) isAction() {}
-
-// RemoveStagingDir removes a staging directory via
-// Bytecode.RemoveStagingDir.
-type RemoveStagingDir struct {
-	// Path is the staging directory to remove.
-	Path string
-}
-
-func (RemoveStagingDir) isAction() {}
 
 // AttachTCX attaches a pinned program to an interface using the
 // kernel-native TCX multi-program mechanism. Returns
@@ -448,40 +332,6 @@ type RemoveDispatcher struct {
 }
 
 func (RemoveDispatcher) isAction() {}
-
-// Shared map pin actions - reference-counted cleanup for PinByName maps
-
-// SaveSharedMapPins records that a program uses the named shared maps.
-type SaveSharedMapPins struct {
-	// ProgramID is the kernel ID of the program that references the named shared maps.
-	ProgramID kernel.ProgramID
-
-	// MapNames are the names of the shared maps the program references.
-	MapNames []string
-}
-
-func (SaveSharedMapPins) isAction() {}
-
-// CleanupSharedMapPins removes a program's shared map pin entries
-// from the store and deletes the filesystem pins for any maps that
-// are no longer referenced by other programs.
-type CleanupSharedMapPins struct {
-	// ProgramID is the kernel ID of the program whose shared map
-	// references this action removes; maps left unreferenced are then
-	// deleted from bpffs.
-	ProgramID kernel.ProgramID
-}
-
-func (CleanupSharedMapPins) isAction() {}
-
-// RemoveSharedMapPin removes a shared map pin file from the
-// filesystem. Used by GC rules for orphan cleanup.
-type RemoveSharedMapPin struct {
-	// Path is the shared map pin file to remove.
-	Path bpfman.MapPinPath
-}
-
-func (RemoveSharedMapPin) isAction() {}
 
 // Deep dispatcher actions - cross-subsystem operations that the
 // executor handles internally (kernel + store transactions with

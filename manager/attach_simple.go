@@ -89,7 +89,7 @@ func (m *Manager) simpleAttach(ctx context.Context, p attachParams) (bpfman.Link
 func (m *Manager) simpleAttachPlan(p attachParams) operation.Plan {
 	return operation.Build(
 		operation.Produce(preparedKey, p.defaultTarget,
-			func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) (attachPlan, error) {
+			func(ctx context.Context, exec action.Executor, _ *operation.Bindings) (attachPlan, error) {
 				prog, err := action.Produce[bpfman.ProgramRecord](ctx, exec, action.GetProgramFromStore{ProgramID: p.programID})
 				if err != nil {
 					return attachPlan{}, err
@@ -101,7 +101,7 @@ func (m *Manager) simpleAttachPlan(p attachParams) operation.Plan {
 		),
 
 		operation.Produce(pendingLinkKey, p.defaultTarget,
-			func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) (bpfman.LinkRecord, error) {
+			func(ctx context.Context, exec action.Executor, b *operation.Bindings) (bpfman.LinkRecord, error) {
 				pa := operation.Get(b, preparedKey)
 				spec := bpfman.LinkSpec{
 					ProgramID: p.programID,
@@ -123,7 +123,7 @@ func (m *Manager) simpleAttachPlan(p attachParams) operation.Plan {
 		),
 
 		operation.Produce(attachOutKey, p.defaultTarget,
-			func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) (bpfman.AttachOutput, error) {
+			func(ctx context.Context, exec action.Executor, b *operation.Bindings) (bpfman.AttachOutput, error) {
 				pa := operation.Get(b, preparedKey)
 				record := operation.Get(b, pendingLinkKey)
 				return action.Produce[bpfman.AttachOutput](ctx, exec, pa.attachAction(*record.PinPath))
@@ -137,7 +137,7 @@ func (m *Manager) simpleAttachPlan(p attachParams) operation.Plan {
 		),
 
 		operation.Produce(linkKey, p.defaultTarget,
-			func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) (bpfman.Link, error) {
+			func(ctx context.Context, exec action.Executor, b *operation.Bindings) (bpfman.Link, error) {
 				pa := operation.Get(b, preparedKey)
 				record := operation.Get(b, pendingLinkKey)
 				out := operation.Get(b, attachOutKey)
@@ -175,7 +175,7 @@ func saveLinkNode(
 	extract func(*operation.Bindings) (bpfman.LinkDetails, bpfman.AttachOutput),
 ) operation.Node {
 	return operation.Produce(linkKey, target,
-		func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) (bpfman.Link, error) {
+		func(ctx context.Context, exec action.Executor, b *operation.Bindings) (bpfman.Link, error) {
 			details, out := extract(b)
 			spec := bpfman.LinkSpec{
 				ProgramID:    programID,
