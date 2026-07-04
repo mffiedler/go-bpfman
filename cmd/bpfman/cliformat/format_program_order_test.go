@@ -118,7 +118,7 @@ func TestFormatProgramTable_RestrictedTranslatedSize(t *testing.T) {
 	}
 
 	var line string
-	for _, l := range strings.Split(formatProgramTable(prog), "\n") {
+	for l := range strings.SplitSeq(formatProgramTable(prog), "\n") {
 		if strings.Contains(l, "Size Translated") {
 			line = l
 		}
