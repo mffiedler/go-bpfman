@@ -253,5 +253,10 @@ fully correct.
 - Idempotency matches: second detach / second unload both exit 1 on
   both implementations; first exits 0.
 - Metadata round-trips on both (`owner=parity` visible in get/list).
-- `--metadata` and `--application` accepted at load by both; Rust stores
-  application as a metadata key, same as Go (`bpfman.io/application`).
+- `--metadata` and `--application` accepted at load by both, and each
+  stores the application name as a metadata key, but the key itself
+  differs: Go uses `bpfman.io/application`, Rust uses
+  `bpfman_application`. Metadata round-trips within each implementation
+  (get, list, and the `--application` list filter all use the same key
+  they wrote), so neither is broken; the two simply do not share the
+  key. Go keeps its Kubernetes-label-style namespaced key deliberately.
