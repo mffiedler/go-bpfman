@@ -46,6 +46,7 @@ func extractBytecode(dir string, logger *slog.Logger) (string, error) {
 		logger.Debug("found file", "name", entry.Name(), "is_dir", entry.IsDir(), "size", size)
 	}
 
+	var lastExtractErr error
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -75,6 +76,12 @@ func extractBytecode(dir string, logger *slog.Logger) (string, error) {
 				return extracted, nil
 			}
 
+			// Both attempts failed. Keep the reason so a corrupt,
+			// oversized, or malformed layer is reported as such at the
+			// fall-through rather than as a missing-bytecode image.
+			if err != nil {
+				lastExtractErr = fmt.Errorf("extract %s: %w", entry.Name(), err)
+			}
 			logger.Debug("gzip extraction failed", "name", entry.Name(), "error", err)
 		}
 
@@ -91,6 +98,9 @@ func extractBytecode(dir string, logger *slog.Logger) (string, error) {
 		}
 	}
 
+	if lastExtractErr != nil {
+		return "", fmt.Errorf("no BPF bytecode (.o file) found in image: %w", lastExtractErr)
+	}
 	return "", fmt.Errorf("no BPF bytecode (.o file) found in image")
 }
 
