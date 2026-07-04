@@ -64,14 +64,6 @@ func (c *ProgramDeleteCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	return executeDeletePrograms(ctx, cli, mgr, ids, c.Recursive, c.All)
 }
 
-func programIDs(explicit []args.ProgramID) []kernel.ProgramID {
-	ids := make([]kernel.ProgramID, len(explicit))
-	for i, pid := range explicit {
-		ids[i] = pid.Value
-	}
-	return ids
-}
-
 // executeDeletePrograms deletes the given programs with cascading
 // cleanup. Locking is handled internally.
 func executeDeletePrograms(ctx context.Context, cli *runtime.CLI, mgr *manager.Manager, ids []kernel.ProgramID, recursive bool, all bool) error {
@@ -123,11 +115,7 @@ func (c *LinkDeleteCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	results := make([]runtime.BatchResult[bpfman.LinkID], 0, len(c.LinkIDs))
 
 	lockErr := runtime.RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
-		linkIDs := make([]bpfman.LinkID, len(c.LinkIDs))
-		for i, lid := range c.LinkIDs {
-			linkIDs[i] = lid.Value
-		}
-		deleteResults := mgr.DeleteLinks(ctx, writeLock, linkIDs, manager.DeleteLinksOpts{Recursive: c.Recursive})
+		deleteResults := mgr.DeleteLinks(ctx, writeLock, linkIDs(c.LinkIDs), manager.DeleteLinksOpts{Recursive: c.Recursive})
 		for _, r := range deleteResults {
 			results = append(results, runtime.BatchResult[bpfman.LinkID]{ID: r.LinkID, Err: r.Err})
 		}

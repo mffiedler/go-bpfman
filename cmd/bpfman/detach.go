@@ -35,11 +35,7 @@ func (c *DetachCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	}
 	defer cleanup()
 
-	ids := make([]bpfman.LinkID, len(c.LinkIDs))
-	for i, lid := range c.LinkIDs {
-		ids[i] = lid.Value
-	}
-	return runtime.RunBatchMutation(ctx, cli, ids, "link", "detach",
+	return runtime.RunBatchMutation(ctx, cli, linkIDs(c.LinkIDs), "link", "detach",
 		func(ctx context.Context, writeLock lock.WriterScope, id bpfman.LinkID) error {
 			err := mgr.Detach(ctx, writeLock, id)
 			if err != nil && c.IgnoreMissing {

@@ -38,11 +38,7 @@ func (c *UnloadCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	}
 	defer cleanup()
 
-	ids := make([]kernel.ProgramID, len(c.ProgramIDs))
-	for i, pid := range c.ProgramIDs {
-		ids[i] = pid.Value
-	}
-	return runtime.RunBatchMutation(ctx, cli, ids, "program", "unload",
+	return runtime.RunBatchMutation(ctx, cli, programIDs(c.ProgramIDs), "program", "unload",
 		func(ctx context.Context, writeLock lock.WriterScope, id kernel.ProgramID) error {
 			err := mgr.Unload(ctx, writeLock, id)
 			if err != nil && c.IgnoreMissing {
