@@ -53,6 +53,39 @@ type tcRebuildOps struct {
 	netnsPath string
 }
 
+// attachedExt records one extension attached during a rebuild: its
+// attach output, chain position, and link pin path. The rebuild
+// functions collect these to build the new snapshot's members and to
+// roll back on failure.
+type attachedExt struct {
+	out      bpfman.AttachOutput
+	position int
+	pinPath  bpfman.LinkPath
+}
+
+// dispatcherMembers builds the snapshot member list from the rebuilt
+// slots and the extensions attached for them, pairing each slot with the
+// kernel link and pin from its attach at the same index.
+func dispatcherMembers(slots []rebuildSlot, attached []attachedExt) []platform.DispatcherMemberSpec {
+	members := make([]platform.DispatcherMemberSpec, len(slots))
+	for i, slot := range slots {
+		members[i] = platform.DispatcherMemberSpec{
+			ExistingLinkID: slot.ExistingLinkID,
+			ProgramID:      slot.ProgramID,
+			ProgramName:    slot.ProgramName,
+			ProgPinPath:    slot.ProgPinPath,
+			KernelLinkID:   attached[i].out.KernelLinkID,
+			LinkPinPath:    attached[i].pinPath,
+			Position:       i,
+			Priority:       slot.Priority,
+			ProceedOn:      slot.ProceedOn,
+			Ifname:         slot.Ifname,
+			Metadata:       slot.Metadata,
+		}
+	}
+	return members
+}
+
 // rebuildXDPDispatcher performs a full XDP dispatcher rebuild.
 // It handles both first-attach (no dispatcher exists) and
 // subsequent-attach (dispatcher exists, rebuild all extensions).
@@ -154,11 +187,6 @@ func (e *executor) rebuildXDPDispatcher(
 	}
 
 	// Attach all extensions to the new dispatcher.
-	type attachedExt struct {
-		out      bpfman.AttachOutput
-		position int
-		pinPath  bpfman.LinkPath
-	}
 	attached := make([]attachedExt, 0, len(allSlots))
 
 	cleanupExtensions := func() {
@@ -246,21 +274,7 @@ func (e *executor) rebuildXDPDispatcher(
 			NetnsPath:    ops.netnsPath,
 		},
 	}
-	for i, slot := range allSlots {
-		newSnap.Members = append(newSnap.Members, platform.DispatcherMemberSpec{
-			ExistingLinkID: slot.ExistingLinkID,
-			ProgramID:      slot.ProgramID,
-			ProgramName:    slot.ProgramName,
-			ProgPinPath:    slot.ProgPinPath,
-			KernelLinkID:   attached[i].out.KernelLinkID,
-			LinkPinPath:    attached[i].pinPath,
-			Position:       i,
-			Priority:       slot.Priority,
-			ProceedOn:      slot.ProceedOn,
-			Ifname:         slot.Ifname,
-			Metadata:       slot.Metadata,
-		})
-	}
+	newSnap.Members = dispatcherMembers(allSlots, attached)
 
 	completed, err := e.store.ReplaceDispatcherSnapshot(ctx, newSnap)
 	if err != nil {
@@ -437,11 +451,6 @@ func (e *executor) rebuildTCDispatcher(
 	}
 
 	// Attach all extensions to the new dispatcher.
-	type attachedExt struct {
-		out      bpfman.AttachOutput
-		position int
-		pinPath  bpfman.LinkPath
-	}
 	attached := make([]attachedExt, 0, len(allSlots))
 
 	cleanupExtensions := func() {
@@ -538,21 +547,7 @@ func (e *executor) rebuildTCDispatcher(
 			NetnsPath:      ops.netnsPath,
 		},
 	}
-	for i, slot := range allSlots {
-		newSnap.Members = append(newSnap.Members, platform.DispatcherMemberSpec{
-			ExistingLinkID: slot.ExistingLinkID,
-			ProgramID:      slot.ProgramID,
-			ProgramName:    slot.ProgramName,
-			ProgPinPath:    slot.ProgPinPath,
-			KernelLinkID:   attached[i].out.KernelLinkID,
-			LinkPinPath:    attached[i].pinPath,
-			Position:       i,
-			Priority:       slot.Priority,
-			ProceedOn:      slot.ProceedOn,
-			Ifname:         slot.Ifname,
-			Metadata:       slot.Metadata,
-		})
-	}
+	newSnap.Members = dispatcherMembers(allSlots, attached)
 
 	completed, err := e.store.ReplaceDispatcherSnapshot(ctx, newSnap)
 	if err != nil {
@@ -738,10 +733,6 @@ func (e *executor) rebuildXDPForDetach(
 	}
 
 	// Attach remaining extensions.
-	type attachedExt struct {
-		out     bpfman.AttachOutput
-		pinPath bpfman.LinkPath
-	}
 	attached := make([]attachedExt, 0, len(slots))
 	cleanupExtensions := func() {
 		for _, ext := range attached {
@@ -798,21 +789,7 @@ func (e *executor) rebuildXDPForDetach(
 			NetnsPath:    snap.Runtime.NetnsPath,
 		},
 	}
-	for i, slot := range slots {
-		newSnap.Members = append(newSnap.Members, platform.DispatcherMemberSpec{
-			ExistingLinkID: slot.ExistingLinkID,
-			ProgramID:      slot.ProgramID,
-			ProgramName:    slot.ProgramName,
-			ProgPinPath:    slot.ProgPinPath,
-			KernelLinkID:   attached[i].out.KernelLinkID,
-			LinkPinPath:    attached[i].pinPath,
-			Position:       i,
-			Priority:       slot.Priority,
-			ProceedOn:      slot.ProceedOn,
-			Ifname:         slot.Ifname,
-			Metadata:       slot.Metadata,
-		})
-	}
+	newSnap.Members = dispatcherMembers(slots, attached)
 
 	if _, err := e.store.ReplaceDispatcherSnapshot(ctx, newSnap); err != nil {
 		oldProgPinPath := e.bpffs.DispatcherProgPath(key.Type, key.Nsid, key.Ifindex, snap.Revision)
@@ -864,10 +841,6 @@ func (e *executor) rebuildTCForDetach(
 	}
 
 	// Attach remaining extensions.
-	type attachedExt struct {
-		out     bpfman.AttachOutput
-		pinPath bpfman.LinkPath
-	}
 	attached := make([]attachedExt, 0, len(slots))
 	cleanupExtensions := func() {
 		for _, ext := range attached {
@@ -952,21 +925,7 @@ func (e *executor) rebuildTCForDetach(
 			NetnsPath:      snap.Runtime.NetnsPath,
 		},
 	}
-	for i, slot := range slots {
-		newSnap.Members = append(newSnap.Members, platform.DispatcherMemberSpec{
-			ExistingLinkID: slot.ExistingLinkID,
-			ProgramID:      slot.ProgramID,
-			ProgramName:    slot.ProgramName,
-			ProgPinPath:    slot.ProgPinPath,
-			KernelLinkID:   attached[i].out.KernelLinkID,
-			LinkPinPath:    attached[i].pinPath,
-			Position:       i,
-			Priority:       slot.Priority,
-			ProceedOn:      slot.ProceedOn,
-			Ifname:         slot.Ifname,
-			Metadata:       slot.Metadata,
-		})
-	}
+	newSnap.Members = dispatcherMembers(slots, attached)
 
 	if _, err := e.store.ReplaceDispatcherSnapshot(ctx, newSnap); err != nil {
 		parent := dispatcher.TCParentHandle(dispType)
