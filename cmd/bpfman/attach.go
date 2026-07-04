@@ -9,7 +9,6 @@ import (
 	"github.com/bpfman/bpfman/cmd/internal/args"
 	"github.com/bpfman/bpfman/cmd/internal/runtime"
 	"github.com/bpfman/bpfman/lock"
-	"github.com/bpfman/bpfman/manager"
 )
 
 // AttachCmd groups per-type attach subcommands.
@@ -44,13 +43,11 @@ type AttachCmd struct {
 	Fexit AttachFexitCmd `cmd:"" help:"Attach a program to a function exit tracing point."`
 }
 
-// attachResult holds the result of an attach operation for output outside the lock.
-type attachResult struct {
-	Link bpfman.Link
-}
-
-// runAttach is the common attach pattern: create manager, run under lock, format output.
-func runAttach(cli *runtime.CLI, ctx context.Context, flags *cliformat.OutputFlags, fn func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error)) error {
+// runAttach is the common attach pattern: build the spec, create the
+// manager, attach under the writer lock, and render the created link.
+// The build callback returns the fully-configured spec, including its
+// metadata; runAttach owns the attach and the rendering.
+func runAttach(cli *runtime.CLI, ctx context.Context, flags *cliformat.OutputFlags, build func() (bpfman.AttachSpec, error)) error {
 	format, err := flags.Format()
 	if err != nil {
 		return err
@@ -62,14 +59,18 @@ func runAttach(cli *runtime.CLI, ctx context.Context, flags *cliformat.OutputFla
 	}
 	defer cleanup()
 
-	result, err := runtime.RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (attachResult, error) {
-		return fn(ctx, mgr, writeLock)
+	link, err := runtime.RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (bpfman.Link, error) {
+		spec, err := build()
+		if err != nil {
+			return bpfman.Link{}, err
+		}
+		return mgr.Attach(ctx, writeLock, spec)
 	})
 	if err != nil {
 		return err
 	}
 
-	return cliformat.RenderLinkAttach(cli.Out, cliformat.LinkAttachView{Link: result.Link}, format)
+	return cliformat.RenderLinkAttach(cli.Out, cliformat.LinkAttachView{Link: link}, format)
 }
 
 // AttachXDPCmd attaches an XDP program to a network interface.
@@ -107,10 +108,10 @@ type AttachXDPCmd struct {
 // to the named interface under the writer lock, and renders the
 // resulting link.
 func (c *AttachXDPCmd) Run(cli *runtime.CLI, ctx context.Context) error {
-	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
+	return runAttach(cli, ctx, &c.OutputFlags, func() (bpfman.AttachSpec, error) {
 		spec, err := bpfman.NewXDPAttachSpec(c.ProgramID.Value, c.Iface, c.Priority)
 		if err != nil {
-			return attachResult{}, fmt.Errorf("invalid XDP spec: %w", err)
+			return nil, fmt.Errorf("invalid XDP spec: %w", err)
 		}
 
 		spec = spec.WithProceedOnActions(c.ProceedOn)
@@ -118,14 +119,7 @@ func (c *AttachXDPCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 			spec = spec.WithNetns(c.Netns)
 		}
 
-		spec = spec.WithMetadata(args.MetadataMap(c.Metadata))
-
-		link, err := mgr.Attach(ctx, writeLock, spec)
-		if err != nil {
-			return attachResult{}, err
-		}
-
-		return attachResult{Link: link}, nil
+		return spec.WithMetadata(args.MetadataMap(c.Metadata)), nil
 	})
 }
 
@@ -167,10 +161,10 @@ type AttachTCCmd struct {
 // the named interface and direction under the writer lock, and
 // renders the resulting link.
 func (c *AttachTCCmd) Run(cli *runtime.CLI, ctx context.Context) error {
-	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
+	return runAttach(cli, ctx, &c.OutputFlags, func() (bpfman.AttachSpec, error) {
 		spec, err := bpfman.NewTCAttachSpec(c.ProgramID.Value, c.Iface, c.Direction, c.Priority)
 		if err != nil {
-			return attachResult{}, fmt.Errorf("invalid TC spec: %w", err)
+			return nil, fmt.Errorf("invalid TC spec: %w", err)
 		}
 
 		spec = spec.WithProceedOnActions(c.ProceedOn)
@@ -178,14 +172,7 @@ func (c *AttachTCCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 			spec = spec.WithNetns(c.Netns)
 		}
 
-		spec = spec.WithMetadata(args.MetadataMap(c.Metadata))
-
-		link, err := mgr.Attach(ctx, writeLock, spec)
-		if err != nil {
-			return attachResult{}, err
-		}
-
-		return attachResult{Link: link}, nil
+		return spec.WithMetadata(args.MetadataMap(c.Metadata)), nil
 	})
 }
 
@@ -223,24 +210,17 @@ type AttachTCXCmd struct {
 // to the named interface and direction under the writer lock, and
 // renders the resulting link.
 func (c *AttachTCXCmd) Run(cli *runtime.CLI, ctx context.Context) error {
-	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
+	return runAttach(cli, ctx, &c.OutputFlags, func() (bpfman.AttachSpec, error) {
 		spec, err := bpfman.NewTCXAttachSpec(c.ProgramID.Value, c.Iface, c.Direction, c.Priority)
 		if err != nil {
-			return attachResult{}, fmt.Errorf("invalid TCX spec: %w", err)
+			return nil, fmt.Errorf("invalid TCX spec: %w", err)
 		}
 
 		if c.Netns != "" {
 			spec = spec.WithNetns(c.Netns)
 		}
 
-		spec = spec.WithMetadata(args.MetadataMap(c.Metadata))
-
-		link, err := mgr.Attach(ctx, writeLock, spec)
-		if err != nil {
-			return attachResult{}, err
-		}
-
-		return attachResult{Link: link}, nil
+		return spec.WithMetadata(args.MetadataMap(c.Metadata)), nil
 	})
 }
 
@@ -266,20 +246,13 @@ type AttachTracepointCmd struct {
 // program to the named tracepoint under the writer lock, and renders
 // the resulting link.
 func (c *AttachTracepointCmd) Run(cli *runtime.CLI, ctx context.Context) error {
-	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
+	return runAttach(cli, ctx, &c.OutputFlags, func() (bpfman.AttachSpec, error) {
 		spec, err := bpfman.NewTracepointAttachSpec(c.ProgramID.Value, c.Tracepoint)
 		if err != nil {
-			return attachResult{}, fmt.Errorf("invalid tracepoint spec: %w", err)
+			return nil, fmt.Errorf("invalid tracepoint spec: %w", err)
 		}
 
-		spec = spec.WithMetadata(args.MetadataMap(c.Metadata))
-
-		link, err := mgr.Attach(ctx, writeLock, spec)
-		if err != nil {
-			return attachResult{}, err
-		}
-
-		return attachResult{Link: link}, nil
+		return spec.WithMetadata(args.MetadataMap(c.Metadata)), nil
 	})
 }
 
@@ -308,24 +281,17 @@ type AttachKprobeCmd struct {
 // program to the named kernel function under the writer lock, and
 // renders the resulting link.
 func (c *AttachKprobeCmd) Run(cli *runtime.CLI, ctx context.Context) error {
-	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
+	return runAttach(cli, ctx, &c.OutputFlags, func() (bpfman.AttachSpec, error) {
 		spec, err := bpfman.NewKprobeAttachSpec(c.ProgramID.Value, c.FnName)
 		if err != nil {
-			return attachResult{}, fmt.Errorf("invalid kprobe spec: %w", err)
+			return nil, fmt.Errorf("invalid kprobe spec: %w", err)
 		}
 
 		if c.Offset != 0 {
 			spec = spec.WithOffset(c.Offset)
 		}
 
-		spec = spec.WithMetadata(args.MetadataMap(c.Metadata))
-
-		link, err := mgr.Attach(ctx, writeLock, spec)
-		if err != nil {
-			return attachResult{}, err
-		}
-
-		return attachResult{Link: link}, nil
+		return spec.WithMetadata(args.MetadataMap(c.Metadata)), nil
 	})
 }
 
@@ -368,10 +334,10 @@ type AttachUprobeCmd struct {
 // program to the target binary or library under the writer lock, and
 // renders the resulting link.
 func (c *AttachUprobeCmd) Run(cli *runtime.CLI, ctx context.Context) error {
-	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
+	return runAttach(cli, ctx, &c.OutputFlags, func() (bpfman.AttachSpec, error) {
 		spec, err := bpfman.NewUprobeAttachSpec(c.ProgramID.Value, c.Target, c.Pid, c.ContainerPid)
 		if err != nil {
-			return attachResult{}, fmt.Errorf("invalid uprobe spec: %w", err)
+			return nil, fmt.Errorf("invalid uprobe spec: %w", err)
 		}
 
 		if c.FnName != "" {
@@ -381,14 +347,7 @@ func (c *AttachUprobeCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 			spec = spec.WithOffset(c.Offset)
 		}
 
-		spec = spec.WithMetadata(args.MetadataMap(c.Metadata))
-
-		link, err := mgr.Attach(ctx, writeLock, spec)
-		if err != nil {
-			return attachResult{}, err
-		}
-
-		return attachResult{Link: link}, nil
+		return spec.WithMetadata(args.MetadataMap(c.Metadata)), nil
 	})
 }
 
@@ -411,20 +370,13 @@ type AttachFentryCmd struct {
 // Run builds an fentry attach spec from the program ID, attaches the
 // program under the writer lock, and renders the resulting link.
 func (c *AttachFentryCmd) Run(cli *runtime.CLI, ctx context.Context) error {
-	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
+	return runAttach(cli, ctx, &c.OutputFlags, func() (bpfman.AttachSpec, error) {
 		spec, err := bpfman.NewFentryAttachSpec(c.ProgramID.Value)
 		if err != nil {
-			return attachResult{}, fmt.Errorf("invalid fentry spec: %w", err)
+			return nil, fmt.Errorf("invalid fentry spec: %w", err)
 		}
 
-		spec = spec.WithMetadata(args.MetadataMap(c.Metadata))
-
-		link, err := mgr.Attach(ctx, writeLock, spec)
-		if err != nil {
-			return attachResult{}, err
-		}
-
-		return attachResult{Link: link}, nil
+		return spec.WithMetadata(args.MetadataMap(c.Metadata)), nil
 	})
 }
 
@@ -447,19 +399,12 @@ type AttachFexitCmd struct {
 // Run builds an fexit attach spec from the program ID, attaches the
 // program under the writer lock, and renders the resulting link.
 func (c *AttachFexitCmd) Run(cli *runtime.CLI, ctx context.Context) error {
-	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
+	return runAttach(cli, ctx, &c.OutputFlags, func() (bpfman.AttachSpec, error) {
 		spec, err := bpfman.NewFexitAttachSpec(c.ProgramID.Value)
 		if err != nil {
-			return attachResult{}, fmt.Errorf("invalid fexit spec: %w", err)
+			return nil, fmt.Errorf("invalid fexit spec: %w", err)
 		}
 
-		spec = spec.WithMetadata(args.MetadataMap(c.Metadata))
-
-		link, err := mgr.Attach(ctx, writeLock, spec)
-		if err != nil {
-			return attachResult{}, err
-		}
-
-		return attachResult{Link: link}, nil
+		return spec.WithMetadata(args.MetadataMap(c.Metadata)), nil
 	})
 }
