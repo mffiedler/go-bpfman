@@ -277,6 +277,13 @@ func outputValueMapper() kong.MapperFunc {
 		if current.IsSet {
 			return fmt.Errorf("only one output format may be specified")
 		}
+
+		switch s {
+		case string(cliformat.OutputFormatText), string(cliformat.OutputFormatJSON):
+		default:
+			return fmt.Errorf("invalid output format %q: must be text or json", s)
+		}
+
 		target.Set(reflect.ValueOf(cliformat.OutputValue{Value: s, IsSet: true}))
 		return nil
 	}
