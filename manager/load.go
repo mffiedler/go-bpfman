@@ -609,9 +609,11 @@ func (m *Manager) loadBody(ctx context.Context, specs []bpfman.LoadSpec, opts Lo
 		var kernelMaps []kernel.Map
 		for _, mapID := range lo.Program.MapIDs {
 			km, err := m.kernel.GetMapByID(ctx, mapID)
-			if err == nil {
-				kernelMaps = append(kernelMaps, km)
+			if err != nil {
+				m.logger.DebugContext(ctx, "kernel map lookup failed, omitting from program maps", "map_id", mapID, "error", err)
+				continue
 			}
+			kernelMaps = append(kernelMaps, km)
 		}
 
 		// Derive the path strings the wire shape exposes. Pure

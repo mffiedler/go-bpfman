@@ -107,7 +107,11 @@ func (m *Manager) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.P
 	for _, mapID := range kp.MapIDs {
 		km, err := m.kernel.GetMapByID(ctx, mapID)
 		if err != nil {
-			// Map exists in program but not accessible - skip
+			// The map is in the program's map-id set but could not be
+			// read back (revoked fd, permissions, transient). Omit it
+			// rather than failing the whole get, but leave a breadcrumb
+			// so a short map list is diagnosable.
+			m.logger.DebugContext(ctx, "kernel map lookup failed, omitting from program maps", "map_id", mapID, "error", err)
 			continue
 		}
 		kernelMaps = append(kernelMaps, km)
@@ -406,13 +410,14 @@ func (m *Manager) ListPrograms(ctx context.Context, opts ...bpfman.ListOption) (
 				// Enrich Status.Maps with kernel-side map metadata
 				// (id, name, type, sizes). Mirrors what Manager.Load
 				// does -- no filesystem pin correlation, that is
-				// Manager.Get's job. Skipped maps (kernel query
-				// failure) silently drop, same as Get.
+				// Manager.Get's job. A map that cannot be read back is
+				// logged and dropped, same as Get.
 				if p.Status.Kernel != nil {
 					var kernelMaps []kernel.Map
 					for _, mapID := range p.Status.Kernel.MapIDs {
 						km, err := m.kernel.GetMapByID(ctx, mapID)
 						if err != nil {
+							m.logger.DebugContext(ctx, "kernel map lookup failed, omitting from program maps", "map_id", mapID, "error", err)
 							continue
 						}
 						kernelMaps = append(kernelMaps, km)
