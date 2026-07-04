@@ -2,12 +2,40 @@ package main
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/alecthomas/kong"
+	"github.com/cilium/ebpf"
 )
+
+// A failed program load carries the kernel verifier log inside a
+// *ebpf.VerifierError. Its Error() summarises to the last line or two,
+// but the full log is the primary diagnostic when the verifier rejects
+// a program, so formatError renders every line rather than the summary.
+func TestFormatError_VerifierErrorShowsFullLog(t *testing.T) {
+	t.Parallel()
+
+	verr := &ebpf.VerifierError{
+		Cause: errors.New("permission denied"),
+		Log:   []string{"0: (bf) r6 = r1", "1: (85) call bpf_probe_read#4", "R1 type=inv expected=fp", "processed 2 insns"},
+	}
+	wrapped := fmt.Errorf("failed to load programs: %w", fmt.Errorf("failed to load collection: %w", verr))
+
+	out := (&CLI{}).formatError(wrapped).Error()
+
+	for _, line := range []string{"0: (bf) r6 = r1", "1: (85) call bpf_probe_read#4", "R1 type=inv expected=fp"} {
+		if !strings.Contains(out, line) {
+			t.Errorf("verifier log line %q missing from rendered error:\n%s", line, out)
+		}
+	}
+	if strings.Contains(out, "omitted") {
+		t.Errorf("rendered error still truncates the log:\n%s", out)
+	}
+}
 
 func TestMaybeInjectServe(t *testing.T) {
 	t.Parallel()

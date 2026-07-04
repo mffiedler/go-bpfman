@@ -10,6 +10,7 @@ import (
 	"slices"
 
 	"github.com/alecthomas/kong"
+	"github.com/cilium/ebpf"
 
 	"github.com/bpfman/bpfman"
 	"github.com/bpfman/bpfman/cmd/bpfman/cliformat"
@@ -141,6 +142,15 @@ func (c *CLI) formatError(err error) error {
 	var timeout *lock.TimeoutError
 	if errors.As(err, &timeout) {
 		return fmt.Errorf("timed out waiting for lock %s (--lock-timeout=%v)", timeout.Path, timeout.Timeout)
+	}
+
+	// A failed program load carries the kernel verifier log inside a
+	// *ebpf.VerifierError, whose Error() summarises to the last line or
+	// two. The full log is the primary diagnostic when the verifier
+	// rejects a program, so render every line via the %+v form.
+	var verifier *ebpf.VerifierError
+	if errors.As(err, &verifier) {
+		return fmt.Errorf("%+v", verifier)
 	}
 
 	return err
