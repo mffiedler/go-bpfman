@@ -11,6 +11,7 @@ import (
 	"github.com/bpfman/bpfman/cmd/bpfman/cliformat"
 	"github.com/bpfman/bpfman/cmd/internal/args"
 	"github.com/bpfman/bpfman/cmd/internal/runtime"
+	"github.com/bpfman/bpfman/kernel"
 	"github.com/bpfman/bpfman/manager"
 )
 
@@ -281,5 +282,23 @@ func (c *ListLinksCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 		return cli.PrintOut(b.String())
 	}
 
-	return cliformat.RenderLinkList(cli.Out, cliformat.LinkListView{Links: links}, format)
+	view := cliformat.LinkListView{Links: links}
+
+	// The text table names each link's owning program (application and
+	// function name); resolve those in one pass over the program entries.
+	// Structured output carries the link records alone and needs no join.
+	if !format.IsStructured() {
+		entries, err := mgr.ListProgramEntries(ctx)
+		if err != nil {
+			return err
+		}
+
+		refs := make(map[kernel.ProgramID]cliformat.LinkProgramRef, len(entries.Programs))
+		for _, e := range entries.Programs {
+			refs[e.ProgramID] = cliformat.LinkProgramRef{Application: e.Application, FunctionName: e.FunctionName}
+		}
+		view.Programs = refs
+	}
+
+	return cliformat.RenderLinkList(cli.Out, view, format)
 }

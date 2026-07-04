@@ -82,6 +82,60 @@ func TestRenderLinkList_NilKernelIDShowsSentinel(t *testing.T) {
 	}
 }
 
+// The link list resolves each link's owning program to an APPLICATION
+// and FUNCTION NAME column, so the listing reads which program (by name)
+// and application a link belongs to without cross-referencing the
+// program list.
+func TestRenderLinkList_ProgramColumns(t *testing.T) {
+	t.Parallel()
+
+	links := []bpfman.LinkRecord{
+		{ID: 1, ProgramID: 42, Kind: bpfman.LinkKindXDP, Details: bpfman.XDPDetails{Interface: "eth0", Position: 0}},
+		{ID: 2, ProgramID: 43, Kind: bpfman.LinkKindTC, Details: bpfman.TCDetails{Interface: "eth0", Direction: bpfman.TCDirectionIngress, Position: 0}},
+	}
+	refs := map[kernel.ProgramID]LinkProgramRef{
+		42: {Application: "demo-app", FunctionName: "pass"},
+		43: {FunctionName: "stats"},
+	}
+
+	var buf bytes.Buffer
+	if err := RenderLinkList(&buf, LinkListView{Links: links, Programs: refs}, OutputFormatText); err != nil {
+		t.Fatalf("RenderLinkList() error = %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"APPLICATION", "FUNCTION NAME", "demo-app", "pass", "stats"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("link list missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// When no listed link's program carries an application label, the
+// APPLICATION column is omitted rather than rendered as a blank stripe,
+// mirroring the program list; FUNCTION NAME is always shown.
+func TestRenderLinkList_ApplicationElidedWhenUnlabelled(t *testing.T) {
+	t.Parallel()
+
+	links := []bpfman.LinkRecord{
+		{ID: 1, ProgramID: 43, Kind: bpfman.LinkKindTC, Details: bpfman.TCDetails{Interface: "eth0", Direction: bpfman.TCDirectionIngress, Position: 0}},
+	}
+	refs := map[kernel.ProgramID]LinkProgramRef{43: {FunctionName: "stats"}}
+
+	var buf bytes.Buffer
+	if err := RenderLinkList(&buf, LinkListView{Links: links, Programs: refs}, OutputFormatText); err != nil {
+		t.Fatalf("RenderLinkList() error = %v", err)
+	}
+
+	out := buf.String()
+	if strings.Contains(out, "APPLICATION") {
+		t.Errorf("APPLICATION column should be elided when unlabelled:\n%s", out)
+	}
+	if !strings.Contains(out, "FUNCTION NAME") || !strings.Contains(out, "stats") {
+		t.Errorf("FUNCTION NAME column should always show:\n%s", out)
+	}
+}
+
 // The ATTACHMENT column summarises where each link is attached from its
 // typed details, so the listing answers "attached to what?" without
 // decoding the pin path or running link get per row.

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bpfman/bpfman"
+	"github.com/bpfman/bpfman/kernel"
 )
 
 // LinkAttachView is the output view for link attach commands.
@@ -32,6 +33,23 @@ type LinkGetView struct {
 type LinkListView struct {
 	// Links are the attachment records to display, one row per link.
 	Links []bpfman.LinkRecord
+
+	// Programs resolves each link's owning program, keyed by
+	// LinkRecord.ProgramID, to the presentation-only application and
+	// function name shown in the APPLICATION and FUNCTION NAME columns of
+	// the text table. It is unused by structured output, which carries
+	// the link records alone.
+	Programs map[kernel.ProgramID]LinkProgramRef
+}
+
+// LinkProgramRef carries the owning-program fields shown per link in the
+// link list: the application grouping label and the BPF function name.
+type LinkProgramRef struct {
+	// Application is the program's application metadata label; empty when unset.
+	Application string
+
+	// FunctionName is the program's BPF function name.
+	FunctionName string
 }
 
 // RenderLinkAttach writes the result of a link attach command.
@@ -65,20 +83,42 @@ func RenderLinkList(w io.Writer, view LinkListView, format OutputFormat) error {
 // answer in domain terms. Pin detail stays on `link get` and in the
 // JSON output.
 func renderLinkListTable(w io.Writer, view LinkListView) error {
-	headers := []string{"LINK ID", "KERNEL LINK ID", "KIND", "PROGRAM ID", "ATTACHMENT"}
+	withApplication := false
+	for _, l := range view.Links {
+		if view.Programs[l.ProgramID].Application != "" {
+			withApplication = true
+			break
+		}
+	}
+
+	headers := []string{"LINK ID", "KERNEL LINK ID", "KIND", "PROGRAM ID", "FUNCTION NAME", "ATTACHMENT"}
+	if withApplication {
+		headers = []string{"LINK ID", "KERNEL LINK ID", "KIND", "PROGRAM ID", "APPLICATION", "FUNCTION NAME", "ATTACHMENT"}
+	}
+
 	rows := make([][]string, len(view.Links))
 	for i, l := range view.Links {
 		kernelLinkID := "<none>"
 		if l.KernelLinkID != nil {
 			kernelLinkID = fmt.Sprintf("%d", *l.KernelLinkID)
 		}
-		rows[i] = []string{
+
+		ref := view.Programs[l.ProgramID]
+		functionName := ref.FunctionName
+		if functionName == "" {
+			functionName = "<none>"
+		}
+
+		row := []string{
 			fmt.Sprintf("%d", l.ID),
 			kernelLinkID,
 			l.Kind.String(),
 			fmt.Sprintf("%d", l.ProgramID),
-			attachmentSummary(l.Details),
 		}
+		if withApplication {
+			row = append(row, ref.Application)
+		}
+		rows[i] = append(row, functionName, attachmentSummary(l.Details))
 	}
 	return writeOutput(w, renderTable("", headers, rows))
 }
