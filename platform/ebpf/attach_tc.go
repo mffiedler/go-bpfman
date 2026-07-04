@@ -332,8 +332,6 @@ func (k *kernelAdapter) AttachTCExtension(ctx context.Context, spec dispatcher.T
 		return bpfman.AttachOutput{}, fmt.Errorf("invalid spec: %w", err)
 	}
 
-	linkPin := spec.LinkPinPath.String()
-
 	// Load the pinned dispatcher to use as attach target.
 	dispatcherProg, err := ebpf.LoadPinnedProgram(spec.DispatcherPinPath.String(), nil)
 	if err != nil {
@@ -359,52 +357,13 @@ func (k *kernelAdapter) AttachTCExtension(ctx context.Context, spec dispatcher.T
 		return bpfman.AttachOutput{}, fmt.Errorf("attach TC freplace to %s: %w", slotName, err)
 	}
 
-	success := false
-	cleanup := func() {
-		if !success {
-			lnk.Close()
-			if linkPin != "" {
-				if err := os.Remove(linkPin); err != nil && !os.IsNotExist(err) {
-					k.logger.Warn("failed to remove pinned TC extension link during cleanup", "path", linkPin, "error", err)
-				}
-			}
-		}
-	}
-	defer cleanup()
-
-	// Pin the link if path provided.
-	if linkPin != "" {
-		if err := pinWithRetry(spec.LinkPinPath, lnk.Pin); err != nil {
-			return bpfman.AttachOutput{}, fmt.Errorf("pin TC extension link to %s: %w", linkPin, err)
-		}
-	}
-
-	// Get link info.
-	linkInfo, err := lnk.Info()
-	if err != nil {
-		return bpfman.AttachOutput{}, fmt.Errorf("get TC link info: %w", err)
-	}
-
-	// Close the fd now that the link is pinned. The pin keeps the
-	// kernel link alive; leaking the fd would prevent DetachLink
-	// (which only removes the pin) from fully releasing the
-	// freplace trampoline.
-	lnk.Close()
-	success = true
-
-	kernelLinkID := kernel.LinkID(linkInfo.ID)
-	return bpfman.AttachOutput{
-		KernelLinkID: &kernelLinkID,
-		KernelLink:   ToKernelLink(linkInfo),
-		PinPath:      spec.LinkPinPath,
-	}, nil
+	return k.finishPinnedAttach(lnk, spec.LinkPinPath, "TC extension link")
 }
 
 // AttachTCX attaches a loaded program directly to an interface using TCX link.
 // Unlike TC which uses dispatchers, TCX uses native kernel multi-program support.
 // The order parameter specifies where to insert the program in the TCX chain.
 func (k *kernelAdapter) AttachTCX(ctx context.Context, ifindex int, direction string, programPinPath bpfman.ProgPinPath, linkPinPath bpfman.LinkPath, netnsPath string, order bpfman.TCXAttachOrder) (bpfman.AttachOutput, error) {
-	linkPin := linkPinPath.String()
 	// Load the pinned program
 	prog, err := ebpf.LoadPinnedProgram(programPinPath.String(), nil)
 	if err != nil {
@@ -457,44 +416,11 @@ func (k *kernelAdapter) AttachTCX(ctx context.Context, ifindex int, direction st
 			return fmt.Errorf("attach TCX to ifindex %d %s: %w", ifindex, direction, err)
 		}
 
-		success := false
-		cleanup := func() {
-			if !success {
-				lnk.Close()
-				if linkPin != "" {
-					if err := os.Remove(linkPin); err != nil && !os.IsNotExist(err) {
-						k.logger.Warn("failed to remove pinned TCX link during cleanup", "path", linkPin, "error", err)
-					}
-				}
-			}
+		out, ferr := k.finishPinnedAttach(lnk, linkPinPath, "TCX link")
+		if ferr != nil {
+			return ferr
 		}
-		defer cleanup()
-
-		// Pin the link if path provided
-		if linkPin != "" {
-			if err := pinWithRetry(linkPinPath, lnk.Pin); err != nil {
-				return fmt.Errorf("pin TCX link to %s: %w", linkPin, err)
-			}
-		}
-
-		// Get link info
-		linkInfo, err := lnk.Info()
-		if err != nil {
-			return fmt.Errorf("get TCX link info: %w", err)
-		}
-
-		// Close the fd now that the link is pinned. The pin
-		// keeps the kernel link alive; leaking the fd would
-		// prevent DetachLink (which only removes the pin) from
-		// fully releasing the link.
-		lnk.Close()
-		success = true
-		kernelLinkID := kernel.LinkID(linkInfo.ID)
-		result = bpfman.AttachOutput{
-			KernelLinkID: &kernelLinkID,
-			KernelLink:   ToKernelLink(linkInfo),
-			PinPath:      linkPinPath,
-		}
+		result = out
 		return nil
 	})
 	if err != nil {

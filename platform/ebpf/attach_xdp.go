@@ -42,7 +42,6 @@ func attachXDPWithRetry(opts link.XDPOptions) (link.Link, error) {
 
 // AttachXDP attaches a pinned XDP program to a network interface.
 func (k *kernelAdapter) AttachXDP(ctx context.Context, progPinPath bpfman.ProgPinPath, ifindex int, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
-	linkPin := linkPinPath.String()
 	prog, err := ebpf.LoadPinnedProgram(progPinPath.String(), nil)
 	if err != nil {
 		return bpfman.AttachOutput{}, fmt.Errorf("load pinned program %s: %w", progPinPath, err)
@@ -60,35 +59,44 @@ func (k *kernelAdapter) AttachXDP(ctx context.Context, progPinPath bpfman.ProgPi
 		return bpfman.AttachOutput{}, fmt.Errorf("attach XDP to ifindex %d: %w", ifindex, err)
 	}
 
+	return k.finishPinnedAttach(lnk, linkPinPath, "link")
+}
+
+// finishPinnedAttach is the shared tail of the pinned/dispatcher
+// attaches (XDP, the XDP and TC freplace extensions, TCX). It pins the
+// link, reads its info, and closes the fd: the pin keeps the kernel link
+// alive, and leaking the fd would stop DetachLink -- which only removes
+// the pin -- from releasing the link. On any failure before the pin is
+// durable it removes the pin and closes the link. The noun labels the
+// link in the pin and cleanup diagnostics ("link", "extension link",
+// "TC extension link", "TCX link").
+func (k *kernelAdapter) finishPinnedAttach(lnk link.Link, linkPinPath bpfman.LinkPath, noun string) (bpfman.AttachOutput, error) {
+	linkPin := linkPinPath.String()
+
 	success := false
 	cleanup := func() {
 		if !success {
 			lnk.Close()
 			if linkPin != "" {
 				if err := os.Remove(linkPin); err != nil && !os.IsNotExist(err) {
-					k.logger.Warn("failed to remove pinned link during cleanup", "path", linkPin, "error", err)
+					k.logger.Warn(fmt.Sprintf("failed to remove pinned %s during cleanup", noun), "path", linkPin, "error", err)
 				}
 			}
 		}
 	}
 	defer cleanup()
 
-	// Pin the link if a path is provided
 	if linkPin != "" {
 		if err := pinWithRetry(linkPin, lnk.Pin); err != nil {
-			return bpfman.AttachOutput{}, fmt.Errorf("pin link to %s: %w", linkPin, err)
+			return bpfman.AttachOutput{}, fmt.Errorf("pin %s to %s: %w", noun, linkPin, err)
 		}
 	}
 
-	// Get link info
 	linkInfo, err := lnk.Info()
 	if err != nil {
 		return bpfman.AttachOutput{}, fmt.Errorf("get link info: %w", err)
 	}
 
-	// Close the fd now that the link is pinned. The pin keeps the
-	// kernel link alive; leaking the fd would prevent DetachLink
-	// (which only removes the pin) from fully releasing the link.
 	lnk.Close()
 	success = true
 
@@ -238,8 +246,6 @@ func (k *kernelAdapter) AttachXDPExtension(ctx context.Context, spec dispatcher.
 		return bpfman.AttachOutput{}, fmt.Errorf("invalid spec: %w", err)
 	}
 
-	linkPin := spec.LinkPinPath.String()
-
 	// Load the pinned dispatcher to use as attach target.
 	dispatcherProg, err := ebpf.LoadPinnedProgram(spec.DispatcherPinPath.String(), nil)
 	if err != nil {
@@ -265,43 +271,5 @@ func (k *kernelAdapter) AttachXDPExtension(ctx context.Context, spec dispatcher.
 		return bpfman.AttachOutput{}, fmt.Errorf("attach freplace to %s: %w", slotName, err)
 	}
 
-	success := false
-	cleanup := func() {
-		if !success {
-			lnk.Close()
-			if linkPin != "" {
-				if err := os.Remove(linkPin); err != nil && !os.IsNotExist(err) {
-					k.logger.Warn("failed to remove pinned extension link during cleanup", "path", linkPin, "error", err)
-				}
-			}
-		}
-	}
-	defer cleanup()
-
-	// Pin the link if path provided.
-	if linkPin != "" {
-		if err := pinWithRetry(linkPin, lnk.Pin); err != nil {
-			return bpfman.AttachOutput{}, fmt.Errorf("pin extension link to %s: %w", linkPin, err)
-		}
-	}
-
-	// Get link info.
-	linkInfo, err := lnk.Info()
-	if err != nil {
-		return bpfman.AttachOutput{}, fmt.Errorf("get link info: %w", err)
-	}
-
-	// Close the fd now that the link is pinned. The pin keeps the
-	// kernel link alive; leaking the fd would prevent DetachLink
-	// (which only removes the pin) from fully releasing the
-	// freplace trampoline.
-	lnk.Close()
-	success = true
-
-	kernelLinkID := kernel.LinkID(linkInfo.ID)
-	return bpfman.AttachOutput{
-		KernelLinkID: &kernelLinkID,
-		KernelLink:   ToKernelLink(linkInfo),
-		PinPath:      spec.LinkPinPath,
-	}, nil
+	return k.finishPinnedAttach(lnk, spec.LinkPinPath, "extension link")
 }
