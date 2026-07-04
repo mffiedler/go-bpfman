@@ -77,6 +77,32 @@ func TestFormatProgramTable_ImageLoadShowsProvenance(t *testing.T) {
 	}
 }
 
+// The Status section reports the kernel's own program-type taxonomy
+// (for example schedcls for a tcx program, tracing for fentry), which
+// can differ from the bpfman Type shown in the Spec. It is elided when
+// the kernel did not report a type.
+func TestFormatProgramTable_KernelTypeRow(t *testing.T) {
+	t.Parallel()
+
+	prog := bpfman.Program{
+		Record: bpfman.ProgramRecord{ProgramID: 42},
+		Status: bpfman.ProgramStatus{
+			Kernel: &kernel.Program{ProgramType: "schedcls"},
+		},
+	}
+	if out := formatProgramTable(prog); !strings.Contains(out, "Kernel Type:") || !strings.Contains(out, "schedcls") {
+		t.Errorf("Status should carry a Kernel Type row, got:\n%s", out)
+	}
+
+	bare := bpfman.Program{
+		Record: bpfman.ProgramRecord{ProgramID: 42},
+		Status: bpfman.ProgramStatus{Kernel: &kernel.Program{}},
+	}
+	if out := formatProgramTable(bare); strings.Contains(out, "Kernel Type:") {
+		t.Errorf("empty kernel type should be elided, got:\n%s", out)
+	}
+}
+
 // The Status section reports map-sharing membership: every program
 // whose records point at this program's map set, space-separated like
 // the list table's LINK IDS column. It answers "whose data disappears

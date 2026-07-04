@@ -208,6 +208,13 @@ func programStatusRows(prog bpfman.Program) []row {
 	if kp.BTFId != 0 {
 		st = append(st, fieldRow("BTF ID", fmt.Sprintf("%d", kp.BTFId)))
 	}
+	// The kernel's own program-type taxonomy (schedcls, probe, tracing,
+	// ...), which can differ from the bpfman Type in the Spec: a tcx
+	// program is schedcls to the kernel, fentry is tracing. Elided when
+	// the kernel did not report a type.
+	if kp.ProgramType != "" {
+		st = append(st, fieldRow("Kernel Type", kp.ProgramType.String()))
+	}
 	if prog.Status.ProgPin != "" {
 		st = append(st, fieldRow("Bytecode", prog.Status.Bytecode))
 	}
