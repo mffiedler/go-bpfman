@@ -614,10 +614,11 @@ func (s *sqliteStore) insertLinkRegistry(ctx context.Context, spec bpfman.LinkSp
 	return record, nil
 }
 
-// scanLinkRecord scans a single row into a LinkRecord (without details).
+// scanLinkRecordFrom scans one link row (without details) using the
+// given Scan function, which both *sql.Row and *sql.Rows provide, so the
+// single-row and multi-row readers share this body.
 // Row format: id, kind, kernel_prog_id, kernel_link_id, pin_path, metadata_json, created_at
-func (s *sqliteStore) scanLinkRecord(row *sql.Row) (bpfman.LinkRecord, error) {
-	var record bpfman.LinkRecord
+func scanLinkRecordFrom(scan func(dest ...any) error) (bpfman.LinkRecord, error) {
 	var linkID int64
 	var kindStr string
 	var programID kernel.ProgramID
@@ -626,22 +627,20 @@ func (s *sqliteStore) scanLinkRecord(row *sql.Row) (bpfman.LinkRecord, error) {
 	var metadataJSON sql.NullString
 	var createdAtStr string
 
-	err := row.Scan(&linkID, &kindStr, &programID, &kernelLinkID, &pinPath, &metadataJSON, &createdAtStr)
-	if err == sql.ErrNoRows {
-		return bpfman.LinkRecord{}, platform.ErrRecordNotFound
-	}
-	if err != nil {
+	if err := scan(&linkID, &kindStr, &programID, &kernelLinkID, &pinPath, &metadataJSON, &createdAtStr); err != nil {
 		return bpfman.LinkRecord{}, err
 	}
 
-	record.ID = bpfman.LinkID(linkID)
 	kind, err := bpfman.ParseLinkKind(kindStr)
 	if err != nil {
 		return bpfman.LinkRecord{}, fmt.Errorf("invalid link kind in DB for link %d: %w", linkID, err)
 	}
 
-	record.Kind = kind
-	record.ProgramID = programID
+	record := bpfman.LinkRecord{
+		ID:        bpfman.LinkID(linkID),
+		Kind:      kind,
+		ProgramID: programID,
+	}
 	if kernelLinkID.Valid {
 		id := kernel.LinkID(kernelLinkID.Int64)
 		record.KernelLinkID = &id
@@ -665,55 +664,25 @@ func (s *sqliteStore) scanLinkRecord(row *sql.Row) (bpfman.LinkRecord, error) {
 	return record, nil
 }
 
+// scanLinkRecord scans a single row into a LinkRecord (without details),
+// mapping a missing row to ErrRecordNotFound.
+func (s *sqliteStore) scanLinkRecord(row *sql.Row) (bpfman.LinkRecord, error) {
+	record, err := scanLinkRecordFrom(row.Scan)
+	if errors.Is(err, sql.ErrNoRows) {
+		return bpfman.LinkRecord{}, platform.ErrRecordNotFound
+	}
+	return record, err
+}
+
 // scanLinkRecords scans multiple rows into a slice of LinkRecord (without details).
-// Row format: id, kind, kernel_prog_id, kernel_link_id, pin_path, metadata_json, created_at
 func (s *sqliteStore) scanLinkRecords(rows *sql.Rows) ([]bpfman.LinkRecord, error) {
 	var result []bpfman.LinkRecord
 
 	for rows.Next() {
-		var linkID int64
-		var kindStr string
-		var programID kernel.ProgramID
-		var kernelLinkID sql.NullInt64
-		var pinPath sql.NullString
-		var metadataJSON sql.NullString
-		var createdAtStr string
-
-		err := rows.Scan(&linkID, &kindStr, &programID, &kernelLinkID, &pinPath, &metadataJSON, &createdAtStr)
+		record, err := scanLinkRecordFrom(rows.Scan)
 		if err != nil {
 			return nil, err
 		}
-
-		kind, err := bpfman.ParseLinkKind(kindStr)
-		if err != nil {
-			return nil, fmt.Errorf("invalid link kind in DB for link %d: %w", linkID, err)
-		}
-
-		record := bpfman.LinkRecord{
-			ID:        bpfman.LinkID(linkID),
-			Kind:      kind,
-			ProgramID: programID,
-		}
-		if kernelLinkID.Valid {
-			id := kernel.LinkID(kernelLinkID.Int64)
-			record.KernelLinkID = &id
-		}
-		if pinPath.Valid {
-			pin := bpfman.LinkPath(pinPath.String)
-			record.PinPath = &pin
-		}
-		record.Metadata, err = unmarshalLinkMetadata(metadataJSON, linkID)
-		if err != nil {
-			return nil, err
-		}
-
-		createdAt, err := time.Parse(time.RFC3339, createdAtStr)
-		if err != nil {
-			return nil, fmt.Errorf("invalid created_at timestamp for link %d: %q: %w", linkID, createdAtStr, err)
-		}
-
-		record.CreatedAt = createdAt
-
 		result = append(result, record)
 	}
 
