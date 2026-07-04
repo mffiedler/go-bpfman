@@ -35,23 +35,33 @@ type ImageCmd struct {
 	Verify ImageVerifyCmd `cmd:"" help:"Verify an OCI image signature."`
 }
 
+// bytecodeInputs are the bytecode-source flags shared by the image
+// build and generate-build-args commands: explicit positional inputs,
+// or a cilium/ebpf project directory.
+type bytecodeInputs struct {
+	// Bytecode lists the bytecode inputs. A single bare BYTECODE path is a
+	// host-architecture image; one or more linux/arch=BYTECODE entries are
+	// a multi-architecture image. Bare and platform-mapped inputs cannot be
+	// mixed, and this is mutually exclusive with --cilium-ebpf-project.
+	Bytecode []string `arg:"" optional:"" name:"bytecode" placeholder:"BYTECODE" help:"Bytecode input: BYTECODE for a single host-architecture image, or linux/arch=BYTECODE for a multi-architecture image."`
+
+	// CiliumEBPFProject points at a directory of cilium/ebpf bpf2go object
+	// files to use as the bytecode source instead of explicit positional
+	// inputs; supplying it together with bytecode arguments is an error.
+	CiliumEBPFProject string `short:"c" name:"cilium-ebpf-project" placeholder:"DIR" help:"Directory containing cilium/ebpf bpf2go object files."`
+}
+
+// plan builds the image build plan from the bytecode inputs.
+func (b bytecodeInputs) plan() (imagebuild.Plan, error) {
+	return planImageBuild(b.Bytecode, b.CiliumEBPFProject)
+}
+
 // ImageBuildCmd builds and pushes an OCI bytecode image.
 type ImageBuildCmd struct {
 	// ImageURL is the registry reference to publish the built image to.
 	ImageURL string `arg:"" name:"image" placeholder:"IMAGE" help:"Image reference to publish."`
 
-	// Bytecode lists the bytecode inputs. A single bare BYTECODE path
-	// builds a host-architecture image; one or more linux/arch=BYTECODE
-	// entries build a multi-architecture image. Bare and platform-mapped
-	// inputs cannot be mixed, and this is mutually exclusive with
-	// --cilium-ebpf-project.
-	Bytecode []string `arg:"" optional:"" name:"bytecode" placeholder:"BYTECODE" help:"Bytecode input: BYTECODE for a single host-architecture image, or linux/arch=BYTECODE for a multi-architecture image."`
-
-	// CiliumEBPFProject points at a directory of cilium/ebpf bpf2go object
-	// files to package as the bytecode source instead of explicit
-	// positional inputs; supplying it together with bytecode arguments is
-	// an error.
-	CiliumEBPFProject string `short:"c" name:"cilium-ebpf-project" placeholder:"DIR" help:"Directory containing cilium/ebpf bpf2go object files."`
+	bytecodeInputs
 }
 
 // AllowRootless reports that the image build command may run without
@@ -65,16 +75,7 @@ type ImageGenerateBuildArgsCmd struct {
 	// or "json".
 	Output string `short:"o" name:"output" placeholder:"FORMAT" enum:"text,json" default:"text" help:"Output format: text or json."`
 
-	// Bytecode lists the bytecode inputs. A single bare BYTECODE path
-	// describes a host-architecture image; one or more linux/arch=BYTECODE
-	// entries describe a multi-architecture image. Mutually exclusive with
-	// --cilium-ebpf-project.
-	Bytecode []string `arg:"" optional:"" name:"bytecode" placeholder:"BYTECODE" help:"Bytecode input: BYTECODE for a single host-architecture image, or linux/arch=BYTECODE for a multi-architecture image."`
-
-	// CiliumEBPFProject points at a directory of cilium/ebpf bpf2go object
-	// files to use as the bytecode source instead of explicit positional
-	// inputs; supplying it together with bytecode arguments is an error.
-	CiliumEBPFProject string `short:"c" name:"cilium-ebpf-project" placeholder:"DIR" help:"Directory containing cilium/ebpf bpf2go object files."`
+	bytecodeInputs
 }
 
 // AllowRootless reports that the generate-build-args command may run
@@ -144,14 +145,6 @@ func (c *ImageInspectCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	}
 
 	return cli.PrintOut(string(output) + "\n")
-}
-
-func (c *ImageBuildCmd) plan() (imagebuild.Plan, error) {
-	return planImageBuild(c.Bytecode, c.CiliumEBPFProject)
-}
-
-func (c *ImageGenerateBuildArgsCmd) plan() (imagebuild.Plan, error) {
-	return planImageBuild(c.Bytecode, c.CiliumEBPFProject)
 }
 
 func planImageBuild(bytecode []string, ciliumProject string) (imagebuild.Plan, error) {
