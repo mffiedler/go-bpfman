@@ -180,20 +180,3 @@ func Ensure() error {
 	}
 	return nil
 }
-
-// RemoveAll deletes every rule establishing the invariant,
-// regardless of preference. Absence is success.
-func RemoveAll() error {
-	existing, err := Installed()
-	if err != nil {
-		return err
-	}
-
-	for _, r := range existing {
-		del := r
-		if err := netlink.RuleDel(&del); err != nil {
-			return fmt.Errorf("remove test-net rule (pref %d): %w", r.Priority, err)
-		}
-	}
-	return nil
-}
