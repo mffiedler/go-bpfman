@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/bpfman/bpfman"
-	"github.com/bpfman/bpfman/cmd/bpfman/cliformat"
 	"github.com/bpfman/bpfman/cmd/internal/args"
 	"github.com/bpfman/bpfman/cmd/internal/runtime"
 	"github.com/bpfman/bpfman/kernel"
@@ -19,10 +18,6 @@ import (
 // through map ownership (map_owner_id). With --all, every managed
 // program is deleted.
 type ProgramDeleteCmd struct {
-	// OutputFlags carries the -o/--output flag selecting text or
-	// JSON rendering.
-	cliformat.OutputFlags
-
 	// Recursive also deletes programs that depend on the targets
 	// through shared maps (map_owner_id dependents).
 	Recursive bool `short:"r" name:"recursive" help:"Also delete programs that share maps with the target (map_owner_id dependents)."`
@@ -91,10 +86,6 @@ func executeDeletePrograms(ctx context.Context, cli *runtime.CLI, mgr *manager.M
 // has no remaining links. With --recursive, also removes programs
 // that depend on the orphaned program through map ownership.
 type LinkDeleteCmd struct {
-	// OutputFlags carries the -o/--output flag selecting text or
-	// JSON rendering.
-	cliformat.OutputFlags
-
 	// Recursive also deletes programs that share maps with programs
 	// orphaned by the detach (map_owner_id dependents).
 	Recursive bool `short:"r" name:"recursive" help:"Also delete programs that share maps with orphaned programs (map_owner_id dependents)."`

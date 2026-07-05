@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/bpfman/bpfman"
-	"github.com/bpfman/bpfman/cmd/bpfman/cliformat"
 	"github.com/bpfman/bpfman/cmd/internal/args"
 	"github.com/bpfman/bpfman/cmd/internal/runtime"
 	"github.com/bpfman/bpfman/kernel"
@@ -15,8 +14,6 @@ import (
 
 // UnloadCmd unloads managed BPF programs by program ID.
 type UnloadCmd struct {
-	cliformat.OutputFlags
-
 	// ProgramIDs are the kernel program IDs to unload (each accepts decimal
 	// or 0x-prefixed hex); at least one is required.
 	ProgramIDs []args.ProgramID `arg:"" name:"program-id" help:"Program IDs to unload (supports hex with 0x prefix)." required:""`
