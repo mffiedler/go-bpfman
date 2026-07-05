@@ -600,7 +600,7 @@ func formatDispatcherSnapshotTable(snap platform.DispatcherSnapshot) string {
 		return b.String()
 	}
 
-	headers := []string{"POS", "PRIORITY", "PROGRAM ID", "NAME", "LINK ID", "KERNEL LINK ID", "PROCEED ON"}
+	headers := []string{"POS", "PRIORITY", "PROGRAM ID", "FUNCTION NAME", "LINK ID", "KERNEL LINK ID", "PROCEED ON"}
 	rows := make([][]string, len(snap.Members))
 	for i, m := range snap.Members {
 		kernelLinkID := "<none>"

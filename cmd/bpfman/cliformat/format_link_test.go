@@ -161,7 +161,7 @@ func TestRenderDispatcherSnapshotTable_ExposesMemberManagedAndKernelIDs(t *testi
 		t.Fatalf("RenderDispatcherSnapshot() error = %v", err)
 	}
 	output := buf.String()
-	for _, want := range []string{"KERNEL LINK ID", "8", "23"} {
+	for _, want := range []string{"FUNCTION NAME", "xdp_pass", "KERNEL LINK ID", "8", "23"} {
 		if !strings.Contains(output, want) {
 			t.Errorf("dispatcher snapshot table missing %q: %s", want, output)
 		}
