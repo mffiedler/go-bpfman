@@ -202,20 +202,6 @@ type Server struct {
 	opCounter atomic.Uint64
 }
 
-// New creates a server with the provided dependencies.
-// The manager must be created by the caller - use manager.New() with
-// appropriate mounter (RealMounter for production, NoOpMounter for tests).
-// The manager should include an ImagePuller if OCI image loading is needed.
-func New(layout fs.Layout, mgr *manager.Manager, logger *slog.Logger) *Server {
-	// Wrap with context-aware handler to extract op_id from context.
-	logger = manager.WithOpIDHandler(logger)
-	return &Server{
-		layout: layout,
-		mgr:    mgr,
-		logger: logger.With("component", "server"),
-	}
-}
-
 // serve starts the gRPC server on the given Unix socket path.
 func (s *Server) serve(ctx context.Context, socketPath string) error {
 	// Ensure socket directory exists
