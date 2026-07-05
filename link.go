@@ -21,9 +21,6 @@ type TCXAttachOrder struct {
 	// First attaches at the head of the chain (runs before all others).
 	First bool `json:"first"`
 
-	// Last attaches at the tail of the chain (runs after all others).
-	Last bool `json:"last"`
-
 	// BeforeProgID attaches before the program with this kernel ID. Zero means not set.
 	BeforeProgID kernel.ProgramID `json:"before_prog_id"`
 

@@ -387,8 +387,6 @@ func (k *kernelAdapter) AttachTCX(ctx context.Context, ifindex int, direction st
 	switch {
 	case order.First:
 		anchor = link.Head()
-	case order.Last:
-		anchor = link.Tail()
 	case order.BeforeProgID != 0:
 		anchor = link.BeforeProgramByID(ebpf.ProgramID(order.BeforeProgID))
 	case order.AfterProgID != 0:

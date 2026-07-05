@@ -15,7 +15,6 @@ func TestComputeTCXAttachOrder(t *testing.T) {
 		existingLinks []bpfman.TCXLinkInfo
 		newPriority   int32
 		wantFirst     bool
-		wantLast      bool
 		wantBefore    kernel.ProgramID
 		wantAfter     kernel.ProgramID
 	}{
@@ -103,9 +102,6 @@ func TestComputeTCXAttachOrder(t *testing.T) {
 			if tt.wantFirst && !got.First {
 				t.Errorf("expected First=true, got %+v", got)
 			}
-			if tt.wantLast && !got.Last {
-				t.Errorf("expected Last=true, got %+v", got)
-			}
 			if tt.wantBefore != 0 && got.BeforeProgID != tt.wantBefore {
 				t.Errorf("expected BeforeProgID=%d, got %+v", tt.wantBefore, got)
 			}
@@ -116,9 +112,6 @@ func TestComputeTCXAttachOrder(t *testing.T) {
 			// Verify mutual exclusivity
 			setFields := 0
 			if got.First {
-				setFields++
-			}
-			if got.Last {
 				setFields++
 			}
 			if got.BeforeProgID != 0 {
