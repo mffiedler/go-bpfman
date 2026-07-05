@@ -71,7 +71,7 @@ func runAttach(cli *runtime.CLI, ctx context.Context, flags *cliformat.OutputFla
 		return err
 	}
 
-	return cliformat.RenderLinkAttach(cli.Out, cliformat.LinkAttachView{Link: link}, format)
+	return cliformat.RenderLinkAttach(cli.Out, link, format)
 }
 
 // AttachXDPCmd attaches an XDP program to a network interface.

@@ -75,7 +75,7 @@ func (c *ListDispatchersCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 		return nil
 	}
 
-	return cliformat.RenderDispatcherList(cli.Out, cliformat.DispatcherListView{Summaries: summaries}, format)
+	return cliformat.RenderDispatcherList(cli.Out, summaries, format)
 }
 
 // GetDispatcherCmd gets details of a dispatcher by its key.

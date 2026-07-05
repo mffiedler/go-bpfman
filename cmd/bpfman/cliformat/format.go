@@ -391,26 +391,19 @@ func presenceSuffix(present bool) string {
 	return " (missing)"
 }
 
-// LoadedProgramsView is the output view for commands that load programs.
-type LoadedProgramsView struct {
-	// Programs are the programs loaded by the command, one row per program.
-	Programs []bpfman.Program
-}
-
 // RenderLoadedPrograms writes the result of a load command.
-func RenderLoadedPrograms(w io.Writer, view LoadedProgramsView, format OutputFormat) error {
-	programs := view.Programs
+func RenderLoadedPrograms(w io.Writer, programs []bpfman.Program, format OutputFormat) error {
 	if programs == nil {
 		programs = []bpfman.Program{}
 	}
 	return renderOutput(w, format, bpfman.LoadResult{Programs: programs}, func(w io.Writer) error {
-		return writeOutput(w, formatLoadedProgramsTable(view))
+		return writeOutput(w, formatLoadedProgramsTable(programs))
 	})
 }
 
-func formatLoadedProgramsTable(view LoadedProgramsView) string {
+func formatLoadedProgramsTable(programs []bpfman.Program) string {
 	// Sort programs by program ID for consistent, scannable output.
-	sorted := slices.Clone(view.Programs)
+	sorted := slices.Clone(programs)
 	slices.SortFunc(sorted, func(a, b bpfman.Program) int {
 		if a.Record.ProgramID < b.Record.ProgramID {
 			return -1
@@ -430,15 +423,8 @@ func formatLoadedProgramsTable(view LoadedProgramsView) string {
 	return strings.Join(parts, "\n")
 }
 
-// ProgramListView is the output view for program list commands.
-type ProgramListView struct {
-	// Result is the program list to render, including both bpfman-managed and kernel-only programs.
-	Result bpfman.ProgramListResult
-}
-
 // RenderProgramList writes a program list result.
-func RenderProgramList(w io.Writer, view ProgramListView, format OutputFormat) error {
-	result := view.Result
+func RenderProgramList(w io.Writer, result bpfman.ProgramListResult, format OutputFormat) error {
 	if result.Programs == nil {
 		result.Programs = []bpfman.ProgramListEntry{}
 	}
@@ -502,27 +488,20 @@ func formatLinkIDs(ids []bpfman.LinkID) string {
 	return strings.Join(parts, " ")
 }
 
-// DispatcherListView is the output view for dispatcher list commands.
-type DispatcherListView struct {
-	// Summaries are the dispatcher summaries to render, one row per dispatcher.
-	Summaries []platform.DispatcherSummary
-}
-
 // RenderDispatcherList writes a dispatcher list result.
-func RenderDispatcherList(w io.Writer, view DispatcherListView, format OutputFormat) error {
-	summaries := view.Summaries
+func RenderDispatcherList(w io.Writer, summaries []platform.DispatcherSummary, format OutputFormat) error {
 	if summaries == nil {
 		summaries = []platform.DispatcherSummary{}
 	}
 	return renderOutput(w, format, platform.DispatcherListResult{Dispatchers: summaries}, func(w io.Writer) error {
-		return writeOutput(w, formatDispatcherListTable(view))
+		return writeOutput(w, formatDispatcherListTable(summaries))
 	})
 }
 
-func formatDispatcherListTable(view DispatcherListView) string {
+func formatDispatcherListTable(summaries []platform.DispatcherSummary) string {
 	headers := []string{"TYPE", "NSID", "IFINDEX", "REVISION", "PROGRAM ID", "KERNEL LINK ID", "PRIORITY", "HANDLE", "MEMBERS", "NETNS"}
-	rows := make([][]string, len(view.Summaries))
-	for i, s := range view.Summaries {
+	rows := make([][]string, len(summaries))
+	for i, s := range summaries {
 		linkID := "-"
 		if s.Runtime.KernelLinkID != nil {
 			linkID = fmt.Sprintf("%d", *s.Runtime.KernelLinkID)

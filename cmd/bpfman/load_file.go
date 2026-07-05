@@ -108,5 +108,5 @@ func executeLoadFile(ctx context.Context, cli *runtime.CLI, mgr *manager.Manager
 		return fmt.Errorf("failed to load programs: %w", err)
 	}
 
-	return cliformat.RenderLoadedPrograms(cli.Out, cliformat.LoadedProgramsView{Programs: loaded}, format)
+	return cliformat.RenderLoadedPrograms(cli.Out, loaded, format)
 }

@@ -172,7 +172,7 @@ func (c *ListProgramsCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 		return cli.PrintOut(b.String())
 	}
 
-	return cliformat.RenderProgramList(cli.Out, cliformat.ProgramListView{Result: result}, format)
+	return cliformat.RenderProgramList(cli.Out, result, format)
 }
 
 // ListLinksCmd lists managed links.

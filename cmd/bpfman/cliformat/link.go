@@ -10,15 +10,6 @@ import (
 	"github.com/bpfman/bpfman/kernel"
 )
 
-// LinkAttachView is the output view for link attach commands.
-//
-// Table output renders the created link details. Structured output
-// continues to expose the created link object for machine consumers.
-type LinkAttachView struct {
-	// Link is the attachment created by the command, rendered as table or JSON.
-	Link bpfman.Link
-}
-
 // LinkGetView is the output view for get-link commands. ProgramName is
 // a presentation-only join resolved by the caller from Link.Record.ProgramID.
 type LinkGetView struct {
@@ -53,9 +44,9 @@ type LinkProgramRef struct {
 }
 
 // RenderLinkAttach writes the result of a link attach command.
-func RenderLinkAttach(w io.Writer, view LinkAttachView, format OutputFormat) error {
-	return renderOutput(w, format, view.Link, func(w io.Writer) error {
-		return writeOutput(w, formatLinkTable(LinkGetView{Link: view.Link}))
+func RenderLinkAttach(w io.Writer, link bpfman.Link, format OutputFormat) error {
+	return renderOutput(w, format, link, func(w io.Writer) error {
+		return writeOutput(w, formatLinkTable(LinkGetView{Link: link}))
 	})
 }
 

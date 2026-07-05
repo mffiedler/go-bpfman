@@ -78,7 +78,7 @@ func TestRenderLinkAttachTable_PrintsLinkDetails(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := RenderLinkAttach(&buf, LinkAttachView{Link: link}, OutputFormatText); err != nil {
+	if err := RenderLinkAttach(&buf, link, OutputFormatText); err != nil {
 		t.Fatalf("RenderLinkAttach() error = %v", err)
 	}
 	output := buf.String()

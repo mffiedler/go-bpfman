@@ -77,7 +77,7 @@ func (c *LoadImageCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 		return fmt.Errorf("failed to load from image: %w", err)
 	}
 
-	return cliformat.RenderLoadedPrograms(cli.Out, cliformat.LoadedProgramsView{Programs: loaded}, format)
+	return cliformat.RenderLoadedPrograms(cli.Out, loaded, format)
 }
 
 // registryAuthFromFlag decodes a base64-encoded registry-auth flag

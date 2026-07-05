@@ -18,7 +18,7 @@ func programListCell(t *testing.T, entry bpfman.ProgramListEntry, column string)
 	t.Helper()
 
 	var buf bytes.Buffer
-	require.NoError(t, RenderProgramList(&buf, ProgramListView{Result: bpfman.ProgramListResult{Programs: []bpfman.ProgramListEntry{entry}}}, OutputFormatText))
+	require.NoError(t, RenderProgramList(&buf, bpfman.ProgramListResult{Programs: []bpfman.ProgramListEntry{entry}}, OutputFormatText))
 
 	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
 	require.Len(t, lines, 2, "header plus one row")
@@ -43,7 +43,7 @@ func TestRenderProgramList_Columns(t *testing.T) {
 
 	entry := bpfman.ProgramListEntry{ProgramID: 42, Application: "demo", Type: "xdp", FunctionName: "xdp_stats"}
 	var buf bytes.Buffer
-	require.NoError(t, RenderProgramList(&buf, ProgramListView{Result: bpfman.ProgramListResult{Programs: []bpfman.ProgramListEntry{entry}}}, OutputFormatText))
+	require.NoError(t, RenderProgramList(&buf, bpfman.ProgramListResult{Programs: []bpfman.ProgramListEntry{entry}}, OutputFormatText))
 
 	header := tableGap.Split(strings.TrimRight(strings.SplitN(buf.String(), "\n", 2)[0], " "), -1)
 	assert.Equal(t, []string{"PROGRAM ID", "APPLICATION", "TYPE", "FUNCTION NAME", "LINK IDS"}, header)
@@ -61,7 +61,7 @@ func TestRenderProgramList_ApplicationColumnElidedWhenEmpty(t *testing.T) {
 
 	headerFor := func(entries ...bpfman.ProgramListEntry) []string {
 		var buf bytes.Buffer
-		require.NoError(t, RenderProgramList(&buf, ProgramListView{Result: bpfman.ProgramListResult{Programs: entries}}, OutputFormatText))
+		require.NoError(t, RenderProgramList(&buf, bpfman.ProgramListResult{Programs: entries}, OutputFormatText))
 		return tableGap.Split(strings.TrimRight(strings.SplitN(buf.String(), "\n", 2)[0], " "), -1)
 	}
 
