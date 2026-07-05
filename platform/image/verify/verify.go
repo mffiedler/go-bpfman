@@ -55,18 +55,6 @@ func WithAllowUnsigned(allow bool) CosignOption {
 	}
 }
 
-// WithIdentity sets exact certificate identity constraints.
-func WithIdentity(issuer, subject string) CosignOption {
-	return func(v *cosignVerifier) {
-		v.identities = []cosign.Identity{
-			{
-				Issuer:  issuer,
-				Subject: subject,
-			},
-		}
-	}
-}
-
 // WithIdentities sets the acceptable certificate identity constraints.
 func WithIdentities(identities []config.SigningIdentity) CosignOption {
 	return func(v *cosignVerifier) {
