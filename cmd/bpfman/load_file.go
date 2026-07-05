@@ -93,7 +93,7 @@ func (c *LoadFileCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 // executeLoadFile loads the selected programs from a local object file
 // and renders them in the chosen output format.
 func executeLoadFile(ctx context.Context, cli *runtime.CLI, mgr *manager.Manager, c *LoadFileCmd, format cliformat.OutputFormat) error {
-	objPath, err := args.ParseObjectPath(c.Path)
+	path, err := args.ParseObjectPath(c.Path)
 	if err != nil {
 		return err
 	}
@@ -101,7 +101,7 @@ func executeLoadFile(ctx context.Context, cli *runtime.CLI, mgr *manager.Manager
 	// Manager.Load decides whether the request needs the writer flock:
 	// ordinary loads stay lockless, while explicit map-owner joins and
 	// PinByName loads serialise internally.
-	req := manager.NewLoadRequest(manager.LoadSource{FilePath: objPath.Path}, loadProgramSpecs(c.Programs), c.requestOpts())
+	req := manager.NewLoadRequest(manager.LoadSource{FilePath: path}, loadProgramSpecs(c.Programs), c.requestOpts())
 
 	loaded, err := mgr.LoadFromRequest(ctx, req)
 	if err != nil {

@@ -94,7 +94,7 @@ func TestParseObjectPath(t *testing.T) {
 
 	got, err := ParseObjectPath(file)
 	require.NoError(t, err, "an existing regular file is accepted")
-	assert.Equal(t, file, got.Path)
+	assert.Equal(t, file, got)
 
 	_, err = ParseObjectPath("")
 	assert.Error(t, err, "empty path is rejected")

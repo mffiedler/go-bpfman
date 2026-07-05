@@ -107,32 +107,27 @@ func ParseGlobalData(s string) (GlobalData, error) {
 	}, nil
 }
 
-// ObjectPath wraps a path to a BPF object file, validated for existence.
-type ObjectPath struct {
-	// Path is the filesystem path to an existing, non-directory BPF object file.
-	Path string
-}
-
-// ParseObjectPath parses and validates that the file exists.
-func ParseObjectPath(s string) (ObjectPath, error) {
+// ParseObjectPath validates that s names an existing, non-directory
+// file and returns the path.
+func ParseObjectPath(s string) (string, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return ObjectPath{}, fmt.Errorf("object path cannot be empty")
+		return "", fmt.Errorf("object path cannot be empty")
 	}
 
 	info, err := os.Stat(s)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return ObjectPath{}, fmt.Errorf("object file %q does not exist", s)
+			return "", fmt.Errorf("object file %q does not exist", s)
 		}
-		return ObjectPath{}, fmt.Errorf("cannot access object file %q: %w", s, err)
+		return "", fmt.Errorf("cannot access object file %q: %w", s, err)
 	}
 
 	if info.IsDir() {
-		return ObjectPath{}, fmt.Errorf("object path %q is a directory, not a file", s)
+		return "", fmt.Errorf("object path %q is a directory, not a file", s)
 	}
 
-	return ObjectPath{Path: s}, nil
+	return s, nil
 }
 
 // MetadataMap converts a slice of KeyValue to a map.

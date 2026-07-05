@@ -197,7 +197,6 @@ func KongOptions() []kong.Option {
 		kong.TypeMapper(reflect.TypeFor[bpfman.LinkID](), scalarMapper("link-id", args.ParseLinkID)),
 		kong.TypeMapper(reflect.TypeFor[args.KeyValue](), scalarMapper("key=value", args.ParseKeyValue)),
 		kong.TypeMapper(reflect.TypeFor[args.GlobalData](), scalarMapper("name=hex", args.ParseGlobalData)),
-		kong.TypeMapper(reflect.TypeFor[args.ObjectPath](), scalarMapper("path", args.ParseObjectPath)),
 		kong.TypeMapper(reflect.TypeFor[args.ProgramSpec](), scalarMapper("type:name", args.ParseProgramSpec)),
 		kong.TypeMapper(reflect.TypeFor[bpfman.ProgramType](), scalarMapper("program-type", lowerTrimmed(bpfman.ParseProgramType))),
 		kong.TypeMapper(reflect.TypeFor[bpfman.LinkKind](), scalarMapper("link-kind", lowerTrimmed(bpfman.ParseLinkKind))),
