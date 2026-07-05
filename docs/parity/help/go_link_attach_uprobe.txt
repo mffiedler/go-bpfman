@@ -11,8 +11,8 @@ Arguments:
 Flags:
   -h, --help                     Show help (-h for compact, --help for full).
 
-  -o, --output=text              Output format: text, json.
-  -m, --metadata=METADATA,...    KEY=VALUE link metadata (can be repeated).
+  -o, --output="text"            Output format: text, json.
+  -m, --metadata=METADATA,...    KEY=VALUE metadata (can be repeated).
   -f, --fn-name=STRING           Function name to attach to.
       --offset=0                 Offset within the function.
       --pid=INT-32               Only trace this process ID (0 traces all
@@ -25,7 +25,8 @@ Global Flags:
                              ($BPFMAN_CONFIG).
   --log=SPEC                 Log spec (e.g., 'info,manager=debug')
                              ($BPFMAN_LOG).
-  --runtime-dir=DIR          Root directory for runtime files.
+  --runtime-dir=DIR          Root directory for runtime files
+                             ($BPFMAN_RUNTIME_DIR).
   --image-cache-dir=DIR      Root directory for OCI image cache.
   --lock-timeout=DURATION    Timeout for acquiring the global writer lock (0 for
                              indefinite) ($BPFMAN_LOCK_TIMEOUT).

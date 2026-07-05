@@ -9,16 +9,17 @@ Arguments:
   <ifindex>    Interface index.
 
 Flags:
-  -h, --help           Show help (-h for compact, --help for full).
+  -h, --help             Show help (-h for compact, --help for full).
 
-  -o, --output=text    Output format: text, json.
+  -o, --output="text"    Output format: text, json.
 
 Global Flags:
   --config=FILE              Config file path (default: /etc/bpfman/bpfman.toml)
                              ($BPFMAN_CONFIG).
   --log=SPEC                 Log spec (e.g., 'info,manager=debug')
                              ($BPFMAN_LOG).
-  --runtime-dir=DIR          Root directory for runtime files.
+  --runtime-dir=DIR          Root directory for runtime files
+                             ($BPFMAN_RUNTIME_DIR).
   --image-cache-dir=DIR      Root directory for OCI image cache.
   --lock-timeout=DURATION    Timeout for acquiring the global writer lock (0 for
                              indefinite) ($BPFMAN_LOCK_TIMEOUT).

@@ -11,7 +11,8 @@ Global Flags:
                              ($BPFMAN_CONFIG).
   --log=SPEC                 Log spec (e.g., 'info,manager=debug')
                              ($BPFMAN_LOG).
-  --runtime-dir=DIR          Root directory for runtime files.
+  --runtime-dir=DIR          Root directory for runtime files
+                             ($BPFMAN_RUNTIME_DIR).
   --image-cache-dir=DIR      Root directory for OCI image cache.
   --lock-timeout=DURATION    Timeout for acquiring the global writer lock (0 for
                              indefinite) ($BPFMAN_LOCK_TIMEOUT).
@@ -22,4 +23,3 @@ BPF Resources:
   program unload        Unload a managed BPF program.
   program get           Get details of a program by program ID.
   program list          List managed programs.
-  program delete        Delete a program with cascading cleanup.

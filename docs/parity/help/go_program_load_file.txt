@@ -9,9 +9,8 @@ Arguments:
 Flags:
   -h, --help                       Show help (-h for compact, --help for full).
 
-  -o, --output=text                Output format: text, json.
-  -m, --metadata=METADATA,...      KEY=VALUE metadata to attach (can be
-                                   repeated).
+  -o, --output="text"              Output format: text, json.
+  -m, --metadata=METADATA,...      KEY=VALUE metadata (can be repeated).
   -g, --global=GLOBAL,...          NAME=HEX global data (can be repeated).
       --programs=PROGRAMS,...      TYPE:NAME or TYPE:NAME:ATTACH_FUNC program
                                    to load (comma-separated or repeated).
