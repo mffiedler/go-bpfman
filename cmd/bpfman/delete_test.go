@@ -3,10 +3,10 @@ package main
 import (
 	"testing"
 
-	"github.com/bpfman/bpfman/cmd/internal/args"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/bpfman/bpfman/kernel"
 )
 
 func TestProgramDeleteCmd_Validate(t *testing.T) {
@@ -26,7 +26,7 @@ func TestProgramDeleteCmd_Validate(t *testing.T) {
 			name: "both --all and IDs",
 			cmd: ProgramDeleteCmd{
 				All:        true,
-				ProgramIDs: []args.ProgramID{{Value: 1}},
+				ProgramIDs: []kernel.ProgramID{1},
 			},
 			wantErr: "--all and explicit program IDs are mutually exclusive",
 		},
@@ -36,7 +36,7 @@ func TestProgramDeleteCmd_Validate(t *testing.T) {
 		},
 		{
 			name: "IDs alone is valid",
-			cmd:  ProgramDeleteCmd{ProgramIDs: []args.ProgramID{{Value: 1}}},
+			cmd:  ProgramDeleteCmd{ProgramIDs: []kernel.ProgramID{1}},
 		},
 	}
 

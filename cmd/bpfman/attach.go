@@ -8,6 +8,7 @@ import (
 	"github.com/bpfman/bpfman/cmd/bpfman/cliformat"
 	"github.com/bpfman/bpfman/cmd/internal/args"
 	"github.com/bpfman/bpfman/cmd/internal/runtime"
+	"github.com/bpfman/bpfman/kernel"
 	"github.com/bpfman/bpfman/lock"
 )
 
@@ -84,7 +85,7 @@ type AttachXDPCmd struct {
 	AttachMetadataFlags
 
 	// ProgramID is the kernel ID of the loaded program to attach.
-	ProgramID args.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
+	ProgramID kernel.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
 
 	// Iface is the name of the network interface to attach to.
 	Iface string `arg:"" name:"iface" help:"Network interface."`
@@ -109,7 +110,7 @@ type AttachXDPCmd struct {
 // resulting link.
 func (c *AttachXDPCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func() (bpfman.AttachSpec, error) {
-		spec, err := bpfman.NewXDPAttachSpec(c.ProgramID.Value, c.Iface, c.Priority)
+		spec, err := bpfman.NewXDPAttachSpec(c.ProgramID, c.Iface, c.Priority)
 		if err != nil {
 			return nil, fmt.Errorf("invalid XDP spec: %w", err)
 		}
@@ -134,7 +135,7 @@ type AttachTCCmd struct {
 	AttachMetadataFlags
 
 	// ProgramID is the kernel ID of the loaded program to attach.
-	ProgramID args.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
+	ProgramID kernel.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
 
 	// Iface is the name of the network interface to attach to.
 	Iface string `arg:"" name:"iface" help:"Network interface."`
@@ -162,7 +163,7 @@ type AttachTCCmd struct {
 // renders the resulting link.
 func (c *AttachTCCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func() (bpfman.AttachSpec, error) {
-		spec, err := bpfman.NewTCAttachSpec(c.ProgramID.Value, c.Iface, c.Direction, c.Priority)
+		spec, err := bpfman.NewTCAttachSpec(c.ProgramID, c.Iface, c.Direction, c.Priority)
 		if err != nil {
 			return nil, fmt.Errorf("invalid TC spec: %w", err)
 		}
@@ -187,7 +188,7 @@ type AttachTCXCmd struct {
 	AttachMetadataFlags
 
 	// ProgramID is the kernel ID of the loaded program to attach.
-	ProgramID args.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
+	ProgramID kernel.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
 
 	// Iface is the name of the network interface to attach to.
 	Iface string `arg:"" name:"iface" help:"Network interface."`
@@ -211,7 +212,7 @@ type AttachTCXCmd struct {
 // renders the resulting link.
 func (c *AttachTCXCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func() (bpfman.AttachSpec, error) {
-		spec, err := bpfman.NewTCXAttachSpec(c.ProgramID.Value, c.Iface, c.Direction, c.Priority)
+		spec, err := bpfman.NewTCXAttachSpec(c.ProgramID, c.Iface, c.Direction, c.Priority)
 		if err != nil {
 			return nil, fmt.Errorf("invalid TCX spec: %w", err)
 		}
@@ -235,7 +236,7 @@ type AttachTracepointCmd struct {
 	AttachMetadataFlags
 
 	// ProgramID is the kernel ID of the loaded program to attach.
-	ProgramID args.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
+	ProgramID kernel.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
 
 	// Tracepoint names the kernel tracepoint in group/name form
 	// (e.g. sched/sched_switch).
@@ -247,7 +248,7 @@ type AttachTracepointCmd struct {
 // the resulting link.
 func (c *AttachTracepointCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func() (bpfman.AttachSpec, error) {
-		spec, err := bpfman.NewTracepointAttachSpec(c.ProgramID.Value, c.Tracepoint)
+		spec, err := bpfman.NewTracepointAttachSpec(c.ProgramID, c.Tracepoint)
 		if err != nil {
 			return nil, fmt.Errorf("invalid tracepoint spec: %w", err)
 		}
@@ -267,7 +268,7 @@ type AttachKprobeCmd struct {
 	AttachMetadataFlags
 
 	// ProgramID is the kernel ID of the loaded program to attach.
-	ProgramID args.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
+	ProgramID kernel.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
 
 	// FnName is the kernel function to probe.
 	FnName string `arg:"" name:"fn-name" help:"Kernel function name to attach to."`
@@ -282,7 +283,7 @@ type AttachKprobeCmd struct {
 // renders the resulting link.
 func (c *AttachKprobeCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func() (bpfman.AttachSpec, error) {
-		spec, err := bpfman.NewKprobeAttachSpec(c.ProgramID.Value, c.FnName)
+		spec, err := bpfman.NewKprobeAttachSpec(c.ProgramID, c.FnName)
 		if err != nil {
 			return nil, fmt.Errorf("invalid kprobe spec: %w", err)
 		}
@@ -306,7 +307,7 @@ type AttachUprobeCmd struct {
 	AttachMetadataFlags
 
 	// ProgramID is the kernel ID of the loaded program to attach.
-	ProgramID args.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
+	ProgramID kernel.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
 
 	// Target is the binary or library to probe: an absolute path, or
 	// a bare library name (e.g. libc) resolved like the dynamic
@@ -335,7 +336,7 @@ type AttachUprobeCmd struct {
 // renders the resulting link.
 func (c *AttachUprobeCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func() (bpfman.AttachSpec, error) {
-		spec, err := bpfman.NewUprobeAttachSpec(c.ProgramID.Value, c.Target, c.Pid, c.ContainerPid)
+		spec, err := bpfman.NewUprobeAttachSpec(c.ProgramID, c.Target, c.Pid, c.ContainerPid)
 		if err != nil {
 			return nil, fmt.Errorf("invalid uprobe spec: %w", err)
 		}
@@ -364,14 +365,14 @@ type AttachFentryCmd struct {
 	// ProgramID is the kernel ID of the loaded fentry program to
 	// attach. The traced function is fixed at load time, so no
 	// further target is required.
-	ProgramID args.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
+	ProgramID kernel.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
 }
 
 // Run builds an fentry attach spec from the program ID, attaches the
 // program under the writer lock, and renders the resulting link.
 func (c *AttachFentryCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func() (bpfman.AttachSpec, error) {
-		spec, err := bpfman.NewFentryAttachSpec(c.ProgramID.Value)
+		spec, err := bpfman.NewFentryAttachSpec(c.ProgramID)
 		if err != nil {
 			return nil, fmt.Errorf("invalid fentry spec: %w", err)
 		}
@@ -393,14 +394,14 @@ type AttachFexitCmd struct {
 	// ProgramID is the kernel ID of the loaded fexit program to
 	// attach. The traced function is fixed at load time, so no
 	// further target is required.
-	ProgramID args.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
+	ProgramID kernel.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
 }
 
 // Run builds an fexit attach spec from the program ID, attaches the
 // program under the writer lock, and renders the resulting link.
 func (c *AttachFexitCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func() (bpfman.AttachSpec, error) {
-		spec, err := bpfman.NewFexitAttachSpec(c.ProgramID.Value)
+		spec, err := bpfman.NewFexitAttachSpec(c.ProgramID)
 		if err != nil {
 			return nil, fmt.Errorf("invalid fexit spec: %w", err)
 		}

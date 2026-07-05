@@ -11,46 +11,36 @@ import (
 	"github.com/bpfman/bpfman/kernel"
 )
 
-// ProgramID wraps a parsed kernel program ID.
-type ProgramID struct {
-	// Value is the parsed kernel program ID.
-	Value kernel.ProgramID
-}
-
-// ParseProgramID parses a decimal program ID.
-func ParseProgramID(s string) (ProgramID, error) {
+// ParseProgramID parses a decimal kernel program ID. It is the Kong
+// mapper for kernel.ProgramID arguments and flags.
+func ParseProgramID(s string) (kernel.ProgramID, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return ProgramID{}, fmt.Errorf("program ID cannot be empty")
+		return 0, fmt.Errorf("program ID cannot be empty")
 	}
 
 	val, err := strconv.ParseUint(s, 10, 32)
 	if err != nil {
-		return ProgramID{}, fmt.Errorf("invalid program ID %q: must be a decimal number", s)
+		return 0, fmt.Errorf("invalid program ID %q: must be a decimal number", s)
 	}
 
-	return ProgramID{Value: kernel.ProgramID(val)}, nil
+	return kernel.ProgramID(val), nil
 }
 
-// LinkID wraps a parsed link ID.
-type LinkID struct {
-	// Value is the parsed link ID.
-	Value bpfman.LinkID
-}
-
-// ParseLinkID parses a decimal link ID.
-func ParseLinkID(s string) (LinkID, error) {
+// ParseLinkID parses a decimal link ID. It is the Kong mapper for
+// bpfman.LinkID arguments and flags.
+func ParseLinkID(s string) (bpfman.LinkID, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return LinkID{}, fmt.Errorf("link ID cannot be empty")
+		return 0, fmt.Errorf("link ID cannot be empty")
 	}
 
 	val, err := strconv.ParseUint(s, 10, 64)
 	if err != nil {
-		return LinkID{}, fmt.Errorf("invalid link ID %q: must be a decimal number", s)
+		return 0, fmt.Errorf("invalid link ID %q: must be a decimal number", s)
 	}
 
-	return LinkID{Value: bpfman.LinkID(val)}, nil
+	return bpfman.LinkID(val), nil
 }
 
 // KeyValue represents a KEY=VALUE metadata pair.

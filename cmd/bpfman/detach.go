@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/bpfman/bpfman"
-	"github.com/bpfman/bpfman/cmd/internal/args"
 	"github.com/bpfman/bpfman/cmd/internal/runtime"
 	"github.com/bpfman/bpfman/lock"
 )
@@ -15,7 +14,7 @@ import (
 type DetachCmd struct {
 	// LinkIDs are the IDs of the links to detach; at least one is
 	// required.
-	LinkIDs []args.LinkID `arg:"" name:"link-id" help:"Link IDs to detach." required:""`
+	LinkIDs []bpfman.LinkID `arg:"" name:"link-id" help:"Link IDs to detach." required:""`
 
 	// IgnoreMissing treats a "link not found" error as success,
 	// making a repeated detach (e.g. from a defer) idempotent.
@@ -30,7 +29,7 @@ func (c *DetachCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	}
 	defer cleanup()
 
-	return runtime.RunBatchMutation(ctx, cli, linkIDs(c.LinkIDs), "link", "detach",
+	return runtime.RunBatchMutation(ctx, cli, c.LinkIDs, "link", "detach",
 		func(ctx context.Context, writeLock lock.WriterScope, id bpfman.LinkID) error {
 			err := mgr.Detach(ctx, writeLock, id)
 			if err != nil && c.IgnoreMissing {

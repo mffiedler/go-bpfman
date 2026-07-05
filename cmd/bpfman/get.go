@@ -6,8 +6,8 @@ import (
 
 	"github.com/bpfman/bpfman"
 	"github.com/bpfman/bpfman/cmd/bpfman/cliformat"
-	"github.com/bpfman/bpfman/cmd/internal/args"
 	"github.com/bpfman/bpfman/cmd/internal/runtime"
+	"github.com/bpfman/bpfman/kernel"
 )
 
 // GetCmd is a hidden verb-noun alias path (`bpfman get link <id>`,
@@ -30,7 +30,7 @@ type GetProgramCmd struct {
 
 	// ProgramID is the kernel ID of the program to show; accepts
 	// decimal or 0x-prefixed hex.
-	ProgramID args.ProgramID `arg:"" name:"program-id" help:"Program ID (supports hex with 0x prefix)."`
+	ProgramID kernel.ProgramID `arg:"" name:"program-id" help:"Program ID."`
 }
 
 // Run executes the get program command.
@@ -46,7 +46,7 @@ func (c *GetProgramCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	}
 	defer cleanup()
 
-	prog, err := mgr.Get(ctx, c.ProgramID.Value)
+	prog, err := mgr.Get(ctx, c.ProgramID)
 	if err != nil {
 		return err
 	}
@@ -61,7 +61,7 @@ type GetLinkCmd struct {
 	cliformat.OutputFlags
 
 	// LinkID is the ID of the link to show.
-	LinkID args.LinkID `arg:"" name:"link-id" help:"Link ID."`
+	LinkID bpfman.LinkID `arg:"" name:"link-id" help:"Link ID."`
 }
 
 // Run executes the get link command.
@@ -77,7 +77,7 @@ func (c *GetLinkCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	}
 	defer cleanup()
 
-	info, err := mgr.GetLinkInfo(ctx, c.LinkID.Value)
+	info, err := mgr.GetLinkInfo(ctx, c.LinkID)
 	if err != nil {
 		return err
 	}

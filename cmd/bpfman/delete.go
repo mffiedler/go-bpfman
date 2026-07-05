@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/bpfman/bpfman"
-	"github.com/bpfman/bpfman/cmd/internal/args"
 	"github.com/bpfman/bpfman/cmd/internal/runtime"
 	"github.com/bpfman/bpfman/kernel"
 	"github.com/bpfman/bpfman/lock"
@@ -28,7 +27,7 @@ type ProgramDeleteCmd struct {
 
 	// ProgramIDs are the kernel IDs of the programs to delete;
 	// omitted when --all is given.
-	ProgramIDs []args.ProgramID `arg:"" name:"program-id" optional:"" help:"Program IDs to delete."`
+	ProgramIDs []kernel.ProgramID `arg:"" name:"program-id" optional:"" help:"Program IDs to delete."`
 }
 
 // Validate ensures exactly one of --all or explicit program IDs is
@@ -51,7 +50,7 @@ func (c *ProgramDeleteCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	}
 	defer cleanup()
 
-	ids, err := mgr.ResolveDeleteProgramIDs(ctx, c.All, programIDs(c.ProgramIDs))
+	ids, err := mgr.ResolveDeleteProgramIDs(ctx, c.All, c.ProgramIDs)
 	if err != nil {
 		return err
 	}
@@ -92,7 +91,7 @@ type LinkDeleteCmd struct {
 
 	// LinkIDs are the IDs of the links to delete; at least one is
 	// required.
-	LinkIDs []args.LinkID `arg:"" name:"link-id" help:"Link IDs to delete." required:""`
+	LinkIDs []bpfman.LinkID `arg:"" name:"link-id" help:"Link IDs to delete." required:""`
 }
 
 // Run executes the link delete command with cascading cleanup.
@@ -106,7 +105,7 @@ func (c *LinkDeleteCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	results := make([]runtime.BatchResult[bpfman.LinkID], 0, len(c.LinkIDs))
 
 	lockErr := runtime.RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
-		deleteResults := mgr.DeleteLinks(ctx, writeLock, linkIDs(c.LinkIDs), manager.DeleteLinksOpts{Recursive: c.Recursive})
+		deleteResults := mgr.DeleteLinks(ctx, writeLock, c.LinkIDs, manager.DeleteLinksOpts{Recursive: c.Recursive})
 		for _, r := range deleteResults {
 			results = append(results, runtime.BatchResult[bpfman.LinkID]{ID: r.LinkID, Err: r.Err})
 		}

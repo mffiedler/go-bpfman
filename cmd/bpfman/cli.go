@@ -17,6 +17,7 @@ import (
 	"github.com/bpfman/bpfman/cmd/internal/runtime"
 	"github.com/bpfman/bpfman/dispatcher"
 	"github.com/bpfman/bpfman/fs"
+	"github.com/bpfman/bpfman/kernel"
 	"github.com/bpfman/bpfman/lock"
 )
 
@@ -192,8 +193,8 @@ func KongOptions() []kong.Option {
 			return nil
 		}),
 		kong.ShortUsageOnError(),
-		kong.TypeMapper(reflect.TypeFor[args.ProgramID](), scalarMapper("program-id", args.ParseProgramID)),
-		kong.TypeMapper(reflect.TypeFor[args.LinkID](), scalarMapper("link-id", args.ParseLinkID)),
+		kong.TypeMapper(reflect.TypeFor[kernel.ProgramID](), scalarMapper("program-id", args.ParseProgramID)),
+		kong.TypeMapper(reflect.TypeFor[bpfman.LinkID](), scalarMapper("link-id", args.ParseLinkID)),
 		kong.TypeMapper(reflect.TypeFor[args.KeyValue](), scalarMapper("key=value", args.ParseKeyValue)),
 		kong.TypeMapper(reflect.TypeFor[args.GlobalData](), scalarMapper("name=hex", args.ParseGlobalData)),
 		kong.TypeMapper(reflect.TypeFor[args.ObjectPath](), scalarMapper("path", args.ParseObjectPath)),

@@ -185,7 +185,7 @@ type ListLinksCmd struct {
 	// ProgramID restricts the listing to links owned by this program ID
 	// (accepts decimal or 0x-prefixed hex); nil lists links for all
 	// programs.
-	ProgramID *args.ProgramID `name:"program-id" help:"Filter by program ID (supports hex with 0x prefix)."`
+	ProgramID *kernel.ProgramID `name:"program-id" help:"Filter by program ID."`
 
 	// Kind filters by one or more link kinds (comma-separated or repeated,
 	// e.g. --kind=xdp,kprobe).
@@ -208,7 +208,7 @@ func (c *ListLinksCmd) buildLinkListOptions() ([]bpfman.LinkListOption, error) {
 	var opts []bpfman.LinkListOption
 
 	if c.ProgramID != nil {
-		opts = append(opts, bpfman.WithProgramID(c.ProgramID.Value))
+		opts = append(opts, bpfman.WithProgramID(*c.ProgramID))
 	}
 
 	if len(c.Kind) > 0 {

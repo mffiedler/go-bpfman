@@ -30,7 +30,7 @@ func TestParseProgramID_Valid(t *testing.T) {
 			t.Parallel()
 			got, err := ParseProgramID(tt.input)
 			require.NoErrorf(t, err, "ParseProgramID(%q)", tt.input)
-			assert.Equal(t, tt.want, got.Value)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -66,7 +66,7 @@ func TestParseLinkID_Valid(t *testing.T) {
 			t.Parallel()
 			got, err := ParseLinkID(tt.input)
 			require.NoErrorf(t, err, "ParseLinkID(%q)", tt.input)
-			assert.Equal(t, tt.want, got.Value)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
