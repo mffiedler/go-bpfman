@@ -182,9 +182,8 @@ type ListLinksCmd struct {
 	// Quiet suppresses the table and prints only link references (link/<id>), one per line.
 	Quiet bool `short:"q" help:"Output only link references (link/<id>), one per line."`
 
-	// ProgramID restricts the listing to links owned by this program ID
-	// (accepts decimal or 0x-prefixed hex); nil lists links for all
-	// programs.
+	// ProgramID restricts the listing to links owned by this program ID;
+	// nil lists links for all programs.
 	ProgramID *kernel.ProgramID `name:"program-id" help:"Filter by program ID."`
 
 	// Kind filters by one or more link kinds (comma-separated or repeated,

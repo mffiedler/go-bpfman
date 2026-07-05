@@ -28,8 +28,7 @@ type GetProgramCmd struct {
 	// JSON rendering.
 	cliformat.OutputFlags
 
-	// ProgramID is the kernel ID of the program to show; accepts
-	// decimal or 0x-prefixed hex.
+	// ProgramID is the kernel ID of the program to show.
 	ProgramID kernel.ProgramID `arg:"" name:"program-id" help:"Program ID."`
 }
 
