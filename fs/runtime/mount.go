@@ -129,14 +129,6 @@ func Mount(mountPoint string) error {
 	return nil
 }
 
-// Unmount unmounts the bpffs at mountPoint.
-func Unmount(mountPoint string) error {
-	if err := syscall.Unmount(mountPoint, 0); err != nil {
-		return fmt.Errorf("unmount syscall: %w", err)
-	}
-	return nil
-}
-
 // EnsureMounted ensures a bpffs is mounted at mountPoint. It checks
 // mountInfoPath (e.g. /proc/self/mountinfo) for an existing bpf mount
 // at mountPoint; if none is found, it mounts one.
