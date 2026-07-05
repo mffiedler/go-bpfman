@@ -77,9 +77,8 @@
 // metadata, and recording shared-map references -- is batched into a
 // single sqlite transaction once every program's plan has run (see
 // loadBody's phase B), so a whole multi-program batch commits or aborts
-// together. These store steps run directly against the transaction
-// rather than through the executor, whose own SaveProgram handler would
-// open a nested transaction.
+// together. These store steps run directly against that shared
+// transaction rather than each opening its own.
 //
 // On failure the plan interpreter rolls back the completed per-program
 // actions in reverse order (RemoveProgramDir, then UnloadProgram and

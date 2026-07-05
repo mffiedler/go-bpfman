@@ -647,10 +647,9 @@ func (m *Manager) loadBody(ctx context.Context, specs []bpfman.LoadSpec, opts Lo
 	// map-owner and PinByName batches arrive here with the flock
 	// already held.
 	//
-	// We call platform.Store methods directly rather than going
-	// through the executor because the executor's SaveProgram and
-	// SaveSharedMapPins handlers each open their own internal
-	// transaction, which would nest here.
+	// We batch every program's store writes into this single
+	// transaction so they commit or abort together rather than
+	// each opening its own.
 	if err := m.store.RunInTransaction(ctx, "load", func(tx platform.Store) error {
 		for _, it := range items {
 			if _, err := tx.Get(ctx, it.out.Program.ID); err == nil {

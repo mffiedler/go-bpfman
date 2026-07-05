@@ -26,7 +26,7 @@
 // follow-on access. [Arg] is the typed post-expansion command-argument
 // boundary used between the interpreter and its embedders.
 //
-// [EvalExpr] evaluates AST expressions directly. [Exec] runs [ir.Program]
+// [EvalExpr] evaluates lowered [ir.Expr] values. [Exec] runs [ir.Program]
 // bodies against an [Env]. [Env] owns the embedding hooks; the runtime
 // owns the execution semantics that call them.
 package runtime
