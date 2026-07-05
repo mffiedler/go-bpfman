@@ -307,8 +307,3 @@ func (l *InheritedLock) Close() error {
 	}
 	return l.f.Close()
 }
-
-// FD returns the raw lock file descriptor (for logging/diagnostics).
-func (l *InheritedLock) FD() int {
-	return int(l.f.Fd())
-}
