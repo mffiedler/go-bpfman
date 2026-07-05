@@ -48,7 +48,7 @@ func TestOutputFlags_Format(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			f := &OutputFlags{Output: OutputValue{Value: tt.output}}
+			f := &OutputFlags{Output: tt.output}
 			got, err := f.Format()
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Format() error = %v, wantErr %v", err, tt.wantErr)

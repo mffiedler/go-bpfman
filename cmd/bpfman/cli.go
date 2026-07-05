@@ -13,7 +13,6 @@ import (
 	"github.com/cilium/ebpf"
 
 	"github.com/bpfman/bpfman"
-	"github.com/bpfman/bpfman/cmd/bpfman/cliformat"
 	"github.com/bpfman/bpfman/cmd/internal/args"
 	"github.com/bpfman/bpfman/cmd/internal/runtime"
 	"github.com/bpfman/bpfman/dispatcher"
@@ -207,7 +206,6 @@ func KongOptions() []kong.Option {
 		kong.TypeMapper(reflect.TypeFor[bpfman.TCAction](), scalarMapper("tc-action", bpfman.ParseTCAction)),
 		kong.TypeMapper(reflect.TypeFor[bpfman.ImagePullPolicy](), scalarMapper("policy", bpfman.ParseImagePullPolicy)),
 		kong.TypeMapper(reflect.TypeFor[dispatcher.DispatcherType](), scalarMapper("dispatcher-type", lowerTrimmed(dispatcher.ParseDispatcherType))),
-		kong.TypeMapper(reflect.TypeFor[cliformat.OutputValue](), outputValueMapper()),
 		kong.Vars{
 			"default_runtime_dir":     fs.DefaultRoot,
 			"default_image_cache_dir": "/var/cache/bpfman",

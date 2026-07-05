@@ -13,32 +13,21 @@ const (
 	OutputFormatJSON OutputFormat = "json"
 )
 
-// OutputValue wraps an output format string and tracks whether it has been set.
-// This allows detection of multiple -o flags, which is an error.
-type OutputValue struct {
-	// Value is the requested format string, normally "text" or "json".
-	Value string
-
-	// IsSet reports whether the -o flag was supplied, used to reject a repeated flag.
-	IsSet bool
-}
-
 // OutputFlags provides output formatting flags.
 type OutputFlags struct {
 	// Output selects the output format (text or json) via the -o/--output flag; it defaults to text.
-	Output OutputValue `short:"o" help:"Output format: text, json." default:"text"`
+	Output string `short:"o" enum:"text,json" default:"text" help:"Output format: text, json."`
 }
 
 // Format returns the base format type, or an error if the format is unrecognised.
 func (f *OutputFlags) Format() (OutputFormat, error) {
-	v := f.Output.Value
-	switch {
-	case v == "text":
+	switch f.Output {
+	case string(OutputFormatText):
 		return OutputFormatText, nil
-	case v == "json":
+	case string(OutputFormatJSON):
 		return OutputFormatJSON, nil
 	default:
-		return "", fmt.Errorf("unknown output format %q; valid formats: text, json", v)
+		return "", fmt.Errorf("unknown output format %q; valid formats: text, json", f.Output)
 	}
 }
 
