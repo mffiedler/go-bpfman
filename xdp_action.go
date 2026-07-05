@@ -70,20 +70,6 @@ func ParseXDPAction(s string) (XDPAction, error) {
 	return action, nil
 }
 
-// ParseXDPActions parses a slice of XDP action strings into domain values.
-func ParseXDPActions(actions []string) ([]XDPAction, error) {
-	result := make([]XDPAction, 0, len(actions))
-	for _, raw := range actions {
-		action, err := ParseXDPAction(raw)
-		if err != nil {
-			return nil, err
-		}
-
-		result = append(result, action)
-	}
-	return result, nil
-}
-
 // XDPActionCodes converts XDP actions to kernel int32 codes.
 func XDPActionCodes(actions []XDPAction) []int32 {
 	result := make([]int32, len(actions))

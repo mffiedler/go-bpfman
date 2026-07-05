@@ -105,20 +105,6 @@ func TCActionNames() []string {
 	return names
 }
 
-// ParseTCActions parses a slice of TC action strings into domain values.
-func ParseTCActions(actions []string) ([]TCAction, error) {
-	result := make([]TCAction, 0, len(actions))
-	for _, s := range actions {
-		a, err := ParseTCAction(s)
-		if err != nil {
-			return nil, err
-		}
-
-		result = append(result, a)
-	}
-	return result, nil
-}
-
 // TCActionCodes converts TC actions to kernel int32 codes.
 func TCActionCodes(actions []TCAction) []int32 {
 	result := make([]int32, len(actions))
