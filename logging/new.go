@@ -92,16 +92,3 @@ func New(opts Options) (*slog.Logger, error) {
 
 	return slog.New(filteringHandler), nil
 }
-
-// Default creates a logger with default settings (warn level, text format, stdout).
-func Default() *slog.Logger {
-	logger, _ := New(Options{})
-	return logger
-}
-
-// FromEnv creates a logger using the BPFMAN_LOG environment variable.
-func FromEnv() (*slog.Logger, error) {
-	return New(Options{
-		EnvSpec: os.Getenv("BPFMAN_LOG"),
-	})
-}
