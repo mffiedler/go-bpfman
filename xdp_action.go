@@ -101,3 +101,24 @@ func XDPActionFromInt32(code int32) (XDPAction, error) {
 	}
 	return XDPAction{}, fmt.Errorf("unknown XDP action code %d", code)
 }
+
+// XDPActionToString converts an XDP action int32 value to its string name.
+func XDPActionToString(action int32) string {
+	if a, ok := xdpActionByCode[action]; ok {
+		return a.name
+	}
+	return fmt.Sprintf("unknown(%d)", action)
+}
+
+// XDPActionsToString converts a slice of XDP action values to a
+// comma-separated string.
+func XDPActionsToString(actions []int32) string {
+	if len(actions) == 0 {
+		return "None"
+	}
+	names := make([]string, len(actions))
+	for i, a := range actions {
+		names[i] = XDPActionToString(a)
+	}
+	return strings.Join(names, ", ")
+}

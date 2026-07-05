@@ -613,7 +613,7 @@ func formatProceedOnMask(mask uint32, dispType dispatcher.DispatcherType) string
 		return fmt.Sprintf("invalid(%v)", err)
 	}
 	if dispType == dispatcher.DispatcherTypeXDP {
-		return formatXDPProceedOn(actions)
+		return bpfman.XDPActionsToString(actions)
 	}
 	return bpfman.TCActionsToString(actions)
 }

@@ -247,7 +247,7 @@ func linkDetailRows(view LinkGetView) []row {
 		add("Network Namespace", netnsOrNone(d.Netns))
 		add("Position", fmt.Sprintf("%d", d.Position))
 		add("Priority", fmt.Sprintf("%d", d.Priority))
-		add("Proceed On", formatXDPProceedOn(d.ProceedOn))
+		add("Proceed On", bpfman.XDPActionsToString(d.ProceedOn))
 	}
 
 	sortRowsByLabel(spec)
@@ -271,29 +271,4 @@ func netnsOrNone(netns string) string {
 		return "None"
 	}
 	return netns
-}
-
-// formatXDPProceedOn converts XDP proceed-on values to a human-readable string.
-func formatXDPProceedOn(actions []int32) string {
-	if len(actions) == 0 {
-		return "None"
-	}
-	// XDP actions: 0=aborted, 1=drop, 2=pass, 3=tx, 4=redirect, 31=dispatcher_return
-	xdpNames := map[int32]string{
-		0:  "aborted",
-		1:  "drop",
-		2:  "pass",
-		3:  "tx",
-		4:  "redirect",
-		31: "dispatcher_return",
-	}
-	names := make([]string, len(actions))
-	for i, a := range actions {
-		if name, ok := xdpNames[a]; ok {
-			names[i] = name
-		} else {
-			names[i] = fmt.Sprintf("unknown(%d)", a)
-		}
-	}
-	return strings.Join(names, ", ")
 }
