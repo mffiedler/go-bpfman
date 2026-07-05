@@ -128,10 +128,7 @@ func (c *CLI) Execute(ctx context.Context) error {
 	}
 
 	if err := c.kctx.Run(c); err != nil {
-		// ErrSilent means the error was already communicated (e.g., via JSON)
-		if !errors.Is(err, ErrSilent) {
-			_ = c.PrintErrf("bpfman: error: %v\n", c.formatError(err))
-		}
+		_ = c.PrintErrf("bpfman: error: %v\n", c.formatError(err))
 		return err
 	}
 
