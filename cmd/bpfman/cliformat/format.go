@@ -605,7 +605,7 @@ func formatDispatcherSnapshotTable(snap platform.DispatcherSnapshot) string {
 // named actions.
 func formatProceedOnMask(mask uint32, dispType dispatcher.DispatcherType) string {
 	if mask == 0 {
-		return "none"
+		return "None"
 	}
 
 	actions, err := dispatcher.ProceedOnActions(dispType, mask)
