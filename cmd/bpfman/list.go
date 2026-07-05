@@ -19,8 +19,8 @@ import (
 type ListProgramsCmd struct {
 	cliformat.OutputFlags
 
-	// Quiet suppresses the table and prints only program references (program/<id>), one per line.
-	Quiet bool `short:"q" help:"Output only program references (program/<id>), one per line."`
+	// Quiet suppresses the table and prints only program IDs, one per line.
+	Quiet bool `short:"q" help:"Output only program IDs, one per line."`
 
 	// Attached restricts the listing to programs that have at least one
 	// active kernel link. Mutually exclusive with Unattached.
@@ -135,9 +135,9 @@ func combineSelectors(selectors ...labels.Selector) labels.Selector {
 }
 
 // Run lists programs matching the configured filters and renders them to
-// the output. With --quiet it prints only "program/<id>" lines;
-// otherwise it renders the program table or structured output in the
-// selected format.
+// the output. With --quiet it prints only the program IDs, one per
+// line; otherwise it renders the program table or structured output in
+// the selected format.
 func (c *ListProgramsCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	format, err := c.OutputFlags.Format()
 	if err != nil {
@@ -167,7 +167,7 @@ func (c *ListProgramsCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	if c.Quiet {
 		var b strings.Builder
 		for _, p := range result.Programs {
-			fmt.Fprintf(&b, "program/%d\n", p.ProgramID)
+			fmt.Fprintf(&b, "%d\n", p.ProgramID)
 		}
 		return cli.PrintOut(b.String())
 	}
@@ -179,8 +179,8 @@ func (c *ListProgramsCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 type ListLinksCmd struct {
 	cliformat.OutputFlags
 
-	// Quiet suppresses the table and prints only link references (link/<id>), one per line.
-	Quiet bool `short:"q" help:"Output only link references (link/<id>), one per line."`
+	// Quiet suppresses the table and prints only link IDs, one per line.
+	Quiet bool `short:"q" help:"Output only link IDs, one per line."`
 
 	// ProgramID restricts the listing to links owned by this program ID;
 	// nil lists links for all programs.
@@ -242,9 +242,9 @@ func (c *ListLinksCmd) programScopeOptions() ([]bpfman.ListOption, bool) {
 
 // Run lists links matching the configured filters and renders them to
 // the output. When any program-scope filter is set the links are scoped
-// to the matching programs. With --quiet it prints only "link/<id>"
-// lines; otherwise it renders the link table or structured output in the
-// selected format.
+// to the matching programs. With --quiet it prints only the link IDs,
+// one per line; otherwise it renders the link table or structured output
+// in the selected format.
 func (c *ListLinksCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	format, err := c.OutputFlags.Format()
 	if err != nil {
@@ -279,7 +279,7 @@ func (c *ListLinksCmd) Run(cli *runtime.CLI, ctx context.Context) error {
 	if c.Quiet {
 		var b strings.Builder
 		for _, l := range links {
-			fmt.Fprintf(&b, "link/%d\n", l.ID)
+			fmt.Fprintf(&b, "%d\n", l.ID)
 		}
 		return cli.PrintOut(b.String())
 	}
