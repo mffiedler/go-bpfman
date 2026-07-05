@@ -106,16 +106,6 @@ func DoAction(label, target string, a action.Action, opts ...NodeOpt) Node {
 	)
 }
 
-// TryAction creates a Try node that executes a single action.
-// Convenience wrapper around Try for a fixed action value.
-func TryAction(label, target string, a action.Action) Node {
-	return Try(label, target,
-		func(ctx context.Context, exec action.Executor, _ *Bindings) error {
-			return exec.Execute(ctx, a)
-		},
-	)
-}
-
 // NodeOpt configures optional behaviour on Produce and Do nodes.
 type NodeOpt interface {
 	applyNodeOpt(*node)
