@@ -11,67 +11,43 @@ import (
 	"github.com/bpfman/bpfman/kernel"
 )
 
-// ProgramID wraps a program ID with hex support.
+// ProgramID wraps a parsed kernel program ID.
 type ProgramID struct {
 	// Value is the parsed kernel program ID.
 	Value kernel.ProgramID
 }
 
-// ParseProgramID parses a program ID from string, supporting hex (0x) prefix
-// and optional "program/" prefix for k8s-style resource references.
+// ParseProgramID parses a decimal program ID.
 func ParseProgramID(s string) (ProgramID, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return ProgramID{}, fmt.Errorf("program ID cannot be empty")
 	}
 
-	// Strip optional program/ prefix
-	s = strings.TrimPrefix(s, "program/")
-
-	var val uint64
-	var err error
-
-	if strings.HasPrefix(s, "0x") || strings.HasPrefix(s, "0X") {
-		val, err = strconv.ParseUint(s[2:], 16, 32)
-	} else {
-		val, err = strconv.ParseUint(s, 10, 32)
-	}
-
+	val, err := strconv.ParseUint(s, 10, 32)
 	if err != nil {
-		return ProgramID{}, fmt.Errorf("invalid program ID %q: must be a decimal or 0x-prefixed hexadecimal number", s)
+		return ProgramID{}, fmt.Errorf("invalid program ID %q: must be a decimal number", s)
 	}
 
 	return ProgramID{Value: kernel.ProgramID(val)}, nil
 }
 
-// LinkID wraps a link ID with hex support.
+// LinkID wraps a parsed link ID.
 type LinkID struct {
 	// Value is the parsed link ID.
 	Value bpfman.LinkID
 }
 
-// ParseLinkID parses a link ID from string, supporting hex (0x) prefix
-// and optional "link/" prefix for k8s-style resource references.
+// ParseLinkID parses a decimal link ID.
 func ParseLinkID(s string) (LinkID, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return LinkID{}, fmt.Errorf("link ID cannot be empty")
 	}
 
-	// Strip optional link/ prefix
-	s = strings.TrimPrefix(s, "link/")
-
-	var val uint64
-	var err error
-
-	if strings.HasPrefix(s, "0x") || strings.HasPrefix(s, "0X") {
-		val, err = strconv.ParseUint(s[2:], 16, 64)
-	} else {
-		val, err = strconv.ParseUint(s, 10, 64)
-	}
-
+	val, err := strconv.ParseUint(s, 10, 64)
 	if err != nil {
-		return LinkID{}, fmt.Errorf("invalid link ID %q: must be a decimal or 0x-prefixed hexadecimal number", s)
+		return LinkID{}, fmt.Errorf("invalid link ID %q: must be a decimal number", s)
 	}
 
 	return LinkID{Value: bpfman.LinkID(val)}, nil

@@ -14,9 +14,9 @@ import (
 
 // UnloadCmd unloads managed BPF programs by program ID.
 type UnloadCmd struct {
-	// ProgramIDs are the kernel program IDs to unload (each accepts decimal
-	// or 0x-prefixed hex); at least one is required.
-	ProgramIDs []args.ProgramID `arg:"" name:"program-id" help:"Program IDs to unload (supports hex with 0x prefix)." required:""`
+	// ProgramIDs are the kernel program IDs to unload; at least one is
+	// required.
+	ProgramIDs []args.ProgramID `arg:"" name:"program-id" help:"Program IDs to unload." required:""`
 
 	// IgnoreMissing treats a "program not found" error as success rather
 	// than a failure, making the command idempotent for cleanup paths such

@@ -20,9 +20,6 @@ func TestParseProgramID_Valid(t *testing.T) {
 		want  kernel.ProgramID
 	}{
 		{"42", 42},
-		{"0x2a", 42},
-		{"0X2A", 42},
-		{"program/42", 42},
 		{"  42  ", 42},
 		{"0", 0},
 		{"4294967295", 4294967295}, // max uint32
@@ -41,8 +38,9 @@ func TestParseProgramID_Valid(t *testing.T) {
 func TestParseProgramID_Invalid(t *testing.T) {
 	t.Parallel()
 
-	// empty, blank, non-numeric, negative, above uint32, bad hex.
-	for _, input := range []string{"", "   ", "garbage", "-1", "4294967296", "0x", "0xZZ", "1.5"} {
+	// Decimal only: empty, blank, non-numeric, negative, above uint32,
+	// and the hex / resource-prefix forms that are no longer accepted.
+	for _, input := range []string{"", "   ", "garbage", "-1", "4294967296", "1.5", "0x2a", "0X2A", "program/42"} {
 		t.Run(input, func(t *testing.T) {
 			t.Parallel()
 			_, err := ParseProgramID(input)
@@ -59,8 +57,6 @@ func TestParseLinkID_Valid(t *testing.T) {
 		want  bpfman.LinkID
 	}{
 		{"42", 42},
-		{"0x2a", 42},
-		{"link/42", 42},
 		{"0", 0},
 		{"18446744073709551615", 18446744073709551615}, // max uint64
 	}
@@ -78,8 +74,9 @@ func TestParseLinkID_Valid(t *testing.T) {
 func TestParseLinkID_Invalid(t *testing.T) {
 	t.Parallel()
 
-	// empty, non-numeric, negative, above uint64, bad hex.
-	for _, input := range []string{"", "garbage", "-1", "18446744073709551616", "0xZZ"} {
+	// Decimal only: empty, non-numeric, negative, above uint64, and the
+	// hex / resource-prefix forms that are no longer accepted.
+	for _, input := range []string{"", "garbage", "-1", "18446744073709551616", "0x2a", "link/42"} {
 		t.Run(input, func(t *testing.T) {
 			t.Parallel()
 			_, err := ParseLinkID(input)
