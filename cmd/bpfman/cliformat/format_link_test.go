@@ -2,6 +2,7 @@ package cliformat
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -164,6 +165,67 @@ func TestRenderDispatcherSnapshotTable_ExposesMemberManagedAndKernelIDs(t *testi
 		if !strings.Contains(output, want) {
 			t.Errorf("dispatcher snapshot table missing %q: %s", want, output)
 		}
+	}
+}
+
+func TestRenderDispatcherSnapshot_OrdersMembersByPosition(t *testing.T) {
+	t.Parallel()
+
+	// Members supplied out of position order, as the store query may
+	// return them (it orders by priority then program name). Slice
+	// order here is position 2, 0, 1.
+	snap := platform.DispatcherSnapshot{
+		Key:      dispatcher.Key{Type: dispatcher.DispatcherTypeXDP, Nsid: 1, Ifindex: 2},
+		Revision: 1,
+		Runtime:  platform.DispatcherRuntime{ProgramID: 999},
+		Members: []platform.DispatcherMember{
+			{ProgramID: 222, ProgramName: "c", LinkID: 73, Position: 2, Priority: 80, ProceedOn: 1 << 2},
+			{ProgramID: 220, ProgramName: "a", LinkID: 71, Position: 0, Priority: 50, ProceedOn: 1 << 2},
+			{ProgramID: 221, ProgramName: "b", LinkID: 72, Position: 1, Priority: 55, ProceedOn: 1 << 2},
+		},
+	}
+
+	// JSON: members must be emitted in ascending position order, with
+	// program IDs following position rather than the input slice order.
+	var jbuf bytes.Buffer
+	if err := RenderDispatcherSnapshot(&jbuf, snap, OutputFormatJSON); err != nil {
+		t.Fatalf("RenderDispatcherSnapshot(json) error = %v", err)
+	}
+
+	var got struct {
+		Members []struct {
+			Position  int `json:"position"`
+			ProgramID int `json:"program_id"`
+		} `json:"members"`
+	}
+	if err := json.Unmarshal(jbuf.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal json: %v", err)
+	}
+
+	wantProgramIDs := []int{220, 221, 222}
+	for i, m := range got.Members {
+		if m.Position != i {
+			t.Errorf("json member %d position = %d, want %d", i, m.Position, i)
+		}
+		if m.ProgramID != wantProgramIDs[i] {
+			t.Errorf("json member %d program_id = %d, want %d", i, m.ProgramID, wantProgramIDs[i])
+		}
+	}
+
+	// Text: program IDs appear top-to-bottom in position order.
+	var tbuf bytes.Buffer
+	if err := RenderDispatcherSnapshot(&tbuf, snap, OutputFormatText); err != nil {
+		t.Fatalf("RenderDispatcherSnapshot(text) error = %v", err)
+	}
+
+	text := tbuf.String()
+	if i220, i221, i222 := strings.Index(text, "220"), strings.Index(text, "221"), strings.Index(text, "222"); !(i220 < i221 && i221 < i222) {
+		t.Errorf("text rows not in position order (220@%d, 221@%d, 222@%d):\n%s", i220, i221, i222, text)
+	}
+
+	// The caller's slice is left in its original order.
+	if snap.Members[0].ProgramID != 222 {
+		t.Errorf("caller's Members slice was reordered: first program_id = %d, want 222", snap.Members[0].ProgramID)
 	}
 }
 

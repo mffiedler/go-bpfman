@@ -555,6 +555,16 @@ func formatDispatcherListTable(view DispatcherListView) string {
 
 // RenderDispatcherSnapshot writes a single dispatcher snapshot.
 func RenderDispatcherSnapshot(w io.Writer, snap platform.DispatcherSnapshot, format OutputFormat) error {
+	// The snapshot's member order follows the store query, which the
+	// rebuild path relies on for equal-priority tie-breaks; it is not
+	// the dispatcher's execution order. Present members in POS order
+	// (the slot the kernel actually runs) for both JSON and text.
+	// Sort a copy so the caller's slice is untouched.
+	snap.Members = slices.Clone(snap.Members)
+	slices.SortFunc(snap.Members, func(a, b platform.DispatcherMember) int {
+		return a.Position - b.Position
+	})
+
 	return renderOutput(w, format, snap, func(w io.Writer) error {
 		return writeOutput(w, formatDispatcherSnapshotTable(snap))
 	})
