@@ -5,7 +5,6 @@ package e2e
 import (
 	"fmt"
 	"os"
-	"os/exec"
 
 	"golang.org/x/sys/unix"
 
@@ -54,35 +53,4 @@ func setupRootNetnsMount() error {
 	}
 
 	return nil
-}
-
-// teardownRootNetnsMount unmounts and removes the bind-mount
-// created by setupRootNetnsMount. Best-effort: any error is
-// returned but TestMain may choose to log and continue.
-func teardownRootNetnsMount() error {
-	target := "/run/netns/" + testnet.RootNetns
-	if err := unix.Unmount(target, 0); err != nil && !os.IsNotExist(err) {
-		// Non-fatal; just continue to remove the file.
-	}
-
-	if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("remove %s: %w", target, err)
-	}
-
-	return nil
-}
-
-// execInNetns runs the given command inside the named netns by
-// shelling out to `ip netns exec <ns> <args...>`. The child
-// process explicitly setns'es into /run/netns/<ns> before
-// exec'ing the inner command, so the netns the child runs in
-// is determined entirely by ns -- not by the calling Go
-// thread's current netns. Use testnet.RootNetns for "in this
-// process's root netns".
-//
-// Returns the combined stdout+stderr and any error from
-// CombinedOutput.
-func execInNetns(ns string, args ...string) ([]byte, error) {
-	full := append([]string{"ip", "netns", "exec", ns}, args...)
-	return exec.Command(full[0], full[1:]...).CombinedOutput()
 }

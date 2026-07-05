@@ -4,7 +4,6 @@ package e2e
 
 import (
 	"bufio"
-	"encoding/binary"
 	"encoding/json"
 	"io"
 	"os"
@@ -32,15 +31,6 @@ type Workload struct {
 
 // Pid returns the workload-driver subprocess's kernel PID.
 func (w *Workload) Pid() int { return w.pid }
-
-// PidBytes returns Pid as little-endian uint32 bytes, the form
-// required by bpfman GlobalData["expected_pid"] when the BPF program
-// declares `volatile const __u32 expected_pid`.
-func (w *Workload) PidBytes() []byte {
-	var b [4]byte
-	binary.LittleEndian.PutUint32(b[:], uint32(w.pid))
-	return b[:]
-}
 
 // Uprobe calls e2e_uprobe_call_malloc N times in the driver's own
 // PID, waiting for the ack before returning. Each call fires

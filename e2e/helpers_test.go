@@ -7,7 +7,6 @@ import (
 	"context"
 	cryptorand "crypto/rand"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"log/slog"
 	"math/rand"
@@ -287,20 +286,6 @@ func callerOp() string {
 	return name
 }
 
-// LoadImage loads BPF programs from an OCI image. Manager.Load
-// conditionally acquires the writer lock for explicit map-owner joins
-// and PinByName loads.
-func (e *TestEnv) LoadImage(ctx context.Context, ref platform.ImageRef, programs []manager.ProgramSpec, opts manager.LoadOpts) ([]bpfman.Program, error) {
-	result, err := e.Manager.Load(ctx, manager.LoadSource{
-		Image: &ref,
-	}, programs, opts)
-	if err == nil {
-		e.trackPrograms(result)
-	}
-
-	return result, err
-}
-
 // LoadFile loads BPF programs from a local object file.
 //
 // Relative paths are resolved against BytecodeDir, the on-disk
@@ -546,29 +531,6 @@ func (e *TestEnv) AssertLinkCount(expected int) {
 	require.Len(e.T, links, expected, "unexpected link count")
 }
 
-// AssertLinkCountByKind verifies the number of links of a specific kind.
-// Scope-aware in shared-runtime mode; iterates the global list and
-// keeps only links this TestEnv created.
-func (e *TestEnv) AssertLinkCountByKind(linkKind bpfman.LinkKind, expected int) {
-	e.T.Helper()
-	ctx := context.Background()
-
-	links, err := e.ListLinks(ctx)
-	require.NoError(e.T, err, "failed to list links")
-
-	count := 0
-	for _, link := range links {
-		if link.Kind != linkKind {
-			continue
-		}
-		if e.shared && !e.scopeContainsLink(link.ID) {
-			continue
-		}
-		count++
-	}
-	require.Equal(e.T, expected, count, "unexpected link count for kind %s", linkKind)
-}
-
 // RequireRoot fails the test if not running as root.
 func RequireRoot(t *testing.T) {
 	t.Helper()
@@ -648,21 +610,6 @@ func tcIngressFilters(t *testing.T, ifaceName string) []netlink.Filter {
 	filters, err := netlink.FilterList(link, netlink.HANDLE_MIN_INGRESS)
 	require.NoError(t, err)
 	return filters
-}
-
-// isMounted checks if a path is a mount point.
-func isMounted(path string) bool {
-	data, err := os.ReadFile("/proc/mounts")
-	if err != nil {
-		return false
-	}
-	for line := range strings.SplitSeq(string(data), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) >= 2 && fields[1] == path {
-			return true
-		}
-	}
-	return false
 }
 
 // unmount unmounts a filesystem.
@@ -824,28 +771,6 @@ func validateStaleTestDir(path, tempDir string) error {
 	}
 
 	return nil
-}
-
-// readPerCPUCounter loads a pinned BPF_MAP_TYPE_PERCPU_ARRAY map and
-// returns the sum of the uint64 values across all CPUs for the given
-// key. This is used to verify that BPF programs with simple counter
-// maps have actually executed.
-func readPerCPUCounter(t *testing.T, mapPinPath string, key uint32) uint64 {
-	t.Helper()
-
-	m, err := ciliumebpf.LoadPinnedMap(mapPinPath, nil)
-	require.NoError(t, err, "load pinned map at %s", mapPinPath)
-	defer m.Close()
-
-	var perCPU []uint64
-	err = m.Lookup(key, &perCPU)
-	require.NoError(t, err, "lookup key %d in map at %s", key, mapPinPath)
-
-	var total uint64
-	for _, v := range perCPU {
-		total += v
-	}
-	return total
 }
 
 // mapIDByName resolves a program's kernel map by name and returns its
@@ -1119,54 +1044,6 @@ func uint64LE(v uint64) []byte {
 	var b [8]byte
 	binary.LittleEndian.PutUint64(b[:], v)
 	return b[:]
-}
-
-// readHashCounterByID opens a BPF_MAP_TYPE_HASH map by its
-// kernel-assigned ID and returns the uint64 value at the given key,
-// or 0 if the key is not present. Used by tests that count events
-// per-PID in a hash map keyed by bpf_get_current_pid_tgid() >> 32,
-// so they can assert exact counts without being polluted by ambient
-// system activity on the same attach surface.
-func readHashCounterByID(t *testing.T, mapID kernel.MapID, key uint32) uint64 {
-	t.Helper()
-
-	m, err := ciliumebpf.NewMapFromID(ciliumebpf.MapID(mapID))
-	require.NoError(t, err, "open map ID %d", mapID)
-	defer m.Close()
-
-	var val uint64
-	err = m.Lookup(key, &val)
-	if err != nil {
-		if errors.Is(err, ciliumebpf.ErrKeyNotExist) {
-			return 0
-		}
-		t.Fatalf("lookup key %d in map ID %d: %v", key, mapID, err)
-	}
-
-	return val
-}
-
-// readPerCPUCounterByID opens a BPF_MAP_TYPE_PERCPU_ARRAY map by its
-// kernel-assigned ID and returns the sum of uint64 values across all
-// CPUs for the given key. Used by tests that load programs from
-// LIBBPF_PIN_NONE objects, where the maps are not on the filesystem
-// and must be resolved via Program.Status.Kernel.MapIDs.
-func readPerCPUCounterByID(t *testing.T, mapID kernel.MapID, key uint32) uint64 {
-	t.Helper()
-
-	m, err := ciliumebpf.NewMapFromID(ciliumebpf.MapID(mapID))
-	require.NoError(t, err, "open map ID %d", mapID)
-	defer m.Close()
-
-	var perCPU []uint64
-	err = m.Lookup(key, &perCPU)
-	require.NoError(t, err, "lookup key %d in map ID %d", key, mapID)
-
-	var total uint64
-	for _, v := range perCPU {
-		total += v
-	}
-	return total
 }
 
 // tLogHandler is an slog.Handler that emits records via t.Logf

@@ -56,14 +56,12 @@ func acquireSuiteLock() {
 // both the test driver and the uprobe attach target.
 //
 // Mode values are <verb>-<specifier>: the verb names the high-
-// level behaviour (e.g. uprobe-trigger), the specifier names
-// which sibling helper to run (e.g. call-malloc). Picking a name
-// per helper avoids retrofitting a "_2" or "_target" suffix once
-// a second uprobe-firing path is needed.
+// level behaviour, the specifier names which sibling helper to
+// run. Picking a name per helper avoids retrofitting a "_2" or
+// "_target" suffix once a second helper path is needed.
 const (
-	e2eModeEnv                     = "BPFMAN_E2E_MODE"
-	e2eModeUprobeTriggerCallMalloc = "uprobe-trigger-call-malloc"
-	e2eModeWorkloadDriver          = "workload-driver"
+	e2eModeEnv            = "BPFMAN_E2E_MODE"
+	e2eModeWorkloadDriver = "workload-driver"
 	// e2eModeHelperInitProbe lets a parent test re-exec the e2e
 	// binary to verify package-init runs cleanly in a constrained
 	// mount namespace. Used by helper_init_test.go to reproduce
@@ -89,9 +87,6 @@ func TestMain(m *testing.M) {
 	// exec.Command(os.Executable()) inheriting BPFMAN_E2E_MODE,
 	// and the helper has nothing to clean up.
 	switch os.Getenv(e2eModeEnv) {
-	case e2eModeUprobeTriggerCallMalloc:
-		invokeUprobeCallMalloc()
-		os.Exit(0)
 	case e2eModeWorkloadDriver:
 		runWorkloadDriver()
 		os.Exit(0)

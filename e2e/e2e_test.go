@@ -4,8 +4,6 @@ package e2e
 
 import (
 	"context"
-	"os"
-	"os/exec"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -3311,15 +3309,6 @@ func TestLoadWithMetadataAndGlobalData(t *testing.T) {
 // the need for a separate helper binary on disk.
 func uprobeTarget() (target, fnName string) {
 	return selfExe, "e2e_uprobe_call_malloc"
-}
-
-// fireUprobe execs the running e2e.test binary in helper mode so
-// e2e_uprobe_call_malloc runs in the child, firing the kernel uprobe
-// (or uretprobe) attached to the same inode + symbol offset.
-func fireUprobe() error {
-	cmd := exec.Command(selfExe)
-	cmd.Env = append(os.Environ(), e2eModeEnv+"="+e2eModeUprobeTriggerCallMalloc)
-	return cmd.Run()
 }
 
 // TestLoad_FentryFexit_TypeMismatchFailsLoudly verifies that
