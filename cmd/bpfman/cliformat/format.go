@@ -187,7 +187,7 @@ func programSpecRows(prog bpfman.Program) []row {
 	// either way.
 	if p.Load.HasImageSource() {
 		spec = append(spec, fieldRow("Image URL", p.Load.ImageURL()))
-		spec = append(spec, fieldRow("Pull Policy", string(p.Load.ImagePullPolicy())))
+		spec = append(spec, fieldRow("Pull Policy", p.Load.ImagePullPolicy().String()))
 	} else {
 		spec = append(spec, fieldRow("Path", p.Load.SourcePath()))
 	}

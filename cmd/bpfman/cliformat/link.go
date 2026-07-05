@@ -195,7 +195,7 @@ func linkDetailRows(view LinkGetView) []row {
 		add("Pin Path", "None")
 	}
 	add("Program ID", fmt.Sprintf("%d", link.Record.ProgramID))
-	add("Type", string(link.Record.Kind))
+	add("Type", link.Record.Kind.String())
 
 	// Type-specific fields from LinkDetails.
 	switch d := link.Record.Details.(type) {
@@ -214,14 +214,14 @@ func linkDetailRows(view LinkGetView) []row {
 			add("Target Offset", fmt.Sprintf("%d", d.Offset))
 		}
 	case bpfman.TCDetails:
-		add("Direction", string(d.Direction))
+		add("Direction", d.Direction.String())
 		add("Interface", d.Interface)
 		add("Network Namespace", netnsOrNone(d.Netns))
 		add("Position", fmt.Sprintf("%d", d.Position))
 		add("Priority", fmt.Sprintf("%d", d.Priority))
 		add("Proceed On", bpfman.TCActionsToString(d.ProceedOn))
 	case bpfman.TCXDetails:
-		add("Direction", string(d.Direction))
+		add("Direction", d.Direction.String())
 		add("Interface", d.Interface)
 		add("Network Namespace", netnsOrNone(d.Netns))
 		add("Position", fmt.Sprintf("%d", d.Position))
