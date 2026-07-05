@@ -36,11 +36,6 @@ func TCXAttachFirst() TCXAttachOrder {
 	return TCXAttachOrder{First: true}
 }
 
-// TCXAttachLast returns an order that attaches at the tail of the chain.
-func TCXAttachLast() TCXAttachOrder {
-	return TCXAttachOrder{Last: true}
-}
-
 // TCXAttachBefore returns an order that attaches before the given program.
 func TCXAttachBefore(progID kernel.ProgramID) TCXAttachOrder {
 	return TCXAttachOrder{BeforeProgID: progID}
