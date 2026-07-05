@@ -142,9 +142,23 @@ func hasOutputFlag(argv []string) bool {
 	return false
 }
 
+// commandSupportsOutput reports whether the bpfman subcommand named by
+// argv produces structured output worth requesting with -o json, and so
+// whether the auto-injected output flag applies. The mutation verbs
+// report failures on stderr and print nothing on success (decode
+// discards their stdout), and image build/inspect render their own
+// formats, so none of them accept or benefit from an output flag.
 func commandSupportsOutput(argv []string) bool {
-	if len(argv) >= 2 && argv[0] == "image" && (argv[1] == "build" || argv[1] == "inspect") {
-		return false
+	if len(argv) < 2 {
+		return true
+	}
+	switch argv[0] {
+	case "image":
+		return argv[1] != "build" && argv[1] != "inspect"
+	case "program":
+		return argv[1] != "unload" && argv[1] != "delete"
+	case "link":
+		return argv[1] != "detach" && argv[1] != "delete"
 	}
 	return true
 }

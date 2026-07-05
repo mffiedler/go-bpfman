@@ -106,12 +106,27 @@ func TestArgToCLIText_StructuredProgramAndLink(t *testing.T) {
 	assert.Equal(t, "99", got)
 }
 
-func TestCommandSupportsOutputSkipsImageBuildAndInspect(t *testing.T) {
+func TestCommandSupportsOutput(t *testing.T) {
 	t.Parallel()
 
+	// Render their own formats; no injected output flag.
 	assert.False(t, commandSupportsOutput([]string{"image", "build"}))
 	assert.False(t, commandSupportsOutput([]string{"image", "inspect"}))
+
+	// Mutation verbs print nothing on success and have no output flag,
+	// so the shell must not inject one.
+	assert.False(t, commandSupportsOutput([]string{"program", "unload"}))
+	assert.False(t, commandSupportsOutput([]string{"program", "delete"}))
+	assert.False(t, commandSupportsOutput([]string{"link", "detach"}))
+	assert.False(t, commandSupportsOutput([]string{"link", "delete"}))
+
+	// Query and load verbs produce structured output.
 	assert.True(t, commandSupportsOutput([]string{"program", "list"}))
+	assert.True(t, commandSupportsOutput([]string{"program", "get"}))
+	assert.True(t, commandSupportsOutput([]string{"program", "load", "file"}))
+	assert.True(t, commandSupportsOutput([]string{"link", "get"}))
+	assert.True(t, commandSupportsOutput([]string{"link", "attach", "xdp"}))
+	assert.True(t, commandSupportsOutput([]string{"image", "verify"}))
 }
 
 func TestDispatchCommandExternalInheritsBPFMANConfig(t *testing.T) {
