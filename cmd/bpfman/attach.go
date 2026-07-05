@@ -80,9 +80,9 @@ type AttachXDPCmd struct {
 	// JSON rendering of the created link.
 	cliformat.OutputFlags
 
-	// AttachMetadataFlags carries the repeatable -m/--metadata
+	// MetadataFlags carries the repeatable -m/--metadata
 	// key/value labels recorded on the new link.
-	AttachMetadataFlags
+	MetadataFlags
 
 	// ProgramID is the kernel ID of the loaded program to attach.
 	ProgramID kernel.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
@@ -130,9 +130,9 @@ type AttachTCCmd struct {
 	// JSON rendering of the created link.
 	cliformat.OutputFlags
 
-	// AttachMetadataFlags carries the repeatable -m/--metadata
+	// MetadataFlags carries the repeatable -m/--metadata
 	// key/value labels recorded on the new link.
-	AttachMetadataFlags
+	MetadataFlags
 
 	// ProgramID is the kernel ID of the loaded program to attach.
 	ProgramID kernel.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
@@ -183,9 +183,9 @@ type AttachTCXCmd struct {
 	// JSON rendering of the created link.
 	cliformat.OutputFlags
 
-	// AttachMetadataFlags carries the repeatable -m/--metadata
+	// MetadataFlags carries the repeatable -m/--metadata
 	// key/value labels recorded on the new link.
-	AttachMetadataFlags
+	MetadataFlags
 
 	// ProgramID is the kernel ID of the loaded program to attach.
 	ProgramID kernel.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
@@ -231,9 +231,9 @@ type AttachTracepointCmd struct {
 	// JSON rendering of the created link.
 	cliformat.OutputFlags
 
-	// AttachMetadataFlags carries the repeatable -m/--metadata
+	// MetadataFlags carries the repeatable -m/--metadata
 	// key/value labels recorded on the new link.
-	AttachMetadataFlags
+	MetadataFlags
 
 	// ProgramID is the kernel ID of the loaded program to attach.
 	ProgramID kernel.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
@@ -263,9 +263,9 @@ type AttachKprobeCmd struct {
 	// JSON rendering of the created link.
 	cliformat.OutputFlags
 
-	// AttachMetadataFlags carries the repeatable -m/--metadata
+	// MetadataFlags carries the repeatable -m/--metadata
 	// key/value labels recorded on the new link.
-	AttachMetadataFlags
+	MetadataFlags
 
 	// ProgramID is the kernel ID of the loaded program to attach.
 	ProgramID kernel.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
@@ -302,9 +302,9 @@ type AttachUprobeCmd struct {
 	// JSON rendering of the created link.
 	cliformat.OutputFlags
 
-	// AttachMetadataFlags carries the repeatable -m/--metadata
+	// MetadataFlags carries the repeatable -m/--metadata
 	// key/value labels recorded on the new link.
-	AttachMetadataFlags
+	MetadataFlags
 
 	// ProgramID is the kernel ID of the loaded program to attach.
 	ProgramID kernel.ProgramID `arg:"" name:"program-id" help:"Program ID to attach."`
@@ -358,9 +358,9 @@ type AttachFentryCmd struct {
 	// JSON rendering of the created link.
 	cliformat.OutputFlags
 
-	// AttachMetadataFlags carries the repeatable -m/--metadata
+	// MetadataFlags carries the repeatable -m/--metadata
 	// key/value labels recorded on the new link.
-	AttachMetadataFlags
+	MetadataFlags
 
 	// ProgramID is the kernel ID of the loaded fentry program to
 	// attach. The traced function is fixed at load time, so no
@@ -387,9 +387,9 @@ type AttachFexitCmd struct {
 	// JSON rendering of the created link.
 	cliformat.OutputFlags
 
-	// AttachMetadataFlags carries the repeatable -m/--metadata
+	// MetadataFlags carries the repeatable -m/--metadata
 	// key/value labels recorded on the new link.
-	AttachMetadataFlags
+	MetadataFlags
 
 	// ProgramID is the kernel ID of the loaded fexit program to
 	// attach. The traced function is fixed at load time, so no

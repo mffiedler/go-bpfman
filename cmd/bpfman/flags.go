@@ -4,19 +4,13 @@ import (
 	"github.com/bpfman/bpfman/cmd/internal/args"
 )
 
-// MetadataFlags provides metadata-related flags.
+// MetadataFlags carries the repeatable -m/--metadata KEY=VALUE flag,
+// shared by program load (program metadata) and link attach (link
+// metadata).
 type MetadataFlags struct {
-	// Metadata holds repeatable -m/--metadata KEY=VALUE pairs
-	// recorded as program metadata at load time.
-	Metadata []args.KeyValue `short:"m" name:"metadata" help:"KEY=VALUE metadata to attach (can be repeated)."`
-}
-
-// AttachMetadataFlags carries -m/--metadata on attach commands,
-// attaching user key/value labels to the created link.
-type AttachMetadataFlags struct {
-	// Metadata holds repeatable -m/--metadata KEY=VALUE labels
-	// recorded on the created link.
-	Metadata []args.KeyValue `short:"m" name:"metadata" help:"KEY=VALUE link metadata (can be repeated)."`
+	// Metadata holds repeatable -m/--metadata KEY=VALUE pairs recorded
+	// against the program at load time or the link at attach time.
+	Metadata []args.KeyValue `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
 }
 
 // GlobalDataFlags provides global data flags.
