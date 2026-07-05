@@ -99,19 +99,6 @@ type CommandOptions struct {
 	WriterLockEnvVar string
 }
 
-// Command creates an exec.Cmd that will run in the mount namespace of the
-// given container PID.
-//
-// The returned command, when executed, will:
-// 1. Start with _BPFMAN_MNT_NS set to /proc/<containerPid>/ns/mnt
-// 2. The C constructor (nsexec) runs before Go, calling setns()
-// 3. Go runtime starts in the container's mount namespace
-//
-// The command inherits the current environment plus the namespace variable.
-func Command(containerPid int32, name string, args ...string) *exec.Cmd {
-	return CommandWithOptions(containerPid, name, CommandOptions{}, args...)
-}
-
 // CommandWithOptions creates an exec.Cmd with configurable options.
 func CommandWithOptions(containerPid int32, name string, opts CommandOptions, args ...string) *exec.Cmd {
 	logger := opts.Logger
@@ -192,44 +179,6 @@ func CommandWithOptions(containerPid int32, name string, opts CommandOptions, ar
 
 	logger.Debug("command environment configured", "MntNsEnvVar", nsPath, "LogLevelEnvVar", logLevel)
 
-	return cmd
-}
-
-// CommandWithNsPath creates an exec.Cmd that will run in the mount namespace
-// at the given path.
-//
-// This is a lower-level variant of Command that takes an explicit namespace
-// path instead of a container PID.
-func CommandWithNsPath(nsPath string, name string, args ...string) *exec.Cmd {
-	cmd := exec.Command(name, args...)
-	cmd.Env = append(os.Environ(),
-		fmt.Sprintf("%s=%s", MntNsEnvVar, nsPath),
-		fmt.Sprintf("%s=%s", LogLevelEnvVar, LogLevelError),
-	)
-	return cmd
-}
-
-// CommandWithNsPathAndLogger is like CommandWithNsPath but with logging.
-func CommandWithNsPathAndLogger(nsPath string, logger *slog.Logger, logLevel LogLevel, name string, args ...string) *exec.Cmd {
-	if logger == nil {
-		logger = slog.Default()
-	}
-
-	// Get namespace inode for logging
-	var nsInode uint64
-	if stat, err := os.Stat(nsPath); err == nil {
-		if sys, ok := stat.Sys().(*syscall.Stat_t); ok {
-			nsInode = sys.Ino
-		}
-	}
-
-	logger.Debug("creating namespace command with explicit path", "ns_path", nsPath, "ns_inode", nsInode, "executable", name, "args", args, "log_level", logLevel)
-
-	cmd := exec.Command(name, args...)
-	cmd.Env = append(os.Environ(),
-		fmt.Sprintf("%s=%s", MntNsEnvVar, nsPath),
-		fmt.Sprintf("%s=%s", LogLevelEnvVar, logLevel),
-	)
 	return cmd
 }
 

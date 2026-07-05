@@ -3,7 +3,6 @@ package ns
 import (
 	"fmt"
 	"os"
-	"runtime"
 
 	"golang.org/x/sys/unix"
 )
@@ -34,14 +33,6 @@ func SendFd(socket *os.File, name string, fd int) error {
 		}
 		return nil
 	}
-}
-
-// SendFile sends a file's descriptor over a Unix socket.
-// The file's name is sent as regular data alongside the fd.
-func SendFile(socket, file *os.File) error {
-	err := SendFd(socket, file.Name(), int(file.Fd()))
-	runtime.KeepAlive(file)
-	return err
 }
 
 // RecvFd receives a file descriptor from a Unix socket.
@@ -97,15 +88,6 @@ func RecvFd(socket *os.File) (fd int, name string, err error) {
 	}
 
 	return fds[0], string(nameBuf), nil
-}
-
-// RecvFile receives a file descriptor from a Unix socket and returns it as *os.File.
-func RecvFile(socket *os.File) (*os.File, error) {
-	fd, name, err := RecvFd(socket)
-	if err != nil {
-		return nil, err
-	}
-	return os.NewFile(uintptr(fd), name), nil
 }
 
 // Socketpair creates a pair of connected Unix sockets.
