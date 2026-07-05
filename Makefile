@@ -630,13 +630,16 @@ LINT_DOCKERFILES := \
 # ---------------------------------------------------------------------------
 # Meta: default target, help, clean, version prints, bin directory.
 # ---------------------------------------------------------------------------
+.PHONY: all
 all: bpfman-build bpfman-shell-build bpfman-e2e-cleanup-build
 
 # Alias so 'make build-all' works as advertised in 'make help'.
 # 'all' stays the canonical default-target name; 'build-all' is
 # the spelling the help text and tab-completion expose.
+.PHONY: build-all
 build-all: all
 
+.PHONY: help
 help:
 	@echo "Build:"
 	@echo "  build-all                   Build all binaries"
@@ -719,15 +722,19 @@ help:
 	@echo ""
 	@echo "SQLite driver: mattn/go-sqlite3 (cgo; the only driver)."
 
+.PHONY: print-go-version
 print-go-version:
 	@echo $(GO_VERSION)
 
+.PHONY: print-fedora-version
 print-fedora-version:
 	@echo $(FEDORA_VERSION)
 
+.PHONY: print-golangci-lint-version
 print-golangci-lint-version:
 	@echo $(GOLANGCI_LINT_VERSION)
 
+.PHONY: clean
 clean: clean-bpfman clean-bpfman-shell clean-bpfman-e2e-cleanup clean-go-test-timeline clean-bpf clean-e2e-kmod clean-coverage
 	$(RM) -r $(BIN_DIR) $(CI_E2E_BUNDLE)
 
@@ -739,6 +746,7 @@ clean: clean-bpfman clean-bpfman-shell clean-bpfman-e2e-cleanup clean-go-test-ti
 # sharing this user's cache, not
 # just this checkout. The module cache is intentionally NOT wiped:
 # `go clean -modcache` forces a full re-download on the next build.
+.PHONY: clean-mrproper
 clean-mrproper: clean
 	go clean -cache -testcache -fuzzcache
 
@@ -752,8 +760,10 @@ $(BIN_DIR):
 # Uber lint target: run every language-specific linter in turn.
 # Keep each sub-target independently runnable so contributors can
 # iterate on one layer at a time.
+.PHONY: lint
 lint: lint-go lint-make lint-hack lint-dockerfile
 
+.PHONY: lint-go
 lint-go: $(DISPATCHER_BPF_EMBEDS) $(BIN_DIR)/golangci-lint
 	$(BIN_DIR)/golangci-lint run
 
@@ -767,6 +777,7 @@ $(BIN_DIR)/golangci-lint: | $(BIN_DIR)
 # Layer 2: GNU Make's `--warn-undefined-variables` in dry-run mode
 # against a bundle of representative targets (LINT_MAKE_TARGETS).
 # Any warning is escalated to an error.
+.PHONY: lint-make
 lint-make:
 	checkmake --config=checkmake.ini Makefile
 	@echo "Probing --warn-undefined-variables across representative targets..."
@@ -780,9 +791,11 @@ lint-make:
 # Lint every shell script under hack/ recursively so subdirectories
 # (hack/openshift/, etc.) are covered. -x lets shellcheck follow
 # source-statements to other files in the tree.
+.PHONY: lint-hack
 lint-hack:
 	find hack -type f -name '*.sh' -exec shellcheck -x {} +
 
+.PHONY: lint-dockerfile
 lint-dockerfile:
 	hadolint $(LINT_DOCKERFILES)
 
@@ -800,9 +813,11 @@ lint-dockerfile:
 # the whole $(E2E_BPF_OBJECTS) set rather than that one object is a
 # deliberate choice -- the e2e corpus is one small, coherent build
 # set, and bpfman-vet already depends on it.
+.PHONY: test
 test: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_OBJECTS) $(E2E_BPF_OBJECTS)
 	$(strip go test $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") $(if $(filter-out 0,$(PARALLEL)),-parallel $(PARALLEL)) ./...)
 
+.PHONY: test-timeline
 test-timeline: go-test-timeline-compile $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_OBJECTS) $(E2E_BPF_OBJECTS)
 	$(Q)mkdir -p $(dir $(GO_TEST_TIMELINE_EVENTS)) $(dir $(GO_TEST_TIMELINE_TRACE))
 	$(Q)rc=0; \
@@ -823,6 +838,7 @@ test-timeline: go-test-timeline-compile $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF
 # Each phase is invoked via $(MAKE) in the recipe rather than as
 # a prerequisite so GNU make sequences them strictly even under
 # `make -j`, mirroring the test-e2e-scripts ordering shape.
+.PHONY: test-all
 test-all:
 	$(Q)$(MAKE) test
 	$(Q)$(MAKE) lint-go
@@ -846,22 +862,22 @@ test-all:
 #   make test-bpfman-ns               # native amd64 only
 #   make test-bpfman-ns-arm64         # single foreign architecture
 #   make test-bpfman-ns-cross         # all architectures
+.PHONY: test-bpfman-ns test-bpfman-ns-amd64
 test-bpfman-ns test-bpfman-ns-amd64: | $(BIN_DIR)
 	@echo "=== ns: amd64 ==="
 	$(strip go test -c $(EXTRA_GOFLAGS) $(if $(BPFMAN_NS_TAGS),-tags=$(BPFMAN_NS_TAGS)) -o $(BPFMAN_NS_TEST_BIN) ./internal/bpfman/ns/)
 	file $(BPFMAN_NS_TEST_BIN)
 	sudo $(BPFMAN_NS_TEST_BIN) -test.v
 
+.PHONY: test-bpfman-ns-arm64 test-bpfman-ns-ppc64le test-bpfman-ns-s390x
 test-bpfman-ns-arm64 test-bpfman-ns-ppc64le test-bpfman-ns-s390x:
 	BPFMAN_NS_TEST_BIN=$(BPFMAN_NS_TEST_BIN) BPFMAN_NS_TAGS=$(BPFMAN_NS_TAGS) \
 		hack/test-bpfman-ns-cross.sh $(@:test-bpfman-ns-%=%)
 
+.PHONY: test-bpfman-ns-cross
 test-bpfman-ns-cross: $(addprefix test-bpfman-ns-,$(BPFMAN_NS_ARCHES))
 
-# Phony so the recipe always runs; go's own build cache decides
-# whether anything actually rebuilds. Mirrors the bpfman-compile
-# pattern -- Make's mtime tracking would otherwise lie when the
-# inputs are .go files we haven't enumerated as prereqs.
+.PHONY: $(BIN_DIR)/e2e.test
 $(BIN_DIR)/e2e.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) | $(BIN_DIR)
 	$(strip go test -c $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(E2E_TAGS),-tags=$(E2E_TAGS)) $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") -o $(BIN_DIR)/e2e.test ./e2e)
 
@@ -869,6 +885,7 @@ $(BIN_DIR)/e2e.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) | $(BIN_DIR)
 # is harmless at the default 1 and turns the same recipe into a
 # stress run when bumped (CI pins it to 5 so every PR gets a small
 # count loop on top of the deterministic gate).
+.PHONY: test-e2e
 test-e2e: $(BIN_DIR)/e2e.test
 	$(Q)$(MAKE) e2e-kmod-reload
 	sudo BPFMAN_E2E_BYTECODE_DIR=$(abspath e2e) $(call forward-env,BPFMAN_E2E_ISOLATED_RUNTIME BPFMAN_E2E_POLICY_RULE_PREF BPFMAN_LOG) $(BIN_DIR)/e2e.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(filter-out 0,$(PARALLEL)),-test.parallel $(PARALLEL)) $(if $(TEST),-test.run $(TEST))
@@ -915,9 +932,11 @@ E2E_GRPC_FORWARD_VARS := \
 	BPFMAN_SQLITE_BUSY_TIMEOUT \
 	BPFMAN_SQLITE_TX_RETRY_BACKOFFS
 
+.PHONY: $(BIN_DIR)/e2e-grpc.test
 $(BIN_DIR)/e2e-grpc.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) | $(BIN_DIR)
 	$(strip go test -c $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(E2E_TAGS),-tags=$(E2E_TAGS)) $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") -o $(BIN_DIR)/e2e-grpc.test ./e2e/grpc)
 
+.PHONY: build-e2e-grpc
 build-e2e-grpc: $(BIN_DIR)/e2e-grpc.test bpfman-compile
 
 # Tell the test binary where bpfman lives explicitly. The test
@@ -926,6 +945,7 @@ build-e2e-grpc: $(BIN_DIR)/e2e-grpc.test bpfman-compile
 # it just produced the binary at $(E2E_GRPC_BPFMAN_BIN) -- so we
 # pass an absolute path through sudo rather than relying on PATH
 # munging.
+.PHONY: run-e2e-grpc
 run-e2e-grpc:
 	sudo BPFMAN_BIN=$(abspath $(E2E_GRPC_BPFMAN_BIN)) \
 	    BPFMAN_E2E_BYTECODE_DIR=$(E2E_GRPC_BYTECODE_DIR) \
@@ -933,6 +953,7 @@ run-e2e-grpc:
 	    $(E2E_GRPC_TEST_BIN) -test.v -test.failfast \
 	    -test.count=$(STRESS_COUNT) $(if $(TEST),-test.run $(TEST))
 
+.PHONY: test-e2e-grpc
 test-e2e-grpc: build-e2e-grpc
 	$(Q)$(MAKE) e2e-kmod-reload
 	$(Q)$(MAKE) run-e2e-grpc
@@ -996,6 +1017,7 @@ E2E_SCRIPTS_FORWARD_VARS := \
 	BPFMAN_E2E_SCRIPT_TIMEOUT \
 	BPFMAN_LOG
 
+.PHONY: $(BIN_DIR)/e2e-scripts.test
 $(BIN_DIR)/e2e-scripts.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) | $(BIN_DIR)
 	$(strip go test -c $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(E2E_TAGS),-tags=$(E2E_TAGS)) $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") -o $(BIN_DIR)/e2e-scripts.test ./e2e/scriptrunner)
 
@@ -1004,9 +1026,11 @@ $(BIN_DIR)/e2e-scripts.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) | $(BIN
 # compares against it in `make test`. Run this after an intended lowerer
 # change, then review the diff. Lowering is pure, so this builds but does
 # not run the manager; the BPF prerequisites are for a clean checkout.
+.PHONY: update-lowered-goldens
 update-lowered-goldens: $(DISPATCHER_BPF_EMBEDS)
 	$(strip go test $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") ./cmd/bpfman-shell/shell/lower -run '^TestLanguageLoweredGolden$$' -update)
 
+.PHONY: bpfman-shell-fmt
 bpfman-shell-fmt: bpfman-shell-compile
 	@set -e; \
 	for f in $(BPFMAN_SHELL_FORMAT_SOURCES); do \
@@ -1014,6 +1038,7 @@ bpfman-shell-fmt: bpfman-shell-compile
 	    $(BIN_DIR)/bpfman-shell fmt -w "$$f"; \
 	done
 
+.PHONY: build-e2e-scripts
 build-e2e-scripts: bpfman-compile bpfman-shell-compile $(E2E_SCRIPTS_TEST_BIN)
 
 # PATH is arranged via `sudo env PATH=...` so the script test
@@ -1023,6 +1048,7 @@ build-e2e-scripts: bpfman-compile bpfman-shell-compile $(E2E_SCRIPTS_TEST_BIN)
 # time setting rather than a sudo env passthrough, so it works
 # under any sudoers configuration. The test process trusts
 # whatever PATH it inherits; no in-code path manipulation.
+.PHONY: run-e2e-scripts
 run-e2e-scripts:
 	sudo env PATH=$(abspath $(BIN_DIR)):$$PATH \
 	    BPFMAN_E2E_DIR=$(abspath e2e) \
@@ -1040,29 +1066,36 @@ run-e2e-scripts:
 # previously-loaded (or absent) module. The sub-make invocation
 # enforces the phase boundary: build + reload complete first, then
 # the runner kicks off.
+.PHONY: test-e2e-scripts
 test-e2e-scripts: build-e2e-scripts e2e-kmod-reload
 	$(Q)$(MAKE) run-e2e-scripts
 
+.PHONY: test-e2e-scripts-file
 test-e2e-scripts-file:
 	$(Q)$(MAKE) test-e2e-scripts BPFMAN_E2E_BYTECODE_SOURCE=
 
+.PHONY: test-e2e-scripts-image
 test-e2e-scripts-image:
 	$(Q)$(MAKE) test-e2e-scripts BPFMAN_E2E_BYTECODE_SOURCE=image
 
+.PHONY: test-e2e-scripts-image-ci
 test-e2e-scripts-image-ci:
 	$(Q)$(MAKE) test-e2e-scripts-image RACE=0 STRESS_COUNT=5
 
+.PHONY: test-e2e-scripts-stress
 test-e2e-scripts-stress:
 	$(Q)$(MAKE) test-e2e-scripts \
 	    BPFMAN_E2E_SCRIPT_REPEATS=$(if $(BPFMAN_E2E_SCRIPT_REPEATS),$(BPFMAN_E2E_SCRIPT_REPEATS),$(BPFMAN_E2E_SCRIPT_STRESS_REPEATS)) \
 	    PARALLEL=$(if $(PARALLEL),$(PARALLEL),$(BPFMAN_E2E_SCRIPT_STRESS_PARALLEL)) \
 	    BPFMAN_LOCK_TIMEOUT=$(if $(BPFMAN_LOCK_TIMEOUT),$(BPFMAN_LOCK_TIMEOUT),5m)
 
+.PHONY: test-e2e-published-images
 test-e2e-published-images:
 	$(Q)$(MAKE) test-e2e-scripts \
 	    BPFMAN_E2E_SCRIPT_SELECTOR=external \
 	    TEST='TestBPFManScripts/scripts/TestPublishedImage'
 
+.PHONY: run-e2e-scripts-timeline
 run-e2e-scripts-timeline: go-test-timeline-compile
 	$(Q)mkdir -p $(dir $(E2E_SCRIPTS_TIMELINE_EVENTS)) $(dir $(E2E_SCRIPTS_TIMELINE_MARKERS)) $(dir $(E2E_SCRIPTS_TIMELINE_TRACE))
 	$(Q)$(RM) $(E2E_SCRIPTS_TIMELINE_MARKERS)
@@ -1083,6 +1116,7 @@ run-e2e-scripts-timeline: go-test-timeline-compile
 	    if [ $$rc -ne 0 ]; then exit $$rc; fi; \
 	    exit $$convert_rc
 
+.PHONY: test-e2e-scripts-timeline
 test-e2e-scripts-timeline: build-e2e-scripts e2e-kmod-reload
 	$(Q)$(MAKE) run-e2e-scripts-timeline
 
@@ -1091,6 +1125,7 @@ test-e2e-scripts-timeline: build-e2e-scripts e2e-kmod-reload
 # walk-throughs; running them in CI catches drift between the
 # shipped examples and the actual CLI surface. Pass TEST=<name> to
 # restrict to scripts whose filename contains <name>.
+.PHONY: test-examples
 test-examples: bpfman-compile bpfman-shell-compile $(BIN_DIR)/e2e.test
 	@echo "Running .bpfman example scripts (requires root)..."
 	BIN_DIR=$(BIN_DIR) hack/test-examples.sh $(TEST)
@@ -1098,22 +1133,27 @@ test-examples: bpfman-compile bpfman-shell-compile $(BIN_DIR)/e2e.test
 # ---------------------------------------------------------------------------
 # Coverage.
 # ---------------------------------------------------------------------------
+.PHONY: coverage
 coverage:
 	@mkdir -p $(COVERAGE_DIR)
 	@$(strip go test $(EXTRA_GOFLAGS) -coverprofile=$(COVERAGE_PROFILE) ./...) 2>&1 | grep -v "no test files" | grep -v "no such tool" | grep -v "^#"
 	@echo "Coverage profile written to $(COVERAGE_PROFILE)"
 	@go tool cover -func=$(COVERAGE_PROFILE) 2>/dev/null | grep total
 
+.PHONY: coverage-html
 coverage-html: coverage
 	go tool cover -html=$(COVERAGE_PROFILE) -o $(COVERAGE_HTML)
 	@echo "Coverage report written to $(COVERAGE_HTML)"
 
+.PHONY: coverage-func
 coverage-func: coverage
 	go tool cover -func=$(COVERAGE_PROFILE)
 
+.PHONY: coverage-open
 coverage-open: coverage-html
 	xdg-open $(COVERAGE_HTML) 2>/dev/null || open $(COVERAGE_HTML) 2>/dev/null || echo "Open $(COVERAGE_HTML) in your browser"
 
+.PHONY: clean-coverage
 clean-coverage:
 	$(RM) -r $(COVERAGE_DIR)
 
@@ -1135,6 +1175,7 @@ clean-coverage:
 # recursive and runs even under -n via the `$(MAKE)` literal in
 # this recipe) does not propagate into the kernel's top-level
 # Makefile, which is not warning-clean and is not ours to fix.
+.PHONY: e2e-kmod-build
 e2e-kmod-build:
 	$(call quiet_cmd,KMOD,$(E2E_KMOD))
 	$(Q)if [ -f "$(E2E_KMOD_STAMP)" ] && \
@@ -1172,6 +1213,7 @@ e2e-kmod-build:
 	fi
 	$(Q)printf '%s\n' "$(KERNEL_RELEASE)" > $(E2E_KMOD_STAMP)
 
+.PHONY: clean-e2e-kmod
 clean-e2e-kmod:
 	$(call quiet_cmd,CLEAN,$(E2E_KMOD_DIR))
 	$(Q)if [ -d "$(E2E_KMOD_KBUILD)" ]; then \
@@ -1193,6 +1235,7 @@ clean-e2e-kmod:
 # exists"). Depends on e2e-kmod-build so a stale .ko gets rebuilt
 # before load. Requires root; the recipe sudos internally so the
 # normal `make` invocation stays unprivileged.
+.PHONY: e2e-kmod-insmod
 e2e-kmod-insmod: e2e-kmod-build
 	$(call quiet_cmd,INSMOD,$(E2E_KMOD))
 	$(Q)if lsmod | awk '{print $$1}' | grep -qx bpfman_e2e_targets; then \
@@ -1205,6 +1248,7 @@ e2e-kmod-insmod: e2e-kmod-build
 # module is not present in lsmod, the target succeeds without
 # action (rmmod would otherwise fail with "Module ... is not
 # currently loaded"). Requires root; the recipe sudos internally.
+.PHONY: e2e-kmod-rmmod
 e2e-kmod-rmmod:
 	$(call quiet_cmd,RMMOD,bpfman_e2e_targets)
 	$(Q)if lsmod | awk '{print $$1}' | grep -qx bpfman_e2e_targets; then \
@@ -1223,6 +1267,7 @@ e2e-kmod-rmmod:
 # use", a previous interrupted run may have left managed bpfman
 # programs attached to the module; use e2e-kmod-force-reload to
 # delete that managed state before reloading.
+.PHONY: e2e-kmod-reload
 e2e-kmod-reload: e2e-kmod-build
 	$(call quiet_cmd,RELOAD,$(E2E_KMOD))
 	$(Q)if lsmod | awk '{print $$1}' | grep -qx bpfman_e2e_targets; then \
@@ -1235,6 +1280,7 @@ e2e-kmod-reload: e2e-kmod-build
 # tears down every managed bpfman program on the host, so it is
 # appropriate for a dedicated e2e development machine but too broad
 # for the ordinary e2e-kmod-reload path.
+.PHONY: e2e-kmod-force-reload
 e2e-kmod-force-reload: bpfman-build bpfman-e2e-cleanup-build
 	$(call quiet_cmd,RESET,bpfman managed state)
 	$(Q)sudo $(BIN_DIR)/bpfman program delete -r --all
@@ -1244,12 +1290,14 @@ e2e-kmod-force-reload: bpfman-build bpfman-e2e-cleanup-build
 # ---------------------------------------------------------------------------
 # Documentation.
 # ---------------------------------------------------------------------------
+.PHONY: doc
 doc:
 	@echo "Starting pkgsite documentation server..."
 	@echo "Open http://localhost:$(DOC_PORT)/github.com/bpfman/bpfman"
 	@echo "Press Ctrl+C to stop"
 	@go run golang.org/x/pkgsite/cmd/pkgsite@latest -http=localhost:$(DOC_PORT) .
 
+.PHONY: doc-text
 doc-text:
 	@echo "=== Public API ===" && echo
 	@for pkg in ./bpfman ./client ./csi; do \
@@ -1266,12 +1314,15 @@ doc-text:
 # verifies both -- the README is current and every kernel verdict holds
 # its declared expectation -- and is also enforced by go test ./... via
 # the cmd/parity-readme and cmd/parity-compare tests.
+.PHONY: parity-readme
 parity-readme:
 	@go run ./cmd/parity-readme
 
+.PHONY: parity-compare
 parity-compare:
 	@go run ./cmd/parity-compare
 
+.PHONY: parity-check
 parity-check:
 	@go run ./cmd/parity-readme -check
 	@go run ./cmd/parity-compare -check
@@ -1284,6 +1335,7 @@ parity-check:
 # CGO is required for the bpfman-ns transport, which uses a C constructor to call
 # setns() before Go runtime starts (needed for uprobe container attachment).
 # ---------------------------------------------------------------------------
+.PHONY: bpfman-build
 bpfman-build: bpfman-fmt bpfman-compile
 
 # Format every .go file in the tree. `go fmt ./...` skips files that
@@ -1291,6 +1343,7 @@ bpfman-build: bpfman-fmt bpfman-compile
 # //go:build e2e), so we'd silently miss formatting drift in e2e/.
 # gofmt invoked directly on the file list ignores build tags and
 # formats every source file, matching what ci-check-fmt expects.
+.PHONY: bpfman-fmt
 bpfman-fmt:
 	@find . -type f -name '*.go' -not -path './vendor/*' -print0 | xargs -0 gofmt -w
 
@@ -1301,6 +1354,7 @@ bpfman-fmt:
 # shell's glibc.static link path makes a freshly-installed
 # goimports segfault at runtime (NSS dlopen). golangci-lint is
 # already pinned for `make lint` so reusing it costs nothing.
+.PHONY: bpfman-goimports
 bpfman-goimports: $(BIN_DIR)/golangci-lint
 	$(BIN_DIR)/golangci-lint fmt
 
@@ -1310,6 +1364,7 @@ bpfman-goimports: $(BIN_DIR)/golangci-lint
 # like !e2e, so this pass supersets a tag-less one and a second pass
 # would be redundant. A single SQLite driver (mattn/go-sqlite3) means
 # one pass covers the store too.
+.PHONY: bpfman-vet
 bpfman-vet: $(DISPATCHER_BPF_EMBEDS)
 	go vet -tags 'e2e,bpfman_ns' ./...
 
@@ -1320,6 +1375,7 @@ bpfman-vet: $(DISPATCHER_BPF_EMBEDS)
 # downloading it on demand; see GOFIX_GO_VERSION for why the pin lives
 # apart from GO_VERSION. Like bpfman-fmt this mutates the tree in
 # place; ci-check-gofix wraps it with a git-diff gate.
+.PHONY: bpfman-gofix
 bpfman-gofix: $(DISPATCHER_BPF_EMBEDS)
 	GOTOOLCHAIN=$(GOFIX_GO_VERSION) go fix -tags 'e2e,bpfman_ns' ./...
 
@@ -1327,9 +1383,11 @@ bpfman-gofix: $(DISPATCHER_BPF_EMBEDS)
 # the dispatcher Go package's go:embed directives need them at
 # compile time. Make's pattern rules build them on demand if
 # missing or out of date.
+.PHONY: bpfman-compile
 bpfman-compile: $(DISPATCHER_BPF_EMBEDS) | $(BIN_DIR)
 	$(strip go build $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(BUILD_TAGS),-tags '$(BUILD_TAGS)') $(if $(BIN_LDFLAGS),-ldflags "$(BIN_LDFLAGS)") -o $(BIN_DIR)/bpfman ./cmd/bpfman)
 
+.PHONY: clean-bpfman
 clean-bpfman:
 	$(RM) $(BIN_DIR)/bpfman
 
@@ -1337,6 +1395,7 @@ clean-bpfman:
 # It hosts the DSL script runner and (in time) the test
 # scaffolding subcommands. Production deployments must ship only
 # bin/bpfman; bin/bpfman-shell is intended for dev and CI.
+.PHONY: bpfman-shell-build
 bpfman-shell-build: bpfman-fmt bpfman-shell-compile
 
 # Depends on the dispatcher BPF embeds because the shell transitively
@@ -1344,9 +1403,11 @@ bpfman-shell-build: bpfman-fmt bpfman-shell-compile
 # .bpf.o objects present at compile time. Make supplies those non-Go
 # inputs; the Go toolchain owns Go freshness and decides what actually
 # needs recompiling.
+.PHONY: bpfman-shell-compile
 bpfman-shell-compile: $(DISPATCHER_BPF_EMBEDS) | $(BIN_DIR)
 	$(strip go build $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(BUILD_TAGS),-tags '$(BUILD_TAGS)') $(if $(BIN_LDFLAGS),-ldflags "$(BIN_LDFLAGS)") -o $(BIN_DIR)/bpfman-shell ./cmd/bpfman-shell)
 
+.PHONY: clean-bpfman-shell
 clean-bpfman-shell:
 	$(RM) $(BIN_DIR)/bpfman-shell
 
@@ -1354,11 +1415,14 @@ clean-bpfman-shell:
 # removes kernel-side residue left behind by bpfman (orphan
 # dispatcher links) and by the e2e harness (test interfaces and
 # netns from interrupted runs). Ships only in dev / CI images.
+.PHONY: bpfman-e2e-cleanup-build
 bpfman-e2e-cleanup-build: bpfman-fmt bpfman-e2e-cleanup-compile
 
+.PHONY: bpfman-e2e-cleanup-compile
 bpfman-e2e-cleanup-compile: | $(BIN_DIR)
 	$(strip go build $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(BUILD_TAGS),-tags '$(BUILD_TAGS)') $(if $(BIN_LDFLAGS),-ldflags "$(BIN_LDFLAGS)") -o $(BIN_DIR)/bpfman-e2e-cleanup ./cmd/bpfman-e2e-cleanup)
 
+.PHONY: clean-bpfman-e2e-cleanup
 clean-bpfman-e2e-cleanup:
 	$(RM) $(BIN_DIR)/bpfman-e2e-cleanup
 
@@ -1366,17 +1430,21 @@ clean-bpfman-e2e-cleanup:
 # streams into Chrome Trace Event JSON loadable by chrome://tracing
 # or https://ui.perfetto.dev. It is intentionally a dev tool rather
 # than part of the production bpfman binary set.
+.PHONY: go-test-timeline-build
 go-test-timeline-build: bpfman-fmt go-test-timeline-compile
 
+.PHONY: go-test-timeline-compile
 go-test-timeline-compile: | $(BIN_DIR)
 	$(strip go build $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(BUILD_TAGS),-tags '$(BUILD_TAGS)') $(if $(BIN_LDFLAGS),-ldflags "$(BIN_LDFLAGS)") -o $(BIN_DIR)/go-test-timeline ./cmd/go-test-timeline)
 
+.PHONY: clean-go-test-timeline
 clean-go-test-timeline:
 	$(RM) $(BIN_DIR)/go-test-timeline
 
 # ---------------------------------------------------------------------------
 # Proto generation for bpfman gRPC API.
 # ---------------------------------------------------------------------------
+.PHONY: bpfman-proto
 bpfman-proto: $(BPFMAN_PB_DIR)/bpfman.pb.go $(BPFMAN_PB_DIR)/bpfman_grpc.pb.go
 
 # protoc (downloaded into $(BIN_DIR)) discovers --go_out / --go-grpc_out
@@ -1465,6 +1533,7 @@ platform/ebpf/%.bpf.o: e2e/testdata/bpf/%.bpf.c Makefile
 	$(Q)clang $(LIBBPF_CFLAGS) $(BPF_CFLAGS) -g -O2 -target bpfel -c $(BPF_TARGET_ARCH) \
 		-MD -MP -MF$(@:.bpf.o=.bpf.d) $< -o $@
 
+.PHONY: clean-bpf
 clean-bpf:
 	$(RM) $(DISPATCHER_BPF_EMBEDS) $(DISPATCHER_BPF_DEPS) \
 	      $(E2E_BPF_OBJECTS) $(E2E_BPF_DEPS) \
@@ -1478,6 +1547,7 @@ clean-bpf:
 
 # Build bpfman image from the host-built binary. Intended for local
 # development and operator integration testing.
+.PHONY: build-image-dev
 build-image-dev: bpfman-build
 	$(OCI_BIN) build \
 		$(if $(filter-out 0,$(OCI_BIN_IS_PODMAN)),--ignorefile=Dockerfile.bpfman.dev.dockerignore) \
@@ -1522,9 +1592,11 @@ build-image-dev: bpfman-build
 # `docker load`s it in one shot; --no-link keeps the workspace free
 # of a stray result symlink that could collide with `nix build .`.
 # See nix/image.nix for what is in the image and why.
+.PHONY: build-image-nix
 build-image-nix:
 	$(OCI_BIN) load < $$(nix build .#bpfman-image --print-out-paths --no-link)
 
+.PHONY: build-image
 build-image:
 	$(OCI_BIN) buildx build \
 		$(if $(PLATFORMS),--platform $(PLATFORMS)) \
@@ -1563,6 +1635,7 @@ build-image:
 # The CI publish path uses `build-image` directly with a comma-
 # separated PLATFORMS list; these presets are purely local-dev
 # shortcuts.
+.PHONY: build-image-amd64 build-image-arm64 build-image-ppc64le build-image-s390x
 build-image-amd64 build-image-arm64 build-image-ppc64le build-image-s390x: build-image-%:
 	$(MAKE) build-image PLATFORMS=linux/$*
 
@@ -1602,6 +1675,7 @@ build-image-amd64 build-image-arm64 build-image-ppc64le build-image-s390x: build
 # the resulting Rekor record is tied to the user's personal
 # identity (Google, GitHub, etc.) rather than to a workflow OIDC
 # token. The mechanics are otherwise identical to CI.
+.PHONY: cosign-sign
 cosign-sign:
 	@command -v cosign >/dev/null 2>&1 || { \
 		echo "error: cosign is not installed; try 'nix shell nixpkgs#cosign'" >&2; \
@@ -1631,9 +1705,11 @@ cosign-sign:
 	cosign sign -y "$(BPFMAN_IMG)@$$digest"
 
 # CSI conformance testing
+.PHONY: build-image-csi-sanity
 build-image-csi-sanity:
 	$(OCI_BIN) build -t $(CSI_SANITY_IMG) -f Dockerfile.csi-sanity $(EXTRA_DOCKER_BUILD_ARGS) .
 
+.PHONY: build-image-openshift
 build-image-openshift:
 	$(OCI_BIN) build \
 		-f $(OPENSHIFT_CONTAINERFILE) \
@@ -1665,6 +1741,7 @@ build-image-openshift:
 # for `docker run` invocations against a mounted source tree. The
 # `--load` is required for `docker run` to find the image in the
 # local store.
+.PHONY: ci-image
 ci-image:
 	$(OCI_BIN) buildx build --target=base -t $(CI_IMAGE) -f $(CI_DOCKERFILE) --load $(CI_BUILDX_CACHE) .
 
@@ -1693,6 +1770,7 @@ ci-image:
 # cheap (~1-2s) and the Go cache volumes carry the rest of the
 # incremental story. ci-test and ci-lint apply the same prefix
 # for the same reason.
+.PHONY: ci-build
 ci-build: ci-image
 	$(CI_RUN) make STAMP=1 clean-bpf bpfman-build bpfman-shell-build
 
@@ -1703,6 +1781,7 @@ ci-build: ci-image
 # the upstream CI job this assumes a clean tree; commit or
 # stash work-in-progress changes before invoking, otherwise
 # `git diff --exit-code` will fail on them.
+.PHONY: ci-check-vendor
 ci-check-vendor:
 	go mod tidy
 	go mod vendor
@@ -1710,12 +1789,14 @@ ci-check-vendor:
 
 # Reproduce the workflow's check-fmt job locally. Same host /
 # clean-tree contract as ci-check-vendor.
+.PHONY: ci-check-fmt
 ci-check-fmt:
 	$(MAKE) bpfman-fmt
 	git diff --exit-code
 
 # Reproduce the workflow's check-goimports job locally. Same host /
 # clean-tree contract as ci-check-fmt.
+.PHONY: ci-check-goimports
 ci-check-goimports:
 	$(MAKE) bpfman-goimports
 	git diff --exit-code
@@ -1723,6 +1804,7 @@ ci-check-goimports:
 # Reproduce the workflow's lint job locally. Runs the full
 # `make lint` umbrella (golangci-lint + hadolint + shellcheck +
 # checkmake) inside the CI container.
+.PHONY: ci-lint
 ci-lint: ci-image
 	$(CI_RUN) make clean-bpf lint
 
@@ -1731,6 +1813,7 @@ ci-lint: ci-image
 # so the BPF embeds and CGO toolchain match what CI sees. Symmetric
 # with ci-check-fmt and ci-check-vendor: a separate gate, not a
 # side effect of bpfman-build.
+.PHONY: ci-check-vet
 ci-check-vet: ci-image
 	$(CI_RUN) make clean-bpf bpfman-vet
 
@@ -1741,6 +1824,7 @@ ci-check-vet: ci-image
 # unmodernised code; run `make bpfman-gofix` to apply the fixes. The
 # container bind-mounts the source, so fixes applied inside are
 # visible to the host git-diff, matching the ci-check-fmt contract.
+.PHONY: ci-check-gofix
 ci-check-gofix: ci-image
 	$(CI_RUN) make clean-bpf bpfman-gofix
 	git diff --exit-code
@@ -1752,6 +1836,7 @@ ci-check-gofix: ci-image
 # diff means a .bpfman file is not canonically formatted; run
 # `make bpfman-shell-fmt` to apply it. Same bind-mount / host git-diff
 # contract as ci-check-gofix.
+.PHONY: ci-check-bpfman-shell-fmt
 ci-check-bpfman-shell-fmt: ci-image
 	$(CI_RUN) make clean-bpf bpfman-shell-fmt
 	git diff --exit-code
@@ -1760,6 +1845,7 @@ ci-check-bpfman-shell-fmt: ci-image
 # mounted into the container so the test process sees the
 # current working tree exactly as a host build would. Same Go
 # cache volumes as ci-build for incremental-compile speed.
+.PHONY: ci-test
 ci-test: ci-image
 	$(CI_RUN) make clean-bpf test PARALLEL=1 STATIC=1 RACE=$(RACE)
 
@@ -1768,6 +1854,7 @@ ci-test: ci-image
 # e2e.test binary and its on-disk BPF object tree are then run on
 # the host with sudo so it has the kernel privileges the e2e suite
 # needs.
+.PHONY: ci-test-e2e
 ci-test-e2e:
 	$(RM) -r $(CI_E2E_BUNDLE)
 	$(OCI_BIN) buildx build --target=e2e-export --output type=local,dest=$(CI_E2E_BUNDLE) -f $(CI_DOCKERFILE) --build-arg RACE=$(RACE) --build-arg EXTRA_TAGS=$(EXTRA_TAGS) $(CI_BUILDX_CACHE) .
@@ -1791,6 +1878,7 @@ ci-test-e2e:
 # from a previous run could otherwise mask "didn't rebuild" bugs.
 # golangci-lint under bin/ is preserved -- it has its own rule
 # and re-fetching over the network is slow.
+.PHONY: ci-test-e2e-scripts
 ci-test-e2e-scripts:
 	$(RM) bin/bpfman bin/bpfman-shell bin/e2e.test bin/e2e-scripts.test
 	$(MAKE) clean-bpf
@@ -1805,6 +1893,7 @@ ci-test-e2e-scripts:
 # from the bundle) rather than ci-test-e2e-scripts (which has to
 # extract because the .bpfman scripts reference testdata via
 # relative paths on disk).
+.PHONY: ci-test-e2e-grpc
 ci-test-e2e-grpc:
 	$(RM) -r $(CI_E2E_BUNDLE)
 	$(OCI_BIN) buildx build --target=e2e-export --output type=local,dest=$(CI_E2E_BUNDLE) -f $(CI_DOCKERFILE) --build-arg RACE=$(RACE) --build-arg EXTRA_TAGS=$(EXTRA_TAGS) $(CI_BUILDX_CACHE) .
@@ -1824,32 +1913,12 @@ ci-test-e2e-grpc:
 # attach failures to shell counter assertions seeing the other
 # suite's events. Don't `make -j ci-test-e2e ci-test-e2e-scripts`
 # locally, and don't run them in two shells at once.
+.PHONY: ci
 ci: ci-check-vendor ci-check-fmt ci-check-goimports ci-check-vet ci-check-gofix ci-check-bpfman-shell-fmt ci-build ci-lint ci-test ci-test-e2e ci-test-e2e-scripts ci-test-e2e-grpc
 
 # ---------------------------------------------------------------------------
 # gRPC integration test.
 # ---------------------------------------------------------------------------
+.PHONY: bpfman-test-grpc
 bpfman-test-grpc: build-image-dev
 	BPFMAN_IMG=$(BPFMAN_IMG) OCI_BIN=$(OCI_BIN) scripts/test-grpc.sh
-
-
-# ============================================================================
-# PHONY declarations
-# ============================================================================
-# Grouped across several lines because checkmake does not parse
-# .PHONY with backslash line continuations; each .PHONY line is a
-# stand-alone declaration.
-.PHONY: all build-all clean clean-mrproper help lint lint-dockerfile lint-go lint-hack lint-make
-.PHONY: clean-bpf
-.PHONY: e2e-kmod-build e2e-kmod-insmod e2e-kmod-rmmod e2e-kmod-reload e2e-kmod-force-reload clean-e2e-kmod
-.PHONY: bpfman-build clean-bpfman bpfman-compile bpfman-fmt bpfman-gofix bpfman-goimports bpfman-proto bpfman-test-grpc bpfman-vet
-.PHONY: bpfman-shell-build bpfman-shell-compile clean-bpfman-shell
-.PHONY: bpfman-e2e-cleanup-build bpfman-e2e-cleanup-compile clean-bpfman-e2e-cleanup
-.PHONY: go-test-timeline-build go-test-timeline-compile clean-go-test-timeline
-.PHONY: build-image build-image-amd64 build-image-arm64 build-image-csi-sanity build-image-dev build-image-nix build-image-openshift build-image-ppc64le build-image-s390x cosign-sign
-.PHONY: ci ci-build ci-check-bpfman-shell-fmt ci-check-fmt ci-check-gofix ci-check-goimports ci-check-vendor ci-check-vet ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-grpc ci-test-e2e-scripts
-.PHONY: coverage clean-coverage coverage-func coverage-html coverage-open
-.PHONY: doc doc-text parity-readme parity-compare parity-check
-.PHONY: print-fedora-version print-go-version print-golangci-lint-version
-.PHONY: build-e2e-grpc build-e2e-scripts $(BIN_DIR)/e2e.test $(BIN_DIR)/e2e-grpc.test $(BIN_DIR)/e2e-scripts.test run-e2e-grpc run-e2e-scripts run-e2e-scripts-timeline bpfman-shell-fmt update-lowered-goldens test test-timeline test-all test-e2e test-e2e-grpc test-e2e-scripts test-e2e-scripts-file test-e2e-scripts-image test-e2e-scripts-image-ci test-e2e-published-images test-e2e-scripts-stress test-e2e-scripts-timeline test-examples
-.PHONY: test-bpfman-ns test-bpfman-ns-amd64 test-bpfman-ns-arm64 test-bpfman-ns-cross test-bpfman-ns-ppc64le test-bpfman-ns-s390x
