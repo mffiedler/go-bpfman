@@ -59,10 +59,6 @@ func SlurpReader(r LineReader) (string, error) {
 // underlining the region. Returns true when at least one issue
 // was emitted so the caller can refuse to evaluate.
 func PreflightCheck(errOut io.Writer, file, src string) bool {
-	return preflightCheck(errOut, file, src)
-}
-
-func preflightCheck(errOut io.Writer, file, src string) bool {
 	if strings.TrimSpace(src) == "" {
 		return false
 	}
