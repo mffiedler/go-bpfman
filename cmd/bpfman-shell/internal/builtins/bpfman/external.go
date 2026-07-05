@@ -87,10 +87,9 @@ func displayName(name string) string {
 //   - HasLinkID          -> the bpfman link ID as decimal text
 //   - HasKernelProgramID -> the program ID as decimal text
 //
-// This mirrors the library backend's parseLinkIDArg /
-// parseProgramIDArg, which use the same capability interfaces to
-// preserve the `$link` / `$prog` ergonomic that scripts already
-// depend on. A StructuredValueArg whose origin satisfies neither
+// Dispatching on the capability rather than the concrete origin
+// type preserves the `$link` / `$prog` ergonomic that scripts
+// already depend on. A StructuredValueArg whose origin satisfies neither
 // capability errors out: the CLI takes only IDs (and other
 // textual flags) on argv, so other structured kinds (Job, Envelope,
 // NetPair) cannot legitimately appear.

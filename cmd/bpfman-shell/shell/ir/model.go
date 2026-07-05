@@ -12,7 +12,7 @@
 //
 // Instructions form a sealed sum via the unexported instrNode()
 // marker, mirroring the existing Stmt and Expr discipline in
-// parse.go and expr.go. Every instruction embeds a source.Span so the
+// ast_stmt.go and ast_expr.go. Every instruction embeds a source.Span so the
 // dump and the interpreter can point back at source coordinates
 // without an out-of-band table.
 //

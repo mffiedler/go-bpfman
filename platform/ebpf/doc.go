@@ -26,7 +26,6 @@
 //     domain types
 //   - program_info.go: program info extraction
 //   - link_info.go: link info extraction with type-specific fields
-//   - discover.go: ELF object file scanning for loadable programs
 //   - tracepoint.go: tracepoint existence validation
 //
 // # Container Uprobe
