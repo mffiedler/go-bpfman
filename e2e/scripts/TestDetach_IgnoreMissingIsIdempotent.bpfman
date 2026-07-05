@@ -10,6 +10,7 @@
 # stays idempotent
 
 guard pair <- net veth-pair
+defer net release $pair
 
 guard loaded <- bpfman program load file testdata/bpf/xdp_pass.bpf.o --programs xdp:pass
 let prog = $loaded.programs[0]
