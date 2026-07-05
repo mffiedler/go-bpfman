@@ -47,14 +47,8 @@ func (c *CLI) EnsuredImageCache() (fs.EnsuredImageCache, error) {
 	return fs.EnsureCache(cache)
 }
 
-// RunWithLock wraps mutating operations with the global writer lock.
-// The lock ensures serialised access to BPF state across concurrent
-// CLI invocations.
-func (c *CLI) RunWithLock(ctx context.Context, fn func(context.Context, lock.WriterScope) error) error {
-	return RunWithLock(ctx, c, fn)
-}
-
-// RunWithLock executes fn under the global writer lock.
+// RunWithLock executes fn under the global writer lock. The lock ensures
+// serialised access to BPF state across concurrent CLI invocations.
 func RunWithLock(ctx context.Context, c *CLI, fn func(context.Context, lock.WriterScope) error) error {
 	_, err := RunWithLockValue(ctx, c, func(ctx context.Context, writeLock lock.WriterScope) (struct{}, error) {
 		return struct{}{}, fn(ctx, writeLock)
