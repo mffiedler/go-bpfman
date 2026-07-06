@@ -23,12 +23,12 @@ jobs:
       contents: read
     env:
       # Override the Makefile's default of quay.io/bpfman/bpfman:latest:
-      # while this fork's CI runs in the frobware GitHub org, we push
-      # to a personal ttl.sh repo rather than to the canonical quay.io
-      # location. Set once at job scope so every `make` invocation in
-      # the build, sign, and verify steps inherits the same value via
+      # CI pushes to an ephemeral ttl.sh repo keyed on the owning
+      # GitHub org rather than to the canonical quay.io location.
+      # Set once at job scope so every `make` invocation in the
+      # build, sign, and verify steps inherits the same value via
       # `BPFMAN_IMG ?=` in the Makefile.
-      BPFMAN_IMG: ttl.sh/frobware/bpfman:latest
+      BPFMAN_IMG: ttl.sh/${{ github.repository_owner }}/bpfman:latest
     steps:
       - uses: actions/checkout@v6
 
@@ -73,7 +73,7 @@ jobs:
           # this same workflow signs in the next step.
           make build-image \
             EXTRA_GO_LDFLAGS="-s -w" \
-            IMAGE_REF=ttl.sh/frobware/bpfman \
+            IMAGE_REF=ttl.sh/${{ github.repository_owner }}/bpfman \
             SIGNER_IDENTITY=https://github.com/${{ github.repository }}/.github/workflows/go-image.yaml@${{ github.ref }} \
             OIDC_ISSUER=https://token.actions.githubusercontent.com \
             PLATFORMS=linux/amd64,linux/arm64,linux/ppc64le,linux/s390x \
@@ -98,9 +98,9 @@ jobs:
         # Verifiers can later confirm the image was published by
         # this exact workflow in this exact repository:
         #
-        #   cosign verify ttl.sh/frobware/bpfman:latest \
+        #   cosign verify ttl.sh/bpfman/bpfman:latest \
         #     --certificate-identity-regexp \
-        #       'https://github.com/frobware/go-bpfman/.github/workflows/image\.yaml@.*' \
+        #       'https://github.com/bpfman/bpfman/.github/workflows/go-image\.yaml@.*' \
         #     --certificate-oidc-issuer \
         #       https://token.actions.githubusercontent.com
         run: |
@@ -124,7 +124,7 @@ jobs:
     env:
       # Must match the BPFMAN_IMG used in build-and-push above; this
       # job pulls the image that job pushed.
-      BPFMAN_IMG: ttl.sh/frobware/bpfman:latest
+      BPFMAN_IMG: ttl.sh/${{ github.repository_owner }}/bpfman:latest
     steps:
       - name: Verify image metadata
         run: |
@@ -152,7 +152,7 @@ jobs:
         run: |
           set -euo pipefail
           cosign verify "$BPFMAN_IMG" \
-            --certificate-identity-regexp 'https://github\.com/frobware/go-bpfman/\.github/workflows/image\.yaml@.*' \
+            --certificate-identity-regexp 'https://github\.com/${{ github.repository }}/\.github/workflows/go-image\.yaml@.*' \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             > "${RUNNER_TEMP}/cosign-verify.json"
           actual_sha=$(jq -r '.[0].optional.githubWorkflowSha' "${RUNNER_TEMP}/cosign-verify.json")

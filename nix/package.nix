@@ -118,7 +118,7 @@ stdenv.mkDerivation rec {
 
   meta = {
     description = "Go reimplementation of bpfman";
-    homepage = "https://github.com/frobware/go-bpfman";
+    homepage = "https://github.com/bpfman/bpfman";
     license = lib.licenses.asl20;
     mainProgram = "bpfman";
     platforms = lib.platforms.linux;

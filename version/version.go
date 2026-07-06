@@ -25,8 +25,8 @@ var (
 	// the Attestation field below is omitted entirely when any
 	// of them is empty.
 
-	imageRef       string // e.g. "ttl.sh/frobware/go-bpfman"
-	signerIdentity string // e.g. "https://github.com/frobware/go-bpfman/.github/workflows/go-image.yaml@refs/heads/main"
+	imageRef       string // e.g. "quay.io/bpfman/bpfman"
+	signerIdentity string // e.g. "https://github.com/bpfman/bpfman/.github/workflows/go-image.yaml@refs/heads/main"
 	oidcIssuer     string // e.g. "https://token.actions.githubusercontent.com"
 )
 

@@ -1542,11 +1542,11 @@ build-image-amd64 build-image-arm64 build-image-ppc64le build-image-s390x: build
 #   make build-image \
 #     PLATFORMS=linux/amd64 \
 #     PUSH=1 \
-#     BPFMAN_IMG=ttl.sh/frobware/go-bpfman-test:latest \
+#     BPFMAN_IMG=ttl.sh/me/bpfman-test:latest \
 #     BUILDX_METADATA_FILE=/tmp/buildx-meta.json
 #
 #   make cosign-sign \
-#     BPFMAN_IMG=ttl.sh/frobware/go-bpfman-test:latest \
+#     BPFMAN_IMG=ttl.sh/me/bpfman-test:latest \
 #     BUILDX_METADATA_FILE=/tmp/buildx-meta.json
 #
 # The local invocation triggers an interactive browser OAuth flow;
