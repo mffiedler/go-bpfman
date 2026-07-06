@@ -2,7 +2,7 @@
 // bpftool for the Go and Rust implementations of a parity case, and
 // judges the result against a declared expectation. bpftool is the
 // neutral juror; this package only diffs what it recorded. It is shared
-// by cmd/parity-compare (the gate) and cmd/parity-readme (the rendered
+// by rust-parity/cmd/parity-compare (the gate) and rust-parity/cmd/parity-readme (the rendered
 // support table) so both compute the verdict the same way.
 package parity
 

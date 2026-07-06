@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regenerate every parity transcript under docs/parity/outputs/.
+# Regenerate every parity transcript under rust-parity/outputs/.
 #
 # Run from anywhere, with bash, after the binaries are in place (see
 # README.md "Setup"). Requires: sudo (passwordless), jq, ip, bpftool,

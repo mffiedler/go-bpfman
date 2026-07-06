@@ -14,7 +14,7 @@ is driven against /run/go-bpfman, the Rust binary against its default
 root. Each implementation gets its own veth(s) so their dispatchers
 never collide.
 
-Run from the go-bpfman repo root:  python3 ./dispatcher-parity.py
+Run from the go-bpfman repo root:  python3 ./rust-parity/dispatcher-parity.py
 (bpfman/ip calls sudo internally; passwordless sudo required.)
 """
 

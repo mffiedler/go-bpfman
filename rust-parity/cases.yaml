@@ -15,7 +15,7 @@ meta:
 
 # At-a-glance coverage, for gauging remaining work. State is the
 # scannable column: `proven` = parity is computed and gated by
-# cmd/parity-compare; `not tested` = no parity evidence here yet (the
+# rust-parity/cmd/parity-compare; `not tested` = no parity evidence here yet (the
 # remaining work). The not-tested surfaces exist in both implementations;
 # `not tested` is about evidence, not whether go-bpfman implements them.
 coverage:

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Captures the error / idempotency / flag / format scenarios to
-# transcripts under docs/parity/outputs/. Sourced after harness.sh.
+# transcripts under rust-parity/outputs/. Sourced after harness.sh.
 capq() { local T="$1"; shift; echo "\$ $*" >>"$T"; CAP_OUT="$("$@" 2>&1)"; CAP_RC=$?; { printf '%s\n' "$CAP_OUT"; echo "[exit $CAP_RC]"; echo; } >>"$T"; }
 LIBC=$(ldd "$(command -v cat)" | awk '/libc\.so/{print $3; exit}')
 XDP=e2e/testdata/bpf/xdp_pass.bpf.o; IF=bpfmanpar0

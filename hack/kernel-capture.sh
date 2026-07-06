@@ -7,12 +7,12 @@
 # timestamps, addresses, ifindex dropped) so the Go comparator can diff
 # Go's kernel footprint against Rust's and compute a verdict.
 #
-# Output: docs/parity/outputs/kernel/<case>.<impl>.json
+# Output: rust-parity/outputs/kernel/<case>.<impl>.json
 set -uo pipefail
 REPO="${PARITY_REPO:-$HOME/src/github.com/frobware/go-bpfman}"
 GO=(sudo "$REPO/bin/go-bpfman" --runtime-dir /run/bpfman-parity-go)
 RS=(sudo "$REPO/bin/bpfman-rs")
-OUT="$REPO/docs/parity/outputs/kernel"
+OUT="$REPO/rust-parity/outputs/kernel"
 mkdir -p "$OUT"
 LIBC=$(ldd "$(command -v cat)" | awk '/libc\.so/{print $3; exit}')
 IF=bpfmanpar0

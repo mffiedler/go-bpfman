@@ -9,13 +9,13 @@ import (
 // verdict (computed from the committed bpftool footprints) contradicts
 // the expectation declared in cases.yaml -- for example if Rust starts
 // honouring kretprobe, or a captured footprint diverges unexpectedly.
-// Re-capture with docs/parity/kernel-capture.sh; verdicts are declared
+// Re-capture with hack/kernel-capture.sh; verdicts are declared
 // in cases.yaml under kernel_cases.
 func TestKernelVerdictsMatchExpectations(t *testing.T) {
 	t.Parallel()
 	const (
-		cases  = "../../docs/parity/cases.yaml"
-		outdir = "../../docs/parity/outputs"
+		cases  = "../../cases.yaml"
+		outdir = "../../outputs"
 	)
 	failures, err := verify(cases, outdir, io.Discard)
 	if err != nil {

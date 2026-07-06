@@ -50,15 +50,15 @@ compiled testdata objects under `e2e/testdata/bpf/` (built by the
 repo's normal `make` flow). Then:
 
 ```sh
-bash docs/parity/run-all.sh
+bash rust-parity/run-all.sh
 ```
 
 That regenerates everything under `outputs/`. To run one slice, source
 the harness and a driver and call its function, for example:
 
 ```sh
-source docs/parity/harness.sh
-source docs/parity/baselines.sh
+source rust-parity/harness.sh
+source rust-parity/baselines.sh
 baseline kprobe e2e/testdata/bpf/kprobe_counter.bpf.o kprobe:kprobe_counter
 ```
 

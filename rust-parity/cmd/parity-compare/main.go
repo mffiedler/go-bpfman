@@ -1,9 +1,9 @@
 // Command parity-compare judges Go vs Rust parity from kernel state,
 // not from either tool's self-report. For each case it reads the two
-// bpftool-captured footprints under docs/parity/outputs/kernel/
+// bpftool-captured footprints under rust-parity/outputs/kernel/
 // (program tag/type, map shape, link semantics), diffs them, and checks
 // the computed verdict against the expectation declared in
-// docs/parity/cases.yaml. bpftool is the neutral juror; this tool only
+// rust-parity/cases.yaml. bpftool is the neutral juror; this tool only
 // diffs what bpftool saw.
 //
 // Usage:
@@ -21,7 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/bpfman/bpfman/internal/parity"
+	"github.com/bpfman/bpfman/rust-parity/internal/parity"
 
 	"gopkg.in/yaml.v3"
 )
@@ -33,8 +33,8 @@ type cfg struct {
 
 func main() {
 	check := flag.Bool("check", false, "exit non-zero if a verdict contradicts its declared expectation")
-	casesPath := flag.String("cases", "docs/parity/cases.yaml", "path to the cases manifest")
-	outdir := flag.String("outdir", "docs/parity/outputs", "directory of captured observations (kernel/ and behaviour/)")
+	casesPath := flag.String("cases", "rust-parity/cases.yaml", "path to the cases manifest")
+	outdir := flag.String("outdir", "rust-parity/outputs", "directory of captured observations (kernel/ and behaviour/)")
 	flag.Parse()
 
 	failures, err := verify(*casesPath, *outdir, os.Stdout)

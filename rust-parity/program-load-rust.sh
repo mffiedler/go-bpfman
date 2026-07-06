@@ -36,7 +36,7 @@
 #
 # Run from the go-bpfman repository root:
 #
-#   sudo ./program-load-rust.sh
+#   sudo ./rust-parity/program-load-rust.sh
 #
 # This intentionally does not detach links or unload programs. Clean up
 # after inspection by unloading the listed program ids and:

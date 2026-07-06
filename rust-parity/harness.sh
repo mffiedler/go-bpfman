@@ -6,18 +6,18 @@
 set -uo pipefail
 
 # Repo root. When this file is run/sourced via bash, derive it from the
-# script location (docs/parity/harness.sh -> repo root is ../..).
+# script location (rust-parity/harness.sh -> repo root is ..).
 # Override with PARITY_REPO; fall back to the conventional checkout path
 # for interactive sourcing under shells without BASH_SOURCE.
 REPO="${PARITY_REPO:-}"
 if [ -z "$REPO" ] && [ -n "${BASH_SOURCE:-}" ]; then
-  REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)"
+  REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
 fi
 REPO="${REPO:-$HOME/src/github.com/frobware/go-bpfman}"
 GO="$REPO/bin/go-bpfman"
 RS="$REPO/bin/bpfman-rs"
 GO_RT=/run/bpfman-parity-go
-OUT="$REPO/docs/parity/outputs"
+OUT="$REPO/rust-parity/outputs"
 mkdir -p "$OUT"
 
 # Go always runs with the isolated runtime dir.

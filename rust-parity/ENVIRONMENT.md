@@ -1,7 +1,7 @@
 # Parity proof environment
 
 This file records the exact environment and the replayable setup steps
-used to generate the parity evidence under `docs/parity/`. The intent
+used to generate the parity evidence under `rust-parity/`. The intent
 is that you can reproduce every step by hand.
 
 ## Host
@@ -111,8 +111,8 @@ offline. Anonymous pull of the public image is sufficient (no auth).
 
 ## What gets recorded
 
-- `docs/parity/outputs/<case>.go.out`   raw Go transcript (command + output).
-- `docs/parity/outputs/<case>.rust.out` raw Rust transcript.
-- `docs/parity/RESULTS.md`               per-case pass/fail summary table.
-- `docs/parity/ISSUES.md`                problems found, per program type.
-- `docs/parity/help/`                    captured `--help` for both CLIs.
+- `rust-parity/outputs/<case>.go.out`   raw Go transcript (command + output).
+- `rust-parity/outputs/<case>.rust.out` raw Rust transcript.
+- `rust-parity/RESULTS.md`               per-case pass/fail summary table.
+- `rust-parity/ISSUES.md`                problems found, per program type.
+- `rust-parity/help/`                    captured `--help` for both CLIs.

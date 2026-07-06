@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Capture a normalised observation for each behavioural parity case, for
-# both implementations, under docs/parity/outputs/behaviour/. Unlike the
+# both implementations, under rust-parity/outputs/behaviour/. Unlike the
 # kernel footprints, these observations are the semantically comparable
 # result of a command sequence -- exit codes, chain positions, kernel
 # map sharing as bpftool sees it, ordering determinism over repeated
@@ -13,7 +13,7 @@ set -uo pipefail
 REPO="${PARITY_REPO:-$HOME/src/github.com/frobware/go-bpfman}"
 GO=(sudo "$REPO/bin/go-bpfman" --runtime-dir /run/bpfman-parity-go)
 RS=(sudo "$REPO/bin/bpfman-rs")
-OUT="$REPO/docs/parity/outputs/behaviour"
+OUT="$REPO/rust-parity/outputs/behaviour"
 mkdir -p "$OUT"
 LIBC=$(ldd "$(command -v cat)" | awk '/libc\.so/{print $3; exit}')
 XDP=e2e/testdata/bpf/xdp_pass.bpf.o
