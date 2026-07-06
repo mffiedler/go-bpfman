@@ -62,8 +62,7 @@ BPFMAN_SHELL_FORMAT_SOURCES := \
 # (docker wins if both are present, as CI runs on docker), fall back
 # to a literal "docker" if neither is, and let the caller override
 # with `make OCI_BIN=podman ...`. Exported so helper scripts the
-# recipes shell out to (scripts/test-grpc.sh, etc.) pick the same
-# tool up.
+# recipes shell out to pick the same tool up.
 #
 # Differences from the operator's exact form, both forced on us by
 # the canonical multi-arch build flow: `make bpfman-compile` is
@@ -657,7 +656,6 @@ help:
 	@echo "  bpfman-compile              Compile bpfman (no fmt/vet/dispatchers)"
 	@echo "  clean-bpfman                Remove generated files and binary"
 	@echo "  bpfman-proto                Generate protobuf/gRPC stubs"
-	@echo "  bpfman-test-grpc            Run gRPC integration tests"
 	@echo ""
 	@echo "Container images:"
 	@echo "  build-image                 Cross-compile current-arch image via Fedora Dockerfile (canonical pipeline)"
@@ -1782,10 +1780,3 @@ ci-test-e2e-grpc:
 # locally, and don't run them in two shells at once.
 .PHONY: ci
 ci: ci-check-vendor ci-check-fmt ci-check-goimports ci-check-vet ci-check-gofix ci-check-bpfman-shell-fmt ci-build ci-lint ci-test ci-test-e2e ci-test-e2e-scripts ci-test-e2e-grpc
-
-# ---------------------------------------------------------------------------
-# gRPC integration test.
-# ---------------------------------------------------------------------------
-.PHONY: bpfman-test-grpc
-bpfman-test-grpc: build-image-dev
-	BPFMAN_IMG=$(BPFMAN_IMG) OCI_BIN=$(OCI_BIN) scripts/test-grpc.sh

@@ -13,5 +13,4 @@
 .gitignore
 *.md
 build/
-scripts/
 vendor/

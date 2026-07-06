@@ -27,4 +27,3 @@ result*
 .gitignore
 *.md
 build/
-scripts/
