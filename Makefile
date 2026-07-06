@@ -40,9 +40,6 @@ PROTOC_VERSION ?= 32.1
 # Paths.
 # ---------------------------------------------------------------------------
 BIN_DIR ?= bin
-COVERAGE_DIR ?= .coverage
-COVERAGE_PROFILE ?= $(COVERAGE_DIR)/coverage.out
-COVERAGE_HTML ?= $(COVERAGE_DIR)/coverage.html
 BPFMAN_PROTO_DIR := proto
 BPFMAN_PB_DIR := server/pb
 DOC_PORT ?= 6060
@@ -587,7 +584,7 @@ LINT_MAKE_TARGETS := \
 	build-image build-image-amd64 build-image-dev \
 	build-image-csi-sanity \
 	ci-build ci-check-fmt ci-check-goimports ci-check-vendor ci-check-vet ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-grpc ci-test-e2e-scripts \
-	cosign-sign coverage clean
+	cosign-sign clean
 
 # Lint every Dockerfile / Containerfile with hadolint. The existing
 # `# hadolint ignore=...` pragmas in the repo are already set up
@@ -640,11 +637,6 @@ help:
 	@printf "  %-31s %s\n" "test-bpfman-ns-cross" "Run bpfman-ns transport tests on amd64/arm64/ppc64le/s390x"
 	@printf "  %-31s %s\n" "test-bpfman-ns-{arch}" "Run bpfman-ns transport tests for a single architecture"
 	@printf "  %-31s %s\n" "lint" "Run golangci-lint"
-	@printf "  %-31s %s\n" "coverage" "Generate coverage profile and show total"
-	@printf "  %-31s %s\n" "coverage-func" "Show coverage by function"
-	@printf "  %-31s %s\n" "coverage-html" "Generate HTML coverage report"
-	@printf "  %-31s %s\n" "coverage-open" "Generate and open HTML coverage report"
-	@printf "  %-31s %s\n" "clean-coverage" "Remove coverage artifacts"
 	@echo ""
 	@echo "Local CI reproducer (Dockerfile.ci):"
 	@echo "  ci                          Run every ci-* target"
@@ -706,7 +698,7 @@ print-golangci-lint-version:
 	@echo $(GOLANGCI_LINT_VERSION)
 
 .PHONY: clean
-clean: clean-bpfman clean-bpfman-shell clean-bpfman-e2e-cleanup clean-bpf clean-e2e-kmod clean-coverage
+clean: clean-bpfman clean-bpfman-shell clean-bpfman-e2e-cleanup clean-bpf clean-e2e-kmod
 	$(RM) -r $(BIN_DIR) $(CI_E2E_BUNDLE)
 
 # Nuclear option, modeled on `make mrproper` in the kernel tree:
@@ -1057,33 +1049,6 @@ test-e2e-published-images:
 	    BPFMAN_E2E_SCRIPT_SELECTOR=external \
 	    TEST='TestBPFManScripts/scripts/TestPublishedImage'
 
-
-# ---------------------------------------------------------------------------
-# Coverage.
-# ---------------------------------------------------------------------------
-.PHONY: coverage
-coverage:
-	@mkdir -p $(COVERAGE_DIR)
-	@$(strip go test $(EXTRA_GOFLAGS) -coverprofile=$(COVERAGE_PROFILE) ./...) 2>&1 | grep -v "no test files" | grep -v "no such tool" | grep -v "^#"
-	@echo "Coverage profile written to $(COVERAGE_PROFILE)"
-	@go tool cover -func=$(COVERAGE_PROFILE) 2>/dev/null | grep total
-
-.PHONY: coverage-html
-coverage-html: coverage
-	go tool cover -html=$(COVERAGE_PROFILE) -o $(COVERAGE_HTML)
-	@echo "Coverage report written to $(COVERAGE_HTML)"
-
-.PHONY: coverage-func
-coverage-func: coverage
-	go tool cover -func=$(COVERAGE_PROFILE)
-
-.PHONY: coverage-open
-coverage-open: coverage-html
-	xdg-open $(COVERAGE_HTML) 2>/dev/null || open $(COVERAGE_HTML) 2>/dev/null || echo "Open $(COVERAGE_HTML) in your browser"
-
-.PHONY: clean-coverage
-clean-coverage:
-	$(RM) -r $(COVERAGE_DIR)
 
 # ---------------------------------------------------------------------------
 # E2E kmod.
