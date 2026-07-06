@@ -16,7 +16,7 @@
 #     dropping the forced-share is safe for real shared maps.
 #
 # Usage:
-#   sudo hack/map-sharing-pinned-demo.sh
+#   sudo rust-parity/map-sharing-pinned-demo.sh
 
 set -euo pipefail
 

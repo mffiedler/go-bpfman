@@ -31,12 +31,12 @@
 # Rust, and the auto-share is described rather than run.
 #
 # Usage:
-#   sudo hack/map-sharing-demo.sh
+#   sudo rust-parity/map-sharing-demo.sh
 #
 # Override the binaries if they live elsewhere:
 #   GO_BPFMAN=./bin/bpfman \
 #   RUST_BPFMAN=~/src/github.com/bpfman/bpfman/target/debug/bpfman \
-#   sudo -E hack/map-sharing-demo.sh
+#   sudo -E rust-parity/map-sharing-demo.sh
 
 set -euo pipefail
 
