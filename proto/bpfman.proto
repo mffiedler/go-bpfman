@@ -1,6 +1,6 @@
 syntax = "proto3";
 package bpfman.v1;
-option go_package = "github.com/bpfman/bpfman/server/pb";
+option go_package = "github.com/bpfman/clients/gobpfman/v1;v1";
 
 service Bpfman {
     rpc Load (LoadRequest) returns (LoadResponse);
@@ -10,8 +10,6 @@ service Bpfman {
     rpc List (ListRequest) returns (ListResponse);
     rpc PullBytecode (PullBytecodeRequest) returns (PullBytecodeResponse);
     rpc Get (GetRequest) returns ( GetResponse );
-    rpc ListLinks (ListLinksRequest) returns (ListLinksResponse);
-    rpc GetLink (GetLinkRequest) returns (GetLinkResponse);
 }
 
 /* BytecodeImage represents an eBPF program that is packaged and contained within
@@ -322,147 +320,11 @@ message GetRequest {
     uint32 id = 1;
 }
 
-/* GetResponse represents a response from getting an eBPF program.
+/* GetResponse represents a response from getting an eBPF program. 
  * It will ALWAYS contain a program's kernel info and if loaded by bpfman, will
  * contain the state kept by bpfman. */
 
-message GetResponse {
+message GetResponse { 
     optional ProgramInfo info = 1;
     KernelProgramInfo kernel_info = 2;
-}
-
-/* Link type enum matching managed.LinkType */
-enum BpfmanLinkType {
-    LINK_TYPE_UNSPECIFIED = 0;
-    LINK_TYPE_TRACEPOINT = 1;
-    LINK_TYPE_KPROBE = 2;
-    LINK_TYPE_KRETPROBE = 3;
-    LINK_TYPE_UPROBE = 4;
-    LINK_TYPE_URETPROBE = 5;
-    LINK_TYPE_FENTRY = 6;
-    LINK_TYPE_FEXIT = 7;
-    LINK_TYPE_XDP = 8;
-    LINK_TYPE_TC = 9;
-    LINK_TYPE_TCX = 10;
-}
-
-/* Common link fields */
-message LinkSummary {
-    uint32 kernel_link_id = 1;
-    BpfmanLinkType link_type = 2;
-    uint32 kernel_program_id = 3;
-    string pin_path = 4;
-    string created_at = 5;  /* RFC3339 */
-}
-
-/* TracepointLinkDetails contains fields specific to tracepoint attachments. */
-message TracepointLinkDetails {
-    string group = 1;
-    string name = 2;
-}
-
-/* KprobeLinkDetails contains fields specific to kprobe/kretprobe attachments. */
-message KprobeLinkDetails {
-    string fn_name = 1;
-    uint64 offset = 2;
-    bool retprobe = 3;
-}
-
-/* UprobeLinkDetails contains fields specific to uprobe/uretprobe attachments. */
-message UprobeLinkDetails {
-    string target = 1;
-    string fn_name = 2;
-    uint64 offset = 3;
-    int32 pid = 4;
-    bool retprobe = 5;
-}
-
-/* FentryLinkDetails contains fields specific to fentry attachments. */
-message FentryLinkDetails {
-    string fn_name = 1;
-}
-
-/* FexitLinkDetails contains fields specific to fexit attachments. */
-message FexitLinkDetails {
-    string fn_name = 1;
-}
-
-/* XDPLinkDetails contains fields specific to XDP attachments. */
-message XDPLinkDetails {
-    string interface = 1;
-    uint32 ifindex = 2;
-    int32 priority = 3;
-    int32 position = 4;
-    repeated int32 proceed_on = 5;
-    string netns = 6;
-    uint64 nsid = 7;
-    uint32 dispatcher_id = 8;
-    uint32 revision = 9;
-}
-
-/* TCLinkDetails contains fields specific to TC attachments. */
-message TCLinkDetails {
-    string interface = 1;
-    uint32 ifindex = 2;
-    string direction = 3;
-    int32 priority = 4;
-    int32 position = 5;
-    repeated int32 proceed_on = 6;
-    string netns = 7;
-    uint64 nsid = 8;
-    uint32 dispatcher_id = 9;
-    uint32 revision = 10;
-}
-
-/* TCXLinkDetails contains fields specific to TCX attachments. */
-message TCXLinkDetails {
-    string interface = 1;
-    uint32 ifindex = 2;
-    string direction = 3;
-    int32 priority = 4;
-    string netns = 5;
-    uint64 nsid = 6;
-    int32 position = 7;
-}
-
-/* LinkDetails is a polymorphic wrapper for type-specific link details. */
-message LinkDetails {
-    oneof details {
-        TracepointLinkDetails tracepoint = 1;
-        KprobeLinkDetails kprobe = 2;
-        UprobeLinkDetails uprobe = 3;
-        FentryLinkDetails fentry = 4;
-        FexitLinkDetails fexit = 5;
-        XDPLinkDetails xdp = 6;
-        TCLinkDetails tc = 7;
-        TCXLinkDetails tcx = 8;
-    }
-}
-
-/* LinkInfo combines summary and optional type-specific details. */
-message LinkInfo {
-    LinkSummary summary = 1;
-    optional LinkDetails details = 2;
-}
-
-/* ListLinksRequest represents a request to list BPF links.
- * If program_id is set, only links for that program are returned.
- */
-message ListLinksRequest {
-    optional uint32 program_id = 1;
-}
-
-/* ListLinksResponse contains the list of BPF links. */
-message ListLinksResponse {
-    repeated LinkInfo links = 1;
-}
-
-/* GetLinkRequest represents a request to get a specific BPF link. */
-message GetLinkRequest {
-    uint32 kernel_link_id = 1;
-}
-
-/* GetLinkResponse contains the details of a BPF link. */
-message GetLinkResponse {
-    LinkInfo link = 1;
 }

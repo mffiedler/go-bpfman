@@ -1307,13 +1307,19 @@ bpfman-proto: $(BPFMAN_PB_DIR)/bpfman.pb.go $(BPFMAN_PB_DIR)/bpfman_grpc.pb.go
 # prerequisites (after `|`) so a fresh checkout that lacks them fetches
 # them once, but their mtime does not invalidate the committed .pb.go
 # files.
+# proto/bpfman.proto is upstream bpfman/bpfman's file verbatim; its
+# go_package targets the upstream client stubs (clients/gobpfman/v1).
+# The M mapping below overrides that per invocation so our server
+# stubs generate under server/pb without editing the shared file.
 $(BPFMAN_PB_DIR)/bpfman.pb.go $(BPFMAN_PB_DIR)/bpfman_grpc.pb.go: \
 		$(BPFMAN_PROTO_DIR)/bpfman.proto \
 		| $(BIN_DIR)/protoc $(BIN_DIR)/protoc-gen-go $(BIN_DIR)/protoc-gen-go-grpc
 	mkdir -p $(BPFMAN_PB_DIR)
 	PATH="$(abspath $(BIN_DIR)):$$PATH" \
 	$(abspath $(BIN_DIR))/protoc --go_out=$(BPFMAN_PB_DIR) --go_opt=paths=source_relative \
+		--go_opt='Mbpfman.proto=github.com/bpfman/bpfman/server/pb;pb' \
 		--go-grpc_out=$(BPFMAN_PB_DIR) --go-grpc_opt=paths=source_relative \
+		--go-grpc_opt='Mbpfman.proto=github.com/bpfman/bpfman/server/pb;pb' \
 		--proto_path=$(BPFMAN_PROTO_DIR) \
 		$<
 

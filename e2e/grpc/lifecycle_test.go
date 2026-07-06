@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -28,13 +29,13 @@ import (
 //     PinByName maps.
 //   - flockWritesPerLifecycle: Attach + Detach + Unload --
 //     serialised on the cross-process writer flock.
-//   - readsPerLifecycle: Get + GetLink + ListLinks +
-//     post-Detach GetLink (negative) + post-Unload Get (negative)
+//   - readsPerLifecycle: Get + post-Attach Get (link membership) +
+//     post-Detach Get (link absence) + post-Unload Get (negative)
 //     -- lockless on both fronts.
 const (
 	loadsPerLifecycle       = 1
 	flockWritesPerLifecycle = 3
-	readsPerLifecycle       = 5
+	readsPerLifecycle       = 4
 	rpcsPerLifecycle        = loadsPerLifecycle + flockWritesPerLifecycle + readsPerLifecycle
 )
 
@@ -132,7 +133,7 @@ func TestParallel_GRPC(t *testing.T) {
 		t.Logf("  %-10s %4d lifecycles  ~%6d rpcs  (%s wall, ~%.1f rpcs/s)", "total", totalLifecycles, totalRPCs, elapsed.Round(time.Millisecond), rate)
 		t.Logf("    flock writes (Attach/Detach/Unload):  %6d ops  ~%6.1f/s", totalFlockWrites, flockRate)
 		t.Logf("    Loads (manager-gated):                %6d ops  ~%6.1f/s", totalLoads, loadRate)
-		t.Logf("    reads (Get/GetLink/ListLinks):        %6d ops  ~%6.1f/s", totalReads, readRate)
+		t.Logf("    reads (Get):                          %6d ops  ~%6.1f/s", totalReads, readRate)
 	})
 
 	for _, spec := range specs {
@@ -306,12 +307,15 @@ func envDuration(name string, def time.Duration) time.Duration {
 	return def
 }
 
-// runOneLifecycle drives one Load -> Get -> Attach -> GetLink ->
-// ListLinks -> Detach -> Unload cycle for the given type, with
-// round-trip and post-condition assertions at each step. No
-// counter-delta or shape assertions: those live in the .bpfman
-// scripts under e2e/scripts/. We only verify that the daemon's gRPC
-// surface behaves correctly under concurrency.
+// runOneLifecycle drives one Load -> Get -> Attach -> Get ->
+// Detach -> Get -> Unload cycle for the given type, with
+// round-trip and post-condition assertions at each step. Link
+// state is verified through Get's info.links (the wire protocol
+// has no per-link inspection RPC): the id Attach returns must
+// appear in the program's links while attached and vanish after
+// Detach. No counter-delta or shape assertions: those live in the
+// .bpfman scripts under e2e/scripts/. We only verify that the
+// daemon's gRPC surface behaves correctly under concurrency.
 func runOneLifecycle(t *testing.T, spec typeSpec, buildAttach func() *pb.AttachInfo, gid, iter int) error {
 	// 180s per-iteration safety net. With 5 sub-tests fanning in
 	// parallel, a goroutine can wait up to (N x sub-tests) flock
@@ -377,45 +381,30 @@ func runOneLifecycle(t *testing.T, spec typeSpec, buildAttach func() *pb.AttachI
 		return fmt.Errorf("Attach %d: returned zero bpfman link id", progID)
 	}
 
-	// The legacy protobuf field name is kernel_link_id, but the server
-	// interprets it as the bpfman-managed link handle.
-	getLinkResp, err := client.GetLink(ctx, &pb.GetLinkRequest{KernelLinkId: linkID})
+	// Get's info.links carries the program's managed link ids --
+	// the same id space Attach returns -- so membership proves the
+	// attach registered.
+	attachedResp, err := client.Get(ctx, &pb.GetRequest{Id: progID})
 	if err != nil {
-		return fmt.Errorf("GetLink %d: %w", linkID, err)
+		return fmt.Errorf("post-Attach Get %d: %w", progID, err)
 	}
-
-	if getLinkResp.Link == nil || getLinkResp.Link.Summary == nil {
-		return fmt.Errorf("GetLink %d: missing link summary", linkID)
+	if attachedResp.Info == nil {
+		return fmt.Errorf("post-Attach Get %d: missing Info", progID)
 	}
-	if getLinkResp.Link.Summary.KernelLinkId == 0 {
-		return fmt.Errorf("GetLink %d: missing captured kernel link id", linkID)
-	}
-	if getLinkResp.Link.Summary.KernelProgramId != progID {
-		return fmt.Errorf("GetLink %d: program id mismatch: got %d want %d", linkID, getLinkResp.Link.Summary.KernelProgramId, progID)
-	}
-
-	listResp, err := client.ListLinks(ctx, &pb.ListLinksRequest{ProgramId: &progID})
-	if err != nil {
-		return fmt.Errorf("ListLinks for program %d: %w", progID, err)
-	}
-
-	found := false
-	for _, l := range listResp.Links {
-		if l.Summary != nil && l.Summary.KernelProgramId == progID {
-			found = true
-			break
-		}
-	}
-	if !found {
-		return fmt.Errorf("ListLinks: link %d missing for program %d", linkID, progID)
+	if !slices.Contains(attachedResp.Info.Links, linkID) {
+		return fmt.Errorf("post-Attach Get %d: link %d missing from links %v", progID, linkID, attachedResp.Info.Links)
 	}
 
 	if _, err := client.Detach(ctx, &pb.DetachRequest{LinkId: linkID}); err != nil {
 		return fmt.Errorf("Detach %d: %w", linkID, err)
 	}
 
-	if _, err := client.GetLink(ctx, &pb.GetLinkRequest{KernelLinkId: linkID}); err == nil {
-		return fmt.Errorf("post-Detach: GetLink %d still succeeds", linkID)
+	detachedResp, err := client.Get(ctx, &pb.GetRequest{Id: progID})
+	if err != nil {
+		return fmt.Errorf("post-Detach Get %d: %w", progID, err)
+	}
+	if detachedResp.Info != nil && slices.Contains(detachedResp.Info.Links, linkID) {
+		return fmt.Errorf("post-Detach: link %d still listed for program %d", linkID, progID)
 	}
 
 	if _, err := client.Unload(ctx, &pb.UnloadRequest{Id: progID}); err != nil {

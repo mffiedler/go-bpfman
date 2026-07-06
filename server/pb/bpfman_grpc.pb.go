@@ -26,8 +26,6 @@ const (
 	Bpfman_List_FullMethodName         = "/bpfman.v1.Bpfman/List"
 	Bpfman_PullBytecode_FullMethodName = "/bpfman.v1.Bpfman/PullBytecode"
 	Bpfman_Get_FullMethodName          = "/bpfman.v1.Bpfman/Get"
-	Bpfman_ListLinks_FullMethodName    = "/bpfman.v1.Bpfman/ListLinks"
-	Bpfman_GetLink_FullMethodName      = "/bpfman.v1.Bpfman/GetLink"
 )
 
 // BpfmanClient is the client API for Bpfman service.
@@ -41,8 +39,6 @@ type BpfmanClient interface {
 	List(ctx context.Context, in *ListRequest, opts ...grpc.CallOption) (*ListResponse, error)
 	PullBytecode(ctx context.Context, in *PullBytecodeRequest, opts ...grpc.CallOption) (*PullBytecodeResponse, error)
 	Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error)
-	ListLinks(ctx context.Context, in *ListLinksRequest, opts ...grpc.CallOption) (*ListLinksResponse, error)
-	GetLink(ctx context.Context, in *GetLinkRequest, opts ...grpc.CallOption) (*GetLinkResponse, error)
 }
 
 type bpfmanClient struct {
@@ -123,26 +119,6 @@ func (c *bpfmanClient) Get(ctx context.Context, in *GetRequest, opts ...grpc.Cal
 	return out, nil
 }
 
-func (c *bpfmanClient) ListLinks(ctx context.Context, in *ListLinksRequest, opts ...grpc.CallOption) (*ListLinksResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListLinksResponse)
-	err := c.cc.Invoke(ctx, Bpfman_ListLinks_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *bpfmanClient) GetLink(ctx context.Context, in *GetLinkRequest, opts ...grpc.CallOption) (*GetLinkResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetLinkResponse)
-	err := c.cc.Invoke(ctx, Bpfman_GetLink_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // BpfmanServer is the server API for Bpfman service.
 // All implementations must embed UnimplementedBpfmanServer
 // for forward compatibility.
@@ -154,8 +130,6 @@ type BpfmanServer interface {
 	List(context.Context, *ListRequest) (*ListResponse, error)
 	PullBytecode(context.Context, *PullBytecodeRequest) (*PullBytecodeResponse, error)
 	Get(context.Context, *GetRequest) (*GetResponse, error)
-	ListLinks(context.Context, *ListLinksRequest) (*ListLinksResponse, error)
-	GetLink(context.Context, *GetLinkRequest) (*GetLinkResponse, error)
 	mustEmbedUnimplementedBpfmanServer()
 }
 
@@ -186,12 +160,6 @@ func (UnimplementedBpfmanServer) PullBytecode(context.Context, *PullBytecodeRequ
 }
 func (UnimplementedBpfmanServer) Get(context.Context, *GetRequest) (*GetResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Get not implemented")
-}
-func (UnimplementedBpfmanServer) ListLinks(context.Context, *ListLinksRequest) (*ListLinksResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ListLinks not implemented")
-}
-func (UnimplementedBpfmanServer) GetLink(context.Context, *GetLinkRequest) (*GetLinkResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method GetLink not implemented")
 }
 func (UnimplementedBpfmanServer) mustEmbedUnimplementedBpfmanServer() {}
 func (UnimplementedBpfmanServer) testEmbeddedByValue()                {}
@@ -340,42 +308,6 @@ func _Bpfman_Get_Handler(srv interface{}, ctx context.Context, dec func(interfac
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Bpfman_ListLinks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListLinksRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(BpfmanServer).ListLinks(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Bpfman_ListLinks_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(BpfmanServer).ListLinks(ctx, req.(*ListLinksRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Bpfman_GetLink_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetLinkRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(BpfmanServer).GetLink(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Bpfman_GetLink_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(BpfmanServer).GetLink(ctx, req.(*GetLinkRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // Bpfman_ServiceDesc is the grpc.ServiceDesc for Bpfman service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -410,14 +342,6 @@ var Bpfman_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Get",
 			Handler:    _Bpfman_Get_Handler,
-		},
-		{
-			MethodName: "ListLinks",
-			Handler:    _Bpfman_ListLinks_Handler,
-		},
-		{
-			MethodName: "GetLink",
-			Handler:    _Bpfman_GetLink_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

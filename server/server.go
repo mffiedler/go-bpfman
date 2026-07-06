@@ -187,7 +187,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 // in-process serialisation. Mutating handlers (Unload, Attach,
 // Detach) wrap their body in withWriterLock to acquire the
 // file-based writer lock from the lock package; read handlers
-// (List, Get, ListLinks, GetLink, PullBytecode) run lockless and rely
+// (List, Get, PullBytecode) run lockless and rely
 // on the store and kernel adapter for safe concurrent access. The
 // Load handler also takes no server-level lock; the manager handles
 // its own conditional flock acquisition for explicit map-owner joins

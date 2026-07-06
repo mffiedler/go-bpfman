@@ -85,80 +85,6 @@ func (BpfmanProgramType) EnumDescriptor() ([]byte, []int) {
 	return file_bpfman_proto_rawDescGZIP(), []int{0}
 }
 
-// Link type enum matching managed.LinkType
-type BpfmanLinkType int32
-
-const (
-	BpfmanLinkType_LINK_TYPE_UNSPECIFIED BpfmanLinkType = 0
-	BpfmanLinkType_LINK_TYPE_TRACEPOINT  BpfmanLinkType = 1
-	BpfmanLinkType_LINK_TYPE_KPROBE      BpfmanLinkType = 2
-	BpfmanLinkType_LINK_TYPE_KRETPROBE   BpfmanLinkType = 3
-	BpfmanLinkType_LINK_TYPE_UPROBE      BpfmanLinkType = 4
-	BpfmanLinkType_LINK_TYPE_URETPROBE   BpfmanLinkType = 5
-	BpfmanLinkType_LINK_TYPE_FENTRY      BpfmanLinkType = 6
-	BpfmanLinkType_LINK_TYPE_FEXIT       BpfmanLinkType = 7
-	BpfmanLinkType_LINK_TYPE_XDP         BpfmanLinkType = 8
-	BpfmanLinkType_LINK_TYPE_TC          BpfmanLinkType = 9
-	BpfmanLinkType_LINK_TYPE_TCX         BpfmanLinkType = 10
-)
-
-// Enum value maps for BpfmanLinkType.
-var (
-	BpfmanLinkType_name = map[int32]string{
-		0:  "LINK_TYPE_UNSPECIFIED",
-		1:  "LINK_TYPE_TRACEPOINT",
-		2:  "LINK_TYPE_KPROBE",
-		3:  "LINK_TYPE_KRETPROBE",
-		4:  "LINK_TYPE_UPROBE",
-		5:  "LINK_TYPE_URETPROBE",
-		6:  "LINK_TYPE_FENTRY",
-		7:  "LINK_TYPE_FEXIT",
-		8:  "LINK_TYPE_XDP",
-		9:  "LINK_TYPE_TC",
-		10: "LINK_TYPE_TCX",
-	}
-	BpfmanLinkType_value = map[string]int32{
-		"LINK_TYPE_UNSPECIFIED": 0,
-		"LINK_TYPE_TRACEPOINT":  1,
-		"LINK_TYPE_KPROBE":      2,
-		"LINK_TYPE_KRETPROBE":   3,
-		"LINK_TYPE_UPROBE":      4,
-		"LINK_TYPE_URETPROBE":   5,
-		"LINK_TYPE_FENTRY":      6,
-		"LINK_TYPE_FEXIT":       7,
-		"LINK_TYPE_XDP":         8,
-		"LINK_TYPE_TC":          9,
-		"LINK_TYPE_TCX":         10,
-	}
-)
-
-func (x BpfmanLinkType) Enum() *BpfmanLinkType {
-	p := new(BpfmanLinkType)
-	*p = x
-	return p
-}
-
-func (x BpfmanLinkType) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (BpfmanLinkType) Descriptor() protoreflect.EnumDescriptor {
-	return file_bpfman_proto_enumTypes[1].Descriptor()
-}
-
-func (BpfmanLinkType) Type() protoreflect.EnumType {
-	return &file_bpfman_proto_enumTypes[1]
-}
-
-func (x BpfmanLinkType) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use BpfmanLinkType.Descriptor instead.
-func (BpfmanLinkType) EnumDescriptor() ([]byte, []int) {
-	return file_bpfman_proto_rawDescGZIP(), []int{1}
-}
-
 type BytecodeImage struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	Url             string                 `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
@@ -2249,1096 +2175,6 @@ func (x *GetResponse) GetKernelInfo() *KernelProgramInfo {
 	return nil
 }
 
-// Common link fields
-type LinkSummary struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	KernelLinkId    uint32                 `protobuf:"varint,1,opt,name=kernel_link_id,json=kernelLinkId,proto3" json:"kernel_link_id,omitempty"`
-	LinkType        BpfmanLinkType         `protobuf:"varint,2,opt,name=link_type,json=linkType,proto3,enum=bpfman.v1.BpfmanLinkType" json:"link_type,omitempty"`
-	KernelProgramId uint32                 `protobuf:"varint,3,opt,name=kernel_program_id,json=kernelProgramId,proto3" json:"kernel_program_id,omitempty"`
-	PinPath         string                 `protobuf:"bytes,4,opt,name=pin_path,json=pinPath,proto3" json:"pin_path,omitempty"`
-	CreatedAt       string                 `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"` // RFC3339
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
-}
-
-func (x *LinkSummary) Reset() {
-	*x = LinkSummary{}
-	mi := &file_bpfman_proto_msgTypes[32]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *LinkSummary) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*LinkSummary) ProtoMessage() {}
-
-func (x *LinkSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_bpfman_proto_msgTypes[32]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use LinkSummary.ProtoReflect.Descriptor instead.
-func (*LinkSummary) Descriptor() ([]byte, []int) {
-	return file_bpfman_proto_rawDescGZIP(), []int{32}
-}
-
-func (x *LinkSummary) GetKernelLinkId() uint32 {
-	if x != nil {
-		return x.KernelLinkId
-	}
-	return 0
-}
-
-func (x *LinkSummary) GetLinkType() BpfmanLinkType {
-	if x != nil {
-		return x.LinkType
-	}
-	return BpfmanLinkType_LINK_TYPE_UNSPECIFIED
-}
-
-func (x *LinkSummary) GetKernelProgramId() uint32 {
-	if x != nil {
-		return x.KernelProgramId
-	}
-	return 0
-}
-
-func (x *LinkSummary) GetPinPath() string {
-	if x != nil {
-		return x.PinPath
-	}
-	return ""
-}
-
-func (x *LinkSummary) GetCreatedAt() string {
-	if x != nil {
-		return x.CreatedAt
-	}
-	return ""
-}
-
-// TracepointLinkDetails contains fields specific to tracepoint attachments.
-type TracepointLinkDetails struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Group         string                 `protobuf:"bytes,1,opt,name=group,proto3" json:"group,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *TracepointLinkDetails) Reset() {
-	*x = TracepointLinkDetails{}
-	mi := &file_bpfman_proto_msgTypes[33]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *TracepointLinkDetails) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*TracepointLinkDetails) ProtoMessage() {}
-
-func (x *TracepointLinkDetails) ProtoReflect() protoreflect.Message {
-	mi := &file_bpfman_proto_msgTypes[33]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use TracepointLinkDetails.ProtoReflect.Descriptor instead.
-func (*TracepointLinkDetails) Descriptor() ([]byte, []int) {
-	return file_bpfman_proto_rawDescGZIP(), []int{33}
-}
-
-func (x *TracepointLinkDetails) GetGroup() string {
-	if x != nil {
-		return x.Group
-	}
-	return ""
-}
-
-func (x *TracepointLinkDetails) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-// KprobeLinkDetails contains fields specific to kprobe/kretprobe attachments.
-type KprobeLinkDetails struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	FnName        string                 `protobuf:"bytes,1,opt,name=fn_name,json=fnName,proto3" json:"fn_name,omitempty"`
-	Offset        uint64                 `protobuf:"varint,2,opt,name=offset,proto3" json:"offset,omitempty"`
-	Retprobe      bool                   `protobuf:"varint,3,opt,name=retprobe,proto3" json:"retprobe,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *KprobeLinkDetails) Reset() {
-	*x = KprobeLinkDetails{}
-	mi := &file_bpfman_proto_msgTypes[34]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *KprobeLinkDetails) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*KprobeLinkDetails) ProtoMessage() {}
-
-func (x *KprobeLinkDetails) ProtoReflect() protoreflect.Message {
-	mi := &file_bpfman_proto_msgTypes[34]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use KprobeLinkDetails.ProtoReflect.Descriptor instead.
-func (*KprobeLinkDetails) Descriptor() ([]byte, []int) {
-	return file_bpfman_proto_rawDescGZIP(), []int{34}
-}
-
-func (x *KprobeLinkDetails) GetFnName() string {
-	if x != nil {
-		return x.FnName
-	}
-	return ""
-}
-
-func (x *KprobeLinkDetails) GetOffset() uint64 {
-	if x != nil {
-		return x.Offset
-	}
-	return 0
-}
-
-func (x *KprobeLinkDetails) GetRetprobe() bool {
-	if x != nil {
-		return x.Retprobe
-	}
-	return false
-}
-
-// UprobeLinkDetails contains fields specific to uprobe/uretprobe attachments.
-type UprobeLinkDetails struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Target        string                 `protobuf:"bytes,1,opt,name=target,proto3" json:"target,omitempty"`
-	FnName        string                 `protobuf:"bytes,2,opt,name=fn_name,json=fnName,proto3" json:"fn_name,omitempty"`
-	Offset        uint64                 `protobuf:"varint,3,opt,name=offset,proto3" json:"offset,omitempty"`
-	Pid           int32                  `protobuf:"varint,4,opt,name=pid,proto3" json:"pid,omitempty"`
-	Retprobe      bool                   `protobuf:"varint,5,opt,name=retprobe,proto3" json:"retprobe,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UprobeLinkDetails) Reset() {
-	*x = UprobeLinkDetails{}
-	mi := &file_bpfman_proto_msgTypes[35]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UprobeLinkDetails) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UprobeLinkDetails) ProtoMessage() {}
-
-func (x *UprobeLinkDetails) ProtoReflect() protoreflect.Message {
-	mi := &file_bpfman_proto_msgTypes[35]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UprobeLinkDetails.ProtoReflect.Descriptor instead.
-func (*UprobeLinkDetails) Descriptor() ([]byte, []int) {
-	return file_bpfman_proto_rawDescGZIP(), []int{35}
-}
-
-func (x *UprobeLinkDetails) GetTarget() string {
-	if x != nil {
-		return x.Target
-	}
-	return ""
-}
-
-func (x *UprobeLinkDetails) GetFnName() string {
-	if x != nil {
-		return x.FnName
-	}
-	return ""
-}
-
-func (x *UprobeLinkDetails) GetOffset() uint64 {
-	if x != nil {
-		return x.Offset
-	}
-	return 0
-}
-
-func (x *UprobeLinkDetails) GetPid() int32 {
-	if x != nil {
-		return x.Pid
-	}
-	return 0
-}
-
-func (x *UprobeLinkDetails) GetRetprobe() bool {
-	if x != nil {
-		return x.Retprobe
-	}
-	return false
-}
-
-// FentryLinkDetails contains fields specific to fentry attachments.
-type FentryLinkDetails struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	FnName        string                 `protobuf:"bytes,1,opt,name=fn_name,json=fnName,proto3" json:"fn_name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *FentryLinkDetails) Reset() {
-	*x = FentryLinkDetails{}
-	mi := &file_bpfman_proto_msgTypes[36]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *FentryLinkDetails) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*FentryLinkDetails) ProtoMessage() {}
-
-func (x *FentryLinkDetails) ProtoReflect() protoreflect.Message {
-	mi := &file_bpfman_proto_msgTypes[36]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use FentryLinkDetails.ProtoReflect.Descriptor instead.
-func (*FentryLinkDetails) Descriptor() ([]byte, []int) {
-	return file_bpfman_proto_rawDescGZIP(), []int{36}
-}
-
-func (x *FentryLinkDetails) GetFnName() string {
-	if x != nil {
-		return x.FnName
-	}
-	return ""
-}
-
-// FexitLinkDetails contains fields specific to fexit attachments.
-type FexitLinkDetails struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	FnName        string                 `protobuf:"bytes,1,opt,name=fn_name,json=fnName,proto3" json:"fn_name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *FexitLinkDetails) Reset() {
-	*x = FexitLinkDetails{}
-	mi := &file_bpfman_proto_msgTypes[37]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *FexitLinkDetails) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*FexitLinkDetails) ProtoMessage() {}
-
-func (x *FexitLinkDetails) ProtoReflect() protoreflect.Message {
-	mi := &file_bpfman_proto_msgTypes[37]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use FexitLinkDetails.ProtoReflect.Descriptor instead.
-func (*FexitLinkDetails) Descriptor() ([]byte, []int) {
-	return file_bpfman_proto_rawDescGZIP(), []int{37}
-}
-
-func (x *FexitLinkDetails) GetFnName() string {
-	if x != nil {
-		return x.FnName
-	}
-	return ""
-}
-
-// XDPLinkDetails contains fields specific to XDP attachments.
-type XDPLinkDetails struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Interface     string                 `protobuf:"bytes,1,opt,name=interface,proto3" json:"interface,omitempty"`
-	Ifindex       uint32                 `protobuf:"varint,2,opt,name=ifindex,proto3" json:"ifindex,omitempty"`
-	Priority      int32                  `protobuf:"varint,3,opt,name=priority,proto3" json:"priority,omitempty"`
-	Position      int32                  `protobuf:"varint,4,opt,name=position,proto3" json:"position,omitempty"`
-	ProceedOn     []int32                `protobuf:"varint,5,rep,packed,name=proceed_on,json=proceedOn,proto3" json:"proceed_on,omitempty"`
-	Netns         string                 `protobuf:"bytes,6,opt,name=netns,proto3" json:"netns,omitempty"`
-	Nsid          uint64                 `protobuf:"varint,7,opt,name=nsid,proto3" json:"nsid,omitempty"`
-	DispatcherId  uint32                 `protobuf:"varint,8,opt,name=dispatcher_id,json=dispatcherId,proto3" json:"dispatcher_id,omitempty"`
-	Revision      uint32                 `protobuf:"varint,9,opt,name=revision,proto3" json:"revision,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *XDPLinkDetails) Reset() {
-	*x = XDPLinkDetails{}
-	mi := &file_bpfman_proto_msgTypes[38]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *XDPLinkDetails) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*XDPLinkDetails) ProtoMessage() {}
-
-func (x *XDPLinkDetails) ProtoReflect() protoreflect.Message {
-	mi := &file_bpfman_proto_msgTypes[38]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use XDPLinkDetails.ProtoReflect.Descriptor instead.
-func (*XDPLinkDetails) Descriptor() ([]byte, []int) {
-	return file_bpfman_proto_rawDescGZIP(), []int{38}
-}
-
-func (x *XDPLinkDetails) GetInterface() string {
-	if x != nil {
-		return x.Interface
-	}
-	return ""
-}
-
-func (x *XDPLinkDetails) GetIfindex() uint32 {
-	if x != nil {
-		return x.Ifindex
-	}
-	return 0
-}
-
-func (x *XDPLinkDetails) GetPriority() int32 {
-	if x != nil {
-		return x.Priority
-	}
-	return 0
-}
-
-func (x *XDPLinkDetails) GetPosition() int32 {
-	if x != nil {
-		return x.Position
-	}
-	return 0
-}
-
-func (x *XDPLinkDetails) GetProceedOn() []int32 {
-	if x != nil {
-		return x.ProceedOn
-	}
-	return nil
-}
-
-func (x *XDPLinkDetails) GetNetns() string {
-	if x != nil {
-		return x.Netns
-	}
-	return ""
-}
-
-func (x *XDPLinkDetails) GetNsid() uint64 {
-	if x != nil {
-		return x.Nsid
-	}
-	return 0
-}
-
-func (x *XDPLinkDetails) GetDispatcherId() uint32 {
-	if x != nil {
-		return x.DispatcherId
-	}
-	return 0
-}
-
-func (x *XDPLinkDetails) GetRevision() uint32 {
-	if x != nil {
-		return x.Revision
-	}
-	return 0
-}
-
-// TCLinkDetails contains fields specific to TC attachments.
-type TCLinkDetails struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Interface     string                 `protobuf:"bytes,1,opt,name=interface,proto3" json:"interface,omitempty"`
-	Ifindex       uint32                 `protobuf:"varint,2,opt,name=ifindex,proto3" json:"ifindex,omitempty"`
-	Direction     string                 `protobuf:"bytes,3,opt,name=direction,proto3" json:"direction,omitempty"`
-	Priority      int32                  `protobuf:"varint,4,opt,name=priority,proto3" json:"priority,omitempty"`
-	Position      int32                  `protobuf:"varint,5,opt,name=position,proto3" json:"position,omitempty"`
-	ProceedOn     []int32                `protobuf:"varint,6,rep,packed,name=proceed_on,json=proceedOn,proto3" json:"proceed_on,omitempty"`
-	Netns         string                 `protobuf:"bytes,7,opt,name=netns,proto3" json:"netns,omitempty"`
-	Nsid          uint64                 `protobuf:"varint,8,opt,name=nsid,proto3" json:"nsid,omitempty"`
-	DispatcherId  uint32                 `protobuf:"varint,9,opt,name=dispatcher_id,json=dispatcherId,proto3" json:"dispatcher_id,omitempty"`
-	Revision      uint32                 `protobuf:"varint,10,opt,name=revision,proto3" json:"revision,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *TCLinkDetails) Reset() {
-	*x = TCLinkDetails{}
-	mi := &file_bpfman_proto_msgTypes[39]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *TCLinkDetails) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*TCLinkDetails) ProtoMessage() {}
-
-func (x *TCLinkDetails) ProtoReflect() protoreflect.Message {
-	mi := &file_bpfman_proto_msgTypes[39]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use TCLinkDetails.ProtoReflect.Descriptor instead.
-func (*TCLinkDetails) Descriptor() ([]byte, []int) {
-	return file_bpfman_proto_rawDescGZIP(), []int{39}
-}
-
-func (x *TCLinkDetails) GetInterface() string {
-	if x != nil {
-		return x.Interface
-	}
-	return ""
-}
-
-func (x *TCLinkDetails) GetIfindex() uint32 {
-	if x != nil {
-		return x.Ifindex
-	}
-	return 0
-}
-
-func (x *TCLinkDetails) GetDirection() string {
-	if x != nil {
-		return x.Direction
-	}
-	return ""
-}
-
-func (x *TCLinkDetails) GetPriority() int32 {
-	if x != nil {
-		return x.Priority
-	}
-	return 0
-}
-
-func (x *TCLinkDetails) GetPosition() int32 {
-	if x != nil {
-		return x.Position
-	}
-	return 0
-}
-
-func (x *TCLinkDetails) GetProceedOn() []int32 {
-	if x != nil {
-		return x.ProceedOn
-	}
-	return nil
-}
-
-func (x *TCLinkDetails) GetNetns() string {
-	if x != nil {
-		return x.Netns
-	}
-	return ""
-}
-
-func (x *TCLinkDetails) GetNsid() uint64 {
-	if x != nil {
-		return x.Nsid
-	}
-	return 0
-}
-
-func (x *TCLinkDetails) GetDispatcherId() uint32 {
-	if x != nil {
-		return x.DispatcherId
-	}
-	return 0
-}
-
-func (x *TCLinkDetails) GetRevision() uint32 {
-	if x != nil {
-		return x.Revision
-	}
-	return 0
-}
-
-// TCXLinkDetails contains fields specific to TCX attachments.
-type TCXLinkDetails struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Interface     string                 `protobuf:"bytes,1,opt,name=interface,proto3" json:"interface,omitempty"`
-	Ifindex       uint32                 `protobuf:"varint,2,opt,name=ifindex,proto3" json:"ifindex,omitempty"`
-	Direction     string                 `protobuf:"bytes,3,opt,name=direction,proto3" json:"direction,omitempty"`
-	Priority      int32                  `protobuf:"varint,4,opt,name=priority,proto3" json:"priority,omitempty"`
-	Netns         string                 `protobuf:"bytes,5,opt,name=netns,proto3" json:"netns,omitempty"`
-	Nsid          uint64                 `protobuf:"varint,6,opt,name=nsid,proto3" json:"nsid,omitempty"`
-	Position      int32                  `protobuf:"varint,7,opt,name=position,proto3" json:"position,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *TCXLinkDetails) Reset() {
-	*x = TCXLinkDetails{}
-	mi := &file_bpfman_proto_msgTypes[40]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *TCXLinkDetails) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*TCXLinkDetails) ProtoMessage() {}
-
-func (x *TCXLinkDetails) ProtoReflect() protoreflect.Message {
-	mi := &file_bpfman_proto_msgTypes[40]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use TCXLinkDetails.ProtoReflect.Descriptor instead.
-func (*TCXLinkDetails) Descriptor() ([]byte, []int) {
-	return file_bpfman_proto_rawDescGZIP(), []int{40}
-}
-
-func (x *TCXLinkDetails) GetInterface() string {
-	if x != nil {
-		return x.Interface
-	}
-	return ""
-}
-
-func (x *TCXLinkDetails) GetIfindex() uint32 {
-	if x != nil {
-		return x.Ifindex
-	}
-	return 0
-}
-
-func (x *TCXLinkDetails) GetDirection() string {
-	if x != nil {
-		return x.Direction
-	}
-	return ""
-}
-
-func (x *TCXLinkDetails) GetPriority() int32 {
-	if x != nil {
-		return x.Priority
-	}
-	return 0
-}
-
-func (x *TCXLinkDetails) GetNetns() string {
-	if x != nil {
-		return x.Netns
-	}
-	return ""
-}
-
-func (x *TCXLinkDetails) GetNsid() uint64 {
-	if x != nil {
-		return x.Nsid
-	}
-	return 0
-}
-
-func (x *TCXLinkDetails) GetPosition() int32 {
-	if x != nil {
-		return x.Position
-	}
-	return 0
-}
-
-// LinkDetails is a polymorphic wrapper for type-specific link details.
-type LinkDetails struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Types that are valid to be assigned to Details:
-	//
-	//	*LinkDetails_Tracepoint
-	//	*LinkDetails_Kprobe
-	//	*LinkDetails_Uprobe
-	//	*LinkDetails_Fentry
-	//	*LinkDetails_Fexit
-	//	*LinkDetails_Xdp
-	//	*LinkDetails_Tc
-	//	*LinkDetails_Tcx
-	Details       isLinkDetails_Details `protobuf_oneof:"details"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *LinkDetails) Reset() {
-	*x = LinkDetails{}
-	mi := &file_bpfman_proto_msgTypes[41]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *LinkDetails) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*LinkDetails) ProtoMessage() {}
-
-func (x *LinkDetails) ProtoReflect() protoreflect.Message {
-	mi := &file_bpfman_proto_msgTypes[41]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use LinkDetails.ProtoReflect.Descriptor instead.
-func (*LinkDetails) Descriptor() ([]byte, []int) {
-	return file_bpfman_proto_rawDescGZIP(), []int{41}
-}
-
-func (x *LinkDetails) GetDetails() isLinkDetails_Details {
-	if x != nil {
-		return x.Details
-	}
-	return nil
-}
-
-func (x *LinkDetails) GetTracepoint() *TracepointLinkDetails {
-	if x != nil {
-		if x, ok := x.Details.(*LinkDetails_Tracepoint); ok {
-			return x.Tracepoint
-		}
-	}
-	return nil
-}
-
-func (x *LinkDetails) GetKprobe() *KprobeLinkDetails {
-	if x != nil {
-		if x, ok := x.Details.(*LinkDetails_Kprobe); ok {
-			return x.Kprobe
-		}
-	}
-	return nil
-}
-
-func (x *LinkDetails) GetUprobe() *UprobeLinkDetails {
-	if x != nil {
-		if x, ok := x.Details.(*LinkDetails_Uprobe); ok {
-			return x.Uprobe
-		}
-	}
-	return nil
-}
-
-func (x *LinkDetails) GetFentry() *FentryLinkDetails {
-	if x != nil {
-		if x, ok := x.Details.(*LinkDetails_Fentry); ok {
-			return x.Fentry
-		}
-	}
-	return nil
-}
-
-func (x *LinkDetails) GetFexit() *FexitLinkDetails {
-	if x != nil {
-		if x, ok := x.Details.(*LinkDetails_Fexit); ok {
-			return x.Fexit
-		}
-	}
-	return nil
-}
-
-func (x *LinkDetails) GetXdp() *XDPLinkDetails {
-	if x != nil {
-		if x, ok := x.Details.(*LinkDetails_Xdp); ok {
-			return x.Xdp
-		}
-	}
-	return nil
-}
-
-func (x *LinkDetails) GetTc() *TCLinkDetails {
-	if x != nil {
-		if x, ok := x.Details.(*LinkDetails_Tc); ok {
-			return x.Tc
-		}
-	}
-	return nil
-}
-
-func (x *LinkDetails) GetTcx() *TCXLinkDetails {
-	if x != nil {
-		if x, ok := x.Details.(*LinkDetails_Tcx); ok {
-			return x.Tcx
-		}
-	}
-	return nil
-}
-
-type isLinkDetails_Details interface {
-	isLinkDetails_Details()
-}
-
-type LinkDetails_Tracepoint struct {
-	Tracepoint *TracepointLinkDetails `protobuf:"bytes,1,opt,name=tracepoint,proto3,oneof"`
-}
-
-type LinkDetails_Kprobe struct {
-	Kprobe *KprobeLinkDetails `protobuf:"bytes,2,opt,name=kprobe,proto3,oneof"`
-}
-
-type LinkDetails_Uprobe struct {
-	Uprobe *UprobeLinkDetails `protobuf:"bytes,3,opt,name=uprobe,proto3,oneof"`
-}
-
-type LinkDetails_Fentry struct {
-	Fentry *FentryLinkDetails `protobuf:"bytes,4,opt,name=fentry,proto3,oneof"`
-}
-
-type LinkDetails_Fexit struct {
-	Fexit *FexitLinkDetails `protobuf:"bytes,5,opt,name=fexit,proto3,oneof"`
-}
-
-type LinkDetails_Xdp struct {
-	Xdp *XDPLinkDetails `protobuf:"bytes,6,opt,name=xdp,proto3,oneof"`
-}
-
-type LinkDetails_Tc struct {
-	Tc *TCLinkDetails `protobuf:"bytes,7,opt,name=tc,proto3,oneof"`
-}
-
-type LinkDetails_Tcx struct {
-	Tcx *TCXLinkDetails `protobuf:"bytes,8,opt,name=tcx,proto3,oneof"`
-}
-
-func (*LinkDetails_Tracepoint) isLinkDetails_Details() {}
-
-func (*LinkDetails_Kprobe) isLinkDetails_Details() {}
-
-func (*LinkDetails_Uprobe) isLinkDetails_Details() {}
-
-func (*LinkDetails_Fentry) isLinkDetails_Details() {}
-
-func (*LinkDetails_Fexit) isLinkDetails_Details() {}
-
-func (*LinkDetails_Xdp) isLinkDetails_Details() {}
-
-func (*LinkDetails_Tc) isLinkDetails_Details() {}
-
-func (*LinkDetails_Tcx) isLinkDetails_Details() {}
-
-// LinkInfo combines summary and optional type-specific details.
-type LinkInfo struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Summary       *LinkSummary           `protobuf:"bytes,1,opt,name=summary,proto3" json:"summary,omitempty"`
-	Details       *LinkDetails           `protobuf:"bytes,2,opt,name=details,proto3,oneof" json:"details,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *LinkInfo) Reset() {
-	*x = LinkInfo{}
-	mi := &file_bpfman_proto_msgTypes[42]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *LinkInfo) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*LinkInfo) ProtoMessage() {}
-
-func (x *LinkInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_bpfman_proto_msgTypes[42]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use LinkInfo.ProtoReflect.Descriptor instead.
-func (*LinkInfo) Descriptor() ([]byte, []int) {
-	return file_bpfman_proto_rawDescGZIP(), []int{42}
-}
-
-func (x *LinkInfo) GetSummary() *LinkSummary {
-	if x != nil {
-		return x.Summary
-	}
-	return nil
-}
-
-func (x *LinkInfo) GetDetails() *LinkDetails {
-	if x != nil {
-		return x.Details
-	}
-	return nil
-}
-
-// ListLinksRequest represents a request to list BPF links.
-// If program_id is set, only links for that program are returned.
-type ListLinksRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProgramId     *uint32                `protobuf:"varint,1,opt,name=program_id,json=programId,proto3,oneof" json:"program_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListLinksRequest) Reset() {
-	*x = ListLinksRequest{}
-	mi := &file_bpfman_proto_msgTypes[43]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListLinksRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListLinksRequest) ProtoMessage() {}
-
-func (x *ListLinksRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bpfman_proto_msgTypes[43]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListLinksRequest.ProtoReflect.Descriptor instead.
-func (*ListLinksRequest) Descriptor() ([]byte, []int) {
-	return file_bpfman_proto_rawDescGZIP(), []int{43}
-}
-
-func (x *ListLinksRequest) GetProgramId() uint32 {
-	if x != nil && x.ProgramId != nil {
-		return *x.ProgramId
-	}
-	return 0
-}
-
-// ListLinksResponse contains the list of BPF links.
-type ListLinksResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Links         []*LinkInfo            `protobuf:"bytes,1,rep,name=links,proto3" json:"links,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListLinksResponse) Reset() {
-	*x = ListLinksResponse{}
-	mi := &file_bpfman_proto_msgTypes[44]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListLinksResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListLinksResponse) ProtoMessage() {}
-
-func (x *ListLinksResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bpfman_proto_msgTypes[44]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListLinksResponse.ProtoReflect.Descriptor instead.
-func (*ListLinksResponse) Descriptor() ([]byte, []int) {
-	return file_bpfman_proto_rawDescGZIP(), []int{44}
-}
-
-func (x *ListLinksResponse) GetLinks() []*LinkInfo {
-	if x != nil {
-		return x.Links
-	}
-	return nil
-}
-
-// GetLinkRequest represents a request to get a specific BPF link.
-type GetLinkRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	KernelLinkId  uint32                 `protobuf:"varint,1,opt,name=kernel_link_id,json=kernelLinkId,proto3" json:"kernel_link_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *GetLinkRequest) Reset() {
-	*x = GetLinkRequest{}
-	mi := &file_bpfman_proto_msgTypes[45]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *GetLinkRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*GetLinkRequest) ProtoMessage() {}
-
-func (x *GetLinkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bpfman_proto_msgTypes[45]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use GetLinkRequest.ProtoReflect.Descriptor instead.
-func (*GetLinkRequest) Descriptor() ([]byte, []int) {
-	return file_bpfman_proto_rawDescGZIP(), []int{45}
-}
-
-func (x *GetLinkRequest) GetKernelLinkId() uint32 {
-	if x != nil {
-		return x.KernelLinkId
-	}
-	return 0
-}
-
-// GetLinkResponse contains the details of a BPF link.
-type GetLinkResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Link          *LinkInfo              `protobuf:"bytes,1,opt,name=link,proto3" json:"link,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *GetLinkResponse) Reset() {
-	*x = GetLinkResponse{}
-	mi := &file_bpfman_proto_msgTypes[46]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *GetLinkResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*GetLinkResponse) ProtoMessage() {}
-
-func (x *GetLinkResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bpfman_proto_msgTypes[46]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use GetLinkResponse.ProtoReflect.Descriptor instead.
-func (*GetLinkResponse) Descriptor() ([]byte, []int) {
-	return file_bpfman_proto_rawDescGZIP(), []int{46}
-}
-
-func (x *GetLinkResponse) GetLink() *LinkInfo {
-	if x != nil {
-		return x.Link
-	}
-	return nil
-}
-
 type ListResponse_ListResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Info          *ProgramInfo           `protobuf:"bytes,1,opt,name=info,proto3,oneof" json:"info,omitempty"`
@@ -3349,7 +2185,7 @@ type ListResponse_ListResult struct {
 
 func (x *ListResponse_ListResult) Reset() {
 	*x = ListResponse_ListResult{}
-	mi := &file_bpfman_proto_msgTypes[60]
+	mi := &file_bpfman_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3361,7 +2197,7 @@ func (x *ListResponse_ListResult) String() string {
 func (*ListResponse_ListResult) ProtoMessage() {}
 
 func (x *ListResponse_ListResult) ProtoReflect() protoreflect.Message {
-	mi := &file_bpfman_proto_msgTypes[60]
+	mi := &file_bpfman_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3605,90 +2441,7 @@ const file_bpfman_proto_rawDesc = "" +
 	"\x04info\x18\x01 \x01(\v2\x16.bpfman.v1.ProgramInfoH\x00R\x04info\x88\x01\x01\x12=\n" +
 	"\vkernel_info\x18\x02 \x01(\v2\x1c.bpfman.v1.KernelProgramInfoR\n" +
 	"kernelInfoB\a\n" +
-	"\x05_info\"\xd1\x01\n" +
-	"\vLinkSummary\x12$\n" +
-	"\x0ekernel_link_id\x18\x01 \x01(\rR\fkernelLinkId\x126\n" +
-	"\tlink_type\x18\x02 \x01(\x0e2\x19.bpfman.v1.BpfmanLinkTypeR\blinkType\x12*\n" +
-	"\x11kernel_program_id\x18\x03 \x01(\rR\x0fkernelProgramId\x12\x19\n" +
-	"\bpin_path\x18\x04 \x01(\tR\apinPath\x12\x1d\n" +
-	"\n" +
-	"created_at\x18\x05 \x01(\tR\tcreatedAt\"A\n" +
-	"\x15TracepointLinkDetails\x12\x14\n" +
-	"\x05group\x18\x01 \x01(\tR\x05group\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"`\n" +
-	"\x11KprobeLinkDetails\x12\x17\n" +
-	"\afn_name\x18\x01 \x01(\tR\x06fnName\x12\x16\n" +
-	"\x06offset\x18\x02 \x01(\x04R\x06offset\x12\x1a\n" +
-	"\bretprobe\x18\x03 \x01(\bR\bretprobe\"\x8a\x01\n" +
-	"\x11UprobeLinkDetails\x12\x16\n" +
-	"\x06target\x18\x01 \x01(\tR\x06target\x12\x17\n" +
-	"\afn_name\x18\x02 \x01(\tR\x06fnName\x12\x16\n" +
-	"\x06offset\x18\x03 \x01(\x04R\x06offset\x12\x10\n" +
-	"\x03pid\x18\x04 \x01(\x05R\x03pid\x12\x1a\n" +
-	"\bretprobe\x18\x05 \x01(\bR\bretprobe\",\n" +
-	"\x11FentryLinkDetails\x12\x17\n" +
-	"\afn_name\x18\x01 \x01(\tR\x06fnName\"+\n" +
-	"\x10FexitLinkDetails\x12\x17\n" +
-	"\afn_name\x18\x01 \x01(\tR\x06fnName\"\x8a\x02\n" +
-	"\x0eXDPLinkDetails\x12\x1c\n" +
-	"\tinterface\x18\x01 \x01(\tR\tinterface\x12\x18\n" +
-	"\aifindex\x18\x02 \x01(\rR\aifindex\x12\x1a\n" +
-	"\bpriority\x18\x03 \x01(\x05R\bpriority\x12\x1a\n" +
-	"\bposition\x18\x04 \x01(\x05R\bposition\x12\x1d\n" +
-	"\n" +
-	"proceed_on\x18\x05 \x03(\x05R\tproceedOn\x12\x14\n" +
-	"\x05netns\x18\x06 \x01(\tR\x05netns\x12\x12\n" +
-	"\x04nsid\x18\a \x01(\x04R\x04nsid\x12#\n" +
-	"\rdispatcher_id\x18\b \x01(\rR\fdispatcherId\x12\x1a\n" +
-	"\brevision\x18\t \x01(\rR\brevision\"\xa7\x02\n" +
-	"\rTCLinkDetails\x12\x1c\n" +
-	"\tinterface\x18\x01 \x01(\tR\tinterface\x12\x18\n" +
-	"\aifindex\x18\x02 \x01(\rR\aifindex\x12\x1c\n" +
-	"\tdirection\x18\x03 \x01(\tR\tdirection\x12\x1a\n" +
-	"\bpriority\x18\x04 \x01(\x05R\bpriority\x12\x1a\n" +
-	"\bposition\x18\x05 \x01(\x05R\bposition\x12\x1d\n" +
-	"\n" +
-	"proceed_on\x18\x06 \x03(\x05R\tproceedOn\x12\x14\n" +
-	"\x05netns\x18\a \x01(\tR\x05netns\x12\x12\n" +
-	"\x04nsid\x18\b \x01(\x04R\x04nsid\x12#\n" +
-	"\rdispatcher_id\x18\t \x01(\rR\fdispatcherId\x12\x1a\n" +
-	"\brevision\x18\n" +
-	" \x01(\rR\brevision\"\xc8\x01\n" +
-	"\x0eTCXLinkDetails\x12\x1c\n" +
-	"\tinterface\x18\x01 \x01(\tR\tinterface\x12\x18\n" +
-	"\aifindex\x18\x02 \x01(\rR\aifindex\x12\x1c\n" +
-	"\tdirection\x18\x03 \x01(\tR\tdirection\x12\x1a\n" +
-	"\bpriority\x18\x04 \x01(\x05R\bpriority\x12\x14\n" +
-	"\x05netns\x18\x05 \x01(\tR\x05netns\x12\x12\n" +
-	"\x04nsid\x18\x06 \x01(\x04R\x04nsid\x12\x1a\n" +
-	"\bposition\x18\a \x01(\x05R\bposition\"\xc3\x03\n" +
-	"\vLinkDetails\x12B\n" +
-	"\n" +
-	"tracepoint\x18\x01 \x01(\v2 .bpfman.v1.TracepointLinkDetailsH\x00R\n" +
-	"tracepoint\x126\n" +
-	"\x06kprobe\x18\x02 \x01(\v2\x1c.bpfman.v1.KprobeLinkDetailsH\x00R\x06kprobe\x126\n" +
-	"\x06uprobe\x18\x03 \x01(\v2\x1c.bpfman.v1.UprobeLinkDetailsH\x00R\x06uprobe\x126\n" +
-	"\x06fentry\x18\x04 \x01(\v2\x1c.bpfman.v1.FentryLinkDetailsH\x00R\x06fentry\x123\n" +
-	"\x05fexit\x18\x05 \x01(\v2\x1b.bpfman.v1.FexitLinkDetailsH\x00R\x05fexit\x12-\n" +
-	"\x03xdp\x18\x06 \x01(\v2\x19.bpfman.v1.XDPLinkDetailsH\x00R\x03xdp\x12*\n" +
-	"\x02tc\x18\a \x01(\v2\x18.bpfman.v1.TCLinkDetailsH\x00R\x02tc\x12-\n" +
-	"\x03tcx\x18\b \x01(\v2\x19.bpfman.v1.TCXLinkDetailsH\x00R\x03tcxB\t\n" +
-	"\adetails\"\x7f\n" +
-	"\bLinkInfo\x120\n" +
-	"\asummary\x18\x01 \x01(\v2\x16.bpfman.v1.LinkSummaryR\asummary\x125\n" +
-	"\adetails\x18\x02 \x01(\v2\x16.bpfman.v1.LinkDetailsH\x00R\adetails\x88\x01\x01B\n" +
-	"\n" +
-	"\b_details\"E\n" +
-	"\x10ListLinksRequest\x12\"\n" +
-	"\n" +
-	"program_id\x18\x01 \x01(\rH\x00R\tprogramId\x88\x01\x01B\r\n" +
-	"\v_program_id\">\n" +
-	"\x11ListLinksResponse\x12)\n" +
-	"\x05links\x18\x01 \x03(\v2\x13.bpfman.v1.LinkInfoR\x05links\"6\n" +
-	"\x0eGetLinkRequest\x12$\n" +
-	"\x0ekernel_link_id\x18\x01 \x01(\rR\fkernelLinkId\":\n" +
-	"\x0fGetLinkResponse\x12'\n" +
-	"\x04link\x18\x01 \x01(\v2\x13.bpfman.v1.LinkInfoR\x04link*l\n" +
+	"\x05_info*l\n" +
 	"\x11BpfmanProgramType\x12\a\n" +
 	"\x03XDP\x10\x00\x12\x06\n" +
 	"\x02TC\x10\x01\x12\x0e\n" +
@@ -3701,20 +2454,7 @@ const file_bpfman_proto_rawDesc = "" +
 	"\n" +
 	"\x06FENTRY\x10\x05\x12\t\n" +
 	"\x05FEXIT\x10\x06\x12\a\n" +
-	"\x03TCX\x10\a*\x86\x02\n" +
-	"\x0eBpfmanLinkType\x12\x19\n" +
-	"\x15LINK_TYPE_UNSPECIFIED\x10\x00\x12\x18\n" +
-	"\x14LINK_TYPE_TRACEPOINT\x10\x01\x12\x14\n" +
-	"\x10LINK_TYPE_KPROBE\x10\x02\x12\x17\n" +
-	"\x13LINK_TYPE_KRETPROBE\x10\x03\x12\x14\n" +
-	"\x10LINK_TYPE_UPROBE\x10\x04\x12\x17\n" +
-	"\x13LINK_TYPE_URETPROBE\x10\x05\x12\x14\n" +
-	"\x10LINK_TYPE_FENTRY\x10\x06\x12\x13\n" +
-	"\x0fLINK_TYPE_FEXIT\x10\a\x12\x11\n" +
-	"\rLINK_TYPE_XDP\x10\b\x12\x10\n" +
-	"\fLINK_TYPE_TC\x10\t\x12\x11\n" +
-	"\rLINK_TYPE_TCX\x10\n" +
-	"2\xc8\x04\n" +
+	"\x03TCX\x10\a2\xbe\x03\n" +
 	"\x06Bpfman\x127\n" +
 	"\x04Load\x12\x16.bpfman.v1.LoadRequest\x1a\x17.bpfman.v1.LoadResponse\x12=\n" +
 	"\x06Unload\x12\x18.bpfman.v1.UnloadRequest\x1a\x19.bpfman.v1.UnloadResponse\x12=\n" +
@@ -3722,9 +2462,7 @@ const file_bpfman_proto_rawDesc = "" +
 	"\x06Detach\x12\x18.bpfman.v1.DetachRequest\x1a\x19.bpfman.v1.DetachResponse\x127\n" +
 	"\x04List\x12\x16.bpfman.v1.ListRequest\x1a\x17.bpfman.v1.ListResponse\x12O\n" +
 	"\fPullBytecode\x12\x1e.bpfman.v1.PullBytecodeRequest\x1a\x1f.bpfman.v1.PullBytecodeResponse\x124\n" +
-	"\x03Get\x12\x15.bpfman.v1.GetRequest\x1a\x16.bpfman.v1.GetResponse\x12F\n" +
-	"\tListLinks\x12\x1b.bpfman.v1.ListLinksRequest\x1a\x1c.bpfman.v1.ListLinksResponse\x12@\n" +
-	"\aGetLink\x12\x19.bpfman.v1.GetLinkRequest\x1a\x1a.bpfman.v1.GetLinkResponseB$Z\"github.com/bpfman/bpfman/server/pbb\x06proto3"
+	"\x03Get\x12\x15.bpfman.v1.GetRequest\x1a\x16.bpfman.v1.GetResponseB*Z(github.com/bpfman/clients/gobpfman/v1;v1b\x06proto3"
 
 var (
 	file_bpfman_proto_rawDescOnce sync.Once
@@ -3738,149 +2476,116 @@ func file_bpfman_proto_rawDescGZIP() []byte {
 	return file_bpfman_proto_rawDescData
 }
 
-var file_bpfman_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_bpfman_proto_msgTypes = make([]protoimpl.MessageInfo, 61)
+var file_bpfman_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_bpfman_proto_msgTypes = make([]protoimpl.MessageInfo, 46)
 var file_bpfman_proto_goTypes = []any{
 	(BpfmanProgramType)(0),          // 0: bpfman.v1.BpfmanProgramType
-	(BpfmanLinkType)(0),             // 1: bpfman.v1.BpfmanLinkType
-	(*BytecodeImage)(nil),           // 2: bpfman.v1.BytecodeImage
-	(*BytecodeLocation)(nil),        // 3: bpfman.v1.BytecodeLocation
-	(*KernelProgramInfo)(nil),       // 4: bpfman.v1.KernelProgramInfo
-	(*ProgramInfo)(nil),             // 5: bpfman.v1.ProgramInfo
-	(*XDPAttachInfo)(nil),           // 6: bpfman.v1.XDPAttachInfo
-	(*TCAttachInfo)(nil),            // 7: bpfman.v1.TCAttachInfo
-	(*TCXAttachInfo)(nil),           // 8: bpfman.v1.TCXAttachInfo
-	(*TracepointAttachInfo)(nil),    // 9: bpfman.v1.TracepointAttachInfo
-	(*KprobeAttachInfo)(nil),        // 10: bpfman.v1.KprobeAttachInfo
-	(*UprobeAttachInfo)(nil),        // 11: bpfman.v1.UprobeAttachInfo
-	(*FentryAttachInfo)(nil),        // 12: bpfman.v1.FentryAttachInfo
-	(*FexitAttachInfo)(nil),         // 13: bpfman.v1.FexitAttachInfo
-	(*AttachInfo)(nil),              // 14: bpfman.v1.AttachInfo
-	(*LoadRequest)(nil),             // 15: bpfman.v1.LoadRequest
-	(*LoadInfo)(nil),                // 16: bpfman.v1.LoadInfo
-	(*FentryLoadInfo)(nil),          // 17: bpfman.v1.FentryLoadInfo
-	(*FexitLoadInfo)(nil),           // 18: bpfman.v1.FexitLoadInfo
-	(*ProgSpecificInfo)(nil),        // 19: bpfman.v1.ProgSpecificInfo
-	(*LoadResponseInfo)(nil),        // 20: bpfman.v1.LoadResponseInfo
-	(*LoadResponse)(nil),            // 21: bpfman.v1.LoadResponse
-	(*UnloadRequest)(nil),           // 22: bpfman.v1.UnloadRequest
-	(*UnloadResponse)(nil),          // 23: bpfman.v1.UnloadResponse
-	(*AttachRequest)(nil),           // 24: bpfman.v1.AttachRequest
-	(*AttachResponse)(nil),          // 25: bpfman.v1.AttachResponse
-	(*DetachRequest)(nil),           // 26: bpfman.v1.DetachRequest
-	(*DetachResponse)(nil),          // 27: bpfman.v1.DetachResponse
-	(*ListRequest)(nil),             // 28: bpfman.v1.ListRequest
-	(*ListResponse)(nil),            // 29: bpfman.v1.ListResponse
-	(*PullBytecodeRequest)(nil),     // 30: bpfman.v1.PullBytecodeRequest
-	(*PullBytecodeResponse)(nil),    // 31: bpfman.v1.PullBytecodeResponse
-	(*GetRequest)(nil),              // 32: bpfman.v1.GetRequest
-	(*GetResponse)(nil),             // 33: bpfman.v1.GetResponse
-	(*LinkSummary)(nil),             // 34: bpfman.v1.LinkSummary
-	(*TracepointLinkDetails)(nil),   // 35: bpfman.v1.TracepointLinkDetails
-	(*KprobeLinkDetails)(nil),       // 36: bpfman.v1.KprobeLinkDetails
-	(*UprobeLinkDetails)(nil),       // 37: bpfman.v1.UprobeLinkDetails
-	(*FentryLinkDetails)(nil),       // 38: bpfman.v1.FentryLinkDetails
-	(*FexitLinkDetails)(nil),        // 39: bpfman.v1.FexitLinkDetails
-	(*XDPLinkDetails)(nil),          // 40: bpfman.v1.XDPLinkDetails
-	(*TCLinkDetails)(nil),           // 41: bpfman.v1.TCLinkDetails
-	(*TCXLinkDetails)(nil),          // 42: bpfman.v1.TCXLinkDetails
-	(*LinkDetails)(nil),             // 43: bpfman.v1.LinkDetails
-	(*LinkInfo)(nil),                // 44: bpfman.v1.LinkInfo
-	(*ListLinksRequest)(nil),        // 45: bpfman.v1.ListLinksRequest
-	(*ListLinksResponse)(nil),       // 46: bpfman.v1.ListLinksResponse
-	(*GetLinkRequest)(nil),          // 47: bpfman.v1.GetLinkRequest
-	(*GetLinkResponse)(nil),         // 48: bpfman.v1.GetLinkResponse
-	nil,                             // 49: bpfman.v1.ProgramInfo.GlobalDataEntry
-	nil,                             // 50: bpfman.v1.ProgramInfo.MetadataEntry
-	nil,                             // 51: bpfman.v1.XDPAttachInfo.MetadataEntry
-	nil,                             // 52: bpfman.v1.TCAttachInfo.MetadataEntry
-	nil,                             // 53: bpfman.v1.TCXAttachInfo.MetadataEntry
-	nil,                             // 54: bpfman.v1.TracepointAttachInfo.MetadataEntry
-	nil,                             // 55: bpfman.v1.KprobeAttachInfo.MetadataEntry
-	nil,                             // 56: bpfman.v1.UprobeAttachInfo.MetadataEntry
-	nil,                             // 57: bpfman.v1.FentryAttachInfo.MetadataEntry
-	nil,                             // 58: bpfman.v1.FexitAttachInfo.MetadataEntry
-	nil,                             // 59: bpfman.v1.LoadRequest.MetadataEntry
-	nil,                             // 60: bpfman.v1.LoadRequest.GlobalDataEntry
-	nil,                             // 61: bpfman.v1.ListRequest.MatchMetadataEntry
-	(*ListResponse_ListResult)(nil), // 62: bpfman.v1.ListResponse.ListResult
+	(*BytecodeImage)(nil),           // 1: bpfman.v1.BytecodeImage
+	(*BytecodeLocation)(nil),        // 2: bpfman.v1.BytecodeLocation
+	(*KernelProgramInfo)(nil),       // 3: bpfman.v1.KernelProgramInfo
+	(*ProgramInfo)(nil),             // 4: bpfman.v1.ProgramInfo
+	(*XDPAttachInfo)(nil),           // 5: bpfman.v1.XDPAttachInfo
+	(*TCAttachInfo)(nil),            // 6: bpfman.v1.TCAttachInfo
+	(*TCXAttachInfo)(nil),           // 7: bpfman.v1.TCXAttachInfo
+	(*TracepointAttachInfo)(nil),    // 8: bpfman.v1.TracepointAttachInfo
+	(*KprobeAttachInfo)(nil),        // 9: bpfman.v1.KprobeAttachInfo
+	(*UprobeAttachInfo)(nil),        // 10: bpfman.v1.UprobeAttachInfo
+	(*FentryAttachInfo)(nil),        // 11: bpfman.v1.FentryAttachInfo
+	(*FexitAttachInfo)(nil),         // 12: bpfman.v1.FexitAttachInfo
+	(*AttachInfo)(nil),              // 13: bpfman.v1.AttachInfo
+	(*LoadRequest)(nil),             // 14: bpfman.v1.LoadRequest
+	(*LoadInfo)(nil),                // 15: bpfman.v1.LoadInfo
+	(*FentryLoadInfo)(nil),          // 16: bpfman.v1.FentryLoadInfo
+	(*FexitLoadInfo)(nil),           // 17: bpfman.v1.FexitLoadInfo
+	(*ProgSpecificInfo)(nil),        // 18: bpfman.v1.ProgSpecificInfo
+	(*LoadResponseInfo)(nil),        // 19: bpfman.v1.LoadResponseInfo
+	(*LoadResponse)(nil),            // 20: bpfman.v1.LoadResponse
+	(*UnloadRequest)(nil),           // 21: bpfman.v1.UnloadRequest
+	(*UnloadResponse)(nil),          // 22: bpfman.v1.UnloadResponse
+	(*AttachRequest)(nil),           // 23: bpfman.v1.AttachRequest
+	(*AttachResponse)(nil),          // 24: bpfman.v1.AttachResponse
+	(*DetachRequest)(nil),           // 25: bpfman.v1.DetachRequest
+	(*DetachResponse)(nil),          // 26: bpfman.v1.DetachResponse
+	(*ListRequest)(nil),             // 27: bpfman.v1.ListRequest
+	(*ListResponse)(nil),            // 28: bpfman.v1.ListResponse
+	(*PullBytecodeRequest)(nil),     // 29: bpfman.v1.PullBytecodeRequest
+	(*PullBytecodeResponse)(nil),    // 30: bpfman.v1.PullBytecodeResponse
+	(*GetRequest)(nil),              // 31: bpfman.v1.GetRequest
+	(*GetResponse)(nil),             // 32: bpfman.v1.GetResponse
+	nil,                             // 33: bpfman.v1.ProgramInfo.GlobalDataEntry
+	nil,                             // 34: bpfman.v1.ProgramInfo.MetadataEntry
+	nil,                             // 35: bpfman.v1.XDPAttachInfo.MetadataEntry
+	nil,                             // 36: bpfman.v1.TCAttachInfo.MetadataEntry
+	nil,                             // 37: bpfman.v1.TCXAttachInfo.MetadataEntry
+	nil,                             // 38: bpfman.v1.TracepointAttachInfo.MetadataEntry
+	nil,                             // 39: bpfman.v1.KprobeAttachInfo.MetadataEntry
+	nil,                             // 40: bpfman.v1.UprobeAttachInfo.MetadataEntry
+	nil,                             // 41: bpfman.v1.FentryAttachInfo.MetadataEntry
+	nil,                             // 42: bpfman.v1.FexitAttachInfo.MetadataEntry
+	nil,                             // 43: bpfman.v1.LoadRequest.MetadataEntry
+	nil,                             // 44: bpfman.v1.LoadRequest.GlobalDataEntry
+	nil,                             // 45: bpfman.v1.ListRequest.MatchMetadataEntry
+	(*ListResponse_ListResult)(nil), // 46: bpfman.v1.ListResponse.ListResult
 }
 var file_bpfman_proto_depIdxs = []int32{
-	2,  // 0: bpfman.v1.BytecodeLocation.image:type_name -> bpfman.v1.BytecodeImage
-	3,  // 1: bpfman.v1.ProgramInfo.bytecode:type_name -> bpfman.v1.BytecodeLocation
-	49, // 2: bpfman.v1.ProgramInfo.global_data:type_name -> bpfman.v1.ProgramInfo.GlobalDataEntry
-	50, // 3: bpfman.v1.ProgramInfo.metadata:type_name -> bpfman.v1.ProgramInfo.MetadataEntry
-	51, // 4: bpfman.v1.XDPAttachInfo.metadata:type_name -> bpfman.v1.XDPAttachInfo.MetadataEntry
-	52, // 5: bpfman.v1.TCAttachInfo.metadata:type_name -> bpfman.v1.TCAttachInfo.MetadataEntry
-	53, // 6: bpfman.v1.TCXAttachInfo.metadata:type_name -> bpfman.v1.TCXAttachInfo.MetadataEntry
-	54, // 7: bpfman.v1.TracepointAttachInfo.metadata:type_name -> bpfman.v1.TracepointAttachInfo.MetadataEntry
-	55, // 8: bpfman.v1.KprobeAttachInfo.metadata:type_name -> bpfman.v1.KprobeAttachInfo.MetadataEntry
-	56, // 9: bpfman.v1.UprobeAttachInfo.metadata:type_name -> bpfman.v1.UprobeAttachInfo.MetadataEntry
-	57, // 10: bpfman.v1.FentryAttachInfo.metadata:type_name -> bpfman.v1.FentryAttachInfo.MetadataEntry
-	58, // 11: bpfman.v1.FexitAttachInfo.metadata:type_name -> bpfman.v1.FexitAttachInfo.MetadataEntry
-	6,  // 12: bpfman.v1.AttachInfo.xdp_attach_info:type_name -> bpfman.v1.XDPAttachInfo
-	7,  // 13: bpfman.v1.AttachInfo.tc_attach_info:type_name -> bpfman.v1.TCAttachInfo
-	9,  // 14: bpfman.v1.AttachInfo.tracepoint_attach_info:type_name -> bpfman.v1.TracepointAttachInfo
-	10, // 15: bpfman.v1.AttachInfo.kprobe_attach_info:type_name -> bpfman.v1.KprobeAttachInfo
-	11, // 16: bpfman.v1.AttachInfo.uprobe_attach_info:type_name -> bpfman.v1.UprobeAttachInfo
-	8,  // 17: bpfman.v1.AttachInfo.tcx_attach_info:type_name -> bpfman.v1.TCXAttachInfo
-	12, // 18: bpfman.v1.AttachInfo.fentry_attach_info:type_name -> bpfman.v1.FentryAttachInfo
-	13, // 19: bpfman.v1.AttachInfo.fexit_attach_info:type_name -> bpfman.v1.FexitAttachInfo
-	3,  // 20: bpfman.v1.LoadRequest.bytecode:type_name -> bpfman.v1.BytecodeLocation
-	59, // 21: bpfman.v1.LoadRequest.metadata:type_name -> bpfman.v1.LoadRequest.MetadataEntry
-	60, // 22: bpfman.v1.LoadRequest.global_data:type_name -> bpfman.v1.LoadRequest.GlobalDataEntry
-	16, // 23: bpfman.v1.LoadRequest.info:type_name -> bpfman.v1.LoadInfo
+	1,  // 0: bpfman.v1.BytecodeLocation.image:type_name -> bpfman.v1.BytecodeImage
+	2,  // 1: bpfman.v1.ProgramInfo.bytecode:type_name -> bpfman.v1.BytecodeLocation
+	33, // 2: bpfman.v1.ProgramInfo.global_data:type_name -> bpfman.v1.ProgramInfo.GlobalDataEntry
+	34, // 3: bpfman.v1.ProgramInfo.metadata:type_name -> bpfman.v1.ProgramInfo.MetadataEntry
+	35, // 4: bpfman.v1.XDPAttachInfo.metadata:type_name -> bpfman.v1.XDPAttachInfo.MetadataEntry
+	36, // 5: bpfman.v1.TCAttachInfo.metadata:type_name -> bpfman.v1.TCAttachInfo.MetadataEntry
+	37, // 6: bpfman.v1.TCXAttachInfo.metadata:type_name -> bpfman.v1.TCXAttachInfo.MetadataEntry
+	38, // 7: bpfman.v1.TracepointAttachInfo.metadata:type_name -> bpfman.v1.TracepointAttachInfo.MetadataEntry
+	39, // 8: bpfman.v1.KprobeAttachInfo.metadata:type_name -> bpfman.v1.KprobeAttachInfo.MetadataEntry
+	40, // 9: bpfman.v1.UprobeAttachInfo.metadata:type_name -> bpfman.v1.UprobeAttachInfo.MetadataEntry
+	41, // 10: bpfman.v1.FentryAttachInfo.metadata:type_name -> bpfman.v1.FentryAttachInfo.MetadataEntry
+	42, // 11: bpfman.v1.FexitAttachInfo.metadata:type_name -> bpfman.v1.FexitAttachInfo.MetadataEntry
+	5,  // 12: bpfman.v1.AttachInfo.xdp_attach_info:type_name -> bpfman.v1.XDPAttachInfo
+	6,  // 13: bpfman.v1.AttachInfo.tc_attach_info:type_name -> bpfman.v1.TCAttachInfo
+	8,  // 14: bpfman.v1.AttachInfo.tracepoint_attach_info:type_name -> bpfman.v1.TracepointAttachInfo
+	9,  // 15: bpfman.v1.AttachInfo.kprobe_attach_info:type_name -> bpfman.v1.KprobeAttachInfo
+	10, // 16: bpfman.v1.AttachInfo.uprobe_attach_info:type_name -> bpfman.v1.UprobeAttachInfo
+	7,  // 17: bpfman.v1.AttachInfo.tcx_attach_info:type_name -> bpfman.v1.TCXAttachInfo
+	11, // 18: bpfman.v1.AttachInfo.fentry_attach_info:type_name -> bpfman.v1.FentryAttachInfo
+	12, // 19: bpfman.v1.AttachInfo.fexit_attach_info:type_name -> bpfman.v1.FexitAttachInfo
+	2,  // 20: bpfman.v1.LoadRequest.bytecode:type_name -> bpfman.v1.BytecodeLocation
+	43, // 21: bpfman.v1.LoadRequest.metadata:type_name -> bpfman.v1.LoadRequest.MetadataEntry
+	44, // 22: bpfman.v1.LoadRequest.global_data:type_name -> bpfman.v1.LoadRequest.GlobalDataEntry
+	15, // 23: bpfman.v1.LoadRequest.info:type_name -> bpfman.v1.LoadInfo
 	0,  // 24: bpfman.v1.LoadInfo.program_type:type_name -> bpfman.v1.BpfmanProgramType
-	19, // 25: bpfman.v1.LoadInfo.info:type_name -> bpfman.v1.ProgSpecificInfo
-	17, // 26: bpfman.v1.ProgSpecificInfo.fentry_load_info:type_name -> bpfman.v1.FentryLoadInfo
-	18, // 27: bpfman.v1.ProgSpecificInfo.fexit_load_info:type_name -> bpfman.v1.FexitLoadInfo
-	5,  // 28: bpfman.v1.LoadResponseInfo.info:type_name -> bpfman.v1.ProgramInfo
-	4,  // 29: bpfman.v1.LoadResponseInfo.kernel_info:type_name -> bpfman.v1.KernelProgramInfo
-	20, // 30: bpfman.v1.LoadResponse.programs:type_name -> bpfman.v1.LoadResponseInfo
-	14, // 31: bpfman.v1.AttachRequest.attach:type_name -> bpfman.v1.AttachInfo
-	61, // 32: bpfman.v1.ListRequest.match_metadata:type_name -> bpfman.v1.ListRequest.MatchMetadataEntry
-	62, // 33: bpfman.v1.ListResponse.results:type_name -> bpfman.v1.ListResponse.ListResult
-	2,  // 34: bpfman.v1.PullBytecodeRequest.image:type_name -> bpfman.v1.BytecodeImage
-	5,  // 35: bpfman.v1.GetResponse.info:type_name -> bpfman.v1.ProgramInfo
-	4,  // 36: bpfman.v1.GetResponse.kernel_info:type_name -> bpfman.v1.KernelProgramInfo
-	1,  // 37: bpfman.v1.LinkSummary.link_type:type_name -> bpfman.v1.BpfmanLinkType
-	35, // 38: bpfman.v1.LinkDetails.tracepoint:type_name -> bpfman.v1.TracepointLinkDetails
-	36, // 39: bpfman.v1.LinkDetails.kprobe:type_name -> bpfman.v1.KprobeLinkDetails
-	37, // 40: bpfman.v1.LinkDetails.uprobe:type_name -> bpfman.v1.UprobeLinkDetails
-	38, // 41: bpfman.v1.LinkDetails.fentry:type_name -> bpfman.v1.FentryLinkDetails
-	39, // 42: bpfman.v1.LinkDetails.fexit:type_name -> bpfman.v1.FexitLinkDetails
-	40, // 43: bpfman.v1.LinkDetails.xdp:type_name -> bpfman.v1.XDPLinkDetails
-	41, // 44: bpfman.v1.LinkDetails.tc:type_name -> bpfman.v1.TCLinkDetails
-	42, // 45: bpfman.v1.LinkDetails.tcx:type_name -> bpfman.v1.TCXLinkDetails
-	34, // 46: bpfman.v1.LinkInfo.summary:type_name -> bpfman.v1.LinkSummary
-	43, // 47: bpfman.v1.LinkInfo.details:type_name -> bpfman.v1.LinkDetails
-	44, // 48: bpfman.v1.ListLinksResponse.links:type_name -> bpfman.v1.LinkInfo
-	44, // 49: bpfman.v1.GetLinkResponse.link:type_name -> bpfman.v1.LinkInfo
-	5,  // 50: bpfman.v1.ListResponse.ListResult.info:type_name -> bpfman.v1.ProgramInfo
-	4,  // 51: bpfman.v1.ListResponse.ListResult.kernel_info:type_name -> bpfman.v1.KernelProgramInfo
-	15, // 52: bpfman.v1.Bpfman.Load:input_type -> bpfman.v1.LoadRequest
-	22, // 53: bpfman.v1.Bpfman.Unload:input_type -> bpfman.v1.UnloadRequest
-	24, // 54: bpfman.v1.Bpfman.Attach:input_type -> bpfman.v1.AttachRequest
-	26, // 55: bpfman.v1.Bpfman.Detach:input_type -> bpfman.v1.DetachRequest
-	28, // 56: bpfman.v1.Bpfman.List:input_type -> bpfman.v1.ListRequest
-	30, // 57: bpfman.v1.Bpfman.PullBytecode:input_type -> bpfman.v1.PullBytecodeRequest
-	32, // 58: bpfman.v1.Bpfman.Get:input_type -> bpfman.v1.GetRequest
-	45, // 59: bpfman.v1.Bpfman.ListLinks:input_type -> bpfman.v1.ListLinksRequest
-	47, // 60: bpfman.v1.Bpfman.GetLink:input_type -> bpfman.v1.GetLinkRequest
-	21, // 61: bpfman.v1.Bpfman.Load:output_type -> bpfman.v1.LoadResponse
-	23, // 62: bpfman.v1.Bpfman.Unload:output_type -> bpfman.v1.UnloadResponse
-	25, // 63: bpfman.v1.Bpfman.Attach:output_type -> bpfman.v1.AttachResponse
-	27, // 64: bpfman.v1.Bpfman.Detach:output_type -> bpfman.v1.DetachResponse
-	29, // 65: bpfman.v1.Bpfman.List:output_type -> bpfman.v1.ListResponse
-	31, // 66: bpfman.v1.Bpfman.PullBytecode:output_type -> bpfman.v1.PullBytecodeResponse
-	33, // 67: bpfman.v1.Bpfman.Get:output_type -> bpfman.v1.GetResponse
-	46, // 68: bpfman.v1.Bpfman.ListLinks:output_type -> bpfman.v1.ListLinksResponse
-	48, // 69: bpfman.v1.Bpfman.GetLink:output_type -> bpfman.v1.GetLinkResponse
-	61, // [61:70] is the sub-list for method output_type
-	52, // [52:61] is the sub-list for method input_type
-	52, // [52:52] is the sub-list for extension type_name
-	52, // [52:52] is the sub-list for extension extendee
-	0,  // [0:52] is the sub-list for field type_name
+	18, // 25: bpfman.v1.LoadInfo.info:type_name -> bpfman.v1.ProgSpecificInfo
+	16, // 26: bpfman.v1.ProgSpecificInfo.fentry_load_info:type_name -> bpfman.v1.FentryLoadInfo
+	17, // 27: bpfman.v1.ProgSpecificInfo.fexit_load_info:type_name -> bpfman.v1.FexitLoadInfo
+	4,  // 28: bpfman.v1.LoadResponseInfo.info:type_name -> bpfman.v1.ProgramInfo
+	3,  // 29: bpfman.v1.LoadResponseInfo.kernel_info:type_name -> bpfman.v1.KernelProgramInfo
+	19, // 30: bpfman.v1.LoadResponse.programs:type_name -> bpfman.v1.LoadResponseInfo
+	13, // 31: bpfman.v1.AttachRequest.attach:type_name -> bpfman.v1.AttachInfo
+	45, // 32: bpfman.v1.ListRequest.match_metadata:type_name -> bpfman.v1.ListRequest.MatchMetadataEntry
+	46, // 33: bpfman.v1.ListResponse.results:type_name -> bpfman.v1.ListResponse.ListResult
+	1,  // 34: bpfman.v1.PullBytecodeRequest.image:type_name -> bpfman.v1.BytecodeImage
+	4,  // 35: bpfman.v1.GetResponse.info:type_name -> bpfman.v1.ProgramInfo
+	3,  // 36: bpfman.v1.GetResponse.kernel_info:type_name -> bpfman.v1.KernelProgramInfo
+	4,  // 37: bpfman.v1.ListResponse.ListResult.info:type_name -> bpfman.v1.ProgramInfo
+	3,  // 38: bpfman.v1.ListResponse.ListResult.kernel_info:type_name -> bpfman.v1.KernelProgramInfo
+	14, // 39: bpfman.v1.Bpfman.Load:input_type -> bpfman.v1.LoadRequest
+	21, // 40: bpfman.v1.Bpfman.Unload:input_type -> bpfman.v1.UnloadRequest
+	23, // 41: bpfman.v1.Bpfman.Attach:input_type -> bpfman.v1.AttachRequest
+	25, // 42: bpfman.v1.Bpfman.Detach:input_type -> bpfman.v1.DetachRequest
+	27, // 43: bpfman.v1.Bpfman.List:input_type -> bpfman.v1.ListRequest
+	29, // 44: bpfman.v1.Bpfman.PullBytecode:input_type -> bpfman.v1.PullBytecodeRequest
+	31, // 45: bpfman.v1.Bpfman.Get:input_type -> bpfman.v1.GetRequest
+	20, // 46: bpfman.v1.Bpfman.Load:output_type -> bpfman.v1.LoadResponse
+	22, // 47: bpfman.v1.Bpfman.Unload:output_type -> bpfman.v1.UnloadResponse
+	24, // 48: bpfman.v1.Bpfman.Attach:output_type -> bpfman.v1.AttachResponse
+	26, // 49: bpfman.v1.Bpfman.Detach:output_type -> bpfman.v1.DetachResponse
+	28, // 50: bpfman.v1.Bpfman.List:output_type -> bpfman.v1.ListResponse
+	30, // 51: bpfman.v1.Bpfman.PullBytecode:output_type -> bpfman.v1.PullBytecodeResponse
+	32, // 52: bpfman.v1.Bpfman.Get:output_type -> bpfman.v1.GetResponse
+	46, // [46:53] is the sub-list for method output_type
+	39, // [39:46] is the sub-list for method input_type
+	39, // [39:39] is the sub-list for extension type_name
+	39, // [39:39] is the sub-list for extension extendee
+	0,  // [0:39] is the sub-list for field type_name
 }
 
 func init() { file_bpfman_proto_init() }
@@ -3917,26 +2622,14 @@ func file_bpfman_proto_init() {
 	}
 	file_bpfman_proto_msgTypes[26].OneofWrappers = []any{}
 	file_bpfman_proto_msgTypes[31].OneofWrappers = []any{}
-	file_bpfman_proto_msgTypes[41].OneofWrappers = []any{
-		(*LinkDetails_Tracepoint)(nil),
-		(*LinkDetails_Kprobe)(nil),
-		(*LinkDetails_Uprobe)(nil),
-		(*LinkDetails_Fentry)(nil),
-		(*LinkDetails_Fexit)(nil),
-		(*LinkDetails_Xdp)(nil),
-		(*LinkDetails_Tc)(nil),
-		(*LinkDetails_Tcx)(nil),
-	}
-	file_bpfman_proto_msgTypes[42].OneofWrappers = []any{}
-	file_bpfman_proto_msgTypes[43].OneofWrappers = []any{}
-	file_bpfman_proto_msgTypes[60].OneofWrappers = []any{}
+	file_bpfman_proto_msgTypes[45].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_bpfman_proto_rawDesc), len(file_bpfman_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   61,
+			NumEnums:      1,
+			NumMessages:   46,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
