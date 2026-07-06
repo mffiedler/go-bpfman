@@ -11,7 +11,7 @@
 #
 # Run from the repository root:
 #
-#   sudo ./program-load.sh
+#   sudo hack/program-load.sh
 #
 # The fixture runs against its own runtime root (/run/go-bpfman via
 # BPFMAN_RUNTIME_DIR) so it never shares /run/bpfman with a daemon, the
@@ -95,8 +95,8 @@ fexit_link_id=$("$BPFMAN" link attach fexit "$fexit_id" -m fixture=program-load 
 # same interface (a two-member dispatcher chain, pos-0 and pos-1) and
 # the tracepoint program on a second tracepoint.
 
-xdp_link2_id=$("$BPFMAN" link attach xdp "$xdp_id" "$HOST_LINK" --priority 55 --proceed-on pass,drop -m fixture=program-load -m kind=xdp -o json | link_id)
-tracepoint_link2_id=$("$BPFMAN" link attach tracepoint "$tracepoint_id" syscalls/sys_exit_kill -m fixture=program-load -m kind=tracepoint -o json | link_id)
+_=$("$BPFMAN" link attach xdp "$xdp_id" "$HOST_LINK" --priority 55 --proceed-on pass,drop -m fixture=program-load -m kind=xdp -o json | link_id)
+_=$("$BPFMAN" link attach tracepoint "$tracepoint_id" syscalls/sys_exit_kill -m fixture=program-load -m kind=tracepoint -o json | link_id)
 
 # --- image-loaded examples ---
 #

@@ -4,7 +4,7 @@
 # load and attach one program of each attachable kind against the Rust
 # CLI, then print the rendered output of program/link get and the lists
 # so the formatting can be compared side by side with the Go fixture
-# (program-load.sh).
+# (hack/program-load.sh).
 #
 # The Rust CLI has no JSON output, so program and link ids are scraped
 # from the plain-text tables ("Program ID:" in the Kernel State table
@@ -21,7 +21,7 @@
 # is_bpffs_mounted check does not recognise a bpffs it did not mount
 # itself: it mounts a fresh bpffs over the top, shadowing every
 # existing pin (observed, not inferred -- stacked mounts in findmnt).
-# The Go fixture (program-load.sh) sidesteps this by running against
+# The Go fixture (hack/program-load.sh) sidesteps this by running against
 # its own root, /run/go-bpfman, via BPFMAN_RUNTIME_DIR. Recover from
 # shadowing by unloading all Rust programs and unmounting the top
 # /run/bpfman/fs layer.
