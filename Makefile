@@ -424,8 +424,7 @@ BPFMAN_NS_TEST_BIN ?= $(BIN_DIR)/bpfman-ns.test
 # equivalent Fedora RPMs (clang, llvm, libbpf-devel, kernel-headers,
 # pkgconf-pkg-config). On stock Ubuntu CI runners, apt-get installs
 # the equivalents (clang, llvm, libbpf-dev, linux-libc-dev,
-# pkg-config). Konflux's Containerfile.bpfman.openshift compiles the
-# BPF objects in its own first stage and does not invoke this rule.
+# pkg-config).
 # ---------------------------------------------------------------------------
 
 # Shared compile setup. LIBBPF_CFLAGS comes from pkg-config so the
@@ -435,12 +434,10 @@ BPFMAN_NS_TEST_BIN ?= $(BIN_DIR)/bpfman-ns.test
 # multiarch include path).
 #
 # `=` (deferred) rather than `:=` (immediate) so pkg-config only
-# fires when a recipe actually references LIBBPF_CFLAGS. The
-# openshift Containerfile's go-builder stage runs `make bpfman-
-# compile` against pre-built .bpf.o files (no BPF compile happens
-# there), and that stage's image (ubi9/go-toolset) intentionally
-# does not ship libbpf-devel; an immediate evaluation would emit a
-# spurious "Package 'libbpf' not found" pkg-config warning.
+# fires when a recipe actually references LIBBPF_CFLAGS; an
+# immediate evaluation would emit a spurious "Package 'libbpf'
+# not found" pkg-config warning in environments that run make
+# without libbpf-devel installed.
 LIBBPF_CFLAGS = $(shell pkg-config --cflags libbpf)
 BPF_CFLAGS ?=
 
@@ -533,10 +530,10 @@ PLATFORMS               ?=
 PUSH                    ?=
 BUILDX_EXTRA_ARGS       ?=
 # Caller-supplied extra args passed last to the plain `docker build`
-# targets (build-image-dev, build-image-csi-sanity, build-image-
-# openshift). Positioned just before the build context so caller
-# flags override any preceding hard-coded flags that buildx/docker
-# treats as last-wins.
+# targets (build-image-dev, build-image-csi-sanity). Positioned
+# just before the build context so caller flags override any
+# preceding hard-coded flags that buildx/docker treats as
+# last-wins.
 EXTRA_DOCKER_BUILD_ARGS ?=
 # Selects which Dockerfile the buildx targets use. Defaults to the
 # in-tree Dockerfile.bpfman; override to test an alternative
@@ -578,21 +575,6 @@ BUILDX_OUTPUT := $(if $(PUSH),--push,$(if $(findstring $(comma),$(PLATFORMS)),,-
 BUILDX_ATTEST := $(if $(PUSH),--provenance=mode=max --sbom=true)
 
 # ---------------------------------------------------------------------------
-# OpenShift Containerfile build (local testing).
-#
-# Build via the same Containerfile that Konflux uses. The BPF
-# builder stage defaults to UBI9 but can be overridden with Fedora
-# for local testing without RHEL entitlements:
-#
-#   make build-image-openshift \
-#     OPENSHIFT_BPF_BASE_IMAGE=fedora:43 \
-#     OPENSHIFT_BPF_INSTALL_CMD="dnf install -y clang gcc kernel-headers libbpf-devel llvm make pkgconf-pkg-config && dnf clean all"
-# ---------------------------------------------------------------------------
-OPENSHIFT_CONTAINERFILE ?= Containerfile.bpfman.openshift
-OPENSHIFT_BPF_BASE_IMAGE ?=
-OPENSHIFT_BPF_INSTALL_CMD ?=
-
-# ---------------------------------------------------------------------------
 # Lint target lists.
 #
 # LINT_MAKE_TARGETS is the bundle that `make lint-make` runs under
@@ -608,7 +590,7 @@ LINT_MAKE_TARGETS := \
 	test-bpfman-ns test-bpfman-ns-amd64 test-bpfman-ns-arm64 test-bpfman-ns-cross \
 	bpfman-compile \
 	build-image build-image-amd64 build-image-dev \
-	build-image-csi-sanity build-image-openshift \
+	build-image-csi-sanity \
 	ci-build ci-check-fmt ci-check-goimports ci-check-vendor ci-check-vet ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-grpc ci-test-e2e-scripts \
 	cosign-sign coverage clean
 
@@ -619,8 +601,7 @@ LINT_DOCKERFILES := \
 	Dockerfile.bpfman.dev \
 	Dockerfile.bpfman \
 	Dockerfile.ci \
-	Dockerfile.csi-sanity \
-	Containerfile.bpfman.openshift
+	Dockerfile.csi-sanity
 
 
 # ============================================================================
@@ -701,7 +682,6 @@ help:
 	@echo "  build-image-csi-sanity      Build csi-sanity container image"
 	@echo "  build-image-dev             Build current-arch image from host-built binary (fast dev iteration)"
 	@echo "  build-image-nix             Pure-Nix OCI image (no Docker daemon at build time; debug toolkit baked in)"
-	@echo "  build-image-openshift       Build via OpenShift Containerfile (local test)"
 	@echo "  cosign-sign                 Sign a published image (requires BUILDX_METADATA_FILE)"
 	@echo ""
 	@echo "Documentation:"
@@ -1709,19 +1689,6 @@ cosign-sign:
 .PHONY: build-image-csi-sanity
 build-image-csi-sanity:
 	$(OCI_BIN) build -t $(CSI_SANITY_IMG) -f Dockerfile.csi-sanity $(EXTRA_DOCKER_BUILD_ARGS) .
-
-.PHONY: build-image-openshift
-build-image-openshift:
-	$(OCI_BIN) build \
-		-f $(OPENSHIFT_CONTAINERFILE) \
-		$(if $(OPENSHIFT_BPF_BASE_IMAGE),--build-arg BPF_BASE_IMAGE=$(OPENSHIFT_BPF_BASE_IMAGE)) \
-		$(if $(OPENSHIFT_BPF_INSTALL_CMD),--build-arg BPF_INSTALL_CMD="$(OPENSHIFT_BPF_INSTALL_CMD)") \
-		--build-arg BUILD_COMMIT=$(GIT_COMMIT) \
-		--build-arg BUILD_BRANCH=$(GIT_BRANCH) \
-		--build-arg BUILD_DATE=$(BUILD_DATE) \
-		--build-arg BUILD_VERSION=$(GIT_VERSION) \
-		-t $(BPFMAN_IMG) \
-		$(EXTRA_DOCKER_BUILD_ARGS) .
 
 # ---------------------------------------------------------------------------
 # Local CI reproducer.
