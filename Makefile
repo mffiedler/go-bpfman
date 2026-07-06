@@ -1196,30 +1196,6 @@ doc-text:
 	done
 
 # ---------------------------------------------------------------------------
-# Rust parity README.
-#
-# parity-readme regenerates the marker-bounded parity section of the
-# repository README from rust-parity/cases.yaml and the captured
-# transcripts. parity-compare prints the kernel-judged verdict table
-# (bpftool footprints diffed by rust-parity/cmd/parity-compare).
-# parity-check verifies both -- the README is current and every kernel
-# verdict holds its declared expectation -- and is also enforced by
-# go test ./... via the rust-parity/cmd/parity-readme and
-# rust-parity/cmd/parity-compare tests.
-.PHONY: parity-readme
-parity-readme:
-	@go run ./rust-parity/cmd/parity-readme
-
-.PHONY: parity-compare
-parity-compare:
-	@go run ./rust-parity/cmd/parity-compare
-
-.PHONY: parity-check
-parity-check:
-	@go run ./rust-parity/cmd/parity-readme -check
-	@go run ./rust-parity/cmd/parity-compare -check
-
-# ---------------------------------------------------------------------------
 # bpfman build.
 #
 # Note: bpfman-proto is not a dependency here since pb files are committed.

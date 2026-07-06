@@ -1,8 +1,0 @@
-$ rsbpf load file --path e2e/testdata/bpf/xdp_counter.bpf.o --programs xdp:xdp_stats
-[ERROR bpfman] Error: failed to load programs: error parsing BPF object: invalid program section `xdp/xdp_stats`
-Error: error parsing BPF object: invalid program section `xdp/xdp_stats`
-
-Caused by:
-    invalid program section `xdp/xdp_stats`
-[exit 1]
-
