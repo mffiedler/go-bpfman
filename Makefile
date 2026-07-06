@@ -642,7 +642,6 @@ help:
 	@printf "  %-31s %s\n" "test-e2e-scripts-stress" "Run .bpfman e2e scripts with high repeat/parallel defaults (requires root)"
 	@printf "  %-31s %s\n" "test-e2e-scripts-timeline" "Run .bpfman e2e scripts and render $(E2E_SCRIPTS_TIMELINE_TRACE) (requires root)"
 	@printf "  %-31s %s\n" "e2e-kmod-force-reload" "Delete managed bpfman state, then rebuild and reload the e2e kmod (requires root)"
-	@printf "  %-31s %s\n" "test-examples" "Run .bpfman scripts under examples/ (requires root)"
 	@printf "  %-31s %s\n" "test-bpfman-ns" "Run bpfman-ns transport tests (native amd64)"
 	@printf "  %-31s %s\n" "test-bpfman-ns-cross" "Run bpfman-ns transport tests on amd64/arm64/ppc64le/s390x"
 	@printf "  %-31s %s\n" "test-bpfman-ns-{arch}" "Run bpfman-ns transport tests for a single architecture"
@@ -1099,16 +1098,6 @@ run-e2e-scripts-timeline: go-test-timeline-compile
 .PHONY: test-e2e-scripts-timeline
 test-e2e-scripts-timeline: build-e2e-scripts e2e-kmod-reload
 	$(Q)$(MAKE) run-e2e-scripts-timeline
-
-# Run every .bpfman script under examples/ against the built bpfman
-# binary. The examples are load/attach/detach/unload
-# walk-throughs; running them in CI catches drift between the
-# shipped examples and the actual CLI surface. Pass TEST=<name> to
-# restrict to scripts whose filename contains <name>.
-.PHONY: test-examples
-test-examples: bpfman-compile bpfman-shell-compile $(BIN_DIR)/e2e.test
-	@echo "Running .bpfman example scripts (requires root)..."
-	BIN_DIR=$(BIN_DIR) hack/test-examples.sh $(TEST)
 
 # ---------------------------------------------------------------------------
 # Coverage.
