@@ -788,8 +788,8 @@ lint-make:
 	fi
 	@echo "--warn-undefined-variables: clean"
 
-# Lint every shell script under hack/ recursively so subdirectories
-# (hack/openshift/, etc.) are covered. -x lets shellcheck follow
+# Lint every shell script under hack/ recursively so any
+# subdirectories are covered. -x lets shellcheck follow
 # source-statements to other files in the tree.
 .PHONY: lint-hack
 lint-hack:
