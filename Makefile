@@ -49,7 +49,7 @@ DOC_PORT ?= 6060
 # cmd/bpfman-shell/testdata: it mixes positive fixtures with
 # parser/check/runtime negative cases whose exact source shape matters.
 # Dockerfile.bpfman is a container build file, and
-# emacs/syntax-gallery.bpfman is deliberately non-canonical.
+# contrib/emacs/syntax-gallery.bpfman is deliberately non-canonical.
 BPFMAN_SHELL_FORMAT_SOURCES := \
 	e2e/lib.bpfman \
 	$(wildcard e2e/scripts/*.bpfman) \

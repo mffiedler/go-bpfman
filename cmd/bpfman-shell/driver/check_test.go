@@ -135,14 +135,14 @@ func TestShellCheck_LinePrefixTracksParserPosition(t *testing.T) {
 }
 
 // TestShellCheck_SyntaxGallery is a smoke test that the shipped
-// emacs/syntax-gallery.bpfman example parses cleanly under
+// contrib/emacs/syntax-gallery.bpfman example parses cleanly under
 // CheckInput. The gallery is the reference source for the shell's
 // surface syntax; if this regresses the refactor has lost
 // coverage somewhere.
 func TestShellCheck_SyntaxGallery(t *testing.T) {
 	t.Parallel()
 
-	path, err := filepath.Abs("../../../emacs/syntax-gallery.bpfman")
+	path, err := filepath.Abs("../../../contrib/emacs/syntax-gallery.bpfman")
 	require.NoError(t, err)
 	f, err := OpenScriptReader(path)
 	require.NoError(t, err)

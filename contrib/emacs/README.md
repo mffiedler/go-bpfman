@@ -18,13 +18,13 @@ This directory contains Emacs tooling for the bpfman-shell language.
 ### Load directly
 
 ```elisp
-(load-file "/path/to/go-bpfman/emacs/bpfman-mode.el")
+(load-file "/path/to/go-bpfman/contrib/emacs/bpfman-mode.el")
 ```
 
 ### Via `load-path`
 
 ```elisp
-(add-to-list 'load-path "/path/to/go-bpfman/emacs/")
+(add-to-list 'load-path "/path/to/go-bpfman/contrib/emacs/")
 (require 'bpfman-mode)
 ```
 
@@ -32,7 +32,7 @@ This directory contains Emacs tooling for the bpfman-shell language.
 
 ```elisp
 (use-package bpfman-mode
-  :load-path "/path/to/go-bpfman/emacs/"
+  :load-path "/path/to/go-bpfman/contrib/emacs/"
   :mode "\\.bpfman\\'")
 ```
 
