@@ -43,11 +43,6 @@ BIN_DIR ?= bin
 COVERAGE_DIR ?= .coverage
 COVERAGE_PROFILE ?= $(COVERAGE_DIR)/coverage.out
 COVERAGE_HTML ?= $(COVERAGE_DIR)/coverage.html
-GO_TEST_TIMELINE_EVENTS ?= $(COVERAGE_DIR)/test-timeline.events.json
-GO_TEST_TIMELINE_TRACE ?= $(COVERAGE_DIR)/test-timeline.trace.json
-E2E_SCRIPTS_TIMELINE_EVENTS ?= $(COVERAGE_DIR)/e2e-scripts-timeline.events.json
-E2E_SCRIPTS_TIMELINE_MARKERS ?= $(COVERAGE_DIR)/e2e-scripts-timeline.markers.json
-E2E_SCRIPTS_TIMELINE_TRACE ?= $(COVERAGE_DIR)/e2e-scripts-timeline.trace.json
 BPFMAN_PROTO_DIR := proto
 BPFMAN_PB_DIR := server/pb
 DOC_PORT ?= 6060
@@ -640,7 +635,6 @@ help:
 	@printf "  %-31s %s\n" "test-e2e-scripts-image-ci" "Run the CI-shaped image-bytecode script suite (requires root)"
 	@printf "  %-31s %s\n" "test-e2e-published-images" "Run published-image .bpfman scripts against quay.io (requires root and network)"
 	@printf "  %-31s %s\n" "test-e2e-scripts-stress" "Run .bpfman e2e scripts with high repeat/parallel defaults (requires root)"
-	@printf "  %-31s %s\n" "test-e2e-scripts-timeline" "Run .bpfman e2e scripts and render $(E2E_SCRIPTS_TIMELINE_TRACE) (requires root)"
 	@printf "  %-31s %s\n" "e2e-kmod-force-reload" "Delete managed bpfman state, then rebuild and reload the e2e kmod (requires root)"
 	@printf "  %-31s %s\n" "test-bpfman-ns" "Run bpfman-ns transport tests (native amd64)"
 	@printf "  %-31s %s\n" "test-bpfman-ns-cross" "Run bpfman-ns transport tests on amd64/arm64/ppc64le/s390x"
@@ -651,8 +645,6 @@ help:
 	@printf "  %-31s %s\n" "coverage-html" "Generate HTML coverage report"
 	@printf "  %-31s %s\n" "coverage-open" "Generate and open HTML coverage report"
 	@printf "  %-31s %s\n" "clean-coverage" "Remove coverage artifacts"
-	@printf "  %-31s %s\n" "go-test-timeline-build" "Build go-test-timeline, a Go test JSON to Chrome trace converter"
-	@printf "  %-31s %s\n" "test-timeline" "Run Go tests with JSON output and render $(GO_TEST_TIMELINE_TRACE)"
 	@echo ""
 	@echo "Local CI reproducer (Dockerfile.ci):"
 	@echo "  ci                          Run every ci-* target"
@@ -714,7 +706,7 @@ print-golangci-lint-version:
 	@echo $(GOLANGCI_LINT_VERSION)
 
 .PHONY: clean
-clean: clean-bpfman clean-bpfman-shell clean-bpfman-e2e-cleanup clean-go-test-timeline clean-bpf clean-e2e-kmod clean-coverage
+clean: clean-bpfman clean-bpfman-shell clean-bpfman-e2e-cleanup clean-bpf clean-e2e-kmod clean-coverage
 	$(RM) -r $(BIN_DIR) $(CI_E2E_BUNDLE)
 
 # Nuclear option, modeled on `make mrproper` in the kernel tree:
@@ -795,15 +787,6 @@ lint-dockerfile:
 .PHONY: test
 test: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_OBJECTS) $(E2E_BPF_OBJECTS)
 	$(strip go test $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") $(if $(filter-out 0,$(PARALLEL)),-parallel $(PARALLEL)) ./...)
-
-.PHONY: test-timeline
-test-timeline: go-test-timeline-compile $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_OBJECTS) $(E2E_BPF_OBJECTS)
-	$(Q)mkdir -p $(dir $(GO_TEST_TIMELINE_EVENTS)) $(dir $(GO_TEST_TIMELINE_TRACE))
-	$(Q)rc=0; \
-	    $(strip go test $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") $(if $(filter-out 0,$(PARALLEL)),-parallel $(PARALLEL)) $(if $(TEST),-run "$(TEST)") -json ./...) > $(GO_TEST_TIMELINE_EVENTS) || rc=$$?; \
-	    $(BIN_DIR)/go-test-timeline -input $(GO_TEST_TIMELINE_EVENTS) -output $(GO_TEST_TIMELINE_TRACE); \
-	    printf "wrote %s\n" "$(GO_TEST_TIMELINE_TRACE)"; \
-	    exit $$rc
 
 # Local test-all: runs every host-side test surface in the order
 # CI's tests/* matrix runs them, bypassing the Dockerfile.ci
@@ -1074,30 +1057,6 @@ test-e2e-published-images:
 	    BPFMAN_E2E_SCRIPT_SELECTOR=external \
 	    TEST='TestBPFManScripts/scripts/TestPublishedImage'
 
-.PHONY: run-e2e-scripts-timeline
-run-e2e-scripts-timeline: go-test-timeline-compile
-	$(Q)mkdir -p $(dir $(E2E_SCRIPTS_TIMELINE_EVENTS)) $(dir $(E2E_SCRIPTS_TIMELINE_MARKERS)) $(dir $(E2E_SCRIPTS_TIMELINE_TRACE))
-	$(Q)$(RM) $(E2E_SCRIPTS_TIMELINE_MARKERS)
-	$(Q)rc=0; \
-	    sudo env PATH=$(abspath $(BIN_DIR)):$$PATH \
-	        BPFMAN_E2E_DIR=$(abspath e2e) \
-	        BPFMAN_E2E_SCRIPT_TIMELINE=$(abspath $(E2E_SCRIPTS_TIMELINE_MARKERS)) \
-	        BPFMAN_LOCK_TIMEOUT=$(if $(BPFMAN_LOCK_TIMEOUT),$(BPFMAN_LOCK_TIMEOUT),5m) \
-	        $(call forward-env,$(E2E_SCRIPTS_FORWARD_VARS)) \
-	        go tool test2json -t -p $(E2E_SCRIPTS_TEST_PKG) \
-	        $(E2E_SCRIPTS_TEST_BIN) -test.v -test.failfast \
-	        -test.count=$(STRESS_COUNT) $(if $(filter-out 0,$(PARALLEL)),-test.parallel $(PARALLEL)) \
-	        -test.run "$(if $(TEST),$(TEST),TestBPFManScripts)" > $(E2E_SCRIPTS_TIMELINE_EVENTS) || rc=$$?; \
-	    sudo chmod a+r $(E2E_SCRIPTS_TIMELINE_MARKERS); \
-	    convert_rc=0; \
-	    $(BIN_DIR)/go-test-timeline -input $(E2E_SCRIPTS_TIMELINE_EVENTS) -markers $(E2E_SCRIPTS_TIMELINE_MARKERS) -output $(E2E_SCRIPTS_TIMELINE_TRACE) -title "bpfman e2e scripts timeline" -test-name-match "/scripts/" || convert_rc=$$?; \
-	    if [ $$convert_rc -eq 0 ]; then printf "wrote %s\n" "$(E2E_SCRIPTS_TIMELINE_TRACE)"; fi; \
-	    if [ $$rc -ne 0 ]; then exit $$rc; fi; \
-	    exit $$convert_rc
-
-.PHONY: test-e2e-scripts-timeline
-test-e2e-scripts-timeline: build-e2e-scripts e2e-kmod-reload
-	$(Q)$(MAKE) run-e2e-scripts-timeline
 
 # ---------------------------------------------------------------------------
 # Coverage.
@@ -1396,20 +1355,6 @@ bpfman-e2e-cleanup-compile: | $(BIN_DIR)
 clean-bpfman-e2e-cleanup:
 	$(RM) $(BIN_DIR)/bpfman-e2e-cleanup
 
-# go-test-timeline turns `go test -json` or `go tool test2json -t`
-# streams into Chrome Trace Event JSON loadable by chrome://tracing
-# or https://ui.perfetto.dev. It is intentionally a dev tool rather
-# than part of the production bpfman binary set.
-.PHONY: go-test-timeline-build
-go-test-timeline-build: bpfman-fmt go-test-timeline-compile
-
-.PHONY: go-test-timeline-compile
-go-test-timeline-compile: | $(BIN_DIR)
-	$(strip go build $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(BUILD_TAGS),-tags '$(BUILD_TAGS)') $(if $(BIN_LDFLAGS),-ldflags "$(BIN_LDFLAGS)") -o $(BIN_DIR)/go-test-timeline ./cmd/go-test-timeline)
-
-.PHONY: clean-go-test-timeline
-clean-go-test-timeline:
-	$(RM) $(BIN_DIR)/go-test-timeline
 
 # ---------------------------------------------------------------------------
 # Proto generation for bpfman gRPC API.
