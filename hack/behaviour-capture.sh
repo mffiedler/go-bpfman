@@ -179,14 +179,14 @@ cap_tiebreak(){
     ifup
     local prog l ids=()
     if [ "$1" = go ]; then prog=$(gload "$XDP" xdp:pass)
-      for i in 1 2 3; do ids+=("$("${GO[@]}" link attach xdp "$prog" "$IF" --priority 100 -o json 2>/dev/null|jq -r '.record.id')"); done
+      for _ in 1 2 3; do ids+=("$("${GO[@]}" link attach xdp "$prog" "$IF" --priority 100 -o json 2>/dev/null|jq -r '.record.id')"); done
       local map=(); local n=0
-      for l in "${ids[@]}"; do n=$((n+1)); local p; p=$("${GO[@]}" link get "$l" -o json 2>/dev/null|jq -r '.record.details.position'); map[$p]=$n; done
+      for l in "${ids[@]}"; do n=$((n+1)); local p; p=$("${GO[@]}" link get "$l" -o json 2>/dev/null|jq -r '.record.details.position'); map[p]=$n; done
       gclean
     else prog=$(rload "$XDP" xdp:pass)
-      for i in 1 2 3; do ids+=("$("${RS[@]}" attach "$prog" xdp --iface "$IF" --priority 100 2>/dev/null|awk '/Link ID:/{print $NF}')"); done
+      for _ in 1 2 3; do ids+=("$("${RS[@]}" attach "$prog" xdp --iface "$IF" --priority 100 2>/dev/null|awk '/Link ID:/{print $NF}')"); done
       local map=(); local n=0
-      for l in "${ids[@]}"; do n=$((n+1)); local p; p=$("${RS[@]}" get link "$l" 2>/dev/null|awk '/Position:/{print $NF}'); map[$p]=$n; done
+      for l in "${ids[@]}"; do n=$((n+1)); local p; p=$("${RS[@]}" get link "$l" 2>/dev/null|awk '/Position:/{print $NF}'); map[p]=$n; done
       rclean
     fi
     ifdown
