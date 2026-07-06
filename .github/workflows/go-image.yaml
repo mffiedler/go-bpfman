@@ -6,7 +6,7 @@ on:
 
 jobs:
   test:
-    uses: ./.github/workflows/test.yaml
+    uses: ./.github/workflows/go-test.yaml
 
   build-and-push:
     name: Build and push (multiarch)
@@ -74,7 +74,7 @@ jobs:
           make build-image \
             EXTRA_GO_LDFLAGS="-s -w" \
             IMAGE_REF=ttl.sh/frobware/bpfman \
-            SIGNER_IDENTITY=https://github.com/${{ github.repository }}/.github/workflows/image.yaml@${{ github.ref }} \
+            SIGNER_IDENTITY=https://github.com/${{ github.repository }}/.github/workflows/go-image.yaml@${{ github.ref }} \
             OIDC_ISSUER=https://token.actions.githubusercontent.com \
             PLATFORMS=linux/amd64,linux/arm64,linux/ppc64le,linux/s390x \
             PUSH=1 \

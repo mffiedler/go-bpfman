@@ -107,7 +107,7 @@ jobs:
       - run: make ci-build
 
   tests:
-    uses: ./.github/workflows/test.yaml
+    uses: ./.github/workflows/go-test.yaml
 
   lint:
     name: Lint

@@ -337,7 +337,7 @@ STAMP ?=
 # Dockerfile.bpfman.dev, and downstream Konflux/RHEL/UBI builds
 # leave them unset, and the version printer omits the Attestation
 # line entirely when any of them is empty. Only the CI image-build
-# workflow (.github/workflows/image.yaml) populates them.
+# workflow (.github/workflows/go-image.yaml) populates them.
 # ---------------------------------------------------------------------------
 IMAGE_REF       ?=
 SIGNER_IDENTITY ?=

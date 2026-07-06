@@ -17,7 +17,7 @@ var (
 	version   string // semantic version tag, if any
 
 	// The next three are populated only by the CI image-build
-	// workflow (.github/workflows/image.yaml). Local `make
+	// workflow (.github/workflows/go-image.yaml). Local `make
 	// build`, host-build paths via Dockerfile.bpfman.dev, and
 	// downstream Konflux/RHEL/UBI builds intentionally leave
 	// them empty: they are only meaningful for binaries that
@@ -26,7 +26,7 @@ var (
 	// of them is empty.
 
 	imageRef       string // e.g. "ttl.sh/frobware/go-bpfman"
-	signerIdentity string // e.g. "https://github.com/frobware/go-bpfman/.github/workflows/image.yaml@refs/heads/main"
+	signerIdentity string // e.g. "https://github.com/frobware/go-bpfman/.github/workflows/go-image.yaml@refs/heads/main"
 	oidcIssuer     string // e.g. "https://token.actions.githubusercontent.com"
 )
 
